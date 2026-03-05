@@ -1,4 +1,8 @@
+use std::process::Command;
+use std::sync::{Arc, Mutex};
+
 use roam::Tx;
+use ship_core::ProjectRegistry;
 use ship_service::Ship;
 use ship_types::{
     AgentKind, AgentSnapshot, AgentState, AutonomyMode, BlockId, ContentBlock,
@@ -8,10 +12,19 @@ use ship_types::{
 };
 use ulid::Ulid;
 
-#[derive(Clone, Debug, Default)]
-pub struct FakeShip;
+// r[server.multi-repo]
+#[derive(Clone, Debug)]
+pub struct ShipImpl {
+    registry: Arc<Mutex<ProjectRegistry>>,
+}
 
-impl FakeShip {
+impl ShipImpl {
+    pub fn new(registry: ProjectRegistry) -> Self {
+        Self {
+            registry: Arc::new(Mutex::new(registry)),
+        }
+    }
+
     fn fake_session_id() -> SessionId {
         SessionId(Ulid::new())
     }
@@ -42,45 +55,65 @@ impl FakeShip {
     }
 }
 
-impl Ship for FakeShip {
+impl Ship for ShipImpl {
     async fn list_projects(&self) -> Vec<ProjectInfo> {
-        vec![
-            ProjectInfo {
-                name: ProjectName("ship-backend".to_owned()),
-                path: "/Users/amos/bearcove/ship-backend".to_owned(),
-                valid: true,
-                invalid_reason: None,
-            },
-            ProjectInfo {
-                name: ProjectName("roam".to_owned()),
-                path: "/Users/amos/bearcove/roam".to_owned(),
-                valid: true,
-                invalid_reason: None,
-            },
-        ]
+        self.registry
+            .lock()
+            .expect("project registry mutex poisoned")
+            .list()
     }
 
     async fn add_project(&self, path: String) -> ProjectInfo {
-        let name = path
-            .rsplit('/')
-            .find(|segment| !segment.is_empty())
-            .unwrap_or("project")
-            .to_owned();
-        ProjectInfo {
-            name: ProjectName(name),
-            path,
-            valid: true,
-            invalid_reason: None,
+        let mut registry = self
+            .registry
+            .lock()
+            .expect("project registry mutex poisoned");
+        match registry.add(&path) {
+            Ok(project) => project,
+            Err(error) => ProjectInfo {
+                name: ProjectName(
+                    path.rsplit('/')
+                        .find(|segment| !segment.is_empty())
+                        .unwrap_or("project")
+                        .to_owned(),
+                ),
+                path,
+                valid: false,
+                invalid_reason: Some(error.to_string()),
+            },
         }
     }
 
-    async fn list_branches(&self, _project: ProjectName) -> Vec<String> {
-        vec![
-            "main".to_owned(),
-            "backend".to_owned(),
-            "feature/ship-roam-service".to_owned(),
-            "origin/main".to_owned(),
-        ]
+    async fn list_branches(&self, project: ProjectName) -> Vec<String> {
+        let project_path = {
+            let registry = self
+                .registry
+                .lock()
+                .expect("project registry mutex poisoned");
+            registry.get(&project.0).map(|project| project.path)
+        };
+
+        let Some(project_path) = project_path else {
+            return Vec::new();
+        };
+
+        let output = Command::new("git")
+            .args(["-C", project_path.as_str(), "branch", "-a"])
+            .output();
+        let Ok(output) = output else {
+            return Vec::new();
+        };
+        if !output.status.success() {
+            return Vec::new();
+        }
+
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(str::trim)
+            .map(|line| line.strip_prefix("* ").unwrap_or(line))
+            .filter(|line| !line.is_empty())
+            .map(ToOwned::to_owned)
+            .collect()
     }
 
     async fn list_sessions(&self) -> Vec<SessionSummary> {
@@ -181,7 +214,7 @@ impl Ship for FakeShip {
                     role: Role::Mate,
                     state: AgentState::Working {
                         plan: Some(vec![PlanStep {
-                            description: "Implement FakeShip".to_owned(),
+                            description: "Implement ShipImpl".to_owned(),
                             status: PlanStepStatus::Completed,
                         }]),
                         activity: Some("Writing server scaffolding".to_owned()),

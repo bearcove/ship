@@ -11,6 +11,7 @@ rustdoc-args = ["--html-in-header", "arborium-header.html"]
 [dependencies]
 ship-types = { path = "../ship-types" }
 futures-core = { workspace = true }
+facet-json = { workspace = true }
 futures-util = "0.3"
 tokio = { version = "1", features = ["sync"] }
 ulid = { workspace = true }

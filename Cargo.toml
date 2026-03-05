@@ -15,6 +15,7 @@ edition = "2024"
 ulid = "1"
 futures-core = "0.3"
 facet = { version = "0.44.1", features = ["ulid"] }
+facet-json = "0.44.1"
 roam = "7.0.0"
 roam-codegen = "7.0.0"
 roam-websocket = "7.0.0"

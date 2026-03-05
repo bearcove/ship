@@ -1,4 +1,4 @@
-mod fake_ship;
+mod ship_impl;
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -10,7 +10,8 @@ use axum::extract::{Request, State};
 use axum::http::{HeaderName, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::any;
-use fake_ship::FakeShip;
+use ship_core::ProjectRegistry;
+use ship_impl::ShipImpl;
 use ship_service::{ShipClient, ShipDispatcher};
 use tower_http::services::{ServeDir, ServeFile};
 use tracing::Level;
@@ -18,7 +19,7 @@ use tracing_subscriber::EnvFilter;
 
 #[derive(Clone)]
 struct AppState {
-    ship: FakeShip,
+    ship: ShipImpl,
     http_client: reqwest::Client,
     frontend_mode: FrontendMode,
 }
@@ -45,8 +46,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .parse::<SocketAddr>()?;
 
     let frontend_mode = load_frontend_mode();
+    // r[server.config-dir]
+    let mut project_registry = ProjectRegistry::load_default()?;
+    // r[project.validation]
+    project_registry.validate_all()?;
     let state = AppState {
-        ship: FakeShip,
+        ship: ShipImpl::new(project_registry),
         http_client: reqwest::Client::new(),
         frontend_mode: frontend_mode.clone(),
     };

@@ -1,4 +1,5 @@
 mod fakes;
+mod project_registry;
 mod session_manager;
 
 use core::fmt;
@@ -12,6 +13,7 @@ use ship_types::{AgentKind, PersistedSession, Role, SessionEvent, SessionId};
 pub use fakes::{
     FakeAgentDriver, FakePromptScript, FakeSessionStore, FakeWorktreeOps, SpawnRecord,
 };
+pub use project_registry::{ProjectRegistry, ProjectRegistryError};
 pub use session_manager::{
     ActiveSession, PendingPermission, SessionManager, SessionManagerError, SessionStateView,
 };

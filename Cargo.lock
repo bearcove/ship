@@ -1695,6 +1695,7 @@ dependencies = [
 name = "ship-core"
 version = "0.1.0"
 dependencies = [
+ "facet-json",
  "futures-core",
  "futures-util",
  "ship-types",
@@ -1711,6 +1712,7 @@ dependencies = [
  "reqwest",
  "roam",
  "roam-websocket",
+ "ship-core",
  "ship-service",
  "ship-types",
  "tokio",

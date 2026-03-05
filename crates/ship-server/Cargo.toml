@@ -14,6 +14,7 @@ hyper-tungstenite = { workspace = true }
 reqwest = { workspace = true }
 roam = { workspace = true }
 roam-websocket = { workspace = true }
+ship-core = { path = "../ship-core" }
 ship-service = { path = "../ship-service" }
 ship-types = { path = "../ship-types" }
 tokio = { workspace = true, features = ["signal"] }
