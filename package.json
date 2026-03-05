@@ -15,5 +15,8 @@
     "@typescript/native-preview": "7.0.0-dev.20260305.1",
     "oxfmt": "^0.36.0",
     "oxlint": "^1.51.0"
+  },
+  "dependencies": {
+    "react-markdown": "^10.1.0"
   }
 }
