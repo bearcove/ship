@@ -1,24 +1,21 @@
 use std::collections::HashMap;
 use std::path::Path;
 use std::pin::Pin;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use agent_client_protocol::{
-    Agent, CancelNotification, Client, ClientCapabilities, ClientSideConnection, ContentBlock,
-    Error, FileSystemCapability, Implementation, InitializeRequest, NewSessionRequest,
-    PlanEntryStatus, PromptRequest, ProtocolVersion, RequestPermissionRequest,
-    RequestPermissionResponse, Result as AcpResult, SessionNotification, SessionUpdate,
-    StopReason as AcpStopReason, TextContent, ToolCallStatus,
+    Agent, CancelNotification, ClientCapabilities, ClientSideConnection, ContentBlock, Error,
+    FileSystemCapability, Implementation, InitializeRequest, NewSessionRequest, PromptRequest,
+    ProtocolVersion, StopReason as AcpStopReason, TextContent,
 };
 use futures::{Stream, stream};
-use ship_types::{
-    AgentState, BlockId, BlockPatch, ContentBlock as ShipContentBlock, PlanStep, PlanStepStatus,
-    Role, SessionEvent, ToolCallStatus as ShipToolCallStatus,
-};
+use ship_types::{Role, SessionEvent};
 use tokio::process::Command;
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
+use crate::acp_client::ShipAcpClient;
 use crate::{AgentDriver, AgentError, AgentHandle, PromptResponse, SessionId, StopReason};
 
 struct AcpHandle {
@@ -33,6 +30,11 @@ enum DriverCommand {
         response: oneshot::Sender<Result<PromptResponse, AgentError>>,
     },
     Cancel {
+        response: oneshot::Sender<Result<(), AgentError>>,
+    },
+    ResolvePermission {
+        permission_id: String,
+        approved: bool,
         response: oneshot::Sender<Result<(), AgentError>>,
     },
     Kill {
@@ -205,6 +207,39 @@ impl AgentDriver for AcpAgentDriver {
         Box::pin(stream::iter(out))
     }
 
+    async fn resolve_permission(
+        &self,
+        handle: &AgentHandle,
+        permission_id: &str,
+        approved: bool,
+    ) -> Result<(), AgentError> {
+        let command_tx = {
+            let handles = self.handles.lock().expect("acp handles mutex poisoned");
+            handles
+                .get(handle)
+                .ok_or_else(|| AgentError {
+                    message: "agent handle not found".to_owned(),
+                })?
+                .command_tx
+                .clone()
+        };
+
+        let (response_tx, response_rx) = oneshot::channel();
+        command_tx
+            .send(DriverCommand::ResolvePermission {
+                permission_id: permission_id.to_owned(),
+                approved,
+                response: response_tx,
+            })
+            .map_err(|error| AgentError {
+                message: format!("failed to send resolve permission command: {error}"),
+            })?;
+
+        response_rx.await.map_err(|error| AgentError {
+            message: format!("resolve permission response channel closed: {error}"),
+        })?
+    }
+
     async fn kill(&self, handle: &AgentHandle) -> Result<(), AgentError> {
         let mut acp_handle = self
             .handles
@@ -272,13 +307,14 @@ async fn run_acp_worker(
         message: "failed to capture ACP stdout".to_owned(),
     })?;
 
-    let client = StubClient {
+    let client = Rc::new(ShipAcpClient::new(
         role,
+        worktree_path.clone(),
         notifications_tx,
-    };
+    ));
 
     let (connection, io_task) = ClientSideConnection::new(
-        client,
+        client.clone(),
         child_stdin.compat_write(),
         child_stdout.compat(),
         |future| {
@@ -336,6 +372,16 @@ async fn run_acp_worker(
                     .map(|_| ());
                 let _ = response.send(result);
             }
+            DriverCommand::ResolvePermission {
+                permission_id,
+                approved,
+                response,
+            } => {
+                let result = client
+                    .resolve_permission(&permission_id, approved)
+                    .map_err(|message| AgentError { message });
+                let _ = response.send(result);
+            }
             DriverCommand::Kill { response } => {
                 let result = child.start_kill().map_err(|error| AgentError {
                     message: format!("failed to kill ACP process: {error}"),
@@ -369,115 +415,5 @@ fn map_prompt_response(response: agent_client_protocol::PromptResponse) -> Promp
 fn acp_error(error: Error) -> AgentError {
     AgentError {
         message: error.to_string(),
-    }
-}
-
-struct StubClient {
-    role: Role,
-    notifications_tx: mpsc::UnboundedSender<SessionEvent>,
-}
-
-#[async_trait::async_trait(?Send)]
-impl Client for StubClient {
-    async fn request_permission(
-        &self,
-        _args: RequestPermissionRequest,
-    ) -> AcpResult<RequestPermissionResponse> {
-        Err(Error::method_not_found())
-    }
-
-    async fn session_notification(&self, args: SessionNotification) -> AcpResult<()> {
-        for event in map_session_update(self.role, args.update) {
-            let _ = self.notifications_tx.send(event);
-        }
-        Ok(())
-    }
-}
-
-fn map_session_update(role: Role, update: SessionUpdate) -> Vec<SessionEvent> {
-    match update {
-        SessionUpdate::UserMessageChunk(chunk)
-        | SessionUpdate::AgentMessageChunk(chunk)
-        | SessionUpdate::AgentThoughtChunk(chunk) => {
-            vec![SessionEvent::BlockAppend {
-                block_id: BlockId::new(),
-                role,
-                block: ShipContentBlock::Text {
-                    text: format_content_block(chunk.content),
-                },
-            }]
-        }
-        SessionUpdate::ToolCall(tool_call) => {
-            let result_text = if tool_call.content.is_empty() {
-                None
-            } else {
-                Some(format!("{:#?}", tool_call.content))
-            };
-            vec![SessionEvent::BlockAppend {
-                block_id: BlockId(tool_call.tool_call_id.0.to_string()),
-                role,
-                block: ShipContentBlock::ToolCall {
-                    tool_name: tool_call.title,
-                    arguments: tool_call
-                        .raw_input
-                        .map(|value| value.to_string())
-                        .unwrap_or_default(),
-                    status: map_tool_status(tool_call.status),
-                    result: result_text,
-                },
-            }]
-        }
-        SessionUpdate::ToolCallUpdate(update) => vec![SessionEvent::BlockPatch {
-            block_id: BlockId(update.tool_call_id.0.to_string()),
-            role,
-            patch: BlockPatch::ToolCallUpdate {
-                status: update
-                    .fields
-                    .status
-                    .map(map_tool_status)
-                    .unwrap_or(ShipToolCallStatus::Running),
-                result: update
-                    .fields
-                    .content
-                    .map(|content| format!("{:#?}", content)),
-            },
-        }],
-        SessionUpdate::Plan(plan) => vec![SessionEvent::AgentStateChanged {
-            role,
-            state: AgentState::Working {
-                plan: Some(
-                    plan.entries
-                        .into_iter()
-                        .map(|entry| PlanStep {
-                            description: entry.content,
-                            status: match entry.status {
-                                PlanEntryStatus::Pending => PlanStepStatus::Planned,
-                                PlanEntryStatus::InProgress => PlanStepStatus::InProgress,
-                                PlanEntryStatus::Completed => PlanStepStatus::Completed,
-                                _ => PlanStepStatus::Failed,
-                            },
-                        })
-                        .collect(),
-                ),
-                activity: Some("ACP plan update".to_owned()),
-            },
-        }],
-        _ => Vec::new(),
-    }
-}
-
-fn format_content_block(block: ContentBlock) -> String {
-    match block {
-        ContentBlock::Text(text) => text.text,
-        other => format!("{other:?}"),
-    }
-}
-
-fn map_tool_status(status: ToolCallStatus) -> ShipToolCallStatus {
-    match status {
-        ToolCallStatus::Pending | ToolCallStatus::InProgress => ShipToolCallStatus::Running,
-        ToolCallStatus::Completed => ShipToolCallStatus::Success,
-        ToolCallStatus::Failed => ShipToolCallStatus::Failure,
-        _ => ShipToolCallStatus::Running,
     }
 }

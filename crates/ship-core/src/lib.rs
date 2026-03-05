@@ -1,3 +1,4 @@
+mod acp_client;
 mod acp_driver;
 mod fakes;
 mod git_worktree;
@@ -108,6 +109,13 @@ pub trait AgentDriver: Send + Sync {
         &self,
         handle: &AgentHandle,
     ) -> Pin<Box<dyn Stream<Item = SessionEvent> + Send + '_>>;
+
+    async fn resolve_permission(
+        &self,
+        handle: &AgentHandle,
+        permission_id: &str,
+        approved: bool,
+    ) -> Result<(), AgentError>;
 
     async fn kill(&self, handle: &AgentHandle) -> Result<(), AgentError>;
 }

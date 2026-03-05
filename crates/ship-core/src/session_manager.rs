@@ -454,16 +454,35 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         permission_id: &str,
         approved: bool,
     ) -> Result<(), SessionManagerError> {
+        let (pending, handle) = {
+            let session = self
+                .sessions
+                .get(session_id)
+                .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
+
+            let pending = session
+                .pending_permissions
+                .get(permission_id)
+                .cloned()
+                .ok_or_else(|| SessionManagerError::PermissionNotFound(permission_id.to_owned()))?;
+
+            let handle = match pending.role {
+                Role::Captain => session.captain_handle.clone(),
+                Role::Mate => session.mate_handle.clone(),
+            };
+
+            (pending, handle)
+        };
+
+        self.agent_driver
+            .resolve_permission(&handle, permission_id, approved)
+            .await
+            .map_err(|error| SessionManagerError::Agent(error.message))?;
+
         let session = self
             .sessions
             .get_mut(session_id)
             .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
-
-        let pending = session
-            .pending_permissions
-            .get(permission_id)
-            .cloned()
-            .ok_or_else(|| SessionManagerError::PermissionNotFound(permission_id.to_owned()))?;
 
         set_agent_state(
             session,

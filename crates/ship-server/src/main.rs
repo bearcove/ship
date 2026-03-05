@@ -4,6 +4,7 @@ use std::io::Write;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::time::Duration;
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
@@ -111,8 +112,12 @@ async fn run_serve(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let listen_addr = resolve_listen_addr(args.listen)?;
+    let vite_addr = resolve_vite_addr()?;
+    // r[dev-proxy.vite-lifecycle]
+    let _vite_process = spawn_vite_dev_server(vite_addr).await?;
+    wait_for_tcp_readiness(vite_addr, Duration::from_secs(10)).await?;
 
-    let frontend_mode = load_frontend_mode();
+    let frontend_mode = load_frontend_mode(vite_addr);
     // r[server.config-dir]
     let mut project_registry = ProjectRegistry::load_default().await?;
     // r[project.validation]
@@ -207,11 +212,59 @@ fn resolve_listen_addr(
     Ok(listen.parse::<SocketAddr>()?)
 }
 
+// r[dev-proxy.vite-port]
+fn resolve_vite_addr() -> Result<SocketAddr, Box<dyn std::error::Error>> {
+    let vite_addr = std::env::var("SHIP_VITE_ADDR").unwrap_or_else(|_| "127.0.0.1:5173".to_owned());
+    Ok(vite_addr.parse::<SocketAddr>()?)
+}
+
 // r[server.mode]
-fn load_frontend_mode() -> FrontendMode {
-    let vite_origin =
-        std::env::var("SHIP_VITE_ORIGIN").unwrap_or_else(|_| "http://127.0.0.1:5173".to_owned());
+fn load_frontend_mode(vite_addr: SocketAddr) -> FrontendMode {
+    let vite_origin = format!("http://{vite_addr}");
     FrontendMode::DevProxy { vite_origin }
+}
+
+async fn spawn_vite_dev_server(
+    vite_addr: SocketAddr,
+) -> Result<tokio::process::Child, Box<dyn std::error::Error>> {
+    let frontend_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../frontend");
+    let mut child = tokio::process::Command::new("pnpm");
+    child
+        .arg("exec")
+        .arg("vite")
+        .arg("--host")
+        .arg(vite_addr.ip().to_string())
+        .arg("--port")
+        .arg(vite_addr.port().to_string())
+        .current_dir(frontend_dir)
+        .kill_on_drop(true)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit());
+    Ok(child.spawn()?)
+}
+
+async fn wait_for_tcp_readiness(
+    vite_addr: SocketAddr,
+    timeout: Duration,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        match tokio::net::TcpStream::connect(vite_addr).await {
+            Ok(stream) => {
+                drop(stream);
+                return Ok(());
+            }
+            Err(error) => {
+                if tokio::time::Instant::now() >= deadline {
+                    return Err(
+                        format!("timed out waiting for Vite at {vite_addr}: {error}").into(),
+                    );
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        }
+    }
 }
 
 // r[backend.persistence-dir-gitignore]

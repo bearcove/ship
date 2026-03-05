@@ -190,6 +190,15 @@ impl AgentDriver for FakeAgentDriver {
         Box::pin(stream::iter(events))
     }
 
+    async fn resolve_permission(
+        &self,
+        _handle: &AgentHandle,
+        _permission_id: &str,
+        _approved: bool,
+    ) -> Result<(), AgentError> {
+        Ok(())
+    }
+
     async fn kill(&self, handle: &AgentHandle) -> Result<(), AgentError> {
         self.inner
             .lock()

@@ -16,10 +16,11 @@ futures-core = { workspace = true }
 facet-json = { workspace = true }
 fs-err = { workspace = true }
 futures-util = "0.3"
-tokio = { version = "1", features = ["rt", "sync", "process"] }
+tokio = { version = "1", features = ["rt", "sync", "process", "fs", "io-util", "time"] }
 tokio-util = { workspace = true }
 async-trait = "0.1"
 tracing = { workspace = true }
+ulid = { workspace = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
