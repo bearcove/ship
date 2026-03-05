@@ -503,6 +503,16 @@ r[proto.add-project]
 The protocol MUST support an `add_project` operation that registers a new
 project by path. This is the RPC equivalent of `ship project add`.
 
+r[proto.remove-project]
+Project removal is CLI-only (`ship project remove`). There is no RPC
+operation for removing projects from the UI. This prevents accidental removal
+while sessions are active.
+
+r[proto.list-branches]
+The protocol MUST support a `list_branches` operation that takes a project
+name and returns its git branches (local and remote-tracking). The frontend
+uses this to populate the branch selector in the create-session dialog.
+
 r[proto.list-sessions]
 The protocol MUST support a `list_sessions` operation that returns summaries
 of all active sessions.
@@ -632,7 +642,7 @@ starts.
 r[worktree.branch-name]
 Each worktree MUST be created on a new branch named
 `ship/{session_short_id}/{slug}` where `session_short_id` is the first 8
-characters of the session UUID and `slug` is a kebab-case summary derived from
+characters of the session ULID and `slug` is a kebab-case summary derived from
 the initial task description (always available since session creation requires
 a task).
 
@@ -767,6 +777,17 @@ r[resilience.load-session-future]
 ACP's `LoadSession` capability (resuming an existing agent session with full
 conversation history) is a future enhancement. For v1, crash recovery uses
 respawn + summary prompt as described above.
+
+r[resilience.server-restart]
+When Ship restarts, all agent processes are dead (they were children of the
+previous server process). On startup, Ship MUST load persisted session state
+from each project's `.ship/` directory. Sessions with non-terminal tasks
+(status is not `Accepted` or `Cancelled`) MUST be displayed in the session
+list with both agents in the `Error` state and a message indicating "Server
+restarted — agents need respawn." The human can then click "Retry" on each
+agent to respawn and trigger crash recovery (per
+`resilience.agent-crash-recovery`). Ship MUST NOT auto-respawn agents on
+restart — the human decides which sessions to resume.
 
 ## Session Sharing
 
@@ -1227,6 +1248,15 @@ The "New Session" action MUST open a `Dialog` containing a form with: project
 base branch (`Select` populated from the selected project's git branches),
 and initial task description (`TextArea`). If only one project is registered,
 it MUST be pre-selected.
+
+r[ui.add-project.dialog]
+The "Add Project" action (from the empty state callout or a top-bar button)
+MUST open a `Dialog` containing: a `TextField` for the repository path
+(absolute path, no tilde expansion — the backend resolves it), and a "Add"
+`Button`. On submit, the dialog calls `proto.add-project`. If validation
+fails (path doesn't exist, not a git repo, name collision), the error MUST
+be displayed inline in the dialog as a red `Callout` without closing the
+dialog.
 
 r[ui.session-list.create.branch-filter]
 The base branch `Select` MUST support type-to-filter for repositories with
