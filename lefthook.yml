@@ -1,0 +1,13 @@
+pre-commit:
+  parallel: true
+  jobs:
+    - name: oxfmt
+      glob: "*.{js,ts,jsx,tsx,css.ts}"
+      run: pnpm exec oxfmt --write {staged_files} && git add {staged_files}
+
+    - name: oxlint
+      glob: "*.{js,ts,jsx,tsx}"
+      run: pnpm exec oxlint {staged_files}
+
+    - name: typecheck
+      run: cd frontend && pnpm exec tsgo --noEmit

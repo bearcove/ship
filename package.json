@@ -10,5 +10,10 @@
     "build": "pnpm --filter ship-frontend build",
     "typecheck": "pnpm --filter ship-frontend typecheck",
     "test": "pnpm --filter ship-frontend test"
+  },
+  "devDependencies": {
+    "@typescript/native-preview": "7.0.0-dev.20260305.1",
+    "oxfmt": "^0.36.0",
+    "oxlint": "^1.51.0"
   }
 }
