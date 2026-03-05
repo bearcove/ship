@@ -786,11 +786,15 @@ frontend opens the channel by session ID and receives `SessionEvent`s as a
 typed stream. The channel is part of the `Ship` service trait.
 
 r[event.subscribe.replay]
-When a new subscriber connects, the backend MUST replay the current task's
-content block history before streaming live events. This ensures late-joining
-browsers see the full current state without a separate hydration call. Replay
-events use the same `SessionEvent` types as live events — the frontend does
-not distinguish between replayed and live events.
+When a new subscriber connects, the backend MUST replay all `SessionEvent`s
+from the current task's event log before streaming live events. This includes
+block events (`BlockAppend`, `BlockPatch`) AND top-level events
+(`AgentStateChanged`, `TaskStatusChanged`, `ContextUpdated`, `TaskStarted`).
+The replay starts from the `TaskStarted` event for the current task — NOT
+from `seq 0`. This ensures late-joining browsers see the full current-task
+state without a separate hydration call. Replay events use the same types and
+sequence numbers as originally emitted — the frontend does not distinguish
+between replayed and live events.
 
 ### Event Envelope
 
@@ -962,11 +966,12 @@ mutate block objects in place.
 ### Replay Semantics
 
 r[event.replay.same-events]
-For v1, replay MUST send the same `BlockAppend`, `BlockPatch`, and top-level
-events that were originally emitted, in the same order, with the same
-sequence numbers. The frontend processes them with the same reducer as live
-events. There is no special "replay mode" — the block store is built from
-events regardless of source.
+For v1, replay MUST send all `SessionEvent`s from the current task's event
+log — block events and top-level events — in the same order, with the same
+sequence numbers as originally emitted. The first replayed event is the
+`TaskStarted` for the current task; the last is the most recent event before
+the subscriber connected. The frontend processes them with the same reducer
+as live events. There is no special "replay mode."
 
 r[event.replay.followed-by-marker]
 After all replayed `SessionEvent`s have been sent to a subscriber, the
@@ -978,9 +983,13 @@ log and is not broadcast to other subscribers.
 
 r[event.replay.snapshot-optimization]
 As a post-v1 optimization, the backend MAY replace event-by-event replay
-with a single `Snapshot` control message containing the materialized block
-store state and the current sequence number. If implemented, `Snapshot` MUST
-be followed by `ReplayComplete`. Like `ReplayComplete`, `Snapshot` is a
+with a single `Snapshot` control message containing the full materialized
+session state: both block stores, agent states, task status, context levels,
+and the current sequence number. This gives the subscriber enough to
+initialize its `SessionViewState` without processing individual events. If
+implemented, `Snapshot` MUST be followed by `ReplayComplete`, and the
+subscriber MUST set `lastSeq` from the snapshot so it can detect gaps in
+subsequent live events. Like `ReplayComplete`, `Snapshot` is a
 subscription-local control message, not a `SessionEvent`. This is NOT
 required for v1 and MUST NOT be implemented until the event-by-event replay
 is proven to be a bottleneck.
@@ -995,24 +1004,25 @@ its own `ReplayComplete` marker after its own replay finishes. Other
 already-connected subscribers are unaffected — they continue receiving live
 events without interruption.
 
-Example: reconnect flow for a single browser.
+Example: reconnect flow for a single browser (session is on task 2,
+`TaskStarted` for task 2 was at `seq 30`).
 
 1. Browser connects, subscribes to session `S`.
-2. Backend replays events `seq 0..47` from the task event log.
+2. Backend replays events `seq 30..47` (current task's log).
 3. Backend sends `ReplayComplete` (no seq) on this subscriber's channel.
 4. Browser processes events, sets `replayComplete = true`, renders.
 5. Live events `seq 48, 49, ...` arrive as they are produced.
 6. WebSocket drops. Browser sets `connected = false`, clears state.
 7. Browser reconnects, re-subscribes to session `S`.
-8. Backend replays events `seq 0..52` (log has grown).
+8. Backend replays events `seq 30..52` (log has grown).
 9. Backend sends `ReplayComplete`.
 10. Browser is caught up again.
 
-Example: late-joining second browser.
+Example: late-joining second browser (same session, same task 2).
 
 1. Browser A is connected and live at `seq 50`.
 2. Browser B connects, subscribes to session `S`.
-3. Backend replays events `seq 0..50` to Browser B only.
+3. Backend replays events `seq 30..50` to Browser B only.
 4. Backend sends `ReplayComplete` to Browser B only.
 5. A new live event `seq 51` is produced.
 6. Both Browser A and Browser B receive `seq 51` — it is a normal
@@ -1034,7 +1044,9 @@ Implementers MUST verify the following invariants:
   identical live `SessionEvent`s with identical sequence numbers.
 - A subscriber that connects, receives replay + `ReplayComplete`, and then
   receives live events MUST observe a contiguous, gap-free sequence from
-  `seq 0` through the latest event.
+  the `TaskStarted` event of the current task through the latest live event.
+  The first replayed seq is NOT necessarily 0 — it is the seq of the current
+  task's `TaskStarted` event.
 
 ### Client-Side Session State
 
