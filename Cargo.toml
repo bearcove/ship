@@ -4,6 +4,7 @@ members = [
   "crates/ship-core",
   "crates/ship-service",
   "crates/ship-server",
+  "xtask",
 ]
 resolver = "2"
 
@@ -15,6 +16,7 @@ ulid = "1"
 futures-core = "0.3"
 facet = { version = "0.44.1", features = ["ulid"] }
 roam = "7.0.0"
+roam-codegen = "7.0.0"
 # TODO: re-add when ship-server uses them
 # tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 # tracing = "0.1"

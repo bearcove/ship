@@ -9,6 +9,8 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@bearcove/roam-core": "7.0.1",
+    "@bearcove/roam-ws": "7.0.1",
     "@phosphor-icons/react": "^2.1.10",
     "@radix-ui/themes": "^3.3.0",
     "react": "^19.2.4",

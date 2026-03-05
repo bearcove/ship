@@ -4,6 +4,7 @@ use ship_types::{
     SessionId, SessionSummary, SubscribeMessage, TaskId,
 };
 
+// r[backend.rpc]
 #[roam::service]
 pub trait Ship {
     // r[proto.list-projects]
