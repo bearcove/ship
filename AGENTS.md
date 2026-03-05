@@ -65,3 +65,38 @@ export function SessionListPage() {
 - For test functions, use `// r[requirement.id]` above the test to mark verification
 - Check `docs/spec/ship.md` for the exact requirement IDs — don't guess
 - Run `tracey status` (if available) to check coverage
+
+## Development workflow
+
+Ship uses git worktrees so multiple agents can work in parallel without conflicts.
+
+### Worktree layout
+
+| Path | Branch | Purpose |
+|---|---|---|
+| `~/bearcove/ship` | `main` | Integration point. No direct edits here. |
+| `~/bearcove/ship-frontend` | `frontend` | Frontend agent works here. |
+| `~/bearcove/ship-backend` | `backend` | Backend agent works here. |
+
+### Merge cycle
+
+1. Agents commit to their branches in their worktrees
+2. When an agent's work is ready, rebase its branch onto main and fast-forward merge:
+   ```
+   cd ~/bearcove/ship-frontend && git rebase main
+   cd ~/bearcove/ship && git merge --ff-only frontend
+   ```
+3. After merging, push main and rebase the other worktree:
+   ```
+   cd ~/bearcove/ship && git push
+   cd ~/bearcove/ship-backend && git rebase main
+   ```
+4. Between agent passes (after merge, before next prompt): add Tracey annotations to code that's missing them, check `tracey status`, commit on main
+5. Agents pull main into their branches before starting new work
+
+### Rules
+
+- Never edit source files directly on main while agents are working — it causes merge conflicts
+- AGENTS.md and docs/ are safe to edit on main (agents don't modify them)
+- Tracey annotation passes happen between merges, not during agent work
+- Each agent's worktree is persistent — don't remove it between passes
