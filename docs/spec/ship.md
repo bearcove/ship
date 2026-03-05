@@ -1279,6 +1279,39 @@ terminal output, tool arguments) and the system sans-serif stack for UI text.
 Font configuration MUST be applied via vanilla-extract global styles, not
 Radix theme overrides.
 
+## Testability
+
+The core logic must be testable without spawning real agents, running git
+commands, or touching the filesystem. All external interactions go through
+traits so tests can substitute in-memory fakes.
+
+r[testability.agent-trait]
+Agent communication MUST go through a trait (e.g., `AgentDriver`) that
+abstracts ACP connection setup, prompting, cancellation, and notification
+streaming. Tests MUST be able to use an in-memory fake that simulates ACP
+responses without spawning real agent processes.
+
+r[testability.git-trait]
+Git worktree operations MUST go through a trait (e.g., `WorktreeOps`) that
+abstracts worktree creation, cleanup, branch management, and uncommitted-change
+detection. Tests MUST be able to use an in-memory fake.
+
+r[testability.persistence-trait]
+Task and session persistence MUST go through a trait (e.g., `SessionStore`)
+that abstracts reading, writing, and listing persisted state. Tests MUST be
+able to use an in-memory store.
+
+r[testability.no-subprocess-in-tests]
+Unit and integration tests MUST NOT spawn real agent binaries or require
+external processes. All tests that exercise session management, task lifecycle,
+steer flow, permission handling, or event streaming MUST run against trait
+fakes.
+
+r[testability.trait-location]
+Testability traits (`AgentDriver`, `WorktreeOps`, `SessionStore`) MUST be
+defined in the `ship-types` crate so they are available to all crates without
+pulling in runtime dependencies.
+
 ## Cost Tracking
 
 r[cost.not-tracked]
