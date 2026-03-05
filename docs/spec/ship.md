@@ -17,7 +17,9 @@ a branch.
 
 r[session.create]
 The system MUST allow creating a session with a specified captain agent kind,
-mate agent kind, and base branch.
+mate agent kind, base branch, and initial task description. Session creation
+and first task assignment are a single atomic operation — there is no session
+without a task.
 
 r[session.list]
 The system MUST allow listing all active sessions with their current state.
@@ -436,8 +438,10 @@ Task identifiers MUST be UUIDs wrapped in a `TaskId` newtype.
 ### Operations
 
 r[proto.create-session]
-The protocol MUST support a `create_session` operation that creates a new
-session with a given agent configuration and returns a `SessionId`.
+The protocol MUST support a `create_session` operation that takes agent
+configuration, base branch, and an initial task description. It creates the
+session, worktree, spawns agents, and assigns the first task in one call.
+Returns a `SessionId` and `TaskId`.
 
 r[proto.list-sessions]
 The protocol MUST support a `list_sessions` operation that returns summaries
@@ -462,16 +466,29 @@ r[proto.resolve-permission]
 The protocol MUST support a `resolve_permission` operation to respond to agent
 permission requests.
 
+r[proto.retry-agent]
+The protocol MUST support a `retry_agent` operation that takes a session ID
+and a role (captain or mate). It respawns the agent process, reinitializes
+the ACP connection, and if a task was in progress, triggers crash recovery
+(per `resilience.agent-crash-recovery`).
+
 r[proto.close-session]
 The protocol MUST support a `close_session` operation that tears down both
 agents, triggers worktree cleanup (with confirmation), and removes the session
 from the active list. The session's persistence file is retained for history.
 
 r[proto.get-session]
-The protocol MUST support a `get_session` operation that returns the full
-session state: agent snapshots, current task (with all content blocks and
-steer history), task history, and autonomy mode. This is used for initial
-hydration when a browser connects or reconnects.
+The protocol MUST support a `get_session` operation that returns the session's
+structural state: agent snapshots, current task metadata and status, task
+history summaries, autonomy mode, and control status. This provides the
+skeleton; content blocks come via event replay.
+
+r[proto.hydration-flow]
+Frontend hydration MUST follow this sequence: first call `get_session` for
+structural state, then open the event subscription channel. The channel
+replays the current task's content block history (per
+`event.subscribe.replay`) before switching to live events. The two mechanisms
+are complementary, not alternatives.
 
 ## Agent State
 
@@ -554,7 +571,8 @@ r[worktree.branch-name]
 Each worktree MUST be created on a new branch named
 `ship/{session_short_id}/{slug}` where `session_short_id` is the first 8
 characters of the session UUID and `slug` is a kebab-case summary derived from
-the session's first task description (or "untitled" if no task yet).
+the initial task description (always available since session creation requires
+a task).
 
 r[worktree.git-command]
 Worktree creation MUST use `git worktree add` with the `--track` flag pointing
@@ -576,6 +594,25 @@ Worktree cleanup MUST use `git worktree remove` followed by branch deletion
 of the session branch (with `--force` only if the human confirms).
 
 ## Task Lifecycle
+
+### Task Status
+
+r[task.status.enum]
+A task's status MUST be one of the following values:
+
+- `Assigned` — task has been created, captain is being prompted for direction
+- `Working` — the mate is actively processing a prompt
+- `ReviewPending` — the mate has finished and the captain is reviewing
+- `SteerPending` — the captain has produced a steer awaiting human approval
+  (human-in-the-loop mode only)
+- `Accepted` — the task is complete, work is done
+- `Cancelled` — the task was cancelled by the human or captain
+
+r[task.status.terminal]
+`Accepted` and `Cancelled` are terminal states. Once a task reaches a terminal
+state, it moves to the session's task history and cannot be modified.
+
+### Task Flow
 
 r[task.assign]
 Task creation begins when the human (or captain) sends an `assign` with a task
@@ -623,8 +660,21 @@ The system MUST emit `AgentStateChanged` events when an agent's state changes,
 including the role and new state.
 
 r[event.content-block]
-The system MUST emit `ContentBlock` events when an agent produces content
-(text, tool call, diff, etc.), including the role and block data.
+The system MUST emit `ContentBlock` events when an agent produces content,
+including the role and block data.
+
+r[event.content-block.types]
+Ship MUST support the following content block variants, mapped from ACP
+`SessionUpdate` types:
+
+- `Text` — agent message text (from `AgentMessageChunk`)
+- `ToolCallStart` — tool invocation beginning, with tool name and arguments
+- `ToolCallDone` — tool invocation result, with output and success/failure
+- `PlanUpdate` — execution plan with step statuses
+- `Error` — agent-reported error
+
+Ship passes through ACP content as-is, wrapping each in a Ship `ContentBlock`
+with the originating role. The frontend MUST have a renderer for each variant.
 
 r[event.permission-requested]
 The system MUST emit `PermissionRequested` events when an agent requests
@@ -640,17 +690,21 @@ changes, including the role and remaining percentage.
 
 ## Resilience
 
-r[resilience.reconnect]
-If the ACP connection drops mid-task, the backend MUST reconnect and call
-`LoadSession` to resume.
-
 r[resilience.state-in-backend]
 Task state MUST live in the backend, not in the agent, so nothing is lost on
 disconnection.
 
-r[resilience.context-recovery]
-If the agent lost context (process crash), the backend MUST inject a summary
-prompt to catch it up.
+r[resilience.agent-crash-recovery]
+If an agent process crashes, the backend MUST respawn the agent, reinitialize
+the ACP connection, create a new session, and inject a summary prompt that
+describes the task, what the agent had done so far, and the current state of
+the worktree. The agent resumes from this summary, not from conversation
+history.
+
+r[resilience.load-session-future]
+ACP's `LoadSession` capability (resuming an existing agent session with full
+conversation history) is a future enhancement. For v1, crash recovery uses
+respawn + summary prompt as described above.
 
 ## Session Sharing
 
@@ -663,6 +717,21 @@ multi-subscriber support.
 
 r[sharing.single-writer]
 Steering MUST be single-writer: one active controller per session at a time.
+
+r[sharing.claim-control]
+A browser MUST be able to claim control of a session via a "take control"
+action. The first browser to connect to a session automatically becomes the
+controller.
+
+r[sharing.release-control]
+When the controlling browser disconnects (WebSocket close, tab close, crash),
+control MUST be released automatically. Any other connected browser can then
+claim it.
+
+r[sharing.viewer-ui]
+Non-controlling browsers MUST see the session in read-only mode: the event
+stream, agent panels, and content blocks are visible, but steer/accept/cancel
+controls and permission approval buttons MUST be disabled or hidden.
 
 ## Captain Role
 
@@ -700,32 +769,47 @@ task description, the steer history so far, and the mate's latest output. The
 prompt MUST ask the captain to either provide a steer (more work needed) or
 signal acceptance (task complete).
 
-r[captain.steer-output]
-The captain's prompt response MUST be interpreted as a steer instruction for
-the mate. The backend extracts the captain's text output and sends it as the
-next `steer` to the mate.
-
-r[captain.no-tools]
-The captain agent MUST be configured without filesystem or terminal
+r[captain.no-filesystem]
+The captain agent MUST NOT be configured with filesystem or terminal ACP
 capabilities. It reviews output, it does not execute.
+
+### Captain Tools
+
+The captain communicates decisions to Ship via ACP extension tools, exposed
+as MCP tools on the captain's session. This avoids fragile text parsing.
+
+r[captain.tool.steer]
+The captain MUST have access to a `ship_steer` tool that takes a `message`
+argument (string). When the captain calls this tool, the backend interprets
+the message as a steer instruction for the mate.
+
+r[captain.tool.accept]
+The captain MUST have access to a `ship_accept` tool that takes an optional
+`summary` argument (string). When the captain calls this tool, the backend
+transitions the task to accepted.
+
+r[captain.tool.reject]
+The captain MUST have access to a `ship_reject` tool that takes a `reason`
+argument (string). When the captain calls this tool, the backend cancels the
+task with the given reason.
+
+r[captain.tool.implementation]
+Captain tools MUST be implemented as MCP tools served by Ship itself. The
+captain's `NewSessionRequest` MUST include Ship's MCP server in its
+`mcp_servers` list so the captain can discover and call these tools.
 
 ### Captain Review Cycle
 
 r[captain.review.auto]
-In autonomous mode, when the captain produces a steer, the backend MUST
-forward it directly to the mate without human approval. The human can
+In autonomous mode, when the captain calls `ship_steer`, the backend MUST
+forward the steer directly to the mate without human approval. The human can
 intervene at any time by sending their own steer or cancelling.
 
 r[captain.review.human]
-In human-in-the-loop mode, when the captain produces a steer, the backend
-MUST present it to the human for approval before forwarding to the mate.
-The human can approve as-is, edit the steer before sending, or discard it
-and write their own.
-
-r[captain.accept-signal]
-The captain MUST be able to signal that the task is complete by including a
-structured accept marker in its response (e.g., a specific JSON block or
-keyword). The backend MUST detect this and transition the task to accepted.
+In human-in-the-loop mode, when the captain calls `ship_steer`, the backend
+MUST present the steer to the human for approval before forwarding to the
+mate. The human can approve as-is, edit the steer before sending, or discard
+it and write their own.
 
 ## Mate Role
 
@@ -891,6 +975,31 @@ the event stream and can intervene at any time.
 r[autonomy.permission-gate]
 The permission system MUST still gate destructive actions regardless of
 autonomy mode.
+
+## Server Configuration
+
+r[server.listen]
+The server's HTTP listen address MUST be configurable via the `SHIP_LISTEN`
+environment variable, defaulting to `[::]:9140`.
+
+r[server.repo-root]
+The server MUST auto-detect the repository root by walking up from the current
+working directory looking for a `.git` directory. An explicit
+`SHIP_REPO_ROOT` environment variable MUST override auto-detection.
+
+r[server.mode]
+The server MUST run in one of two modes: **dev** (Vite proxy enabled, hot
+reload) or **prod** (serves built frontend from disk). Mode MUST be
+configurable via `SHIP_MODE` environment variable, defaulting to `dev`.
+
+r[server.discord-webhook]
+The Discord webhook URL MUST be configurable via the `SHIP_DISCORD_WEBHOOK`
+environment variable. If unset, Discord notifications are disabled.
+
+r[server.mcp-defaults]
+The default MCP server list MUST be configurable via a JSON file at
+`.ship/mcp-servers.json` in the repository root. If absent, no MCP servers
+are passed to agents by default.
 
 ## Cost Tracking
 

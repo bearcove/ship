@@ -253,8 +253,8 @@ session.
 
 ## Cost tracking
 
-ACP exposes token usage. Surface it in the UI per-session, per-task,
-per-agent. Running totals and per-prompt costs.
+Not implemented. Ship assumes subscription-based usage (Claude Pro/Team,
+Codex subscription), not metered API tokens. See spec for details.
 
 ## Context exhaustion
 
