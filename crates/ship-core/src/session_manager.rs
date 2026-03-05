@@ -522,6 +522,45 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             })
     }
 
+    async fn cleanup_session_resources(
+        &self,
+        session: &ActiveSession,
+        force: bool,
+    ) -> Result<(), SessionManagerError> {
+        let repo_root = Self::repo_root_for_worktree(&session.worktree_path)?;
+
+        self.agent_driver
+            .kill(&session.captain_handle)
+            .await
+            .map_err(|error| SessionManagerError::Agent(error.message.clone()))?;
+        self.agent_driver
+            .kill(&session.mate_handle)
+            .await
+            .map_err(|error| SessionManagerError::Agent(error.message.clone()))?;
+
+        self.worktree_ops
+            .remove_worktree(&session.worktree_path, force)
+            .await
+            .map_err(|error| SessionManagerError::Worktree(error.message))?;
+
+        let branch_exists = self
+            .worktree_ops
+            .list_branches(repo_root)
+            .await
+            .map_err(|error| SessionManagerError::Worktree(error.message))?
+            .iter()
+            .any(|branch| branch == &session.config.branch_name);
+
+        if branch_exists {
+            self.worktree_ops
+                .delete_branch(&session.config.branch_name, force, repo_root)
+                .await
+                .map_err(|error| SessionManagerError::Worktree(error.message))?;
+        }
+
+        Ok(())
+    }
+
     // r[proto.close-session]
     // r[backend.worktree-management]
     // r[worktree.cleanup]
@@ -532,12 +571,12 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         session_id: &SessionId,
         force: bool,
     ) -> Result<CloseSessionResponse, SessionManagerError> {
-        let worktree_path = self
+        let session = self
             .sessions
             .get(session_id)
             .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?
-            .worktree_path
             .clone();
+        let worktree_path = session.worktree_path.clone();
 
         if self
             .worktree_ops
@@ -549,28 +588,12 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             return Ok(CloseSessionResponse::RequiresConfirmation);
         }
 
-        let session = self
-            .sessions
-            .remove(session_id)
-            .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
-        let repo_root = Self::repo_root_for_worktree(&session.worktree_path)?;
-
-        self.agent_driver
-            .kill(&session.captain_handle)
+        self.cleanup_session_resources(&session, force).await?;
+        self.store
+            .delete_session(session_id)
             .await
-            .map_err(|error| SessionManagerError::Agent(error.message.clone()))?;
-        self.agent_driver
-            .kill(&session.mate_handle)
-            .await
-            .map_err(|error| SessionManagerError::Agent(error.message.clone()))?;
-        self.worktree_ops
-            .remove_worktree(&session.worktree_path, force)
-            .await
-            .map_err(|error| SessionManagerError::Worktree(error.message))?;
-        self.worktree_ops
-            .delete_branch(&session.config.branch_name, force, repo_root)
-            .await
-            .map_err(|error| SessionManagerError::Worktree(error.message))?;
+            .map_err(|error| SessionManagerError::Store(error.message))?;
+        self.sessions.remove(session_id);
 
         Ok(CloseSessionResponse::Closed)
     }

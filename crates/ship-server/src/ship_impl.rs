@@ -114,6 +114,45 @@ impl ShipImpl {
             .ok_or_else(|| format!("invalid worktree path: {}", worktree_path.display()))
     }
 
+    async fn cleanup_session_resources(
+        &self,
+        session: &ActiveSession,
+        force: bool,
+    ) -> Result<(), String> {
+        let repo_root = Self::repo_root_for_worktree(&session.worktree_path)?;
+
+        if let Err(error) = self.agent_driver.kill(&session.captain_handle).await {
+            Self::log_error("close_session_kill_captain", &error.message);
+        }
+        if let Err(error) = self.agent_driver.kill(&session.mate_handle).await {
+            Self::log_error("close_session_kill_mate", &error.message);
+        }
+
+        if session.worktree_path.exists() {
+            self.worktree_ops
+                .remove_worktree(&session.worktree_path, force)
+                .await
+                .map_err(|error| error.message)?;
+        }
+
+        let branch_exists = self
+            .worktree_ops
+            .list_branches(repo_root)
+            .await
+            .map_err(|error| error.message)?
+            .iter()
+            .any(|branch| branch == &session.config.branch_name);
+
+        if branch_exists {
+            self.worktree_ops
+                .delete_branch(&session.config.branch_name, force, repo_root)
+                .await
+                .map_err(|error| error.message)?;
+        }
+
+        Ok(())
+    }
+
     async fn persist_session(&self, session_id: &SessionId) -> Result<(), String> {
         let persisted = {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
@@ -799,19 +838,26 @@ impl Ship for ShipImpl {
     // r[worktree.cleanup-uncommitted]
     // r[worktree.cleanup-git]
     async fn close_session(&self, req: CloseSessionRequest) -> CloseSessionResponse {
-        let worktree_path = {
+        let session = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let Some(session) = sessions.get(&req.id) else {
                 Self::log_error("close_session", "session not found");
                 return CloseSessionResponse::NotFound;
             };
-            session.worktree_path.clone()
+            session.clone()
         };
+        let worktree_path = session.worktree_path.clone();
 
-        match self
-            .worktree_ops
-            .has_uncommitted_changes(&worktree_path)
-            .await
+        match async {
+            if worktree_path.exists() {
+                self.worktree_ops
+                    .has_uncommitted_changes(&worktree_path)
+                    .await
+            } else {
+                Ok(false)
+            }
+        }
+        .await
         {
             Ok(true) if !req.force => return CloseSessionResponse::RequiresConfirmation,
             Ok(_) => {}
@@ -823,49 +869,20 @@ impl Ship for ShipImpl {
             }
         }
 
-        let removed = {
-            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
-            sessions.remove(&req.id)
-        };
-
-        let Some(session) = removed else {
-            Self::log_error("close_session", "session not found");
-            return CloseSessionResponse::NotFound;
-        };
-        let repo_root = match Self::repo_root_for_worktree(&session.worktree_path) {
-            Ok(repo_root) => repo_root,
-            Err(error) => {
-                Self::log_error("close_session_repo_root", &error);
-                return CloseSessionResponse::Failed { message: error };
-            }
-        };
-
-        if let Err(error) = self.agent_driver.kill(&session.captain_handle).await {
-            Self::log_error("close_session_kill_captain", &error.message);
+        if let Err(error) = self.cleanup_session_resources(&session, req.force).await {
+            Self::log_error("close_session_cleanup", &error);
+            return CloseSessionResponse::Failed { message: error };
         }
-        if let Err(error) = self.agent_driver.kill(&session.mate_handle).await {
-            Self::log_error("close_session_kill_mate", &error.message);
-        }
-        if let Err(error) = self
-            .worktree_ops
-            .remove_worktree(&session.worktree_path, req.force)
-            .await
-        {
-            Self::log_error("close_session_remove_worktree", &error.message);
+        if let Err(error) = self.store.delete_session(&req.id).await {
+            Self::log_error("close_session_delete_session", &error.message);
             return CloseSessionResponse::Failed {
                 message: error.message,
             };
         }
-        if let Err(error) = self
-            .worktree_ops
-            .delete_branch(&session.config.branch_name, req.force, repo_root)
-            .await
-        {
-            Self::log_error("close_session_delete_branch", &error.message);
-            return CloseSessionResponse::Failed {
-                message: error.message,
-            };
-        }
+        self.sessions
+            .lock()
+            .expect("sessions mutex poisoned")
+            .remove(&req.id);
 
         CloseSessionResponse::Closed
     }

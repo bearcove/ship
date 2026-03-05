@@ -217,6 +217,8 @@ struct FakeWorktreeInner {
     dirty_flags: HashMap<PathBuf, bool>,
     branches: Vec<String>,
     deleted_branches: Vec<(String, bool, PathBuf)>,
+    remove_errors: HashMap<PathBuf, String>,
+    delete_branch_errors: HashMap<String, String>,
 }
 
 #[derive(Clone, Default)]
@@ -238,6 +240,26 @@ impl FakeWorktreeOps {
             .expect("fake worktree ops mutex poisoned")
             .dirty_flags
             .insert(path, has_changes);
+    }
+
+    pub fn set_remove_error(&self, path: PathBuf, message: impl Into<String>) {
+        self.inner
+            .lock()
+            .expect("fake worktree ops mutex poisoned")
+            .remove_errors
+            .insert(path, message.into());
+    }
+
+    pub fn set_delete_branch_error(
+        &self,
+        branch_name: impl Into<String>,
+        message: impl Into<String>,
+    ) {
+        self.inner
+            .lock()
+            .expect("fake worktree ops mutex poisoned")
+            .delete_branch_errors
+            .insert(branch_name.into(), message.into());
     }
 
     pub fn created_paths(&self) -> Vec<PathBuf> {
@@ -289,6 +311,8 @@ impl WorktreeOps for FakeWorktreeOps {
 
         inner.next_idx += 1;
         let path = repo_root.join(format!(".worktrees/fake-{}", inner.next_idx));
+        let short_session_id: String = session_id.0.chars().take(8).collect();
+        let branch_name = format!("ship/{short_session_id}/{slug}");
         inner.created.insert(
             path.clone(),
             (
@@ -298,12 +322,21 @@ impl WorktreeOps for FakeWorktreeOps {
                 repo_root.to_path_buf(),
             ),
         );
+        if !inner.branches.iter().any(|branch| branch == &branch_name) {
+            inner.branches.push(branch_name);
+        }
 
         Ok(path)
     }
 
     async fn remove_worktree(&self, path: &Path, force: bool) -> Result<(), WorktreeError> {
         let mut inner = self.inner.lock().expect("fake worktree ops mutex poisoned");
+
+        if let Some(message) = inner.remove_errors.get(path) {
+            return Err(WorktreeError {
+                message: message.clone(),
+            });
+        }
 
         inner.created.remove(path);
         inner.removed.push((path.to_path_buf(), force));
@@ -328,11 +361,16 @@ impl WorktreeOps for FakeWorktreeOps {
         force: bool,
         repo_root: &Path,
     ) -> Result<(), WorktreeError> {
-        self.inner
-            .lock()
-            .expect("fake worktree ops mutex poisoned")
+        let mut inner = self.inner.lock().expect("fake worktree ops mutex poisoned");
+        if let Some(message) = inner.delete_branch_errors.get(branch_name) {
+            return Err(WorktreeError {
+                message: message.clone(),
+            });
+        }
+        inner
             .deleted_branches
             .push((branch_name.to_owned(), force, repo_root.to_path_buf()));
+        inner.branches.retain(|branch| branch != branch_name);
         Ok(())
     }
 }

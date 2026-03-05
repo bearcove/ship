@@ -409,7 +409,7 @@ async fn test_event_broadcast() {
 // r[verify worktree.cleanup-git]
 #[tokio::test]
 async fn test_close_session_cleans_up_clean_worktree() {
-    let (mut manager, agent, worktree, _store) = make_manager();
+    let (mut manager, agent, worktree, store) = make_manager();
 
     agent.push_response(StopReason::EndTurn);
     agent.push_response(StopReason::EndTurn);
@@ -442,6 +442,14 @@ async fn test_close_session_cleans_up_clean_worktree() {
     assert!(
         manager.get_session(&session_id).is_err(),
         "closed session should be removed from active sessions"
+    );
+    assert!(
+        store
+            .load_session(&session_id)
+            .await
+            .expect("store load should work")
+            .is_none(),
+        "closed session should be deleted from persistence"
     );
 }
 
@@ -484,7 +492,7 @@ async fn test_close_session_requires_confirmation_for_dirty_worktree() {
 // r[verify worktree.cleanup-git]
 #[tokio::test]
 async fn test_close_session_force_deletes_dirty_worktree() {
-    let (mut manager, agent, worktree, _store) = make_manager();
+    let (mut manager, agent, worktree, store) = make_manager();
 
     agent.push_response(StopReason::EndTurn);
     agent.push_response(StopReason::EndTurn);
@@ -516,5 +524,58 @@ async fn test_close_session_force_deletes_dirty_worktree() {
             true,
             Path::new("/repo").to_path_buf()
         )]
+    );
+    assert!(
+        store
+            .load_session(&session_id)
+            .await
+            .expect("store load should work")
+            .is_none(),
+        "forced close should delete persistence"
+    );
+}
+
+// r[verify backend.worktree-management]
+// r[verify worktree.cleanup-git]
+#[tokio::test]
+async fn test_close_session_keeps_session_when_cleanup_fails() {
+    let (mut manager, agent, worktree, store) = make_manager();
+
+    agent.push_response(StopReason::EndTurn);
+    agent.push_response(StopReason::EndTurn);
+    agent.push_response(StopReason::EndTurn);
+
+    let (session_id, _) = manager
+        .create_session(make_request("Cleanup failure"), Path::new("/repo"))
+        .await
+        .expect("create session should work");
+    let worktree_path = worktree
+        .created_paths()
+        .into_iter()
+        .next()
+        .expect("worktree should exist");
+    worktree.set_remove_error(worktree_path.clone(), "remove failed");
+
+    let close = manager.close_session(&session_id, false).await;
+
+    assert!(matches!(
+        close,
+        Err(ship_core::SessionManagerError::Worktree(message)) if message == "remove failed"
+    ));
+    assert!(
+        manager.get_session(&session_id).is_ok(),
+        "session should stay active when cleanup fails"
+    );
+    assert!(
+        store
+            .load_session(&session_id)
+            .await
+            .expect("store load should work")
+            .is_some(),
+        "failed close should keep persistence for retry"
+    );
+    assert_eq!(
+        worktree.remove_requests(),
+        Vec::<(std::path::PathBuf, bool)>::new()
     );
 }
