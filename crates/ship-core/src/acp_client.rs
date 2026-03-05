@@ -180,7 +180,6 @@ impl ShipAcpClient {
             }
             // r[event.context-updated]
             SessionUpdate::UsageUpdate(update) => {
-                self.reset_text_block();
                 let Some(remaining_percent) = remaining_context_percent(update.used, update.size)
                 else {
                     return Vec::new();
@@ -638,7 +637,7 @@ mod tests {
 
     // r[verify event.block-id.text]
     #[test]
-    fn non_text_update_breaks_text_chunk_accumulation() {
+    fn usage_update_does_not_break_text_chunk_accumulation() {
         let client = make_client();
         client.begin_prompt_turn();
 
@@ -654,11 +653,15 @@ mod tests {
             [SessionEvent::BlockAppend { block_id, .. }] => block_id.clone(),
             other => panic!("unexpected first events: {other:?}"),
         };
-        let second_id = match &second[..] {
-            [SessionEvent::BlockAppend { block_id, .. }] => block_id.clone(),
-            other => panic!("unexpected second events: {other:?}"),
-        };
-
-        assert_ne!(first_id, second_id);
+        assert_eq!(
+            second,
+            vec![SessionEvent::BlockPatch {
+                block_id: first_id,
+                role: Role::Mate,
+                patch: BlockPatch::TextAppend {
+                    text: "Again".to_owned(),
+                },
+            }]
+        );
     }
 }
