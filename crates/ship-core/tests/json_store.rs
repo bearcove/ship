@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use ship_core::{JsonSessionStore, SessionStore};
 use ship_types::{
     AgentKind, AgentSnapshot, AgentState, AutonomyMode, BlockId, ContentBlock, CurrentTask,
-    PersistedSession, ProjectName, Role, SessionConfig, SessionId, TaskContentRecord, TaskId,
-    TaskRecord, TaskStatus,
+    PersistedSession, ProjectName, Role, SessionConfig, SessionEvent, SessionEventEnvelope,
+    SessionId, TaskContentRecord, TaskId, TaskRecord, TaskStatus,
 };
 
 fn make_temp_dir(test_name: &str) -> PathBuf {
@@ -50,6 +50,13 @@ fn make_persisted_session(id: &str, description: &str) -> PersistedSession {
                 role: Role::Mate,
                 block: ContentBlock::Text {
                     text: "Started implementation".to_owned(),
+                },
+            }],
+            event_log: vec![SessionEventEnvelope {
+                seq: 0,
+                event: SessionEvent::TaskStarted {
+                    task_id: TaskId::new(),
+                    description: description.to_owned(),
                 },
             }],
         }),

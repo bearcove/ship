@@ -47,6 +47,17 @@ async fn recv_task_status(
     }
 }
 
+fn drain_replay(rx: &mut tokio::sync::broadcast::Receiver<SessionEventEnvelope>) {
+    loop {
+        match rx.try_recv() {
+            Ok(_) => {}
+            Err(tokio::sync::broadcast::error::TryRecvError::Empty) => return,
+            Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => continue,
+            Err(tokio::sync::broadcast::error::TryRecvError::Closed) => return,
+        }
+    }
+}
+
 // r[verify proto.create-session]
 // r[verify session.persistent]
 #[tokio::test]
@@ -106,6 +117,7 @@ async fn test_task_lifecycle() {
     let mut events = manager
         .subscribe(&session_id)
         .expect("subscribe should work");
+    drain_replay(&mut events);
 
     agent.push_response(StopReason::EndTurn);
     agent.push_response(StopReason::EndTurn);
@@ -211,6 +223,7 @@ async fn test_permission_flow() {
     let mut rx = manager
         .subscribe(&session_id)
         .expect("subscribe should work");
+    drain_replay(&mut rx);
 
     agent.queue_notifications(
         &mate_handle,
@@ -231,10 +244,26 @@ async fn test_permission_flow() {
         .await
         .expect("drain notifications should work");
 
-    let envelope = timeout(Duration::from_secs(1), rx.recv())
-        .await
-        .expect("should receive event")
-        .expect("broadcast should be open");
+    let envelope = loop {
+        let envelope = timeout(Duration::from_secs(1), rx.recv())
+            .await
+            .expect("should receive event")
+            .expect("broadcast should be open");
+        if envelope.event
+            == (SessionEvent::BlockAppend {
+                block_id: block_id.clone(),
+                role: Role::Mate,
+                block: ContentBlock::Permission {
+                    tool_name: "write_file".to_owned(),
+                    arguments: "{\"path\":\"src/lib.rs\"}".to_owned(),
+                    description: "Write file".to_owned(),
+                    resolution: None,
+                },
+            })
+        {
+            break envelope;
+        }
+    };
 
     assert_eq!(
         envelope.event,
@@ -342,6 +371,8 @@ async fn test_event_broadcast() {
     let mut rx2 = manager
         .subscribe(&session_id)
         .expect("subscribe should work");
+    drain_replay(&mut rx1);
+    drain_replay(&mut rx2);
 
     manager
         .cancel(&session_id)

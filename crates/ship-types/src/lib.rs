@@ -353,7 +353,7 @@ pub mod protocol {
 
 pub mod persistence {
     use crate::agent::{AgentKind, AgentSnapshot, Role};
-    use crate::events::ContentBlock;
+    use crate::events::{ContentBlock, SessionEventEnvelope};
     use crate::ids::{BlockId, ProjectName, SessionId};
     use crate::protocol::AutonomyMode;
     use crate::task::TaskRecord;
@@ -380,6 +380,8 @@ pub mod persistence {
     pub struct CurrentTask {
         pub record: TaskRecord,
         pub content_history: Vec<TaskContentRecord>,
+        // r[backend.persistence-contents]
+        pub event_log: Vec<SessionEventEnvelope>,
     }
 
     // r[session.persistent]

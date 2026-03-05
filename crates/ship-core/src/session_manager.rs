@@ -68,6 +68,8 @@ pub struct ActiveSession {
     pub mate: AgentSnapshot,
     pub current_task: Option<CurrentTask>,
     pub task_history: Vec<TaskRecord>,
+    pub captain_block_count: usize,
+    pub mate_block_count: usize,
     pub pending_permissions: HashMap<String, PendingPermission>,
     pub pending_steer: Option<String>,
     pub events_tx: broadcast::Sender<SessionEventEnvelope>,
@@ -160,6 +162,8 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             },
             current_task: None,
             task_history: Vec::new(),
+            captain_block_count: 0,
+            mate_block_count: 0,
             pending_permissions: HashMap::new(),
             pending_steer: None,
             events_tx,
@@ -215,6 +219,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
     }
 
     // r[event.subscribe.roam-channel]
+    // r[event.subscribe.replay]
     pub fn subscribe(
         &self,
         session_id: &SessionId,
@@ -224,7 +229,15 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             .get(session_id)
             .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
 
-        Ok(session.events_tx.subscribe())
+        let rx = session.events_tx.subscribe();
+
+        if let Some(task) = session.current_task.as_ref() {
+            for envelope in &task.event_log {
+                let _ = session.events_tx.send(envelope.clone());
+            }
+        }
+
+        Ok(rx)
     }
 
     // r[autonomy.toggle]
@@ -272,16 +285,17 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                     status: TaskStatus::Assigned,
                 },
                 content_history: Vec::new(),
+                event_log: Vec::new(),
             });
 
-            emit_event(
+            apply_event(
                 session,
                 SessionEvent::TaskStarted {
                     task_id: task_id.clone(),
                     description: description.clone(),
                 },
             );
-            emit_event(
+            apply_event(
                 session,
                 SessionEvent::TaskStatusChanged {
                     task_id: task_id.clone(),
@@ -336,7 +350,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                 });
             }
 
-            emit_event(
+            apply_event(
                 session,
                 SessionEvent::BlockAppend {
                     block_id: BlockId::new(),
@@ -447,7 +461,8 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
 
         let pending = session
             .pending_permissions
-            .remove(permission_id)
+            .get(permission_id)
+            .cloned()
             .ok_or_else(|| SessionManagerError::PermissionNotFound(permission_id.to_owned()))?;
 
         set_agent_state(
@@ -458,7 +473,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                 activity: Some("Permission resolved".to_owned()),
             },
         );
-        emit_event(
+        apply_event(
             session,
             SessionEvent::BlockPatch {
                 block_id: pending.block_id,
@@ -524,8 +539,9 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                 .sessions
                 .get_mut(session_id)
                 .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
-            emit_event(session, event);
+            apply_event(session, event);
         }
+        drop(stream);
 
         self.persist_session(session_id).await?;
         Ok(())
@@ -659,12 +675,15 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         Ok(response.stop_reason)
     }
 
-    async fn persist_session(&self, session_id: &SessionId) -> Result<(), SessionManagerError> {
+    async fn persist_session(&mut self, session_id: &SessionId) -> Result<(), SessionManagerError> {
         let session = self
             .sessions
-            .get(session_id)
+            .get_mut(session_id)
             .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
 
+        rebuild_materialized_from_event_log(session);
+
+        // r[backend.persistence-contents]
         let persisted = PersistedSession {
             id: session.id.clone(),
             config: session.config.clone(),
@@ -683,8 +702,25 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
     }
 }
 
-// r[resilience.state-in-backend]
-fn emit_event(session: &mut ActiveSession, event: SessionEvent) {
+// r[backend.event-pipeline]
+// r[backend.event-log]
+fn apply_event(session: &mut ActiveSession, event: SessionEvent) {
+    let envelope = SessionEventEnvelope {
+        seq: session.next_event_seq,
+        event,
+    };
+    session.next_event_seq = session.next_event_seq.saturating_add(1);
+
+    if let Some(task) = session.current_task.as_mut() {
+        task.event_log.push(envelope.clone());
+    }
+
+    apply_event_to_materialized_state(session, &envelope.event);
+    let _ = session.events_tx.send(envelope);
+}
+
+// r[backend.materialized-state]
+fn apply_event_to_materialized_state(session: &mut ActiveSession, event: &SessionEvent) {
     match &event {
         SessionEvent::BlockAppend {
             block_id,
@@ -697,6 +733,12 @@ fn emit_event(session: &mut ActiveSession, event: SessionEvent) {
                     role: *role,
                     block: block.clone(),
                 });
+            }
+            match role {
+                Role::Captain => {
+                    session.captain_block_count = session.captain_block_count.saturating_add(1)
+                }
+                Role::Mate => session.mate_block_count = session.mate_block_count.saturating_add(1),
             }
 
             if let ContentBlock::Permission {
@@ -734,7 +776,7 @@ fn emit_event(session: &mut ActiveSession, event: SessionEvent) {
         }
         SessionEvent::BlockPatch {
             block_id,
-            role: _,
+            role,
             patch,
         } => {
             if let Some(task) = session.current_task.as_mut()
@@ -745,13 +787,32 @@ fn emit_event(session: &mut ActiveSession, event: SessionEvent) {
             {
                 apply_block_patch(&mut record.block, patch);
             }
+            if matches!(patch, BlockPatch::PermissionResolve { .. }) {
+                session
+                    .pending_permissions
+                    .retain(|_, pending| pending.block_id != *block_id || pending.role != *role);
+            }
         }
         SessionEvent::AgentStateChanged { role, state } => match role {
             Role::Captain => session.captain.state = state.clone(),
             Role::Mate => session.mate.state = state.clone(),
         },
-        SessionEvent::TaskStatusChanged { .. } => {}
-        SessionEvent::TaskStarted { .. } => {}
+        SessionEvent::TaskStatusChanged { task_id, status } => {
+            if let Some(task) = session.current_task.as_mut()
+                && task.record.id == *task_id
+            {
+                task.record.status = *status;
+            }
+        }
+        SessionEvent::TaskStarted {
+            task_id,
+            description,
+        } => {
+            if let Some(task) = session.current_task.as_mut() {
+                task.record.id = task_id.clone();
+                task.record.description = description.clone();
+            }
+        }
         SessionEvent::ContextUpdated {
             role,
             remaining_percent,
@@ -760,13 +821,6 @@ fn emit_event(session: &mut ActiveSession, event: SessionEvent) {
             Role::Mate => session.mate.context_remaining_percent = Some(*remaining_percent),
         },
     }
-
-    let envelope = SessionEventEnvelope {
-        seq: session.next_event_seq,
-        event,
-    };
-    session.next_event_seq = session.next_event_seq.saturating_add(1);
-    let _ = session.events_tx.send(envelope);
 }
 
 fn apply_block_patch(block: &mut ContentBlock, patch: &BlockPatch) {
@@ -804,6 +858,30 @@ fn apply_block_patch(block: &mut ContentBlock, patch: &BlockPatch) {
     }
 }
 
+// r[backend.persistence-contents]
+fn rebuild_materialized_from_event_log(session: &mut ActiveSession) {
+    let Some(current_task) = session.current_task.as_mut() else {
+        session.pending_permissions.clear();
+        session.captain_block_count = 0;
+        session.mate_block_count = 0;
+        return;
+    };
+
+    current_task.content_history.clear();
+    session.pending_permissions.clear();
+    session.captain_block_count = 0;
+    session.mate_block_count = 0;
+    session.captain.state = AgentState::Idle;
+    session.mate.state = AgentState::Idle;
+    session.captain.context_remaining_percent = None;
+    session.mate.context_remaining_percent = None;
+
+    let replay = current_task.event_log.clone();
+    for envelope in replay {
+        apply_event_to_materialized_state(session, &envelope.event);
+    }
+}
+
 // r[task.progress]
 fn transition_task(
     session: &mut ActiveSession,
@@ -819,9 +897,8 @@ fn transition_task(
         return Err(SessionManagerError::InvalidTaskTransition { from, to: next });
     }
 
-    task.record.status = next;
     let task_id = task.record.id.clone();
-    emit_event(
+    apply_event(
         session,
         SessionEvent::TaskStatusChanged {
             task_id,
@@ -881,7 +958,7 @@ fn current_task_status(session: &ActiveSession) -> Result<TaskStatus, SessionMan
 }
 
 fn set_agent_state(session: &mut ActiveSession, role: Role, state: AgentState) {
-    emit_event(session, SessionEvent::AgentStateChanged { role, state });
+    apply_event(session, SessionEvent::AgentStateChanged { role, state });
 }
 
 fn short_id(id: &SessionId) -> String {
