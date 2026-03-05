@@ -2,14 +2,21 @@
 name = "ship-server"
 version = "0.1.0"
 edition = "2024"
+autobins = false
 
 [package.metadata]
 
 [package.metadata."docs.rs"]
 rustdoc-args = ["--html-in-header", "arborium-header.html"]
 
+[[bin]]
+name = "ship"
+path = "src/main.rs"
+
 [dependencies]
 axum = { workspace = true }
+facet = { workspace = true }
+figue = { workspace = true }
 hyper-tungstenite = { workspace = true }
 reqwest = { workspace = true }
 roam = { workspace = true }
