@@ -1,6 +1,9 @@
-import { MOCK_TASK_HISTORY } from "../mocks/data";
+import { useScenario } from "../context/ScenarioContext";
+import { SESSION_SCENARIOS } from "../mocks/data";
 import type { Task } from "../types";
 
+// r[session.single-task]
 export function useTaskHistory(_id: string): Task[] {
-  return MOCK_TASK_HISTORY;
+  const { sessionScenario } = useScenario();
+  return SESSION_SCENARIOS[sessionScenario].taskHistory;
 }

@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Badge, Box, Button, Flex, Switch, Tabs, Text } from "@radix-ui/themes";
-import { X } from "@phosphor-icons/react";
+import { Badge, Box, Button, Callout, Flex, Switch, Tabs, Text } from "@radix-ui/themes";
+import { Clock, X } from "@phosphor-icons/react";
 import { useSession } from "../hooks/useSession";
 import { AgentPanel } from "../components/AgentPanel";
 import { TaskBar } from "../components/TaskBar";
@@ -14,7 +14,19 @@ import {
   panelColumn,
   mobileTabs,
   mobilePanel,
+  idleBanner,
 } from "../styles/session-view.css";
+import type { SessionDetail } from "../types";
+
+function getIdleMessage(session: SessionDetail): string | null {
+  if (session.activeTask?.status === "ReviewPending")
+    return "Mate has finished — review and accept, reject, or steer.";
+  if (session.activeTask?.status === "SteerPending")
+    return "Captain's steer is ready — review and send to the mate.";
+  if (session.mate.state === "awaiting-permission")
+    return "Mate is waiting for permission approval.";
+  return null;
+}
 
 // r[ui.layout.session-view]
 export function SessionViewPage() {
@@ -23,6 +35,19 @@ export function SessionViewPage() {
   const session = useSession(sessionId ?? "");
   const [autonomous, setAutonomous] = useState(session.autonomyMode === "autonomous");
   const [mobileTab, setMobileTab] = useState<"captain" | "mate">("captain");
+
+  const idle = getIdleMessage(session);
+
+  // r[ui.keys.nav]
+  useEffect(() => {
+    function handler(e: KeyboardEvent) {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key === "1") setMobileTab("captain");
+      if (e.key === "2") setMobileTab("mate");
+    }
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   return (
     <Flex className={sessionViewRoot}>
@@ -57,6 +82,16 @@ export function SessionViewPage() {
           </Tabs.List>
         </Tabs.Root>
       </Box>
+
+      {/* r[ui.idle.banner] */}
+      {idle && (
+        <Callout.Root color="amber" size="1" className={idleBanner}>
+          <Callout.Icon>
+            <Clock size={14} />
+          </Callout.Icon>
+          <Callout.Text>{idle}</Callout.Text>
+        </Callout.Root>
+      )}
 
       <Box style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
         <Box className={desktopGrid} style={{ flex: 1 }}>

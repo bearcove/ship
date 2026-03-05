@@ -1,7 +1,11 @@
-import { MOCK_SESSIONS } from "../mocks/data";
+import { useScenario } from "../context/ScenarioContext";
+import { SESSION_LIST_SCENARIOS } from "../mocks/data";
 import type { SessionSummary } from "../types";
 
+// r[proto.list-sessions]
 export function useSessionList(projectFilter?: string): SessionSummary[] {
-  if (!projectFilter) return MOCK_SESSIONS;
-  return MOCK_SESSIONS.filter((s) => s.projectName === projectFilter);
+  const { sessionListScenario } = useScenario();
+  const sessions = SESSION_LIST_SCENARIOS[sessionListScenario];
+  if (!projectFilter) return sessions;
+  return sessions.filter((s) => s.projectName === projectFilter);
 }

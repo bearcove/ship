@@ -1,6 +1,9 @@
-import { MOCK_SESSION_DETAIL } from "../mocks/data";
+import { useScenario } from "../context/ScenarioContext";
+import { SESSION_SCENARIOS } from "../mocks/data";
 import type { SessionDetail } from "../types";
 
+// r[proto.get-session]
 export function useSession(_id: string): SessionDetail {
-  return MOCK_SESSION_DETAIL;
+  const { sessionScenario } = useScenario();
+  return SESSION_SCENARIOS[sessionScenario].detail;
 }

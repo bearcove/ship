@@ -1,6 +1,10 @@
-import { MOCK_CAPTAIN_EVENTS, MOCK_MATE_EVENTS } from "../mocks/data";
+import { useScenario } from "../context/ScenarioContext";
+import { SESSION_SCENARIOS } from "../mocks/data";
 import type { ContentBlock, Role } from "../types";
 
+// r[event.subscribe]
 export function useSessionEvents(_id: string, role: Role): ContentBlock[] {
-  return role === "captain" ? MOCK_CAPTAIN_EVENTS : MOCK_MATE_EVENTS;
+  const { sessionScenario } = useScenario();
+  const scenario = SESSION_SCENARIOS[sessionScenario];
+  return role === "captain" ? scenario.captainEvents : scenario.mateEvents;
 }

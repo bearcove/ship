@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Badge, Box, Button, Code, Flex, Text, Tooltip } from "@radix-ui/themes";
 import { CaretDown, CaretRight } from "@phosphor-icons/react";
 import type { PermissionBlock as PermissionBlockType } from "../../types";
@@ -6,11 +6,27 @@ import { permissionCard } from "../../styles/session-view.css";
 
 interface Props {
   block: PermissionBlockType;
+  onApprove?: () => void;
+  onDeny?: () => void;
 }
 
 // r[ui.permission.layout]
-export function PermissionBlock({ block }: Props) {
+export function PermissionBlock({ block, onApprove, onDeny }: Props) {
   const [argsExpanded, setArgsExpanded] = useState(false);
+
+  // r[ui.keys.permission]
+  useEffect(() => {
+    if (block.resolution) return;
+    if (!onApprove && !onDeny) return;
+
+    function handler(e: KeyboardEvent) {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key === "y") onApprove?.();
+      if (e.key === "n") onDeny?.();
+    }
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [block.resolution, onApprove, onDeny]);
 
   if (block.resolution) {
     return (
@@ -62,18 +78,24 @@ export function PermissionBlock({ block }: Props) {
         </Box>
       )}
 
-      <Flex gap="2">
-        <Button size="1" color="green" variant="solid">
+      {/* r[ui.permission.actions] */}
+      <Flex gap="2" align="center">
+        <Button size="1" color="green" variant="solid" onClick={onApprove}>
           Approve
         </Button>
-        <Button size="1" color="red" variant="soft">
+        <Button size="1" color="red" variant="soft" onClick={onDeny}>
           Deny
         </Button>
         <Tooltip content="Approve all future uses of this tool for the current task">
-          <Button size="1" color="green" variant="outline">
+          <Button size="1" color="green" variant="outline" onClick={onApprove}>
             Approve all {block.toolName}
           </Button>
         </Tooltip>
+        {(onApprove || onDeny) && (
+          <Text size="1" color="gray" style={{ marginLeft: "auto" }}>
+            y / n
+          </Text>
+        )}
       </Flex>
     </Box>
   );

@@ -195,3 +195,8 @@ export const permissionCard = style({
   flexDirection: "column",
   gap: "var(--space-2)",
 });
+
+export const idleBanner = style({
+  flexShrink: 0,
+  borderBottom: "1px solid var(--amber-a6)",
+});
