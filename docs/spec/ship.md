@@ -72,6 +72,117 @@ r[acp.terminals]
 The backend MUST support managed command execution with exit codes through ACP
 terminal facilities.
 
+## ACP Integration
+
+Ship acts as an ACP client. Each agent (Claude or Codex) is a subprocess that
+speaks ACP over stdio. Ship spawns the subprocess, creates a
+`ClientSideConnection`, and implements the `Client` trait to handle requests
+from the agent.
+
+### Agent Binaries
+
+r[acp.binary.claude]
+For Claude agents, Ship MUST spawn the `claude-agent-acp` binary
+(`@zed-industries/claude-agent-acp` npm package). This is a Node.js process
+that wraps the Claude Agent SDK as an ACP agent.
+
+r[acp.binary.codex]
+For Codex agents, Ship MUST spawn the `codex-acp` binary
+(`zed-industries/codex-acp` Rust crate). This is a native process that wraps
+codex-rs as an ACP agent.
+
+### Subprocess Lifecycle
+
+r[acp.spawn.stdio]
+Ship MUST spawn agent binaries as child processes with piped stdin and stdout
+for ACP communication. Stderr MUST be inherited or captured for diagnostics.
+
+r[acp.spawn.kill-on-drop]
+Agent child processes MUST be killed when the session is closed or the server
+shuts down.
+
+r[acp.spawn.cwd]
+Agent child processes MUST be spawned with their working directory set to the
+session's git worktree path.
+
+### Connection Setup
+
+r[acp.conn.client-side]
+Ship MUST create a `ClientSideConnection` from the `agent-client-protocol`
+crate, passing the child process's stdout (read) and stdin (write) streams.
+
+r[acp.conn.local-set]
+Because the ACP SDK uses `!Send` futures, the ACP connection's I/O task MUST
+be driven on a Tokio `LocalSet` (via `spawn_local`).
+
+r[acp.conn.initialize]
+After creating the connection, Ship MUST call `initialize` with its client
+info and capabilities before any other ACP method.
+
+r[acp.conn.new-session]
+After initialization, Ship MUST call `new_session` with the worktree path
+as the working directory and any MCP servers to connect.
+
+### Client Implementation
+
+Ship implements the ACP `Client` trait to handle requests from agents.
+
+r[acp.client.permission]
+Ship MUST implement `request_permission` to surface permission requests to the
+UI and block until the human approves or denies.
+
+r[acp.client.session-notification]
+Ship MUST implement `session_notification` to receive `SessionUpdate`s from
+the agent, including `AgentMessageChunk`, `ToolCallStart`, `ToolCallDone`,
+`PlanUpdate`, and other update types.
+
+r[acp.client.terminal-create]
+Ship MUST implement `create_terminal` to execute commands in the session's
+worktree and return a terminal ID.
+
+r[acp.client.terminal-output]
+Ship MUST implement `terminal_output` to return the current output and exit
+status of a terminal.
+
+r[acp.client.terminal-wait]
+Ship MUST implement `wait_for_terminal_exit` to block until a terminal command
+completes and return its exit status.
+
+r[acp.client.terminal-kill]
+Ship MUST implement `kill_terminal_command` to terminate a running terminal
+command.
+
+r[acp.client.terminal-release]
+Ship MUST implement `release_terminal` to clean up terminal resources after
+the agent is done with them.
+
+r[acp.client.fs-read]
+Ship MUST implement `read_text_file` to read files from the session's
+worktree.
+
+r[acp.client.fs-write]
+Ship MUST implement `write_text_file` to write files to the session's
+worktree.
+
+### Prompt Flow
+
+r[acp.prompt.send]
+To execute a task, Ship MUST call `prompt` on the `ClientSideConnection` with
+the session ID and prompt content.
+
+r[acp.prompt.subscribe]
+Ship MUST subscribe to the connection's stream to receive real-time updates
+(message chunks, tool calls, plan updates) while the prompt is being processed.
+
+r[acp.prompt.stop-reason]
+When the `prompt` call returns, Ship MUST inspect the `PromptResponse`'s stop
+reason to determine next steps: `EndTurn` (agent is done), `Cancelled` (prompt
+was cancelled), or other reasons.
+
+r[acp.prompt.cancel]
+Ship MUST be able to send a `cancel` notification to abort an in-progress
+prompt turn.
+
 ## Architecture
 
 ### Crate Structure
@@ -105,6 +216,10 @@ facet-based format crates (facet-json, facet-msgpack, etc.) for serialization.
 
 r[dep.tokio]
 The backend MUST use Tokio as its async runtime.
+
+r[dep.acp]
+The backend MUST use the `agent-client-protocol` crate
+(`agentclientprotocol/rust-sdk`) as its ACP client library.
 
 ### Backend
 
