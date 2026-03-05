@@ -2,23 +2,22 @@ import { useEffect, useState } from "react";
 import { shipClient } from "../api/client";
 import type { AgentDiscovery } from "../generated/ship";
 
-const DEFAULT_DISCOVERY: AgentDiscovery = { claude: true, codex: true };
-
 // r[server.agent-discovery]
 export function useAgentDiscovery(): AgentDiscovery {
-  const [discovery, setDiscovery] = useState(DEFAULT_DISCOVERY);
+  const [discovery, setDiscovery] = useState<AgentDiscovery>({ claude: false, codex: false });
 
   useEffect(() => {
     let active = true;
 
-    shipClient
-      .then((client) => client.agentDiscovery())
-      .then((result) => {
-        if (active) {
-          setDiscovery(result);
-        }
-      })
-      .catch(() => {});
+    async function fetchDiscovery() {
+      const client = await shipClient;
+      const result = await client.agentDiscovery();
+      if (active) {
+        setDiscovery(result);
+      }
+    }
+
+    fetchDiscovery();
 
     return () => {
       active = false;

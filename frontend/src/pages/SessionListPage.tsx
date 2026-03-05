@@ -23,6 +23,7 @@ import { useBranches } from "../hooks/useBranches";
 import { sessionCard } from "../styles/session-list.css";
 import type { AgentKind, TaskStatus } from "../generated/ship";
 import { shipClient } from "../api/client";
+import { agentKindTooltip } from "./session-list-utils";
 
 // r[ui.session-list.status-colors]
 const STATUS_COLOR: Record<
@@ -80,7 +81,7 @@ function AgentKindControl({
         size="2"
       >
         <DisabledTooltip
-          content={claudeAvailable ? undefined : "claude-agent-acp not found on PATH"}
+          content={agentKindTooltip("claude", { claude: claudeAvailable, codex: codexAvailable })}
         >
           <SegmentedControl.Item
             value="Claude"
@@ -89,7 +90,9 @@ function AgentKindControl({
             Claude
           </SegmentedControl.Item>
         </DisabledTooltip>
-        <DisabledTooltip content={codexAvailable ? undefined : "codex-acp not found on PATH"}>
+        <DisabledTooltip
+          content={agentKindTooltip("codex", { claude: claudeAvailable, codex: codexAvailable })}
+        >
           <SegmentedControl.Item
             value="Codex"
             style={codexAvailable ? undefined : { opacity: 0.4, pointerEvents: "none" }}
