@@ -1,0 +1,72 @@
+import type { ContentBlock, Role, BlockPatch } from "../generated/ship";
+
+export interface BlockEntry {
+  blockId: string;
+  role: Role;
+  block: ContentBlock;
+}
+
+// r[event.store.immutable-updates]
+// r[event.store.structure]
+export interface BlockStore {
+  blocks: BlockEntry[];
+  index: Map<string, number>;
+}
+
+export function createBlockStore(): BlockStore {
+  return { blocks: [], index: new Map() };
+}
+
+// r[event.store.append]
+export function appendBlock(
+  store: BlockStore,
+  blockId: string,
+  role: Role,
+  block: ContentBlock,
+): BlockStore {
+  const entry: BlockEntry = { blockId, role, block };
+  const blocks = [...store.blocks, entry];
+  const index = new Map(store.index);
+  index.set(blockId, blocks.length - 1);
+  return { blocks, index };
+}
+
+// r[event.store.patch]
+export function patchBlock(
+  store: BlockStore,
+  blockId: string,
+  patch: BlockPatch,
+): BlockStore | null {
+  const pos = store.index.get(blockId);
+  if (pos === undefined) return null;
+
+  const entry = store.blocks[pos];
+  const patched = applyPatch(entry.block, patch);
+  if (patched === null) return null;
+
+  const blocks = [...store.blocks];
+  blocks[pos] = { ...entry, block: patched };
+  return { blocks, index: store.index };
+}
+
+function applyPatch(block: ContentBlock, patch: BlockPatch): ContentBlock | null {
+  switch (patch.tag) {
+    case "TextAppend":
+      if (block.tag !== "Text") return null;
+      return { ...block, text: block.text + patch.text };
+    case "ToolCallUpdate":
+      if (block.tag !== "ToolCall") return null;
+      return { ...block, status: patch.status, result: patch.result };
+    case "PlanReplace":
+      if (block.tag !== "PlanUpdate") return null;
+      return { ...block, steps: patch.steps };
+    case "PermissionResolve":
+      if (block.tag !== "Permission") return null;
+      return { ...block, resolution: patch.resolution };
+  }
+}
+
+// r[event.store.clear-on-new-task]
+export function clearBlocks(): BlockStore {
+  return createBlockStore();
+}

@@ -3,9 +3,11 @@ import { useParams, useNavigate } from "react-router-dom";
 import { Badge, Box, Button, Callout, Flex, Switch, Tabs, Text } from "@radix-ui/themes";
 import { Clock, X } from "@phosphor-icons/react";
 import { useSession } from "../hooks/useSession";
+import { useSessionState } from "../hooks/useSessionState";
 import { AgentPanel } from "../components/AgentPanel";
 import { TaskBar } from "../components/TaskBar";
 import { SteerReview } from "../components/SteerReview";
+import { ConnectionBanner } from "../components/ConnectionBanner";
 import {
   sessionViewRoot,
   sessionTopBar,
@@ -16,15 +18,17 @@ import {
   mobilePanel,
   idleBanner,
 } from "../styles/session-view.css";
-import type { SessionDetail } from "../generated/ship";
+import type { TaskStatus } from "../generated/ship";
 
-function getIdleMessage(session: SessionDetail): string | null {
-  if (session.current_task?.status.tag === "ReviewPending")
+function getIdleMessage(
+  taskStatus: TaskStatus | null,
+  mateAwaitingPermission: boolean,
+): string | null {
+  if (taskStatus?.tag === "ReviewPending")
     return "Mate has finished — review and accept, reject, or steer.";
-  if (session.current_task?.status.tag === "SteerPending")
+  if (taskStatus?.tag === "SteerPending")
     return "Captain's steer is ready — review and send to the mate.";
-  if (session.mate.state.tag === "AwaitingPermission")
-    return "Mate is waiting for permission approval.";
+  if (mateAwaitingPermission) return "Mate is waiting for permission approval.";
   return null;
 }
 
@@ -34,10 +38,17 @@ export function SessionViewPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
   const session = useSession(sessionId ?? "");
+  const eventState = useSessionState(sessionId ?? "");
   const [autonomous, setAutonomous] = useState(session.autonomy_mode.tag === "Autonomous");
   const [mobileTab, setMobileTab] = useState<"captain" | "mate">("captain");
 
-  const idle = getIdleMessage(session);
+  const mateAwaitingPermission =
+    eventState.mate !== null && eventState.mate.state.tag === "AwaitingPermission";
+  const idle = getIdleMessage(eventState.currentTaskStatus, mateAwaitingPermission);
+
+  // Use live agent snapshots from event state if available, fall back to session detail
+  const captain = eventState.captain ?? session.captain;
+  const mate = eventState.mate ?? session.mate;
 
   // r[ui.keys.nav]
   useEffect(() => {
@@ -76,6 +87,8 @@ export function SessionViewPage() {
         </Button>
       </Flex>
 
+      <ConnectionBanner connected={eventState.connected} />
+
       <Box className={mobileTabs} px="3" pt="2">
         <Tabs.Root value={mobileTab} onValueChange={(v) => setMobileTab(v as "captain" | "mate")}>
           <Tabs.List>
@@ -98,18 +111,18 @@ export function SessionViewPage() {
       <Box style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
         <Box className={desktopGrid} style={{ flex: 1 }}>
           <Box className={panelColumn}>
-            <AgentPanel sessionId={session.id} agent={session.captain} />
+            <AgentPanel agent={captain} blocks={eventState.captainBlocks.blocks} />
           </Box>
           <Box className={panelColumn}>
-            <AgentPanel sessionId={session.id} agent={session.mate} />
+            <AgentPanel agent={mate} blocks={eventState.mateBlocks.blocks} />
           </Box>
         </Box>
 
         <Box className={mobilePanel}>
           {mobileTab === "captain" ? (
-            <AgentPanel sessionId={session.id} agent={session.captain} />
+            <AgentPanel agent={captain} blocks={eventState.captainBlocks.blocks} />
           ) : (
-            <AgentPanel sessionId={session.id} agent={session.mate} />
+            <AgentPanel agent={mate} blocks={eventState.mateBlocks.blocks} />
           )}
         </Box>
       </Box>
