@@ -2005,6 +2005,7 @@ dependencies = [
  "axum",
  "facet",
  "figue",
+ "futures-util",
  "hyper-tungstenite",
  "reqwest",
  "roam",

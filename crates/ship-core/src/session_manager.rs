@@ -723,7 +723,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
 
 // r[backend.event-pipeline]
 // r[backend.event-log]
-fn apply_event(session: &mut ActiveSession, event: SessionEvent) {
+pub fn apply_event(session: &mut ActiveSession, event: SessionEvent) {
     let envelope = SessionEventEnvelope {
         seq: session.next_event_seq,
         event,
@@ -739,7 +739,7 @@ fn apply_event(session: &mut ActiveSession, event: SessionEvent) {
 }
 
 // r[backend.materialized-state]
-fn apply_event_to_materialized_state(session: &mut ActiveSession, event: &SessionEvent) {
+pub fn apply_event_to_materialized_state(session: &mut ActiveSession, event: &SessionEvent) {
     match &event {
         SessionEvent::BlockAppend {
             block_id,
@@ -842,7 +842,7 @@ fn apply_event_to_materialized_state(session: &mut ActiveSession, event: &Sessio
     }
 }
 
-fn apply_block_patch(block: &mut ContentBlock, patch: &BlockPatch) {
+pub fn apply_block_patch(block: &mut ContentBlock, patch: &BlockPatch) {
     match patch {
         BlockPatch::TextAppend { text } => {
             if let ContentBlock::Text { text: existing } = block {
@@ -878,7 +878,7 @@ fn apply_block_patch(block: &mut ContentBlock, patch: &BlockPatch) {
 }
 
 // r[backend.persistence-contents]
-fn rebuild_materialized_from_event_log(session: &mut ActiveSession) {
+pub fn rebuild_materialized_from_event_log(session: &mut ActiveSession) {
     let Some(current_task) = session.current_task.as_mut() else {
         session.pending_permissions.clear();
         session.captain_block_count = 0;
@@ -902,7 +902,7 @@ fn rebuild_materialized_from_event_log(session: &mut ActiveSession) {
 }
 
 // r[task.progress]
-fn transition_task(
+pub fn transition_task(
     session: &mut ActiveSession,
     next: TaskStatus,
 ) -> Result<(), SessionManagerError> {
@@ -929,7 +929,7 @@ fn transition_task(
 }
 
 // r[task.completion]
-fn is_valid_transition(from: TaskStatus, to: TaskStatus) -> bool {
+pub fn is_valid_transition(from: TaskStatus, to: TaskStatus) -> bool {
     if from.is_terminal() {
         return false;
     }
@@ -949,7 +949,7 @@ fn is_valid_transition(from: TaskStatus, to: TaskStatus) -> bool {
     )
 }
 
-fn archive_terminal_task(session: &mut ActiveSession) {
+pub fn archive_terminal_task(session: &mut ActiveSession) {
     let should_archive = session
         .current_task
         .as_ref()
@@ -968,7 +968,7 @@ fn archive_terminal_task(session: &mut ActiveSession) {
     session.pending_steer = None;
 }
 
-fn current_task_status(session: &ActiveSession) -> Result<TaskStatus, SessionManagerError> {
+pub fn current_task_status(session: &ActiveSession) -> Result<TaskStatus, SessionManagerError> {
     session
         .current_task
         .as_ref()
@@ -976,7 +976,7 @@ fn current_task_status(session: &ActiveSession) -> Result<TaskStatus, SessionMan
         .ok_or(SessionManagerError::NoActiveTask)
 }
 
-fn set_agent_state(session: &mut ActiveSession, role: Role, state: AgentState) {
+pub fn set_agent_state(session: &mut ActiveSession, role: Role, state: AgentState) {
     apply_event(session, SessionEvent::AgentStateChanged { role, state });
 }
 
