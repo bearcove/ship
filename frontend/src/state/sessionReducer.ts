@@ -16,7 +16,7 @@ export interface SessionViewState {
   currentTaskId: string | null;
   currentTaskStatus: TaskStatus | null;
   connected: boolean;
-  replayComplete: boolean;
+  phase: "loading" | "replaying" | "live";
   lastSeq: number;
 }
 
@@ -29,7 +29,7 @@ export function initialSessionViewState(): SessionViewState {
     currentTaskId: null,
     currentTaskStatus: null,
     connected: true,
-    replayComplete: false,
+    phase: "loading",
     lastSeq: 0,
   };
 }
@@ -45,11 +45,11 @@ export type SessionAction =
 export function sessionReducer(state: SessionViewState, action: SessionAction): SessionViewState {
   switch (action.type) {
     case "replay-complete":
-      return { ...state, replayComplete: true };
+      return { ...state, phase: "live" };
 
     // r[event.client.connection-lifecycle]
     case "connected":
-      return { ...state, connected: true };
+      return { ...state, connected: true, phase: "replaying" };
 
     // r[event.client.connection-lifecycle]
     case "disconnected":

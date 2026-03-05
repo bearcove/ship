@@ -1,4 +1,4 @@
-import { useEffect, useReducer } from "react";
+import { useEffect, useReducer, useState } from "react";
 import { channel } from "@bearcove/roam-core";
 import type { SubscribeMessage } from "../generated/ship";
 import { shipClient } from "../api/client";
@@ -8,10 +8,15 @@ import {
   sessionReducer,
 } from "../state/sessionReducer";
 
+const RECONNECT_DELAY_MS = 3000;
+
+// r[proto.hydration-flow]
 // r[event.client.hydration-sequence]
+// r[event.client.connection-lifecycle]
 // r[event.subscribe]
 export function useSessionState(sessionId: string): SessionViewState {
   const [state, dispatch] = useReducer(sessionReducer, undefined, initialSessionViewState);
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -37,17 +42,25 @@ export function useSessionState(sessionId: string): SessionViewState {
 
       if (!cancelled) {
         dispatch({ type: "disconnected" });
+        setTimeout(() => {
+          if (!cancelled) setRetryCount((c) => c + 1);
+        }, RECONNECT_DELAY_MS);
       }
     }
 
     subscribe().catch(() => {
-      if (!cancelled) dispatch({ type: "disconnected" });
+      if (!cancelled) {
+        dispatch({ type: "disconnected" });
+        setTimeout(() => {
+          if (!cancelled) setRetryCount((c) => c + 1);
+        }, RECONNECT_DELAY_MS);
+      }
     });
 
     return () => {
       cancelled = true;
     };
-  }, [sessionId]);
+  }, [sessionId, retryCount]);
 
   return state;
 }

@@ -32,6 +32,7 @@ export function PermissionBlock({ block, onApprove, onDeny }: Props) {
     return () => window.removeEventListener("keydown", handler);
   }, [resolution, onApprove, onDeny]);
 
+  // r[ui.permission.resolved]
   if (resolution) {
     return (
       <Flex align="center" gap="2">
@@ -83,15 +84,22 @@ export function PermissionBlock({ block, onApprove, onDeny }: Props) {
       )}
 
       {/* r[ui.permission.actions] */}
+      {/* r[ui.permission.viewer-mode] */}
       <Flex gap="2" align="center">
-        <Button size="1" color="green" variant="solid" onClick={onApprove}>
+        <Button size="1" color="green" variant="solid" disabled={!onApprove} onClick={onApprove}>
           Approve
         </Button>
-        <Button size="1" color="red" variant="soft" onClick={onDeny}>
+        <Button size="1" color="red" variant="soft" disabled={!onDeny} onClick={onDeny}>
           Deny
         </Button>
         <Tooltip content="Approve all future uses of this tool for the current task">
-          <Button size="1" color="green" variant="outline" onClick={onApprove}>
+          <Button
+            size="1"
+            color="green"
+            variant="outline"
+            disabled={!onApprove}
+            onClick={onApprove}
+          >
             Approve all {block.tool_name}
           </Button>
         </Tooltip>

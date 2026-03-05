@@ -1,17 +1,20 @@
-import { useState, useRef, useEffect } from "react";
-import { Box } from "@radix-ui/themes";
-import type { AgentSnapshot, ContentBlock, PermissionResolution } from "../generated/ship";
+import { useRef, useEffect } from "react";
+import { Box, Flex, Spinner, Text } from "@radix-ui/themes";
+import type { AgentSnapshot, ContentBlock } from "../generated/ship";
 import type { BlockEntry } from "../state/blockStore";
 import { TextBlock } from "./blocks/TextBlock";
 import { ToolCallBlock } from "./blocks/ToolCallBlock";
 import { PlanUpdateBlock as PlanUpdateBlockComponent } from "./blocks/PlanUpdateBlock";
 import { ErrorBlock } from "./blocks/ErrorBlock";
 import { PermissionBlock } from "./blocks/PermissionBlock";
+import { shipClient } from "../api/client";
 import { agentPanelRoot, eventStream, stickyPlan } from "../styles/session-view.css";
 
 interface Props {
+  sessionId: string;
   agent: AgentSnapshot;
   blocks: BlockEntry[];
+  loading?: boolean;
 }
 
 type PlanUpdateBlock = Extract<ContentBlock, { tag: "PlanUpdate" }>;
@@ -25,17 +28,13 @@ function latestPlan(entries: BlockEntry[]): PlanUpdateBlock | undefined {
 }
 
 // r[ui.event-stream.grouping]
-export function AgentPanel({ agent, blocks }: Props) {
+// r[view.agent-panel.state]
+export function AgentPanel({ sessionId, agent, blocks, loading }: Props) {
   const plan = latestPlan(blocks);
-  const [resolvedPerms, setResolvedPerms] = useState<Record<string, PermissionResolution>>({});
 
   let lastUnresolvedPermBlockId: string | undefined;
   for (const entry of blocks) {
-    if (
-      entry.block.tag === "Permission" &&
-      !entry.block.resolution &&
-      !resolvedPerms[entry.blockId]
-    ) {
+    if (entry.block.tag === "Permission" && !entry.block.resolution) {
       lastUnresolvedPermBlockId = entry.blockId;
     }
   }
@@ -68,26 +67,25 @@ export function AgentPanel({ agent, blocks }: Props) {
         return null;
       case "Error":
         return <ErrorBlock block={block} agentState={agent.state} />;
+      // r[ui.permission.actions]
       case "Permission": {
-        const resolution: PermissionResolution | null = resolvedPerms[blockId] ?? block.resolution;
-        const resolvedBlock: Extract<ContentBlock, { tag: "Permission" }> = {
-          ...block,
-          resolution,
-        };
         const isActive = blockId === lastUnresolvedPermBlockId;
+        const permissionId =
+          isActive && agent.state.tag === "AwaitingPermission"
+            ? agent.state.request.permission_id
+            : null;
+
+        async function resolve(approved: boolean) {
+          if (!permissionId) return;
+          const client = await shipClient;
+          await client.resolvePermission(sessionId, permissionId, approved);
+        }
+
         return (
           <PermissionBlock
-            block={resolvedBlock}
-            onApprove={
-              isActive
-                ? () => setResolvedPerms((r) => ({ ...r, [blockId]: { tag: "Approved" } as const }))
-                : undefined
-            }
-            onDeny={
-              isActive
-                ? () => setResolvedPerms((r) => ({ ...r, [blockId]: { tag: "Denied" } as const }))
-                : undefined
-            }
+            block={block}
+            onApprove={permissionId ? () => resolve(true) : undefined}
+            onDeny={permissionId ? () => resolve(false) : undefined}
           />
         );
       }
@@ -96,6 +94,15 @@ export function AgentPanel({ agent, blocks }: Props) {
 
   return (
     <Box className={agentPanelRoot}>
+      {loading && (
+        <Flex align="center" gap="2" px="3" py="2" style={{ flexShrink: 0 }}>
+          <Spinner size="1" />
+          <Text size="1" color="gray">
+            Replaying events…
+          </Text>
+        </Flex>
+      )}
+
       {plan && (
         <Box className={stickyPlan}>
           <PlanUpdateBlockComponent block={plan} />

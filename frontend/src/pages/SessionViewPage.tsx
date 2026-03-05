@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Badge, Box, Button, Callout, Flex, Switch, Tabs, Text } from "@radix-ui/themes";
+import { Badge, Box, Button, Callout, Flex, Spinner, Switch, Tabs, Text } from "@radix-ui/themes";
 import { Clock, X } from "@phosphor-icons/react";
 import { useSession } from "../hooks/useSession";
 import { useSessionState } from "../hooks/useSessionState";
@@ -35,21 +35,23 @@ function getIdleMessage(
 
 // r[view.session]
 // r[ui.layout.session-view]
+// r[proto.hydration-flow]
 export function SessionViewPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
+  // r[event.client.hydration-sequence]: Step 1 — structural state
   const session = useSession(sessionId ?? "");
+  // r[event.client.hydration-sequence]: Step 2/3 — event subscription + replay
   const eventState = useSessionState(sessionId ?? "");
-  const [autonomous, setAutonomous] = useState(session.autonomy_mode.tag === "Autonomous");
+  const [autonomous, setAutonomous] = useState(false);
   const [mobileTab, setMobileTab] = useState<"captain" | "mate">("captain");
+
+  useEffect(() => {
+    if (session) setAutonomous(session.autonomy_mode.tag === "Autonomous");
+  }, [session]);
 
   const mateAwaitingPermission =
     eventState.mate !== null && eventState.mate.state.tag === "AwaitingPermission";
-  const idle = getIdleMessage(eventState.currentTaskStatus, mateAwaitingPermission);
-
-  // Use live agent snapshots from event state if available, fall back to session detail
-  const captain = eventState.captain ?? session.captain;
-  const mate = eventState.mate ?? session.mate;
 
   // r[ui.keys.nav]
   useEffect(() => {
@@ -61,6 +63,21 @@ export function SessionViewPage() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, []);
+
+  if (!session) {
+    return (
+      <Flex className={sessionViewRoot} align="center" justify="center">
+        <Spinner size="3" />
+      </Flex>
+    );
+  }
+
+  const idle = getIdleMessage(eventState.currentTaskStatus, mateAwaitingPermission);
+  const isReplaying = eventState.phase !== "live";
+
+  // Use live agent snapshots from event state if available, fall back to session detail
+  const captain = eventState.captain ?? session.captain;
+  const mate = eventState.mate ?? session.mate;
 
   return (
     <Flex className={sessionViewRoot}>
@@ -113,11 +130,21 @@ export function SessionViewPage() {
         <Box className={desktopGrid} style={{ flex: 1 }}>
           <Box className={panelColumn}>
             <AgentHeader agent={captain} />
-            <AgentPanel agent={captain} blocks={eventState.captainBlocks.blocks} />
+            <AgentPanel
+              sessionId={session.id}
+              agent={captain}
+              blocks={eventState.captainBlocks.blocks}
+              loading={isReplaying}
+            />
           </Box>
           <Box className={panelColumn}>
             <AgentHeader agent={mate} />
-            <AgentPanel agent={mate} blocks={eventState.mateBlocks.blocks} />
+            <AgentPanel
+              sessionId={session.id}
+              agent={mate}
+              blocks={eventState.mateBlocks.blocks}
+              loading={isReplaying}
+            />
           </Box>
         </Box>
 
@@ -125,12 +152,22 @@ export function SessionViewPage() {
           {mobileTab === "captain" ? (
             <>
               <AgentHeader agent={captain} />
-              <AgentPanel agent={captain} blocks={eventState.captainBlocks.blocks} />
+              <AgentPanel
+                sessionId={session.id}
+                agent={captain}
+                blocks={eventState.captainBlocks.blocks}
+                loading={isReplaying}
+              />
             </>
           ) : (
             <>
               <AgentHeader agent={mate} />
-              <AgentPanel agent={mate} blocks={eventState.mateBlocks.blocks} />
+              <AgentPanel
+                sessionId={session.id}
+                agent={mate}
+                blocks={eventState.mateBlocks.blocks}
+                loading={isReplaying}
+              />
             </>
           )}
         </Box>

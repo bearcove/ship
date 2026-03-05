@@ -1,9 +1,23 @@
-import { useScenario } from "../context/ScenarioContext";
-import { SESSION_SCENARIOS } from "../mocks/data";
+import { useEffect, useState } from "react";
+import { shipClient } from "../api/client";
 import type { SessionDetail } from "../generated/ship";
 
 // r[proto.get-session]
-export function useSession(_id: string): SessionDetail {
-  const { sessionScenario } = useScenario();
-  return SESSION_SCENARIOS[sessionScenario].detail;
+// r[event.client.hydration-sequence]
+export function useSession(id: string): SessionDetail | null {
+  const [session, setSession] = useState<SessionDetail | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    shipClient
+      .then((client) => client.getSession(id))
+      .then((detail) => {
+        if (!cancelled) setSession(detail);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+  return session;
 }
