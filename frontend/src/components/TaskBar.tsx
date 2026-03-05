@@ -15,6 +15,7 @@ import {
 import { ClockCounterClockwise } from "@phosphor-icons/react";
 import type { TaskRecord, TaskStatus } from "../generated/ship";
 import { useTaskHistory } from "../hooks/useTaskHistory";
+import { shipClient } from "../api/client";
 import { taskBar, taskDescription } from "../styles/session-view.css";
 
 const STATUS_COLOR: Record<
@@ -29,6 +30,7 @@ const STATUS_COLOR: Record<
   Cancelled: "red",
 };
 
+// r[ui.task-bar.history]
 function TaskHistoryPopover({ sessionId }: { sessionId: string }) {
   const history = useTaskHistory(sessionId);
 
@@ -68,9 +70,24 @@ function TaskHistoryPopover({ sessionId }: { sessionId: string }) {
   );
 }
 
-function OwnSteerDialog() {
+// r[ui.steer-review.own-steer]
+function OwnSteerDialog({ sessionId }: { sessionId: string }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function handleSend() {
+    if (!text.trim() || loading) return;
+    setLoading(true);
+    try {
+      const client = await shipClient;
+      await client.steer(sessionId, text);
+      setOpen(false);
+      setText("");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
@@ -90,13 +107,13 @@ function OwnSteerDialog() {
           />
           <Flex gap="2" justify="end">
             <Dialog.Close>
-              <Button variant="soft" color="gray">
+              <Button variant="soft" color="gray" disabled={loading}>
                 Cancel
               </Button>
             </Dialog.Close>
-            <Dialog.Close>
-              <Button disabled={!text.trim()}>Send</Button>
-            </Dialog.Close>
+            <Button disabled={!text.trim()} loading={loading} onClick={handleSend}>
+              Send
+            </Button>
           </Flex>
         </Flex>
       </Dialog.Content>
@@ -104,9 +121,24 @@ function OwnSteerDialog() {
   );
 }
 
-function NewTaskDialog() {
+// r[ui.task-bar.new-task]
+function NewTaskDialog({ sessionId }: { sessionId: string }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function handleAssign() {
+    if (!text.trim() || loading) return;
+    setLoading(true);
+    try {
+      const client = await shipClient;
+      await client.assign(sessionId, text);
+      setOpen(false);
+      setText("");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
@@ -126,13 +158,13 @@ function NewTaskDialog() {
           />
           <Flex gap="2" justify="end">
             <Dialog.Close>
-              <Button variant="soft" color="gray">
+              <Button variant="soft" color="gray" disabled={loading}>
                 Cancel
               </Button>
             </Dialog.Close>
-            <Dialog.Close>
-              <Button disabled={!text.trim()}>Assign</Button>
-            </Dialog.Close>
+            <Button disabled={!text.trim()} loading={loading} onClick={handleAssign}>
+              Assign
+            </Button>
           </Flex>
         </Flex>
       </Dialog.Content>
@@ -147,6 +179,30 @@ interface Props {
 
 // r[ui.task-bar.layout]
 export function TaskBar({ sessionId, task }: Props) {
+  const [actionLoading, setActionLoading] = useState(false);
+
+  async function handleAccept() {
+    if (actionLoading) return;
+    setActionLoading(true);
+    try {
+      const client = await shipClient;
+      await client.accept(sessionId);
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handleCancel() {
+    if (actionLoading) return;
+    setActionLoading(true);
+    try {
+      const client = await shipClient;
+      await client.cancel(sessionId);
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
   return (
     <Flex className={taskBar} align="center" gap="3">
       {task ? (
@@ -166,24 +222,37 @@ export function TaskBar({ sessionId, task }: Props) {
         </Text>
       )}
 
+      {/* r[ui.task-bar.actions] */}
       <Flex gap="2" align="center" style={{ flexShrink: 0 }}>
-        <OwnSteerDialog />
+        <OwnSteerDialog sessionId={sessionId} />
         {task?.status.tag === "Working" && (
-          <Button size="2" color="red" variant="soft">
+          <Button
+            size="2"
+            color="red"
+            variant="soft"
+            loading={actionLoading}
+            onClick={handleCancel}
+          >
             Cancel
           </Button>
         )}
-        {task?.status.tag === "ReviewPending" && (
+        {(task?.status.tag === "ReviewPending" || task?.status.tag === "SteerPending") && (
           <>
-            <Button size="2" color="green">
+            <Button size="2" color="green" loading={actionLoading} onClick={handleAccept}>
               Accept
             </Button>
-            <Button size="2" color="red" variant="soft">
+            <Button
+              size="2"
+              color="red"
+              variant="soft"
+              loading={actionLoading}
+              onClick={handleCancel}
+            >
               Cancel
             </Button>
           </>
         )}
-        {!task && <NewTaskDialog />}
+        {!task && <NewTaskDialog sessionId={sessionId} />}
         <TaskHistoryPopover sessionId={sessionId} />
       </Flex>
     </Flex>

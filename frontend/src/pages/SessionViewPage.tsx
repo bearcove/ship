@@ -127,7 +127,13 @@ export function SessionViewPage() {
         </Box>
       </Box>
 
-      {session.pending_steer && <SteerReview steer={{ captainSteer: session.pending_steer }} />}
+      {session.pending_steer && (
+        <SteerReview
+          sessionId={session.id}
+          steerText={session.pending_steer}
+          onDismiss={() => {}}
+        />
+      )}
 
       <TaskBar sessionId={session.id} task={session.current_task} />
     </Flex>

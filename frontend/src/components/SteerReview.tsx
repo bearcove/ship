@@ -1,34 +1,46 @@
 import { useEffect, useRef, useState } from "react";
 import { Box, Button, Card, Flex, Text, TextArea } from "@radix-ui/themes";
-import ReactMarkdown from "react-markdown";
-import type { SteerReview as SteerReviewType } from "../types";
+import { shipClient } from "../api/client";
 import { steerReviewCard } from "../styles/session-view.css";
 
 interface Props {
-  steer: SteerReviewType;
-  onSend?: (message: string) => void;
+  sessionId: string;
+  steerText: string;
+  onDismiss?: () => void;
 }
 
 // r[ui.steer-review.layout]
-export function SteerReview({ steer, onSend }: Props) {
+export function SteerReview({ sessionId, steerText, onDismiss }: Props) {
   const [editMode, setEditMode] = useState(false);
-  const [editText, setEditText] = useState(steer.captainSteer);
+  const [editText, setEditText] = useState(steerText);
   const editTextRef = useRef(editText);
   editTextRef.current = editText;
+  const [loading, setLoading] = useState(false);
+
+  async function handleSend(text: string) {
+    if (loading) return;
+    setLoading(true);
+    try {
+      const client = await shipClient;
+      await client.steer(sessionId, text);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   // r[ui.keys.steer-send]
   useEffect(() => {
     function handler(e: KeyboardEvent) {
       if (!((e.metaKey || e.ctrlKey) && e.key === "Enter")) return;
       if (editMode) {
-        onSend?.(editTextRef.current);
+        handleSend(editTextRef.current);
       } else {
-        onSend?.(steer.captainSteer);
+        handleSend(steerText);
       }
     }
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [editMode, onSend, steer.captainSteer]);
+  }, [editMode, steerText]);
 
   if (editMode) {
     return (
@@ -49,14 +61,15 @@ export function SteerReview({ steer, onSend }: Props) {
               size="2"
               variant="soft"
               color="gray"
+              disabled={loading}
               onClick={() => {
-                setEditText(steer.captainSteer);
+                setEditText(steerText);
                 setEditMode(false);
               }}
             >
               Cancel
             </Button>
-            <Button size="2" color="blue" onClick={() => onSend?.(editText)}>
+            <Button size="2" color="blue" loading={loading} onClick={() => handleSend(editText)}>
               Send
             </Button>
           </Flex>
@@ -72,7 +85,7 @@ export function SteerReview({ steer, onSend }: Props) {
           Captain's steer — awaiting your review
         </Text>
         <Box style={{ fontSize: "var(--font-size-2)" }}>
-          <ReactMarkdown>{steer.captainSteer}</ReactMarkdown>
+          <Text size="2">{steerText}</Text>
         </Box>
         {/* r[ui.steer-review.actions] */}
         <Flex gap="2" align="center">
@@ -80,14 +93,27 @@ export function SteerReview({ steer, onSend }: Props) {
             size="2"
             color="blue"
             variant="solid"
-            onClick={() => onSend?.(steer.captainSteer)}
+            loading={loading}
+            onClick={() => handleSend(steerText)}
           >
             Send to Mate
           </Button>
-          <Button size="2" color="blue" variant="outline" onClick={() => setEditMode(true)}>
+          <Button
+            size="2"
+            color="blue"
+            variant="outline"
+            disabled={loading}
+            onClick={() => setEditMode(true)}
+          >
             Edit &amp; Send
           </Button>
-          <Button size="2" color="red" variant="soft">
+          <Button
+            size="2"
+            color="red"
+            variant="soft"
+            disabled={loading}
+            onClick={() => onDismiss?.()}
+          >
             Discard
           </Button>
           <Text size="1" color="gray" style={{ marginLeft: "auto" }}>
