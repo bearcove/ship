@@ -795,12 +795,17 @@ not distinguish between replayed and live events.
 ### Event Envelope
 
 r[event.envelope]
-Every event sent to the frontend MUST be wrapped in a `SessionEvent` envelope
+Every `SessionEvent` sent to the frontend MUST be wrapped in an envelope
 containing: a monotonically increasing sequence number (`seq`), and the event
 payload. The sequence number is per-session, starts at 0 when the session is
 created, and never resets — it increases across task boundaries. Replay events
 use the original sequence numbers. Events that are scoped to a role include
 the role in their payload; the envelope itself is role-agnostic.
+
+Control markers (`ReplayComplete`) are NOT `SessionEvent`s — they are
+out-of-band messages on the roam channel with no sequence number. Only
+`SessionEvent`s are persisted in the event log and broadcast to all
+subscribers.
 
 r[event.ordering]
 Events MUST be delivered in sequence order. If the frontend receives an event
@@ -892,10 +897,13 @@ frontend MUST clear both block stores. The sequence number does NOT reset —
 it continues from the session's current value.
 
 r[event.replay-complete]
-The system MUST emit a `ReplayComplete` event after all replay events have
-been sent for a new subscriber. The payload is empty. This allows the frontend
-to transition from "loading history" to "live". `ReplayComplete` has a
-sequence number like any other event and is part of the event log.
+After the backend has sent all replayed events to a newly connected
+subscriber, it MUST send a `ReplayComplete` control marker on that
+subscriber's channel. `ReplayComplete` is a subscription-local signal — it
+is NOT persisted in the task event log, NOT broadcast to other subscribers,
+and does NOT carry a sequence number. It is not a `SessionEvent`; it is a
+separate message type on the roam channel. The frontend uses it to transition
+from "loading history" to "live".
 
 ### Content Block Types
 
@@ -961,18 +969,72 @@ events. There is no special "replay mode" — the block store is built from
 events regardless of source.
 
 r[event.replay.followed-by-marker]
-After all replayed events have been sent, the backend MUST send a
-`ReplayComplete` event (per `event.replay-complete`). This is the signal
-that the frontend has caught up. The frontend SHOULD show a loading indicator
-until `ReplayComplete` is received.
+After all replayed `SessionEvent`s have been sent to a subscriber, the
+backend MUST send a `ReplayComplete` control marker (per
+`event.replay-complete`) on that subscriber's channel. The frontend SHOULD
+show a loading indicator until `ReplayComplete` is received. Since
+`ReplayComplete` is not a `SessionEvent`, it does not appear in the event
+log and is not broadcast to other subscribers.
 
 r[event.replay.snapshot-optimization]
 As a post-v1 optimization, the backend MAY replace event-by-event replay
-with a single `Snapshot` event containing the materialized block store state
-and the current sequence number. If implemented, `Snapshot` MUST be followed
-by `ReplayComplete` and the frontend MUST handle `Snapshot` as an alternative
-to processing individual events. This is NOT required for v1 and MUST NOT be
-implemented until the event-by-event replay is proven to be a bottleneck.
+with a single `Snapshot` control message containing the materialized block
+store state and the current sequence number. If implemented, `Snapshot` MUST
+be followed by `ReplayComplete`. Like `ReplayComplete`, `Snapshot` is a
+subscription-local control message, not a `SessionEvent`. This is NOT
+required for v1 and MUST NOT be implemented until the event-by-event replay
+is proven to be a bottleneck.
+
+### Multi-Subscriber Replay Behavior
+
+r[event.replay.per-subscriber]
+Replay is per-subscriber. When a new subscriber connects (whether a
+reconnecting browser or a late-joining second browser), the backend replays
+the event log for that subscriber independently. Each subscriber receives
+its own `ReplayComplete` marker after its own replay finishes. Other
+already-connected subscribers are unaffected — they continue receiving live
+events without interruption.
+
+Example: reconnect flow for a single browser.
+
+1. Browser connects, subscribes to session `S`.
+2. Backend replays events `seq 0..47` from the task event log.
+3. Backend sends `ReplayComplete` (no seq) on this subscriber's channel.
+4. Browser processes events, sets `replayComplete = true`, renders.
+5. Live events `seq 48, 49, ...` arrive as they are produced.
+6. WebSocket drops. Browser sets `connected = false`, clears state.
+7. Browser reconnects, re-subscribes to session `S`.
+8. Backend replays events `seq 0..52` (log has grown).
+9. Backend sends `ReplayComplete`.
+10. Browser is caught up again.
+
+Example: late-joining second browser.
+
+1. Browser A is connected and live at `seq 50`.
+2. Browser B connects, subscribes to session `S`.
+3. Backend replays events `seq 0..50` to Browser B only.
+4. Backend sends `ReplayComplete` to Browser B only.
+5. A new live event `seq 51` is produced.
+6. Both Browser A and Browser B receive `seq 51` — it is a normal
+   `SessionEvent` broadcast to all subscribers.
+
+### Replay and Broadcast Invariants
+
+r[event.replay.invariants]
+Implementers MUST verify the following invariants:
+
+- The task event log contains only `SessionEvent`s. `ReplayComplete` and
+  `Snapshot` MUST NOT appear in the log.
+- Every `SessionEvent` produced by the event pipeline (per
+  `backend.event-pipeline`) is appended to the log AND broadcast to all
+  current subscribers. No event is logged without broadcast or vice versa.
+- `ReplayComplete` is sent exactly once per subscriber per subscription
+  (including re-subscriptions after reconnect).
+- Two subscribers connected to the same session at the same time receive
+  identical live `SessionEvent`s with identical sequence numbers.
+- A subscriber that connects, receives replay + `ReplayComplete`, and then
+  receives live events MUST observe a contiguous, gap-free sequence from
+  `seq 0` through the latest event.
 
 ### Client-Side Session State
 
@@ -1002,7 +1064,7 @@ handles every `SessionEvent` variant. The reducer MUST be a pure function
 with no side effects — given the same state and event, it always produces
 the same new state. This makes the system testable and predictable.
 
-The reducer MUST handle at minimum:
+The reducer MUST handle every `SessionEvent` variant:
 - `BlockAppend` → insert block into the appropriate role's store
 - `BlockPatch` → find block by ID in the appropriate role's store, apply
   the patch, produce a new block object (immutable update)
@@ -1011,7 +1073,10 @@ The reducer MUST handle at minimum:
 - `ContextUpdated` → update `captainContext` or `mateContext`
 - `TaskStarted` (per `event.task-started`) → clear both block stores, set
   new `taskId` and `taskStatus`. `lastSeq` is NOT reset.
-- `ReplayComplete` → set `replayComplete` to true
+
+`ReplayComplete` is NOT a `SessionEvent` and MUST NOT be processed by the
+reducer. The subscription layer sets `replayComplete = true` when it
+receives the control marker, outside the reducer.
 
 r[event.client.reducer-purity]
 The reducer MUST NOT call APIs, dispatch actions, or trigger side effects.
@@ -1074,8 +1139,9 @@ r[sharing.multi-browser]
 Multiple browsers MUST be able to watch the same session simultaneously.
 
 r[sharing.event-broadcast]
-Every connected client MUST receive the same `SessionEvent`s via roam's
-multi-subscriber support.
+Every connected subscriber MUST receive the same `SessionEvent`s (with the
+same sequence numbers) for live events. Subscription-local control markers
+(`ReplayComplete`) are per-subscriber and are NOT broadcast.
 
 r[sharing.single-writer]
 Steering MUST be single-writer: one active controller per session at a time.
