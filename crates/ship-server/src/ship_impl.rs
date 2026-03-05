@@ -1,5 +1,5 @@
 use std::process::Command;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use roam::Tx;
 use ship_core::ProjectRegistry;
@@ -10,6 +10,7 @@ use ship_types::{
     ProjectName, Role, SessionDetail, SessionEvent, SessionEventEnvelope, SessionId,
     SessionSummary, SubscribeMessage, TaskId, TaskRecord, TaskStatus,
 };
+use tokio::sync::Mutex;
 use ulid::Ulid;
 
 // r[server.multi-repo]
@@ -57,18 +58,12 @@ impl ShipImpl {
 
 impl Ship for ShipImpl {
     async fn list_projects(&self) -> Vec<ProjectInfo> {
-        self.registry
-            .lock()
-            .expect("project registry mutex poisoned")
-            .list()
+        self.registry.lock().await.list()
     }
 
     async fn add_project(&self, path: String) -> ProjectInfo {
-        let mut registry = self
-            .registry
-            .lock()
-            .expect("project registry mutex poisoned");
-        match registry.add(&path) {
+        let mut registry = self.registry.lock().await;
+        match registry.add(&path).await {
             Ok(project) => project,
             Err(error) => ProjectInfo {
                 name: ProjectName(
@@ -86,10 +81,7 @@ impl Ship for ShipImpl {
 
     async fn list_branches(&self, project: ProjectName) -> Vec<String> {
         let project_path = {
-            let registry = self
-                .registry
-                .lock()
-                .expect("project registry mutex poisoned");
+            let registry = self.registry.lock().await;
             registry.get(&project.0).map(|project| project.path)
         };
 

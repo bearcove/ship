@@ -17,7 +17,7 @@ roam-websocket = { workspace = true }
 ship-core = { path = "../ship-core" }
 ship-service = { path = "../ship-service" }
 ship-types = { path = "../ship-types" }
-tokio = { workspace = true, features = ["signal"] }
+tokio = { workspace = true, features = ["signal", "sync"] }
 tower-http = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

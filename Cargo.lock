@@ -535,6 +535,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "fs-err"
+version = "3.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "73fde052dbfc920003cfd2c8e2c6e6d4cc7c1091538c3a24226cec0665ab08c0"
+dependencies = [
+ "autocfg",
+ "tokio",
+]
+
+[[package]]
 name = "futures-channel"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1696,6 +1706,7 @@ name = "ship-core"
 version = "0.1.0"
 dependencies = [
  "facet-json",
+ "fs-err",
  "futures-core",
  "futures-util",
  "ship-types",

@@ -1,10 +1,10 @@
 use std::env;
 use std::error::Error;
 use std::fmt;
-use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use fs_err::tokio as fs;
 use ship_types::{ProjectInfo, ProjectName};
 
 #[derive(Debug)]
@@ -44,21 +44,20 @@ pub struct ProjectRegistry {
 
 impl ProjectRegistry {
     // r[server.config-dir]
-    pub fn load_default() -> Result<Self, ProjectRegistryError> {
+    pub async fn load_default() -> Result<Self, ProjectRegistryError> {
         let config_dir = default_config_dir()?;
-        Self::load_in(config_dir)
+        Self::load_in(config_dir).await
     }
 
-    pub fn load_in(config_dir: PathBuf) -> Result<Self, ProjectRegistryError> {
-        fs::create_dir_all(&config_dir)?;
+    pub async fn load_in(config_dir: PathBuf) -> Result<Self, ProjectRegistryError> {
+        fs::create_dir_all(&config_dir).await?;
         let projects_file = config_dir.join("projects.json");
-        let projects = if projects_file.exists() {
-            let bytes = fs::read(&projects_file)?;
-            facet_json::from_slice::<Vec<ProjectInfo>>(&bytes).map_err(|error| {
+        let projects = match fs::read(&projects_file).await {
+            Ok(bytes) => facet_json::from_slice::<Vec<ProjectInfo>>(&bytes).map_err(|error| {
                 ProjectRegistryError::new(format!("invalid projects.json: {error}"))
-            })?
-        } else {
-            Vec::new()
+            })?,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Vec::new(),
+            Err(error) => return Err(error.into()),
         };
 
         Ok(Self {
@@ -70,7 +69,10 @@ impl ProjectRegistry {
 
     // r[project.registration]
     // r[project.identity]
-    pub fn add(&mut self, path: impl AsRef<Path>) -> Result<ProjectInfo, ProjectRegistryError> {
+    pub async fn add(
+        &mut self,
+        path: impl AsRef<Path>,
+    ) -> Result<ProjectInfo, ProjectRegistryError> {
         let absolute = absolutize(path.as_ref())?;
         let base_name = derive_project_name(&absolute);
         let unique_name = self.unique_project_name(&base_name);
@@ -81,16 +83,16 @@ impl ProjectRegistry {
             invalid_reason: None,
         };
         self.projects.push(project.clone());
-        self.save()?;
+        self.save().await?;
         Ok(project)
     }
 
-    pub fn remove(&mut self, name: &str) -> Result<bool, ProjectRegistryError> {
+    pub async fn remove(&mut self, name: &str) -> Result<bool, ProjectRegistryError> {
         let before = self.projects.len();
         self.projects.retain(|project| project.name.0 != name);
         let removed = self.projects.len() != before;
         if removed {
-            self.save()?;
+            self.save().await?;
         }
         Ok(removed)
     }
@@ -107,15 +109,17 @@ impl ProjectRegistry {
     }
 
     // r[project.validation]
-    pub fn validate_all(&mut self) -> Result<(), ProjectRegistryError> {
+    pub async fn validate_all(&mut self) -> Result<(), ProjectRegistryError> {
         for project in &mut self.projects {
             let path = PathBuf::from(&project.path);
-            if !path.exists() {
+            if fs::metadata(&path).await.is_err() {
                 project.valid = false;
                 project.invalid_reason = Some("path does not exist".to_owned());
                 continue;
             }
-            if !path.join(".git").is_dir() {
+            let git_dir = path.join(".git");
+            let git_metadata = fs::metadata(&git_dir).await;
+            if !matches!(git_metadata, Ok(metadata) if metadata.is_dir()) {
                 project.valid = false;
                 project.invalid_reason = Some("not a git repository (.git missing)".to_owned());
                 continue;
@@ -123,7 +127,7 @@ impl ProjectRegistry {
             project.valid = true;
             project.invalid_reason = None;
         }
-        self.save()?;
+        self.save().await?;
         Ok(())
     }
 
@@ -156,11 +160,11 @@ impl ProjectRegistry {
         }
     }
 
-    fn save(&self) -> Result<(), ProjectRegistryError> {
+    async fn save(&self) -> Result<(), ProjectRegistryError> {
         let bytes = facet_json::to_vec_pretty(&self.projects).map_err(|error| {
             ProjectRegistryError::new(format!("failed to serialize projects: {error}"))
         })?;
-        fs::write(&self.projects_file, bytes)?;
+        fs::write(&self.projects_file, bytes).await?;
         Ok(())
     }
 }

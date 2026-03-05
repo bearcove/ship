@@ -47,9 +47,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let frontend_mode = load_frontend_mode();
     // r[server.config-dir]
-    let mut project_registry = ProjectRegistry::load_default()?;
+    let mut project_registry = ProjectRegistry::load_default().await?;
     // r[project.validation]
-    project_registry.validate_all()?;
+    project_registry.validate_all().await?;
     let state = AppState {
         ship: ShipImpl::new(project_registry),
         http_client: reqwest::Client::new(),
