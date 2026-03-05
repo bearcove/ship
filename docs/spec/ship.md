@@ -210,9 +210,22 @@ prompt turn.
 
 r[crate.ship-types]
 A `ship-types` crate MUST define all shared types: identifiers (`SessionId`,
-`TaskId`), enums (`AgentKind`, `Role`, `AgentState`), event types
-(`SessionEvent`), and request/response structs. This crate MUST NOT depend on
-any runtime or framework crates.
+`TaskId`, `BlockId`), enums (`AgentKind`, `Role`, `AgentState`), event types
+(`SessionEvent`, `BlockPatch`), error types (`ShipError`), and
+request/response structs. This crate MUST NOT depend on any runtime or
+framework crates. All types MUST derive `Facet` for serialization over roam.
+
+r[crate.ship-types.error]
+The `ShipError` enum MUST be a proper Facet-deriving enum with structured
+variants (not `String` errors). Variants MUST include at minimum:
+`SessionNotFound`, `ProjectNotFound`, `ProjectInvalid`, `NoActiveTask`,
+`AgentError`, `PermissionNotFound`, `WorktreeError`, `InvalidState`. Each
+variant carries the relevant context (IDs, messages) as named fields.
+
+r[crate.ship-types.block-id]
+`BlockId` MUST be a ULID newtype, like `SessionId` and `TaskId`. It
+identifies a content block across its entire lifecycle (creation, patches,
+replay). The frontend uses it as the React key and block store index.
 
 r[crate.ship-core]
 A `ship-core` crate MUST define the testability traits (`AgentDriver`,
@@ -723,42 +736,174 @@ typed stream. The channel is part of the `Ship` service trait.
 r[event.subscribe.replay]
 When a new subscriber connects, the backend MUST replay the current task's
 content block history before streaming live events. This ensures late-joining
-browsers see the full current state without a separate hydration call.
+browsers see the full current state without a separate hydration call. Replay
+events use the same `SessionEvent` types as live events — the frontend does
+not distinguish between replayed and live events.
+
+### Event Envelope
+
+r[event.envelope]
+Every event sent to the frontend MUST be wrapped in a `SessionEvent` envelope
+containing: a monotonically increasing sequence number (`seq`), the originating
+agent role, and the event payload. The sequence number is per-session and
+starts at 0 for each new task. Replay events use the original sequence numbers.
+
+r[event.ordering]
+Events MUST be delivered in sequence order. If the frontend receives an event
+with a sequence gap (missed events), it MUST re-subscribe to get a full replay.
+The backend MUST NOT send events out of order.
+
+### Content Blocks and Stable IDs
+
+r[event.block-id]
+Every content block MUST have a server-assigned stable ID (`BlockId`), which
+is a ULID. The backend assigns the ID when it first creates the block from an
+ACP notification. The same block ID is used in all subsequent updates to that
+block. The frontend uses this ID as the React key and as the index into its
+block store.
+
+r[event.block-id.tool-call]
+For tool calls, the `BlockId` MUST be derived deterministically from the ACP
+`ToolCallId` (e.g., by hashing or namespacing). This ensures that the initial
+`ToolCall` notification and all subsequent `ToolCallUpdate` notifications map
+to the same Ship block.
+
+r[event.block-id.text]
+For agent text, the backend MUST accumulate consecutive `AgentMessageChunk`
+notifications from the same prompt turn into a single text block. The block ID
+is assigned on the first chunk and reused for all subsequent chunks in the same
+turn. A new prompt turn starts a new text block with a new ID.
+
+r[event.block-id.plan]
+Plan updates are full replacements (ACP sends the entire plan each time). Each
+agent has at most one active plan block. The block ID for the plan is assigned
+on the first `Plan` notification and reused for all subsequent plan updates
+from the same agent within the same task.
+
+r[event.block-id.permission]
+Permission request blocks MUST use a block ID derived from the ACP
+`ToolCallId` in the `RequestPermissionRequest`. This links the permission
+visually to the tool call that triggered it.
 
 ### Event Types
 
+r[event.append]
+A `BlockAppend` event MUST be emitted when a new content block is created. It
+contains the block ID, the role, and the full initial block data. The frontend
+MUST insert this block at the end of the role's block list.
+
+r[event.patch]
+A `BlockPatch` event MUST be emitted when an existing block is updated. It
+contains the block ID, the role, and a patch payload describing what changed.
+The frontend MUST find the block by ID and apply the patch in place.
+
+The following patch variants MUST be supported:
+
+r[event.patch.text-append]
+`TextAppend` — appends text to an existing text block. Used when additional
+`AgentMessageChunk` notifications arrive for the same turn.
+
+r[event.patch.tool-call-update]
+`ToolCallUpdate` — updates a tool call block's status, result, and/or output.
+Used when ACP sends a `ToolCallUpdate` notification. The patch includes the
+new status (`running`, `success`, `failure`), optional result text, and
+optional output.
+
+r[event.patch.plan-replace]
+`PlanReplace` — replaces the entire plan step list. Used when ACP sends a new
+`Plan` notification. Plans are always full replacements, never deltas.
+
+r[event.patch.permission-resolve]
+`PermissionResolve` — updates a permission block with the human's decision
+(`approved` or `denied`). Emitted when `resolve_permission` is called.
+
 r[event.agent-state-changed]
 The system MUST emit `AgentStateChanged` events when an agent's state changes,
-including the role and new state.
-
-r[event.content-block]
-The system MUST emit `ContentBlock` events when an agent produces content,
-including the role and block data.
-
-r[event.content-block.types]
-Ship MUST support the following content block variants, mapped from ACP
-`SessionUpdate` types:
-
-- `Text` — agent message text (from `AgentMessageChunk`)
-- `ToolCallStart` — tool invocation beginning, with tool name and arguments
-- `ToolCallDone` — tool invocation result, with output and success/failure
-- `PlanUpdate` — execution plan with step statuses
-- `Error` — agent-reported error
-
-Ship passes through ACP content as-is, wrapping each in a Ship `ContentBlock`
-with the originating role. The frontend MUST have a renderer for each variant.
-
-r[event.permission-requested]
-The system MUST emit `PermissionRequested` events when an agent requests
-permission for an action.
+including the role and new state. This is a top-level event, not a block
+append/patch.
 
 r[event.task-status-changed]
 The system MUST emit `TaskStatusChanged` events when a task's status changes,
-including the task ID and new status.
+including the task ID and new status. This is a top-level event.
 
 r[event.context-updated]
 The system MUST emit `ContextUpdated` events when an agent's context usage
-changes, including the role and remaining percentage.
+changes, including the role and remaining percentage. This is a top-level
+event.
+
+### Content Block Types
+
+r[event.content-block.types]
+Ship MUST support the following content block types, mapped from ACP
+`SessionUpdate` / `SessionNotification` types:
+
+- `Text` — accumulated agent message text. Multiple `AgentMessageChunk`
+  notifications from the same prompt turn are merged into one block. Has a
+  `text: String` field that grows via `TextAppend` patches.
+- `ToolCall` — a single tool invocation lifecycle. Created from ACP `ToolCall`
+  notification, updated via `ToolCallUpdate` patches. Fields: `tool_call_id`,
+  `tool_name`, `status` (pending/running/success/failure), `arguments`,
+  optional `result`, optional `output`.
+- `Plan` — the agent's execution plan. Created on first ACP `Plan`
+  notification, replaced in full on subsequent ones. Fields: `steps: Vec<PlanStep>`
+  where each step has `description`, `status` (pending/in-progress/completed/failed),
+  and `priority` (high/medium/low).
+- `Error` — an error message. Created when the backend detects an agent error
+  condition. Fields: `message: String`.
+- `Permission` — a permission request from an agent. Created from ACP
+  `RequestPermissionRequest`. Fields: `tool_call_id`, `tool_name`,
+  `description`, `arguments`, `options: Vec<PermissionOption>`,
+  optional `resolution`.
+
+The frontend MUST have a renderer for each block type.
+
+### Frontend Block Store
+
+r[event.store.structure]
+The frontend MUST maintain a per-role ordered block store. The store is a list
+of `(BlockId, Block)` pairs, preserving insertion order. A separate index
+(map from `BlockId` to list position) MUST be maintained for O(1) patch
+lookups.
+
+r[event.store.append]
+On `BlockAppend`, the frontend MUST append the block to the end of the
+role's list and add it to the index.
+
+r[event.store.patch]
+On `BlockPatch`, the frontend MUST look up the block by ID, apply the patch
+to produce a new block value, and trigger a re-render of that block only.
+If the block ID is not found (e.g., due to a missed event), the frontend
+MUST re-subscribe to get a full replay.
+
+r[event.store.clear-on-new-task]
+When a new task is assigned, the backend MUST emit a `TaskStarted` event
+(a top-level event, not a block event). On receiving this, the frontend MUST
+clear both block stores and the sequence counter. The new task's events start
+from sequence 0.
+
+r[event.store.immutable-updates]
+Block store updates MUST use immutable data patterns (new object references
+on mutation) so that React can detect changes via reference equality. Do NOT
+mutate block objects in place.
+
+### Replay Semantics
+
+r[event.replay.same-events]
+Replay MUST send the same `BlockAppend` and `BlockPatch` events that were
+originally emitted, in order. The frontend processes them identically to
+live events. There is no special "replay mode" — the store is built from
+events regardless of whether they are replayed or live.
+
+r[event.replay.snapshot-optimization]
+As a future optimization, the backend MAY send a single `Snapshot` event
+containing the full block store state instead of replaying individual events.
+This is not required for v1.
+
+r[event.replay.marker]
+The backend MUST send a `ReplayComplete` top-level event after all replay
+events have been sent. This allows the frontend to distinguish between
+"still loading history" and "caught up to live". The frontend MAY show a
+loading indicator until `ReplayComplete` is received.
 
 ## Resilience
 
@@ -1297,9 +1442,10 @@ chronological order. The scroll area MUST auto-scroll to the bottom when new
 content arrives, unless the user has scrolled up (sticky-scroll behavior).
 
 r[ui.event-stream.grouping]
-Adjacent text blocks from the same prompt turn MUST be merged into a single
-visual group. Tool calls (start + done) MUST be grouped as a single collapsible
-unit.
+Adjacent text blocks from the same prompt turn are already merged into a single
+block by the backend (per `event.block-id.text`). Tool calls are single blocks
+with a lifecycle status (per `event.content-block.types`) — no client-side
+grouping is needed. The frontend renders each block as-is from the store.
 
 ### Content Block: Text
 
@@ -1312,10 +1458,11 @@ be rendered with syntax highlighting (via a lightweight highlighter like
 ### Content Block: Tool Call
 
 r[ui.block.tool-call.layout]
-A tool call (ToolCallStart + ToolCallDone pair) MUST be rendered as a single
-collapsible unit. The collapsed state shows one line: an icon, the tool name
-in a `Code` span, and a success/failure `Badge`. Clicking expands to show
-arguments and result.
+A tool call block MUST be rendered as a single collapsible unit that updates
+in place as patches arrive. While status is `pending` or `running`, the badge
+shows a spinner. On `success` or `failure`, the badge updates to a checkmark
+or X. The collapsed state shows one line: an icon, the tool name in a `Code`
+span, and a status `Badge`. Clicking expands to show arguments and result.
 
 ```
 ▸ Read  src/auth.rs                              ✓
