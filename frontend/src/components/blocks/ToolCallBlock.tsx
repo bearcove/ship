@@ -285,7 +285,9 @@ export function ToolCallBlock({ block }: Props) {
         )}
         <Box ml="auto" style={{ flexShrink: 0 }}>
           {isRunning ? (
-            <Spinner size="1" />
+            <Badge color="gray" size="1">
+              <Spinner size="1" />
+            </Badge>
           ) : (
             <Badge color={statusColor} size="1">
               {block.status.tag === "Success" ? "✓" : "✗"}
@@ -293,7 +295,16 @@ export function ToolCallBlock({ block }: Props) {
           )}
         </Box>
       </Flex>
-      {expanded && <Box className={toolCallBody}>{renderExpandedResult()}</Box>}
+      {expanded && (
+        <Box className={toolCallBody}>
+          <Flex direction="column" gap="2">
+            <Code size="1" style={{ whiteSpace: "pre-wrap", color: "var(--gray-11)" }}>
+              {block.arguments}
+            </Code>
+            {renderExpandedResult()}
+          </Flex>
+        </Box>
+      )}
     </Box>
   );
 }
