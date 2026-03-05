@@ -16,6 +16,7 @@ import {
   mobilePanel,
 } from "../styles/session-view.css";
 
+// r[ui.layout.session-view]
 export function SessionViewPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();

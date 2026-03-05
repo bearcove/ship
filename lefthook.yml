@@ -15,6 +15,9 @@ pre-commit:
     - name: typecheck
       run: cd frontend && pnpm exec tsgo --noEmit
 
+    - name: tracey
+      run: tracey query validate
+
 pre-push:
   parallel: true
   jobs:

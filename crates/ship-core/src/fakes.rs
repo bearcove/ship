@@ -38,6 +38,7 @@ struct FakeAgentDriverInner {
     killed: Vec<AgentHandle>,
 }
 
+// r[testability.no-subprocess-in-tests]
 #[derive(Clone, Default)]
 pub struct FakeAgentDriver {
     inner: Arc<Mutex<FakeAgentDriverInner>>,

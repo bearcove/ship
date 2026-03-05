@@ -78,6 +78,7 @@ impl fmt::Display for StoreError {
 
 impl Error for StoreError {}
 
+// r[testability.agent-trait]
 #[allow(async_fn_in_trait)]
 pub trait AgentDriver: Send + Sync {
     async fn spawn(
@@ -103,6 +104,7 @@ pub trait AgentDriver: Send + Sync {
     async fn kill(&self, handle: &AgentHandle) -> Result<(), AgentError>;
 }
 
+// r[testability.git-trait]
 #[allow(async_fn_in_trait)]
 pub trait WorktreeOps: Send + Sync {
     async fn create_worktree(
@@ -127,6 +129,7 @@ pub trait WorktreeOps: Send + Sync {
     ) -> Result<(), WorktreeError>;
 }
 
+// r[testability.persistence-trait]
 #[allow(async_fn_in_trait)]
 pub trait SessionStore: Send + Sync {
     async fn save_session(&self, session: &PersistedSession) -> Result<(), StoreError>;

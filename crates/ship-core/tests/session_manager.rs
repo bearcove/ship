@@ -47,6 +47,8 @@ async fn recv_task_status(
     }
 }
 
+// r[verify proto.create-session]
+// r[verify session.persistent]
 #[tokio::test]
 async fn test_create_session() {
     let (mut manager, agent, worktree, store) = make_manager();
@@ -81,6 +83,9 @@ async fn test_create_session() {
     assert_eq!(current.record.status, TaskStatus::ReviewPending);
 }
 
+// r[verify task.progress]
+// r[verify proto.steer]
+// r[verify proto.accept]
 #[tokio::test]
 async fn test_task_lifecycle() {
     let (mut manager, agent, _worktree, _store) = make_manager();
@@ -153,6 +158,8 @@ async fn test_task_lifecycle() {
     assert_eq!(state.task_history[0].status, TaskStatus::Accepted);
 }
 
+// r[verify proto.cancel]
+// r[verify task.status.terminal]
 #[tokio::test]
 async fn test_cancel_task() {
     let (mut manager, agent, _worktree, _store) = make_manager();
@@ -178,6 +185,8 @@ async fn test_cancel_task() {
     assert_eq!(state.task_history[0].status, TaskStatus::Cancelled);
 }
 
+// r[verify proto.resolve-permission]
+// r[verify approval.request.content]
 #[tokio::test]
 async fn test_permission_flow() {
     let (mut manager, agent, _worktree, _store) = make_manager();
@@ -249,6 +258,7 @@ async fn test_permission_flow() {
     ));
 }
 
+// r[verify autonomy.toggle]
 #[tokio::test]
 async fn test_autonomy_modes() {
     let (mut manager, agent, _worktree, _store) = make_manager();
@@ -305,6 +315,8 @@ async fn test_autonomy_modes() {
     );
 }
 
+// r[verify event.subscribe]
+// r[verify resilience.state-in-backend]
 #[tokio::test]
 async fn test_event_broadcast() {
     let (mut manager, agent, _worktree, _store) = make_manager();

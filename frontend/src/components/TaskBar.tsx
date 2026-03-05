@@ -159,6 +159,7 @@ interface Props {
   task?: Task;
 }
 
+// r[ui.task-bar.layout]
 export function TaskBar({ sessionId, task }: Props) {
   return (
     <Flex className={taskBar} align="center" gap="3">

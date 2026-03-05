@@ -8,6 +8,7 @@ interface Props {
   steer: SteerReviewType;
 }
 
+// r[ui.steer-review.layout]
 export function SteerReview({ steer }: Props) {
   const [editMode, setEditMode] = useState(false);
   const [editText, setEditText] = useState(steer.captainSteer);

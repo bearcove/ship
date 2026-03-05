@@ -12,7 +12,7 @@ export function TextBlock({ block }: Props) {
     <Box>
       <ReactMarkdown
         components={{
-          code({ children, className }) {
+          code({ children, className }: { children?: React.ReactNode; className?: string }) {
             const isBlock = className?.startsWith("language-");
             if (isBlock) {
               return (
@@ -26,7 +26,7 @@ export function TextBlock({ block }: Props) {
             }
             return <Code size="1">{children}</Code>;
           },
-          p({ children }) {
+          p({ children }: { children?: React.ReactNode }) {
             return (
               <p style={{ margin: "0 0 var(--space-2)", fontSize: "var(--font-size-2)" }}>
                 {children}

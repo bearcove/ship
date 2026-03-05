@@ -99,6 +99,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         }
     }
 
+    // r[proto.create-session]
     pub async fn create_session(
         &mut self,
         req: CreateSessionRequest,
@@ -166,6 +167,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         Ok((session_id, task_id))
     }
 
+    // r[proto.list-sessions]
     pub fn list_sessions(&self) -> Vec<SessionSummary> {
         self.sessions
             .values()
@@ -185,6 +187,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             .collect()
     }
 
+    // r[proto.get-session]
     pub fn get_session(
         &self,
         session_id: &SessionId,
@@ -206,6 +209,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         })
     }
 
+    // r[event.subscribe.roam-channel]
     pub fn subscribe(
         &self,
         session_id: &SessionId,
@@ -218,6 +222,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         Ok(session.events_tx.subscribe())
     }
 
+    // r[autonomy.toggle]
     pub fn set_autonomy_mode(
         &mut self,
         session_id: &SessionId,
@@ -232,6 +237,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         Ok(())
     }
 
+    // r[proto.assign]
     pub async fn assign(
         &mut self,
         session_id: &SessionId,
@@ -298,6 +304,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         Ok(task_id)
     }
 
+    // r[proto.steer]
     pub async fn steer(
         &mut self,
         session_id: &SessionId,
@@ -354,6 +361,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         Ok(())
     }
 
+    // r[proto.accept]
     pub async fn accept(&mut self, session_id: &SessionId) -> Result<(), SessionManagerError> {
         {
             let session = self
@@ -376,6 +384,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         Ok(())
     }
 
+    // r[proto.cancel]
     pub async fn cancel(&mut self, session_id: &SessionId) -> Result<(), SessionManagerError> {
         let handle = {
             let session = self
@@ -411,6 +420,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         Ok(())
     }
 
+    // r[proto.resolve-permission]
     pub async fn resolve_permission(
         &mut self,
         session_id: &SessionId,
@@ -439,6 +449,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         Ok(())
     }
 
+    // r[proto.close-session]
     pub async fn close_session(
         &mut self,
         session_id: &SessionId,
@@ -493,6 +504,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         Ok(())
     }
 
+    // r[captain.initial-prompt]
     async fn prompt_captain_initial(
         &mut self,
         session_id: &SessionId,
@@ -507,6 +519,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         .map(|_| ())
     }
 
+    // r[captain.review-trigger]
     async fn prompt_captain_review(
         &mut self,
         session_id: &SessionId,
@@ -643,6 +656,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
     }
 }
 
+// r[resilience.state-in-backend]
 fn emit_event(session: &mut ActiveSession, event: SessionEvent) {
     match &event {
         SessionEvent::AgentStateChanged { role, state } => match role {
@@ -687,6 +701,7 @@ fn emit_event(session: &mut ActiveSession, event: SessionEvent) {
     let _ = session.events_tx.send(event);
 }
 
+// r[task.progress]
 fn transition_task(
     session: &mut ActiveSession,
     next: TaskStatus,
@@ -714,6 +729,7 @@ fn transition_task(
     Ok(())
 }
 
+// r[task.completion]
 fn is_valid_transition(from: TaskStatus, to: TaskStatus) -> bool {
     if from.is_terminal() {
         return false;

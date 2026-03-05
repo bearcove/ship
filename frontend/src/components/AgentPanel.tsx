@@ -80,6 +80,7 @@ function renderBlock(block: ContentBlock, agentState: AgentInfo["state"]) {
   }
 }
 
+// r[ui.agent-header.layout]
 export function AgentPanel({ sessionId, agent }: Props) {
   const events = useSessionEvents(sessionId, agent.role);
   const plan = latestPlan(events);

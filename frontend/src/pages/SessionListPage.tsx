@@ -178,6 +178,7 @@ function BranchCombobox({
   );
 }
 
+// r[session.create]
 function NewSessionDialog({
   open,
   onOpenChange,
@@ -313,6 +314,7 @@ function AddProjectDialog({
   );
 }
 
+// r[ui.session-list.layout]
 export function SessionListPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const projectFilter = searchParams.get("project") ?? undefined;

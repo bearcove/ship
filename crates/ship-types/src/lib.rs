@@ -1,15 +1,19 @@
 pub mod ids {
+    // r[proto.id.session]
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct SessionId(pub ulid::Ulid);
 
+    // r[proto.id.task]
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct TaskId(pub ulid::Ulid);
 
+    // r[proto.id.project]
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct ProjectName(pub String);
 }
 
 pub mod agent {
+    // r[session.agent.kind]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum AgentKind {
         Claude,
@@ -22,6 +26,7 @@ pub mod agent {
         Mate,
     }
 
+    // r[agent-state.plan-step]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum PlanStepStatus {
         Planned,
@@ -36,6 +41,7 @@ pub mod agent {
         pub status: PlanStepStatus,
     }
 
+    // r[approval.request.content]
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub struct PermissionRequest {
         pub permission_id: String,
@@ -44,6 +50,7 @@ pub mod agent {
         pub description: String,
     }
 
+    // r[agent-state.derived]
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub enum AgentState {
         Working {
@@ -60,6 +67,7 @@ pub mod agent {
         },
     }
 
+    // r[agent-state.snapshot]
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub struct AgentSnapshot {
         pub role: Role,
@@ -72,6 +80,7 @@ pub mod agent {
 pub mod task {
     use crate::ids::TaskId;
 
+    // r[task.status.enum]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum TaskStatus {
         Assigned,
@@ -82,6 +91,7 @@ pub mod task {
         Cancelled,
     }
 
+    // r[task.status.terminal]
     impl TaskStatus {
         pub fn is_terminal(&self) -> bool {
             matches!(self, Self::Accepted | Self::Cancelled)
@@ -101,6 +111,7 @@ pub mod events {
     use crate::task::TaskStatus;
     use crate::{AgentState, TaskId};
 
+    // r[event.content-block.types]
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub enum ContentBlock {
         Text {
@@ -123,6 +134,7 @@ pub mod events {
         },
     }
 
+    // r[event.subscribe]
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub enum SessionEvent {
         AgentStateChanged {
@@ -153,12 +165,14 @@ pub mod protocol {
     use crate::ids::{ProjectName, SessionId};
     use crate::task::TaskStatus;
 
+    // r[autonomy.toggle]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum AutonomyMode {
         HumanInTheLoop,
         Autonomous,
     }
 
+    // r[session.create]
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub struct CreateSessionRequest {
         pub project: ProjectName,
@@ -168,6 +182,7 @@ pub mod protocol {
         pub task_description: String,
     }
 
+    // r[session.list]
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub struct SessionSummary {
         pub id: SessionId,
@@ -198,6 +213,7 @@ pub mod persistence {
         pub autonomy_mode: AutonomyMode,
     }
 
+    // r[mate.output.persisted]
     #[derive(Debug, Clone)]
     pub struct TaskContentRecord {
         pub role: Role,
@@ -210,6 +226,7 @@ pub mod persistence {
         pub content_history: Vec<TaskContentRecord>,
     }
 
+    // r[session.persistent]
     #[derive(Debug, Clone)]
     pub struct PersistedSession {
         pub id: SessionId,

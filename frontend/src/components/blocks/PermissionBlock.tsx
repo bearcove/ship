@@ -8,6 +8,7 @@ interface Props {
   block: PermissionBlockType;
 }
 
+// r[ui.permission.layout]
 export function PermissionBlock({ block }: Props) {
   const [argsExpanded, setArgsExpanded] = useState(false);
 

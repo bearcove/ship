@@ -1,9 +1,12 @@
+// r[session.agent.kind]
 export type AgentKind = "claude" | "codex";
 
 export type Role = "captain" | "mate";
 
+// r[agent-state.derived]
 export type AgentState = "idle" | "working" | "awaiting-permission" | "context-exhausted" | "error";
 
+// r[task.status.enum]
 export type TaskStatus =
   | "Assigned"
   | "Working"
@@ -12,6 +15,7 @@ export type TaskStatus =
   | "Accepted"
   | "Cancelled";
 
+// r[autonomy.toggle]
 export type AutonomyMode = "autonomous" | "human-in-the-loop";
 
 export interface Project {
@@ -21,6 +25,7 @@ export interface Project {
   invalidReason?: string;
 }
 
+// r[session.list]
 export interface SessionSummary {
   id: string;
   projectName: string;
@@ -38,6 +43,7 @@ export interface AgentContext {
   total: number;
 }
 
+// r[agent-state.snapshot]
 export interface AgentInfo {
   kind: AgentKind;
   role: Role;
@@ -67,6 +73,7 @@ export interface SessionDetail {
 
 // ─── Content Blocks ──────────────────────────────────────────────────────────
 
+// r[agent-state.plan-step]
 export type PlanStepStatus = "planned" | "in-progress" | "completed" | "failed";
 
 export interface PlanStep {
@@ -113,6 +120,7 @@ export interface ErrorBlock {
   message: string;
 }
 
+// r[approval.request.content]
 export interface PermissionBlock {
   type: "permission";
   id: string;
@@ -123,6 +131,7 @@ export interface PermissionBlock {
   resolution?: "approved" | "denied";
 }
 
+// r[event.content-block.types]
 export type ContentBlock =
   | TextBlock
   | ToolCallBlock
