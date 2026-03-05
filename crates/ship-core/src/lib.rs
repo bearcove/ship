@@ -62,6 +62,7 @@ impl fmt::Display for StoreError {
 
 impl Error for StoreError {}
 
+#[allow(async_fn_in_trait)]
 pub trait AgentDriver: Send + Sync {
     async fn spawn(
         &self,
@@ -86,6 +87,7 @@ pub trait AgentDriver: Send + Sync {
     async fn kill(&self, handle: &AgentHandle) -> Result<(), AgentError>;
 }
 
+#[allow(async_fn_in_trait)]
 pub trait WorktreeOps: Send + Sync {
     async fn create_worktree(
         &self,
@@ -109,6 +111,7 @@ pub trait WorktreeOps: Send + Sync {
     ) -> Result<(), WorktreeError>;
 }
 
+#[allow(async_fn_in_trait)]
 pub trait SessionStore: Send + Sync {
     async fn save_session(&self, session: &PersistedSession) -> Result<(), StoreError>;
 
