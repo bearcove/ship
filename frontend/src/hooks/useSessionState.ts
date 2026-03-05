@@ -20,6 +20,9 @@ export function useSessionState(sessionId: string): SessionViewState {
 
   useEffect(() => {
     let cancelled = false;
+    // signalStop is set once the stopSignal Promise is created inside subscribe().
+    // Calling it resolves the stopSignal, immediately unblocking the receive loop.
+    let signalStop: (() => void) | null = null;
 
     async function subscribe() {
       const client = await shipClient;
@@ -28,11 +31,26 @@ export function useSessionState(sessionId: string): SessionViewState {
       dispatch({ type: "connected" });
 
       const [tx, rx] = channel<SubscribeMessage>();
-      // Starts the RPC call eagerly, binding the channel
-      client.subscribeEvents(sessionId, tx);
 
-      for await (const msg of rx) {
-        if (cancelled) break;
+      // Resolves to null when the receive loop should stop (cleanup or RPC end).
+      const stopSignal = new Promise<null>((resolve) => {
+        signalStop = () => resolve(null);
+      });
+
+      // Start the subscription RPC eagerly (binds channel, sends request).
+      // When it ends (success or error), unblock the receive loop via stopSignal.
+      const subscribeCall = client.subscribeEvents(sessionId, tx);
+      void subscribeCall.then(
+        () => signalStop?.(),
+        () => signalStop?.(),
+      );
+
+      while (true) {
+        // Race between the next channel message and a stop signal.
+        // This ensures cleanup (cancelled = true + signalStop()) unblocks immediately
+        // instead of waiting for the next message or channel close.
+        const msg = await Promise.race([rx.recv(), stopSignal]);
+        if (msg === null || cancelled) break;
         if (msg.tag === "Event") {
           dispatch({ type: "event", envelope: msg.value });
         } else if (msg.tag === "ReplayComplete") {
@@ -59,6 +77,7 @@ export function useSessionState(sessionId: string): SessionViewState {
 
     return () => {
       cancelled = true;
+      signalStop?.(); // Unblock the receive loop immediately on cleanup
     };
   }, [sessionId, retryCount]);
 
