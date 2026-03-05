@@ -22,7 +22,7 @@ fs-err = { version = "3", features = ["tokio"] }
 roam = "7.0.0"
 roam-codegen = "7.0.0"
 roam-websocket = "7.0.0"
-agent-client-protocol = "0.9.5"
+agent-client-protocol = { version = "0.9.5", features = ["unstable_session_usage"] }
 tokio-util = { version = "0.7", features = ["compat"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 axum = "0.8"

@@ -27,6 +27,7 @@ pub struct ShipAcpClient {
     role: Role,
     worktree_path: PathBuf,
     notifications_tx: mpsc::UnboundedSender<SessionEvent>,
+    active_text_block: Rc<RefCell<Option<BlockId>>>,
     pending_permissions: Rc<RefCell<HashMap<String, oneshot::Sender<bool>>>>,
     terminals: Rc<RefCell<HashMap<String, TerminalState>>>,
 }
@@ -48,9 +49,14 @@ impl ShipAcpClient {
             role,
             worktree_path,
             notifications_tx,
+            active_text_block: Rc::new(RefCell::new(None)),
             pending_permissions: Rc::new(RefCell::new(HashMap::new())),
             terminals: Rc::new(RefCell::new(HashMap::new())),
         }
+    }
+
+    pub fn begin_prompt_turn(&self) {
+        self.reset_text_block();
     }
 
     pub fn resolve_permission(&self, permission_id: &str, approved: bool) -> Result<(), String> {
@@ -67,6 +73,129 @@ impl ShipAcpClient {
     fn send_event(&self, event: SessionEvent) {
         let _ = self.notifications_tx.send(event);
     }
+
+    fn reset_text_block(&self) {
+        *self.active_text_block.borrow_mut() = None;
+    }
+
+    fn map_session_update(&self, update: SessionUpdate) -> Vec<SessionEvent> {
+        match update {
+            SessionUpdate::UserMessageChunk(chunk)
+            | SessionUpdate::AgentMessageChunk(chunk)
+            | SessionUpdate::AgentThoughtChunk(chunk) => {
+                let text = format_content_block(chunk.content);
+                let existing_block = self.active_text_block.borrow().clone();
+                match existing_block {
+                    Some(block_id) => vec![SessionEvent::BlockPatch {
+                        // r[event.block-id.text]
+                        block_id,
+                        role: self.role,
+                        patch: BlockPatch::TextAppend { text },
+                    }],
+                    None => {
+                        let block_id = BlockId::new();
+                        *self.active_text_block.borrow_mut() = Some(block_id.clone());
+                        vec![SessionEvent::BlockAppend {
+                            // r[event.block-id.text]
+                            block_id,
+                            role: self.role,
+                            block: ShipContentBlock::Text { text },
+                        }]
+                    }
+                }
+            }
+            SessionUpdate::ToolCall(tool_call) => {
+                self.reset_text_block();
+                let result_text = if tool_call.content.is_empty() {
+                    None
+                } else {
+                    Some(format!("{:#?}", tool_call.content))
+                };
+                vec![SessionEvent::BlockAppend {
+                    block_id: BlockId(tool_call.tool_call_id.0.to_string()),
+                    role: self.role,
+                    block: ShipContentBlock::ToolCall {
+                        tool_name: tool_call.title,
+                        arguments: tool_call
+                            .raw_input
+                            .map(|value| value.to_string())
+                            .unwrap_or_default(),
+                        status: map_tool_status(tool_call.status),
+                        result: result_text,
+                    },
+                }]
+            }
+            SessionUpdate::ToolCallUpdate(update) => {
+                self.reset_text_block();
+                vec![SessionEvent::BlockPatch {
+                    block_id: BlockId(update.tool_call_id.0.to_string()),
+                    role: self.role,
+                    patch: BlockPatch::ToolCallUpdate {
+                        status: update
+                            .fields
+                            .status
+                            .map(map_tool_status)
+                            .unwrap_or(ShipToolCallStatus::Running),
+                        result: update
+                            .fields
+                            .content
+                            .map(|content| format!("{:#?}", content)),
+                    },
+                }]
+            }
+            SessionUpdate::Plan(plan) => {
+                self.reset_text_block();
+                vec![SessionEvent::AgentStateChanged {
+                    role: self.role,
+                    state: AgentState::Working {
+                        plan: Some(
+                            plan.entries
+                                .into_iter()
+                                .map(|entry| PlanStep {
+                                    description: entry.content,
+                                    status: match entry.status {
+                                        agent_client_protocol::PlanEntryStatus::Pending => {
+                                            PlanStepStatus::Planned
+                                        }
+                                        agent_client_protocol::PlanEntryStatus::InProgress => {
+                                            PlanStepStatus::InProgress
+                                        }
+                                        agent_client_protocol::PlanEntryStatus::Completed => {
+                                            PlanStepStatus::Completed
+                                        }
+                                        _ => PlanStepStatus::Failed,
+                                    },
+                                })
+                                .collect(),
+                        ),
+                        activity: Some("ACP plan update".to_owned()),
+                    },
+                }]
+            }
+            SessionUpdate::AvailableCommandsUpdate(_)
+            | SessionUpdate::CurrentModeUpdate(_)
+            | SessionUpdate::ConfigOptionUpdate(_) => {
+                self.reset_text_block();
+                Vec::new()
+            }
+            // r[event.context-updated]
+            SessionUpdate::UsageUpdate(update) => {
+                self.reset_text_block();
+                let Some(remaining_percent) = remaining_context_percent(update.used, update.size)
+                else {
+                    return Vec::new();
+                };
+                vec![SessionEvent::ContextUpdated {
+                    role: self.role,
+                    remaining_percent,
+                }]
+            }
+            _ => {
+                self.reset_text_block();
+                Vec::new()
+            }
+        }
+    }
 }
 
 #[async_trait::async_trait(?Send)]
@@ -76,6 +205,7 @@ impl Client for ShipAcpClient {
         &self,
         args: RequestPermissionRequest,
     ) -> AcpResult<RequestPermissionResponse> {
+        self.reset_text_block();
         let permission_id = args.tool_call.tool_call_id.0.to_string();
         let tool_name = args
             .tool_call
@@ -169,7 +299,7 @@ impl Client for ShipAcpClient {
 
     // r[acp.client.session-notification]
     async fn session_notification(&self, args: SessionNotification) -> AcpResult<()> {
-        for event in map_session_update(self.role, args.update) {
+        for event in self.map_session_update(args.update) {
             self.send_event(event);
         }
         Ok(())
@@ -416,84 +546,6 @@ fn resolve_relative_to_worktree(worktree_path: &Path, path: &Path) -> PathBuf {
     resolved
 }
 
-fn map_session_update(role: Role, update: SessionUpdate) -> Vec<SessionEvent> {
-    match update {
-        SessionUpdate::UserMessageChunk(chunk)
-        | SessionUpdate::AgentMessageChunk(chunk)
-        | SessionUpdate::AgentThoughtChunk(chunk) => {
-            vec![SessionEvent::BlockAppend {
-                block_id: BlockId::new(),
-                role,
-                block: ShipContentBlock::Text {
-                    text: format_content_block(chunk.content),
-                },
-            }]
-        }
-        SessionUpdate::ToolCall(tool_call) => {
-            let result_text = if tool_call.content.is_empty() {
-                None
-            } else {
-                Some(format!("{:#?}", tool_call.content))
-            };
-            vec![SessionEvent::BlockAppend {
-                block_id: BlockId(tool_call.tool_call_id.0.to_string()),
-                role,
-                block: ShipContentBlock::ToolCall {
-                    tool_name: tool_call.title,
-                    arguments: tool_call
-                        .raw_input
-                        .map(|value| value.to_string())
-                        .unwrap_or_default(),
-                    status: map_tool_status(tool_call.status),
-                    result: result_text,
-                },
-            }]
-        }
-        SessionUpdate::ToolCallUpdate(update) => vec![SessionEvent::BlockPatch {
-            block_id: BlockId(update.tool_call_id.0.to_string()),
-            role,
-            patch: BlockPatch::ToolCallUpdate {
-                status: update
-                    .fields
-                    .status
-                    .map(map_tool_status)
-                    .unwrap_or(ShipToolCallStatus::Running),
-                result: update
-                    .fields
-                    .content
-                    .map(|content| format!("{:#?}", content)),
-            },
-        }],
-        SessionUpdate::Plan(plan) => vec![SessionEvent::AgentStateChanged {
-            role,
-            state: AgentState::Working {
-                plan: Some(
-                    plan.entries
-                        .into_iter()
-                        .map(|entry| PlanStep {
-                            description: entry.content,
-                            status: match entry.status {
-                                agent_client_protocol::PlanEntryStatus::Pending => {
-                                    PlanStepStatus::Planned
-                                }
-                                agent_client_protocol::PlanEntryStatus::InProgress => {
-                                    PlanStepStatus::InProgress
-                                }
-                                agent_client_protocol::PlanEntryStatus::Completed => {
-                                    PlanStepStatus::Completed
-                                }
-                                _ => PlanStepStatus::Failed,
-                            },
-                        })
-                        .collect(),
-                ),
-                activity: Some("ACP plan update".to_owned()),
-            },
-        }],
-        _ => Vec::new(),
-    }
-}
-
 fn format_content_block(block: ContentBlock) -> String {
     match block {
         ContentBlock::Text(text) => text.text,
@@ -507,5 +559,106 @@ fn map_tool_status(status: ToolCallStatus) -> ShipToolCallStatus {
         ToolCallStatus::Completed => ShipToolCallStatus::Success,
         ToolCallStatus::Failed => ShipToolCallStatus::Failure,
         _ => ShipToolCallStatus::Running,
+    }
+}
+
+fn remaining_context_percent(used: u64, size: u64) -> Option<u8> {
+    if size == 0 {
+        return None;
+    }
+
+    let remaining = size.saturating_sub(used);
+    let percent = remaining.saturating_mul(100) / size;
+    Some(percent.min(u8::MAX as u64) as u8)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use agent_client_protocol::{ContentChunk, SessionNotification, TextContent, UsageUpdate};
+
+    fn make_client() -> ShipAcpClient {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        ShipAcpClient::new(Role::Mate, PathBuf::from("/tmp/worktree"), tx)
+    }
+
+    // r[verify acp.client.session-notification]
+    // r[verify event.context-updated]
+    #[test]
+    fn usage_update_json_decodes_and_maps_to_context_updated() {
+        let notification: SessionNotification = serde_json::from_str(
+            r#"{
+                "sessionId":"01J00000000000000000000000",
+                "update":{"sessionUpdate":"usage_update","used":25,"size":100}
+            }"#,
+        )
+        .expect("usage_update should decode");
+
+        let client = make_client();
+        let events = client.map_session_update(notification.update);
+
+        assert_eq!(
+            events,
+            vec![SessionEvent::ContextUpdated {
+                role: Role::Mate,
+                remaining_percent: 75,
+            }]
+        );
+    }
+
+    // r[verify event.block-id.text]
+    #[test]
+    fn consecutive_text_chunks_reuse_block_id_and_append() {
+        let client = make_client();
+        client.begin_prompt_turn();
+
+        let first = client.map_session_update(SessionUpdate::AgentMessageChunk(ContentChunk::new(
+            ContentBlock::Text(TextContent::new("Hello".to_owned())),
+        )));
+        let second = client.map_session_update(SessionUpdate::AgentMessageChunk(
+            ContentChunk::new(ContentBlock::Text(TextContent::new(", world".to_owned()))),
+        ));
+
+        let block_id = match &first[..] {
+            [SessionEvent::BlockAppend { block_id, .. }] => block_id.clone(),
+            other => panic!("unexpected first events: {other:?}"),
+        };
+
+        assert_eq!(
+            second,
+            vec![SessionEvent::BlockPatch {
+                block_id,
+                role: Role::Mate,
+                patch: BlockPatch::TextAppend {
+                    text: ", world".to_owned(),
+                },
+            }]
+        );
+    }
+
+    // r[verify event.block-id.text]
+    #[test]
+    fn non_text_update_breaks_text_chunk_accumulation() {
+        let client = make_client();
+        client.begin_prompt_turn();
+
+        let first = client.map_session_update(SessionUpdate::AgentMessageChunk(ContentChunk::new(
+            ContentBlock::Text(TextContent::new("Hello".to_owned())),
+        )));
+        let _ = client.map_session_update(SessionUpdate::UsageUpdate(UsageUpdate::new(10, 100)));
+        let second = client.map_session_update(SessionUpdate::AgentMessageChunk(
+            ContentChunk::new(ContentBlock::Text(TextContent::new("Again".to_owned()))),
+        ));
+
+        let first_id = match &first[..] {
+            [SessionEvent::BlockAppend { block_id, .. }] => block_id.clone(),
+            other => panic!("unexpected first events: {other:?}"),
+        };
+        let second_id = match &second[..] {
+            [SessionEvent::BlockAppend { block_id, .. }] => block_id.clone(),
+            other => panic!("unexpected second events: {other:?}"),
+        };
+
+        assert_ne!(first_id, second_id);
     }
 }

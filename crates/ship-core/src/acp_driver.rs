@@ -354,6 +354,7 @@ async fn run_acp_worker(
     while let Some(command) = command_rx.recv().await {
         match command {
             DriverCommand::Prompt { content, response } => {
+                client.begin_prompt_turn();
                 let result = connection
                     .prompt(PromptRequest::new(
                         session_id.clone(),

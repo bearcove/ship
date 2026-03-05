@@ -369,7 +369,7 @@ impl ShipImpl {
         }
     }
 
-    async fn spawn_task_flow(&self, session_id: SessionId, task_description: String) {
+    fn spawn_task_flow(&self, session_id: SessionId, task_description: String) {
         let this = self.clone();
         tokio::spawn(async move {
             this.run_task_prompt_flow(session_id, task_description)
@@ -420,7 +420,7 @@ impl ShipImpl {
         }
 
         self.persist_session(session_id).await?;
-        self.spawn_task_flow(session_id.clone(), description).await;
+        self.spawn_task_flow(session_id.clone(), description);
 
         Ok(task_id)
     }

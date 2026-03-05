@@ -1991,6 +1991,7 @@ dependencies = [
  "futures",
  "futures-core",
  "futures-util",
+ "serde_json",
  "ship-types",
  "tokio",
  "tokio-util",
