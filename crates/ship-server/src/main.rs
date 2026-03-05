@@ -53,7 +53,7 @@ enum Command {
 
 #[derive(Debug, facet::Facet)]
 struct ServeArgs {
-    /// HTTP listen address (for example: [::]:9140).
+    /// HTTP listen address (for example: `[::]:9140`).
     #[facet(args::named, default)]
     listen: Option<String>,
 }
