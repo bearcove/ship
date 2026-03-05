@@ -39,3 +39,29 @@ Examples:
 - `https://www.radix-ui.com/themes/docs/components/select.md`
 
 Use this before assuming what props a component accepts.
+
+## Spec coverage (Tracey)
+
+Ship is spec-first. Every requirement in `docs/spec/ship.md` has an ID like `r[session.create]`. When you implement or test a requirement, annotate your code with Tracey markers.
+
+### In Rust
+
+```rust
+// r[session.create]
+pub async fn create_session(&self, req: CreateSessionRequest) -> Result<SessionId, Error> {
+```
+
+### In TypeScript
+
+```typescript
+// r[ui.session-list.layout]
+export function SessionListPage() {
+```
+
+### Rules
+
+- Place the `// r[requirement.id]` comment directly above the function, struct, component, or block that implements it
+- One annotation per requirement. If a requirement is implemented across multiple places, annotate the primary location.
+- For test functions, use `// r[requirement.id]` above the test to mark verification
+- Check `docs/spec/ship.md` for the exact requirement IDs — don't guess
+- Run `tracey status` (if available) to check coverage
