@@ -3,13 +3,35 @@
 specs (
     {
         name ship
-        include (docs/spec/**/*.md)
+        include (docs/spec/ship.md)
         impls (
             {
                 name rust
                 include (crates/**/*.rs src/**/*.rs)
                 exclude (target/**)
             }
+            {
+                name typescript
+                include (frontend/**/*.ts frontend/**/*.tsx)
+                exclude (frontend/node_modules/**)
+            }
+        )
+    }
+    {
+        name backend
+        include (docs/spec/backend.md)
+        impls (
+            {
+                name rust
+                include (crates/**/*.rs src/**/*.rs)
+                exclude (target/**)
+            }
+        )
+    }
+    {
+        name frontend
+        include (docs/spec/frontend.md)
+        impls (
             {
                 name typescript
                 include (frontend/**/*.ts frontend/**/*.tsx)
