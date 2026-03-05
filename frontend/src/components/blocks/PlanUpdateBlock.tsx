@@ -1,4 +1,4 @@
-import { Box, Card, Text } from "@radix-ui/themes";
+import { Card, Text } from "@radix-ui/themes";
 import { Circle, SpinnerGap, CheckCircle, XCircle } from "@phosphor-icons/react";
 import type { PlanUpdateBlock as PlanUpdateBlockType, PlanStepStatus } from "../../types";
 
