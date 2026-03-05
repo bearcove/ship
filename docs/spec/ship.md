@@ -74,6 +74,38 @@ terminal facilities.
 
 ## Architecture
 
+### Crate Structure
+
+r[crate.ship-types]
+A `ship-types` crate MUST define all shared types: identifiers (`SessionId`,
+`TaskId`), enums (`AgentKind`, `Role`, `AgentState`), event types
+(`SessionEvent`), and request/response structs. This crate MUST NOT depend on
+any runtime or framework crates.
+
+r[crate.ship-service]
+A `ship-service` crate MUST define the roam service trait (`Ship`) and its
+request/response types. This crate depends on `ship-types` and roam.
+
+r[crate.ship-server]
+A `ship-server` crate MUST implement the HTTP server, roam WebSocket endpoint,
+Vite dev proxy, and the `Ship` service. This is the binary crate.
+
+### Dependencies
+
+r[dep.axum]
+The backend MUST use axum as its HTTP framework.
+
+r[dep.roam]
+The backend MUST use roam for the frontend-backend RPC protocol, including
+WebSocket transport and TypeScript codegen.
+
+r[dep.facet]
+All serializable types MUST derive `Facet` instead of serde traits. Use
+facet-based format crates (facet-json, facet-msgpack, etc.) for serialization.
+
+r[dep.tokio]
+The backend MUST use Tokio as its async runtime.
+
 ### Backend
 
 r[backend.rust]
