@@ -9,7 +9,15 @@ edition = "2024"
 rustdoc-args = ["--html-in-header", "arborium-header.html"]
 
 [dependencies]
-# TODO(dep.ship-core): add when SessionManager is implemented
-# TODO(dep.ship-service): add when roam service trait is implemented
-# TODO(dep.axum): add `axum` HTTP server dependency when transport layer is implemented.
-# TODO(dep.figue): add `figue` for layered server configuration parsing.
+axum = { workspace = true }
+hyper-tungstenite = { workspace = true }
+reqwest = { workspace = true }
+roam = { workspace = true }
+roam-websocket = { workspace = true }
+ship-service = { path = "../ship-service" }
+ship-types = { path = "../ship-types" }
+tokio = { workspace = true, features = ["signal"] }
+tower-http = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+ulid = { workspace = true }

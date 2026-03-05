@@ -17,6 +17,11 @@ futures-core = "0.3"
 facet = { version = "0.44.1", features = ["ulid"] }
 roam = "7.0.0"
 roam-codegen = "7.0.0"
-# TODO: re-add when ship-server uses them
-# tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
-# tracing = "0.1"
+roam-websocket = "7.0.0"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+axum = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+tower-http = { version = "0.6", features = ["fs"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+hyper-tungstenite = "0.17"
