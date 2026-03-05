@@ -4,6 +4,7 @@ import { Badge, Box, Button, Callout, Flex, Switch, Tabs, Text } from "@radix-ui
 import { Clock, X } from "@phosphor-icons/react";
 import { useSession } from "../hooks/useSession";
 import { useSessionState } from "../hooks/useSessionState";
+import { AgentHeader } from "../components/AgentHeader";
 import { AgentPanel } from "../components/AgentPanel";
 import { TaskBar } from "../components/TaskBar";
 import { SteerReview } from "../components/SteerReview";
@@ -111,18 +112,26 @@ export function SessionViewPage() {
       <Box style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
         <Box className={desktopGrid} style={{ flex: 1 }}>
           <Box className={panelColumn}>
+            <AgentHeader agent={captain} />
             <AgentPanel agent={captain} blocks={eventState.captainBlocks.blocks} />
           </Box>
           <Box className={panelColumn}>
+            <AgentHeader agent={mate} />
             <AgentPanel agent={mate} blocks={eventState.mateBlocks.blocks} />
           </Box>
         </Box>
 
         <Box className={mobilePanel}>
           {mobileTab === "captain" ? (
-            <AgentPanel agent={captain} blocks={eventState.captainBlocks.blocks} />
+            <>
+              <AgentHeader agent={captain} />
+              <AgentPanel agent={captain} blocks={eventState.captainBlocks.blocks} />
+            </>
           ) : (
-            <AgentPanel agent={mate} blocks={eventState.mateBlocks.blocks} />
+            <>
+              <AgentHeader agent={mate} />
+              <AgentPanel agent={mate} blocks={eventState.mateBlocks.blocks} />
+            </>
           )}
         </Box>
       </Box>
