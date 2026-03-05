@@ -98,6 +98,9 @@ function OwnSteerDialog({ sessionId }: { sessionId: string }) {
       </Dialog.Trigger>
       <Dialog.Content maxWidth="480px">
         <Dialog.Title>Steer the Mate directly</Dialog.Title>
+        <Dialog.Description size="2" color="gray">
+          Send instructions directly to the Mate for the current task.
+        </Dialog.Description>
         <Flex direction="column" gap="3" mt="2">
           <TextArea
             placeholder="Write instructions for the mate…"
@@ -149,6 +152,9 @@ function NewTaskDialog({ sessionId }: { sessionId: string }) {
       </Dialog.Trigger>
       <Dialog.Content maxWidth="480px">
         <Dialog.Title>Assign New Task</Dialog.Title>
+        <Dialog.Description size="2" color="gray">
+          Describe the task to assign to the Captain and Mate.
+        </Dialog.Description>
         <Flex direction="column" gap="3" mt="2">
           <TextArea
             placeholder="Describe the task…"

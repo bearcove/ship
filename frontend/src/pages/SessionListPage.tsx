@@ -232,6 +232,9 @@ function NewSessionDialog({
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Content key={String(open)} maxWidth="480px">
         <Dialog.Title>New Session</Dialog.Title>
+        <Dialog.Description size="2" color="gray">
+          Configure a new agent session with a project, agents, branch, and task.
+        </Dialog.Description>
         <Flex direction="column" gap="4" mt="2">
           <Flex direction="column" gap="1">
             <Text size="2" weight="medium">
@@ -334,6 +337,9 @@ function AddProjectDialog({
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Content key={String(open)} maxWidth="440px">
         <Dialog.Title>Add Project</Dialog.Title>
+        <Dialog.Description size="2" color="gray">
+          Enter the absolute path to a local git repository to add as a project.
+        </Dialog.Description>
         <Flex direction="column" gap="4" mt="2">
           <Flex direction="column" gap="1">
             <Text size="2" weight="medium">
