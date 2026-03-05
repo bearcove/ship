@@ -43,7 +43,9 @@ fn codegen_typescript(workspace_root: &Path) -> Result<(), Box<dyn Error>> {
     std::fs::create_dir_all(&out_dir)?;
 
     let descriptor = ship_service::ship_service_descriptor();
-    let code = roam_codegen::targets::typescript::generate_service(descriptor);
+    let code = normalize_generated_typescript(roam_codegen::targets::typescript::generate_service(
+        descriptor,
+    ));
 
     let out_path = out_dir.join("ship.ts");
     write_if_changed(&out_path, code)?;
@@ -54,6 +56,19 @@ fn codegen_typescript(workspace_root: &Path) -> Result<(), Box<dyn Error>> {
     println!("generated {}", out_path.display());
     println!("generated {}", index_path.display());
     Ok(())
+}
+
+fn normalize_generated_typescript(code: String) -> String {
+    if code.contains("import { Tx, Rx, bindChannels } from \"@bearcove/roam-core\";")
+        && !code.contains("Rx<")
+    {
+        return code.replace(
+            "import { Tx, Rx, bindChannels } from \"@bearcove/roam-core\";",
+            "import { Tx, bindChannels } from \"@bearcove/roam-core\";",
+        );
+    }
+
+    code
 }
 
 fn write_if_changed(path: &Path, content: String) -> Result<(), Box<dyn Error>> {

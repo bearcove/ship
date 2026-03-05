@@ -10,7 +10,7 @@ import type {
 } from "@bearcove/roam-core";
 import { CallBuilder, helloExchangeInitiator, defaultHello } from "@bearcove/roam-core";
 import { connectWs } from "@bearcove/roam-ws";
-import { Tx, Rx, bindChannels } from "@bearcove/roam-core";
+import { Tx, bindChannels } from "@bearcove/roam-core";
 
 // Named type definitions
 export interface ProjectInfo {
