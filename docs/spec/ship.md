@@ -16,16 +16,19 @@ A session is a pairing: one captain agent and one mate agent collaborating on
 a branch.
 
 r[session.create]
-The system MUST allow creating a session with a specified captain agent kind,
-mate agent kind, base branch, and initial task description. Session creation
-and first task assignment are a single atomic operation — there is no session
-without a task.
+The system MUST allow creating a session with a specified project, captain
+agent kind, mate agent kind, base branch, and initial task description.
+Session creation and first task assignment are a single atomic operation —
+there is no session without a task.
 
 r[session.list]
 The system MUST allow listing all active sessions with their current state.
 
 r[session.persistent]
 Sessions MUST be persistent across browser reloads and server restarts.
+Agents continue running after the browser tab is closed. When the human
+returns, the session list shows updated state and the hydration flow
+(per `proto.hydration-flow`) restores full context.
 
 r[session.single-task]
 Each session MUST have at most one active task at a time, plus a history of
@@ -272,9 +275,9 @@ Task state MUST be persisted to survive server restarts.
 
 r[backend.persistence-format]
 Session and task state MUST be serialized using facet-json and stored as JSON
-files in a `.ship/` directory relative to the repository root. Each session
-gets a `{session_id}.json` file containing the session config, current task,
-and task history.
+files in a `.ship/` directory relative to the session's project repository
+root. Each session gets a `{session_id}.json` file containing the session
+config, current task, and task history.
 
 r[backend.persistence-dir-gitignore]
 The `.ship/` persistence directory MUST be added to `.gitignore`.
@@ -444,11 +447,23 @@ Task identifiers MUST be UUIDs wrapped in a `TaskId` newtype.
 
 ### Operations
 
+r[proto.id.project]
+Project identifiers MUST be the project name string (unique, derived from
+directory name at registration time).
+
 r[proto.create-session]
-The protocol MUST support a `create_session` operation that takes agent
-configuration, base branch, and an initial task description. It creates the
-session, worktree, spawns agents, and assigns the first task in one call.
-Returns a `SessionId` and `TaskId`.
+The protocol MUST support a `create_session` operation that takes a project
+name, agent configuration, base branch, and an initial task description. It
+creates the session, worktree in the project's repo, spawns agents, and
+assigns the first task in one call. Returns a `SessionId` and `TaskId`.
+
+r[proto.list-projects]
+The protocol MUST support a `list_projects` operation that returns all
+registered projects with their names, paths, and validation status.
+
+r[proto.add-project]
+The protocol MUST support an `add_project` operation that registers a new
+project by path. This is the RPC equivalent of `ship project add`.
 
 r[proto.list-sessions]
 The protocol MUST support a `list_sessions` operation that returns summaries
@@ -1025,30 +1040,93 @@ r[autonomy.permission-gate]
 The permission system MUST still gate destructive actions regardless of
 autonomy mode.
 
+## CLI
+
+r[cli.binary]
+The Ship binary MUST be named `ship`. It is the single entry point for all
+operations.
+
+r[cli.serve]
+`ship serve` MUST start the HTTP server. It does not require being run from
+inside a git repository — Ship is not tied to a single repo.
+
+r[cli.open-browser]
+On startup, `ship serve` MUST print the URL to stdout. It MUST NOT
+auto-open a browser.
+
+r[cli.project-add]
+`ship project add <path>` MUST register a git repository as a Ship project.
+The path MUST be resolved to an absolute path and validated as a git
+repository (contains `.git`). The project is added to Ship's configuration.
+
+r[cli.project-remove]
+`ship project remove <name>` MUST unregister a project. Active sessions in
+that project MUST be closed first (with confirmation) or the command MUST
+fail.
+
+r[cli.project-list]
+`ship project list` MUST print all registered projects with their names and
+paths.
+
+## Projects
+
+Ship manages multiple git repositories. Each repository is a "project."
+
+r[project.registration]
+Projects MUST be explicitly registered via the CLI (`ship project add`) or
+the UI before sessions can be created in them. Ship does not auto-discover
+repositories.
+
+r[project.identity]
+Each project MUST have a unique name derived from the repository directory
+name (e.g., `/home/user/bearcove/roam` → `roam`). If a name collision occurs
+during registration, Ship MUST append a disambiguating suffix.
+
+r[project.validation]
+On server startup, Ship MUST validate that all registered project paths still
+exist and are git repositories. Projects with invalid paths MUST be flagged
+in the UI (not silently removed).
+
+r[project.persistence-dir]
+Each project's `.ship/` directory (for session persistence, MCP config) is
+relative to that project's repository root. Ship's own configuration (project
+list, global settings) lives in `~/.config/ship/`.
+
+r[project.mcp-defaults]
+Each project MAY have a `.ship/mcp-servers.json` in its repository root for
+project-specific MCP server defaults. A global default MAY also be configured
+in `~/.config/ship/mcp-servers.json`. Project-level config takes precedence.
+
 ## Server Configuration
 
 r[server.listen]
 The server's HTTP listen address MUST be configurable via the `SHIP_LISTEN`
 environment variable, defaulting to `[::]:9140`.
 
-r[server.repo-root]
-The server MUST auto-detect the repository root by walking up from the current
-working directory looking for a `.git` directory. An explicit
-`SHIP_REPO_ROOT` environment variable MUST override auto-detection.
+r[server.multi-repo]
+A single Ship server instance manages sessions across all registered
+projects. There is no need to run multiple Ship instances.
 
 r[server.mode]
 The server MUST run in one of two modes: **dev** (Vite proxy enabled, hot
 reload) or **prod** (serves built frontend from disk). Mode MUST be
 configurable via `SHIP_MODE` environment variable, defaulting to `dev`.
 
+r[server.config-dir]
+Ship's global configuration MUST be stored in `~/.config/ship/`. This
+directory contains `projects.json` (the project registry) and optional
+global settings.
+
 r[server.discord-webhook]
 The Discord webhook URL MUST be configurable via the `SHIP_DISCORD_WEBHOOK`
 environment variable. If unset, Discord notifications are disabled.
 
-r[server.mcp-defaults]
-The default MCP server list MUST be configurable via a JSON file at
-`.ship/mcp-servers.json` in the repository root. If absent, no MCP servers
-are passed to agents by default.
+r[server.agent-discovery]
+On startup, Ship MUST check whether `claude-agent-acp` and `codex-acp`
+binaries are available on `PATH`. The availability of each agent kind MUST
+be surfaced in the create-session dialog — unavailable agent kinds MUST be
+disabled with a `Tooltip` explaining what's missing (e.g., "codex-acp not
+found on PATH").
 
 ## UI Design
 
@@ -1089,19 +1167,34 @@ single column with a `Tabs` switcher (Captain | Mate) above.
 
 r[ui.session-list.layout]
 The session list MUST display sessions as a vertical stack of `Card` components,
-each showing: session branch name, captain and mate agent kinds (as `Badge`),
-current task description (truncated), task status (as `Badge` with color), and
-a relative timestamp of last activity.
+each showing: project name (as `Badge`), session branch name, captain and mate
+agent kinds (as `Badge`), current task description (truncated), task status
+(as `Badge` with color), and a relative timestamp of last activity.
+
+r[ui.session-list.project-filter]
+The session list MUST include a project filter above the session cards. The
+filter shows "All projects" by default and can be set to a specific project
+via a `Select` dropdown. The filter state MUST be preserved in the URL query
+string (e.g., `?project=roam`).
 
 r[ui.session-list.empty]
 When no sessions exist, the list MUST show a centered `Callout` with
-instructions and a "New Session" `Button`.
+instructions and a "New Session" `Button`. If no projects are registered,
+the callout MUST instead prompt the user to add a project first, with an
+"Add Project" `Button`.
 
 r[ui.session-list.create]
-The "New Session" action MUST open a `Dialog` containing a form with: captain
-agent kind (`SegmentedControl`: Claude | Codex), mate agent kind
-(`SegmentedControl`), base branch (`Select` populated from git branches), and
-initial task description (`TextArea`).
+The "New Session" action MUST open a `Dialog` containing a form with: project
+(`Select` populated from registered projects), captain agent kind
+(`SegmentedControl`: Claude | Codex), mate agent kind (`SegmentedControl`),
+base branch (`Select` populated from the selected project's git branches),
+and initial task description (`TextArea`). If only one project is registered,
+it MUST be pre-selected.
+
+r[ui.session-list.create.branch-filter]
+The base branch `Select` MUST support type-to-filter for repositories with
+many branches. If Radix `Select` proves insufficient, a `TextField` with
+a filtered dropdown (combobox pattern) MUST be used instead.
 
 r[ui.session-list.nav]
 Each session `Card` MUST be a clickable link (using react-router `Link`)
