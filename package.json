@@ -1,0 +1,14 @@
+{
+  "private": true,
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
+  "scripts": {
+    "dev": "pnpm --filter ship-frontend dev",
+    "build": "pnpm --filter ship-frontend build",
+    "typecheck": "pnpm --filter ship-frontend typecheck",
+    "test": "pnpm --filter ship-frontend test"
+  }
+}
