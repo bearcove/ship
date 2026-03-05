@@ -781,9 +781,20 @@ r[event.subscribe]
 The frontend MUST be able to subscribe to a session's event stream.
 
 r[event.subscribe.roam-channel]
-Event subscription MUST be implemented as a roam bidirectional channel. The
-frontend opens the channel by session ID and receives `SessionEvent`s as a
-typed stream. The channel is part of the `Ship` service trait.
+Event subscription MUST be implemented as a roam `Tx<SubscribeMessage>`
+channel on the `subscribe_events` method of the `Ship` service trait. The
+frontend opens the channel by session ID and receives a stream of
+`SubscribeMessage` values. `SubscribeMessage` is a wire-level enum defined
+in `ship-types` with the following variants:
+
+- `Event(SessionEvent)` — a sequenced session event (replayed or live)
+- `ReplayComplete` — subscription-local control marker (no seq field)
+
+The `Snapshot` variant is reserved for the post-v1 optimization described
+in `event.replay.snapshot-optimization` and MUST NOT be implemented in v1.
+
+This explicit union type ensures the backend and frontend agree on what the
+channel carries, with no ambiguity about out-of-band vs in-band delivery.
 
 r[event.subscribe.replay]
 When a new subscriber connects, the backend MUST replay all `SessionEvent`s
@@ -806,10 +817,9 @@ created, and never resets — it increases across task boundaries. Replay events
 use the original sequence numbers. Events that are scoped to a role include
 the role in their payload; the envelope itself is role-agnostic.
 
-Control markers (`ReplayComplete`) are NOT `SessionEvent`s — they are
-out-of-band messages on the roam channel with no sequence number. Only
-`SessionEvent`s are persisted in the event log and broadcast to all
-subscribers.
+Only `SubscribeMessage::Event(SessionEvent)` carries a sequence number.
+`SubscribeMessage::ReplayComplete` has no seq field. Only `SessionEvent`s
+are persisted in the event log and broadcast to all subscribers.
 
 r[event.ordering]
 Events MUST be delivered in sequence order. If the frontend receives an event
@@ -902,12 +912,13 @@ it continues from the session's current value.
 
 r[event.replay-complete]
 After the backend has sent all replayed events to a newly connected
-subscriber, it MUST send a `ReplayComplete` control marker on that
-subscriber's channel. `ReplayComplete` is a subscription-local signal — it
-is NOT persisted in the task event log, NOT broadcast to other subscribers,
-and does NOT carry a sequence number. It is not a `SessionEvent`; it is a
-separate message type on the roam channel. The frontend uses it to transition
-from "loading history" to "live".
+subscriber, it MUST send `SubscribeMessage::ReplayComplete` on that
+subscriber's channel (per `event.subscribe.roam-channel`).
+`ReplayComplete` is a subscription-local signal — it is NOT persisted in
+the task event log, NOT broadcast to other subscribers, and does NOT carry
+a sequence number. It is a variant of `SubscribeMessage`, not a
+`SessionEvent`. The frontend uses it to transition from "loading history"
+to "live".
 
 ### Content Block Types
 
@@ -1047,6 +1058,14 @@ Implementers MUST verify the following invariants:
   the `TaskStarted` event of the current task through the latest live event.
   The first replayed seq is NOT necessarily 0 — it is the seq of the current
   task's `TaskStarted` event.
+
+r[event.replay.test-mixed-stream]
+The backend and frontend MUST each have integration tests that exercise a
+mixed `SubscribeMessage` stream: a sequence of `Event(...)` items followed
+by `ReplayComplete`, then further `Event(...)` items. Tests MUST assert
+correct decoding/handling of both variants, and that `ReplayComplete` is
+processed exactly once per subscription without affecting the event log or
+other subscribers.
 
 ### Client-Side Session State
 
