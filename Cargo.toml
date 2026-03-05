@@ -1,0 +1,17 @@
+[workspace]
+members = [
+  "crates/ship-types",
+  "crates/ship-core",
+  "crates/ship-service",
+  "crates/ship-server",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+
+[workspace.dependencies]
+ulid = "1"
+futures-core = "0.3"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+tracing = "0.1"

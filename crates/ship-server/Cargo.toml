@@ -1,0 +1,13 @@
+[package]
+name = "ship-server"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ship-core = { path = "../ship-core" }
+ship-service = { path = "../ship-service" }
+ship-types = { path = "../ship-types" }
+tokio = { workspace = true }
+tracing = { workspace = true }
+# TODO(dep.axum): add `axum` HTTP server dependency when transport layer is implemented.
+# TODO(dep.figue): add `figue` for layered server configuration parsing.

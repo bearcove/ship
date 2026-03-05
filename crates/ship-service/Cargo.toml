@@ -1,0 +1,8 @@
+[package]
+name = "ship-service"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ship-types = { path = "../ship-types" }
+# TODO(dep.roam): add `roam` for Ship service trait and RPC transport bindings.

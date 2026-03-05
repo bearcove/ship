@@ -1,0 +1,8 @@
+[package]
+name = "ship-types"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ulid = { workspace = true }
+# TODO(dep.facet): add `facet` derive/core dependencies for shared type serialization.
