@@ -1,3 +1,4 @@
+mod acp_driver;
 mod fakes;
 mod git_worktree;
 mod json_store;
@@ -12,6 +13,7 @@ use std::pin::Pin;
 use futures_core::Stream;
 use ship_types::{AgentKind, PersistedSession, Role, SessionEvent, SessionId};
 
+pub use acp_driver::AcpAgentDriver;
 pub use fakes::{
     FakeAgentDriver, FakePromptScript, FakeSessionStore, FakeWorktreeOps, SpawnRecord,
 };

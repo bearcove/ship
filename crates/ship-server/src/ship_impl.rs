@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use roam::Tx;
 use ship_core::{
-    FakeAgentDriver, GitWorktreeOps, JsonSessionStore, ProjectRegistry, SessionManager,
-    SessionManagerError, SessionStateView, StopReason,
+    AcpAgentDriver, GitWorktreeOps, JsonSessionStore, ProjectRegistry, SessionManager,
+    SessionManagerError, SessionStateView,
 };
 use ship_service::Ship;
 use ship_types::{
@@ -19,7 +19,7 @@ use tokio::sync::broadcast;
 #[derive(Clone)]
 pub struct ShipImpl {
     registry: Arc<Mutex<ProjectRegistry>>,
-    manager: Arc<Mutex<SessionManager<FakeAgentDriver, GitWorktreeOps, JsonSessionStore>>>,
+    manager: Arc<Mutex<SessionManager<AcpAgentDriver, GitWorktreeOps, JsonSessionStore>>>,
     repo_root: Arc<std::path::PathBuf>,
 }
 
@@ -29,9 +29,7 @@ impl ShipImpl {
         sessions_dir: std::path::PathBuf,
         repo_root: std::path::PathBuf,
     ) -> Self {
-        let agent_driver = FakeAgentDriver::default();
-        // TODO: replace with real ACP agent driver
-        agent_driver.push_response(StopReason::EndTurn);
+        let agent_driver = AcpAgentDriver::new();
 
         let manager = SessionManager::new(
             agent_driver,
