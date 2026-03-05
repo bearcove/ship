@@ -5,8 +5,8 @@ use ship_core::{
     FakeAgentDriver, FakeSessionStore, FakeWorktreeOps, SessionManager, SessionStore, StopReason,
 };
 use ship_types::{
-    AgentKind, AgentState, AutonomyMode, CreateSessionRequest, PermissionRequest, ProjectName,
-    Role, SessionEvent, TaskStatus,
+    AgentKind, AgentState, AutonomyMode, BlockId, ContentBlock, CreateSessionRequest, ProjectName,
+    Role, SessionEvent, SessionEventEnvelope, TaskStatus,
 };
 use tokio::time::timeout;
 
@@ -34,14 +34,14 @@ fn make_manager() -> (
 }
 
 async fn recv_task_status(
-    rx: &mut tokio::sync::broadcast::Receiver<SessionEvent>,
+    rx: &mut tokio::sync::broadcast::Receiver<SessionEventEnvelope>,
 ) -> (ship_types::TaskId, TaskStatus) {
     loop {
-        let event = timeout(Duration::from_secs(1), rx.recv())
+        let envelope = timeout(Duration::from_secs(1), rx.recv())
             .await
             .expect("should receive event")
             .expect("broadcast should be open");
-        if let SessionEvent::TaskStatusChanged { task_id, status } = event {
+        if let SessionEvent::TaskStatusChanged { task_id, status } = envelope.event {
             return (task_id, status);
         }
     }
@@ -206,12 +206,7 @@ async fn test_permission_flow() {
         .expect("mate should be spawned")
         .handle;
 
-    let request = PermissionRequest {
-        permission_id: "perm-1".to_owned(),
-        tool_name: "write_file".to_owned(),
-        arguments: "{\"path\":\"src/lib.rs\"}".to_owned(),
-        description: "Write file".to_owned(),
-    };
+    let block_id = BlockId(ulid::Ulid::new());
 
     let mut rx = manager
         .subscribe(&session_id)
@@ -219,9 +214,15 @@ async fn test_permission_flow() {
 
     agent.queue_notifications(
         &mate_handle,
-        vec![SessionEvent::PermissionRequested {
+        vec![SessionEvent::BlockAppend {
+            block_id: block_id.clone(),
             role: Role::Mate,
-            request: request.clone(),
+            block: ContentBlock::Permission {
+                tool_name: "write_file".to_owned(),
+                arguments: "{\"path\":\"src/lib.rs\"}".to_owned(),
+                description: "Write file".to_owned(),
+                resolution: None,
+            },
         }],
     );
 
@@ -230,21 +231,27 @@ async fn test_permission_flow() {
         .await
         .expect("drain notifications should work");
 
-    let event = timeout(Duration::from_secs(1), rx.recv())
+    let envelope = timeout(Duration::from_secs(1), rx.recv())
         .await
         .expect("should receive event")
         .expect("broadcast should be open");
 
     assert_eq!(
-        event,
-        SessionEvent::PermissionRequested {
+        envelope.event,
+        SessionEvent::BlockAppend {
+            block_id: block_id.clone(),
             role: Role::Mate,
-            request: request.clone(),
+            block: ContentBlock::Permission {
+                tool_name: "write_file".to_owned(),
+                arguments: "{\"path\":\"src/lib.rs\"}".to_owned(),
+                description: "Write file".to_owned(),
+                resolution: None,
+            },
         }
     );
 
     manager
-        .resolve_permission(&session_id, "perm-1", true)
+        .resolve_permission(&session_id, &block_id.0.to_string(), true)
         .await
         .expect("resolve permission should work");
 
@@ -351,14 +358,14 @@ async fn test_event_broadcast() {
         .expect("broadcast should be open");
 
     assert_eq!(
-        event1,
+        event1.event,
         SessionEvent::TaskStatusChanged {
             task_id: task_id.clone(),
             status: TaskStatus::Cancelled,
         }
     );
     assert_eq!(
-        event2,
+        event2.event,
         SessionEvent::TaskStatusChanged {
             task_id,
             status: TaskStatus::Cancelled,

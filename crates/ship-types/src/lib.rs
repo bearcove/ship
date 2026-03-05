@@ -7,6 +7,10 @@ pub mod ids {
     #[derive(Debug, Clone, PartialEq, Eq, Hash, facet::Facet)]
     pub struct TaskId(pub ulid::Ulid);
 
+    // r[event.block-id]
+    #[derive(Debug, Clone, PartialEq, Eq, Hash, facet::Facet)]
+    pub struct BlockId(pub ulid::Ulid);
+
     // r[proto.id.project]
     #[derive(Debug, Clone, PartialEq, Eq, Hash, facet::Facet)]
     pub struct ProjectName(pub String);
@@ -112,9 +116,25 @@ pub mod task {
 }
 
 pub mod events {
-    use crate::agent::{PermissionRequest, PlanStep, Role};
+    use crate::TaskId;
+    use crate::agent::{AgentState, PlanStep, Role};
+    use crate::ids::BlockId;
     use crate::task::TaskStatus;
-    use crate::{AgentState, TaskId};
+
+    #[repr(u8)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, facet::Facet)]
+    pub enum ToolCallStatus {
+        Running,
+        Success,
+        Failure,
+    }
+
+    #[repr(u8)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, facet::Facet)]
+    pub enum PermissionResolution {
+        Approved,
+        Denied,
+    }
 
     // r[event.content-block.types]
     #[repr(u8)]
@@ -123,14 +143,11 @@ pub mod events {
         Text {
             text: String,
         },
-        ToolCallStart {
+        ToolCall {
             tool_name: String,
             arguments: String,
-        },
-        ToolCallDone {
-            tool_name: String,
-            output: String,
-            success: bool,
+            status: ToolCallStatus,
+            result: Option<String>,
         },
         PlanUpdate {
             steps: Vec<PlanStep>,
@@ -138,39 +155,87 @@ pub mod events {
         Error {
             message: String,
         },
+        Permission {
+            tool_name: String,
+            description: String,
+            arguments: String,
+            resolution: Option<PermissionResolution>,
+        },
+    }
+
+    // r[event.patch]
+    #[repr(u8)]
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub enum BlockPatch {
+        // r[event.patch.text-append]
+        TextAppend {
+            text: String,
+        },
+        // r[event.patch.tool-call-update]
+        ToolCallUpdate {
+            status: ToolCallStatus,
+            result: Option<String>,
+        },
+        // r[event.patch.plan-replace]
+        PlanReplace {
+            steps: Vec<PlanStep>,
+        },
+        // r[event.patch.permission-resolve]
+        PermissionResolve {
+            resolution: PermissionResolution,
+        },
     }
 
     // r[event.subscribe]
     #[repr(u8)]
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub enum SessionEvent {
+        // r[event.append]
+        BlockAppend {
+            block_id: BlockId,
+            role: Role,
+            block: ContentBlock,
+        },
+        // r[event.patch]
+        BlockPatch {
+            block_id: BlockId,
+            role: Role,
+            patch: BlockPatch,
+        },
+        // r[event.agent-state-changed]
         AgentStateChanged {
             role: Role,
             state: AgentState,
         },
-        Content {
-            role: Role,
-            block: ContentBlock,
-        },
-        PermissionRequested {
-            role: Role,
-            request: PermissionRequest,
-        },
+        // r[event.task-status-changed]
         TaskStatusChanged {
             task_id: TaskId,
             status: TaskStatus,
         },
+        // r[event.context-updated]
         ContextUpdated {
             role: Role,
             remaining_percent: u8,
         },
+        // r[event.task-started]
+        TaskStarted {
+            task_id: TaskId,
+            description: String,
+        },
+    }
+
+    // r[event.envelope]
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct SessionEventEnvelope {
+        pub seq: u64,
+        pub event: SessionEvent,
     }
 
     // r[event.subscribe.roam-channel]
     #[repr(u8)]
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub enum SubscribeMessage {
-        Event(SessionEvent),
+        Event(SessionEventEnvelope),
         ReplayComplete,
     }
 }
@@ -245,7 +310,7 @@ pub mod protocol {
 pub mod persistence {
     use crate::agent::{AgentKind, AgentSnapshot, Role};
     use crate::events::ContentBlock;
-    use crate::ids::{ProjectName, SessionId};
+    use crate::ids::{BlockId, ProjectName, SessionId};
     use crate::protocol::AutonomyMode;
     use crate::task::TaskRecord;
 
@@ -262,6 +327,7 @@ pub mod persistence {
     // r[mate.output.persisted]
     #[derive(Debug, Clone)]
     pub struct TaskContentRecord {
+        pub block_id: BlockId,
         pub role: Role,
         pub block: ContentBlock,
     }
@@ -287,8 +353,11 @@ pub mod persistence {
 pub use agent::{
     AgentKind, AgentSnapshot, AgentState, PermissionRequest, PlanStep, PlanStepStatus, Role,
 };
-pub use events::{ContentBlock, SessionEvent, SubscribeMessage};
-pub use ids::{ProjectName, SessionId, TaskId};
+pub use events::{
+    BlockPatch, ContentBlock, PermissionResolution, SessionEvent, SessionEventEnvelope,
+    SubscribeMessage, ToolCallStatus,
+};
+pub use ids::{BlockId, ProjectName, SessionId, TaskId};
 pub use persistence::{CurrentTask, PersistedSession, SessionConfig, TaskContentRecord};
 pub use protocol::{
     AutonomyMode, CreateSessionRequest, CreateSessionResponse, ProjectInfo, SessionDetail,

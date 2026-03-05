@@ -120,21 +120,55 @@ export interface CreateSessionResponse {
   task_id: TaskId;
 }
 
+export interface BlockId {
+  0: unknown;
+}
+
+export type ToolCallStatus = { tag: "Running" } | { tag: "Success" } | { tag: "Failure" };
+
+export type PermissionResolution = { tag: "Approved" } | { tag: "Denied" };
+
 export type ContentBlock =
   | { tag: "Text"; text: string }
-  | { tag: "ToolCallStart"; tool_name: string; arguments: string }
-  | { tag: "ToolCallDone"; tool_name: string; output: string; success: boolean }
+  | {
+      tag: "ToolCall";
+      tool_name: string;
+      arguments: string;
+      status: ToolCallStatus;
+      result: string | null;
+    }
   | { tag: "PlanUpdate"; steps: PlanStep[] }
-  | { tag: "Error"; message: string };
+  | { tag: "Error"; message: string }
+  | {
+      tag: "Permission";
+      tool_name: string;
+      description: string;
+      arguments: string;
+      resolution: PermissionResolution | null;
+    };
+
+export type BlockPatch =
+  | { tag: "TextAppend"; text: string }
+  | { tag: "ToolCallUpdate"; status: ToolCallStatus; result: string | null }
+  | { tag: "PlanReplace"; steps: PlanStep[] }
+  | { tag: "PermissionResolve"; resolution: PermissionResolution };
 
 export type SessionEvent =
+  | { tag: "BlockAppend"; block_id: BlockId; role: Role; block: ContentBlock }
+  | { tag: "BlockPatch"; block_id: BlockId; role: Role; patch: BlockPatch }
   | { tag: "AgentStateChanged"; role: Role; state: AgentState }
-  | { tag: "Content"; role: Role; block: ContentBlock }
-  | { tag: "PermissionRequested"; role: Role; request: PermissionRequest }
   | { tag: "TaskStatusChanged"; task_id: TaskId; status: TaskStatus }
-  | { tag: "ContextUpdated"; role: Role; remaining_percent: number };
+  | { tag: "ContextUpdated"; role: Role; remaining_percent: number }
+  | { tag: "TaskStarted"; task_id: TaskId; description: string };
 
-export type SubscribeMessage = { tag: "Event"; value: SessionEvent } | { tag: "ReplayComplete" };
+export interface SessionEventEnvelope {
+  seq: bigint;
+  event: SessionEvent;
+}
+
+export type SubscribeMessage =
+  | { tag: "Event"; value: SessionEventEnvelope }
+  | { tag: "ReplayComplete" };
 
 // Request/Response type aliases
 export type ListProjectsRequest = [];
@@ -550,7 +584,7 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0xe08dc614311c17e7n) {
+    } else if (method.id === 0x7e2e71c3d949fb71n) {
       try {
         const result = await this.handler.subscribeEvents(
           args[0] as SessionId,
@@ -1326,7 +1360,7 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: "subscribeEvents",
-      id: 0xe08dc614311c17e7n,
+      id: 0x7e2e71c3d949fb71n,
       args: {
         kind: "tuple",
         elements: [
@@ -1339,178 +1373,258 @@ export const ship_descriptor: ServiceDescriptor = {
                 {
                   name: "Event",
                   fields: {
-                    kind: "enum",
-                    variants: [
-                      {
-                        name: "AgentStateChanged",
-                        fields: {
-                          role: {
-                            kind: "enum",
-                            variants: [
-                              { name: "Captain", fields: null },
-                              { name: "Mate", fields: null },
-                            ],
-                          },
-                          state: {
-                            kind: "enum",
-                            variants: [
-                              {
-                                name: "Working",
-                                fields: {
-                                  plan: {
-                                    kind: "option",
-                                    inner: {
-                                      kind: "vec",
-                                      element: {
-                                        kind: "struct",
-                                        fields: {
-                                          description: { kind: "string" },
-                                          status: {
-                                            kind: "enum",
-                                            variants: [
-                                              { name: "Planned", fields: null },
-                                              { name: "InProgress", fields: null },
-                                              { name: "Completed", fields: null },
-                                              { name: "Failed", fields: null },
-                                            ],
+                    kind: "struct",
+                    fields: {
+                      seq: { kind: "u64" },
+                      event: {
+                        kind: "enum",
+                        variants: [
+                          {
+                            name: "BlockAppend",
+                            fields: {
+                              block_id: { kind: "struct", fields: { "0": { kind: "bytes" } } },
+                              role: {
+                                kind: "enum",
+                                variants: [
+                                  { name: "Captain", fields: null },
+                                  { name: "Mate", fields: null },
+                                ],
+                              },
+                              block: {
+                                kind: "enum",
+                                variants: [
+                                  { name: "Text", fields: { text: { kind: "string" } } },
+                                  {
+                                    name: "ToolCall",
+                                    fields: {
+                                      tool_name: { kind: "string" },
+                                      arguments: { kind: "string" },
+                                      status: {
+                                        kind: "enum",
+                                        variants: [
+                                          { name: "Running", fields: null },
+                                          { name: "Success", fields: null },
+                                          { name: "Failure", fields: null },
+                                        ],
+                                      },
+                                      result: { kind: "option", inner: { kind: "string" } },
+                                    },
+                                  },
+                                  {
+                                    name: "PlanUpdate",
+                                    fields: {
+                                      steps: {
+                                        kind: "vec",
+                                        element: {
+                                          kind: "struct",
+                                          fields: {
+                                            description: { kind: "string" },
+                                            status: {
+                                              kind: "enum",
+                                              variants: [
+                                                { name: "Planned", fields: null },
+                                                { name: "InProgress", fields: null },
+                                                { name: "Completed", fields: null },
+                                                { name: "Failed", fields: null },
+                                              ],
+                                            },
                                           },
                                         },
                                       },
                                     },
                                   },
-                                  activity: { kind: "option", inner: { kind: "string" } },
-                                },
-                              },
-                              { name: "Idle", fields: null },
-                              {
-                                name: "AwaitingPermission",
-                                fields: {
-                                  request: {
-                                    kind: "struct",
+                                  { name: "Error", fields: { message: { kind: "string" } } },
+                                  {
+                                    name: "Permission",
                                     fields: {
-                                      permission_id: { kind: "string" },
                                       tool_name: { kind: "string" },
-                                      arguments: { kind: "string" },
                                       description: { kind: "string" },
-                                    },
-                                  },
-                                },
-                              },
-                              { name: "ContextExhausted", fields: null },
-                              { name: "Error", fields: { message: { kind: "string" } } },
-                            ],
-                          },
-                        },
-                      },
-                      {
-                        name: "Content",
-                        fields: {
-                          role: {
-                            kind: "enum",
-                            variants: [
-                              { name: "Captain", fields: null },
-                              { name: "Mate", fields: null },
-                            ],
-                          },
-                          block: {
-                            kind: "enum",
-                            variants: [
-                              { name: "Text", fields: { text: { kind: "string" } } },
-                              {
-                                name: "ToolCallStart",
-                                fields: {
-                                  tool_name: { kind: "string" },
-                                  arguments: { kind: "string" },
-                                },
-                              },
-                              {
-                                name: "ToolCallDone",
-                                fields: {
-                                  tool_name: { kind: "string" },
-                                  output: { kind: "string" },
-                                  success: { kind: "bool" },
-                                },
-                              },
-                              {
-                                name: "PlanUpdate",
-                                fields: {
-                                  steps: {
-                                    kind: "vec",
-                                    element: {
-                                      kind: "struct",
-                                      fields: {
-                                        description: { kind: "string" },
-                                        status: {
+                                      arguments: { kind: "string" },
+                                      resolution: {
+                                        kind: "option",
+                                        inner: {
                                           kind: "enum",
                                           variants: [
-                                            { name: "Planned", fields: null },
-                                            { name: "InProgress", fields: null },
-                                            { name: "Completed", fields: null },
-                                            { name: "Failed", fields: null },
+                                            { name: "Approved", fields: null },
+                                            { name: "Denied", fields: null },
                                           ],
                                         },
                                       },
                                     },
                                   },
-                                },
+                                ],
                               },
-                              { name: "Error", fields: { message: { kind: "string" } } },
-                            ],
+                            },
                           },
-                        },
-                      },
-                      {
-                        name: "PermissionRequested",
-                        fields: {
-                          role: {
-                            kind: "enum",
-                            variants: [
-                              { name: "Captain", fields: null },
-                              { name: "Mate", fields: null },
-                            ],
-                          },
-                          request: {
-                            kind: "struct",
+                          {
+                            name: "BlockPatch",
                             fields: {
-                              permission_id: { kind: "string" },
-                              tool_name: { kind: "string" },
-                              arguments: { kind: "string" },
+                              block_id: { kind: "struct", fields: { "0": { kind: "bytes" } } },
+                              role: {
+                                kind: "enum",
+                                variants: [
+                                  { name: "Captain", fields: null },
+                                  { name: "Mate", fields: null },
+                                ],
+                              },
+                              patch: {
+                                kind: "enum",
+                                variants: [
+                                  { name: "TextAppend", fields: { text: { kind: "string" } } },
+                                  {
+                                    name: "ToolCallUpdate",
+                                    fields: {
+                                      status: {
+                                        kind: "enum",
+                                        variants: [
+                                          { name: "Running", fields: null },
+                                          { name: "Success", fields: null },
+                                          { name: "Failure", fields: null },
+                                        ],
+                                      },
+                                      result: { kind: "option", inner: { kind: "string" } },
+                                    },
+                                  },
+                                  {
+                                    name: "PlanReplace",
+                                    fields: {
+                                      steps: {
+                                        kind: "vec",
+                                        element: {
+                                          kind: "struct",
+                                          fields: {
+                                            description: { kind: "string" },
+                                            status: {
+                                              kind: "enum",
+                                              variants: [
+                                                { name: "Planned", fields: null },
+                                                { name: "InProgress", fields: null },
+                                                { name: "Completed", fields: null },
+                                                { name: "Failed", fields: null },
+                                              ],
+                                            },
+                                          },
+                                        },
+                                      },
+                                    },
+                                  },
+                                  {
+                                    name: "PermissionResolve",
+                                    fields: {
+                                      resolution: {
+                                        kind: "enum",
+                                        variants: [
+                                          { name: "Approved", fields: null },
+                                          { name: "Denied", fields: null },
+                                        ],
+                                      },
+                                    },
+                                  },
+                                ],
+                              },
+                            },
+                          },
+                          {
+                            name: "AgentStateChanged",
+                            fields: {
+                              role: {
+                                kind: "enum",
+                                variants: [
+                                  { name: "Captain", fields: null },
+                                  { name: "Mate", fields: null },
+                                ],
+                              },
+                              state: {
+                                kind: "enum",
+                                variants: [
+                                  {
+                                    name: "Working",
+                                    fields: {
+                                      plan: {
+                                        kind: "option",
+                                        inner: {
+                                          kind: "vec",
+                                          element: {
+                                            kind: "struct",
+                                            fields: {
+                                              description: { kind: "string" },
+                                              status: {
+                                                kind: "enum",
+                                                variants: [
+                                                  { name: "Planned", fields: null },
+                                                  { name: "InProgress", fields: null },
+                                                  { name: "Completed", fields: null },
+                                                  { name: "Failed", fields: null },
+                                                ],
+                                              },
+                                            },
+                                          },
+                                        },
+                                      },
+                                      activity: { kind: "option", inner: { kind: "string" } },
+                                    },
+                                  },
+                                  { name: "Idle", fields: null },
+                                  {
+                                    name: "AwaitingPermission",
+                                    fields: {
+                                      request: {
+                                        kind: "struct",
+                                        fields: {
+                                          permission_id: { kind: "string" },
+                                          tool_name: { kind: "string" },
+                                          arguments: { kind: "string" },
+                                          description: { kind: "string" },
+                                        },
+                                      },
+                                    },
+                                  },
+                                  { name: "ContextExhausted", fields: null },
+                                  { name: "Error", fields: { message: { kind: "string" } } },
+                                ],
+                              },
+                            },
+                          },
+                          {
+                            name: "TaskStatusChanged",
+                            fields: {
+                              task_id: { kind: "struct", fields: { "0": { kind: "bytes" } } },
+                              status: {
+                                kind: "enum",
+                                variants: [
+                                  { name: "Assigned", fields: null },
+                                  { name: "Working", fields: null },
+                                  { name: "ReviewPending", fields: null },
+                                  { name: "SteerPending", fields: null },
+                                  { name: "Accepted", fields: null },
+                                  { name: "Cancelled", fields: null },
+                                ],
+                              },
+                            },
+                          },
+                          {
+                            name: "ContextUpdated",
+                            fields: {
+                              role: {
+                                kind: "enum",
+                                variants: [
+                                  { name: "Captain", fields: null },
+                                  { name: "Mate", fields: null },
+                                ],
+                              },
+                              remaining_percent: { kind: "u8" },
+                            },
+                          },
+                          {
+                            name: "TaskStarted",
+                            fields: {
+                              task_id: { kind: "struct", fields: { "0": { kind: "bytes" } } },
                               description: { kind: "string" },
                             },
                           },
-                        },
+                        ],
                       },
-                      {
-                        name: "TaskStatusChanged",
-                        fields: {
-                          task_id: { kind: "struct", fields: { "0": { kind: "bytes" } } },
-                          status: {
-                            kind: "enum",
-                            variants: [
-                              { name: "Assigned", fields: null },
-                              { name: "Working", fields: null },
-                              { name: "ReviewPending", fields: null },
-                              { name: "SteerPending", fields: null },
-                              { name: "Accepted", fields: null },
-                              { name: "Cancelled", fields: null },
-                            ],
-                          },
-                        },
-                      },
-                      {
-                        name: "ContextUpdated",
-                        fields: {
-                          role: {
-                            kind: "enum",
-                            variants: [
-                              { name: "Captain", fields: null },
-                              { name: "Mate", fields: null },
-                            ],
-                          },
-                          remaining_percent: { kind: "u8" },
-                        },
-                      },
-                    ],
+                    },
                   },
                 },
                 { name: "ReplayComplete", fields: null },

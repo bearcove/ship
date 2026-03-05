@@ -1,10 +1,10 @@
 use roam::Tx;
 use ship_service::Ship;
 use ship_types::{
-    AgentKind, AgentSnapshot, AgentState, AutonomyMode, ContentBlock, CreateSessionRequest,
-    CreateSessionResponse, PermissionRequest, PlanStep, PlanStepStatus, ProjectInfo, ProjectName,
-    Role, SessionDetail, SessionEvent, SessionId, SessionSummary, SubscribeMessage, TaskId,
-    TaskRecord, TaskStatus,
+    AgentKind, AgentSnapshot, AgentState, AutonomyMode, BlockId, ContentBlock,
+    CreateSessionRequest, CreateSessionResponse, PlanStep, PlanStepStatus, ProjectInfo,
+    ProjectName, Role, SessionDetail, SessionEvent, SessionEventEnvelope, SessionId,
+    SessionSummary, SubscribeMessage, TaskId, TaskRecord, TaskStatus,
 };
 use ulid::Ulid;
 
@@ -156,37 +156,60 @@ impl Ship for FakeShip {
 
     async fn subscribe_events(&self, _session: SessionId, output: Tx<SubscribeMessage>) {
         let task_id = Self::fake_task_id();
-        let permission = PermissionRequest {
-            permission_id: "perm_fake_1".to_owned(),
-            tool_name: "exec_command".to_owned(),
-            arguments: "{\"cmd\":\"cargo check --workspace\"}".to_owned(),
-            description: "Run workspace check".to_owned(),
-        };
+        let text_block_id = BlockId(Ulid::new());
+        let permission_block_id = BlockId(Ulid::new());
 
         let replay_events = vec![
-            SessionEvent::TaskStatusChanged {
-                task_id: task_id.clone(),
-                status: TaskStatus::Working,
-            },
-            SessionEvent::AgentStateChanged {
-                role: Role::Mate,
-                state: AgentState::Working {
-                    plan: Some(vec![PlanStep {
-                        description: "Implement FakeShip".to_owned(),
-                        status: PlanStepStatus::Completed,
-                    }]),
-                    activity: Some("Writing server scaffolding".to_owned()),
+            SessionEventEnvelope {
+                seq: 0,
+                event: SessionEvent::TaskStarted {
+                    task_id: task_id.clone(),
+                    description: "Implement fake Ship service and wire a roam websocket server"
+                        .to_owned(),
                 },
             },
-            SessionEvent::Content {
-                role: Role::Mate,
-                block: ContentBlock::Text {
-                    text: "Implemented fake ship service and websocket wiring".to_owned(),
+            SessionEventEnvelope {
+                seq: 1,
+                event: SessionEvent::TaskStatusChanged {
+                    task_id: task_id.clone(),
+                    status: TaskStatus::Working,
                 },
             },
-            SessionEvent::PermissionRequested {
-                role: Role::Mate,
-                request: permission,
+            SessionEventEnvelope {
+                seq: 2,
+                event: SessionEvent::AgentStateChanged {
+                    role: Role::Mate,
+                    state: AgentState::Working {
+                        plan: Some(vec![PlanStep {
+                            description: "Implement FakeShip".to_owned(),
+                            status: PlanStepStatus::Completed,
+                        }]),
+                        activity: Some("Writing server scaffolding".to_owned()),
+                    },
+                },
+            },
+            SessionEventEnvelope {
+                seq: 3,
+                event: SessionEvent::BlockAppend {
+                    block_id: text_block_id,
+                    role: Role::Mate,
+                    block: ContentBlock::Text {
+                        text: "Implemented fake ship service and websocket wiring".to_owned(),
+                    },
+                },
+            },
+            SessionEventEnvelope {
+                seq: 4,
+                event: SessionEvent::BlockAppend {
+                    block_id: permission_block_id,
+                    role: Role::Mate,
+                    block: ContentBlock::Permission {
+                        tool_name: "exec_command".to_owned(),
+                        description: "Run workspace check".to_owned(),
+                        arguments: "{\"cmd\":\"cargo check --workspace\"}".to_owned(),
+                        resolution: None,
+                    },
+                },
             },
         ];
 
@@ -200,9 +223,12 @@ impl Ship for FakeShip {
             return;
         }
 
-        let live_event = SessionEvent::TaskStatusChanged {
-            task_id,
-            status: TaskStatus::ReviewPending,
+        let live_event = SessionEventEnvelope {
+            seq: 5,
+            event: SessionEvent::TaskStatusChanged {
+                task_id,
+                status: TaskStatus::ReviewPending,
+            },
         };
         let _ = output.send(SubscribeMessage::Event(live_event)).await;
         let _ = output.close(Default::default()).await;

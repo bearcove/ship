@@ -4,9 +4,10 @@ use std::path::{Path, PathBuf};
 
 use futures_util::StreamExt;
 use ship_types::{
-    AgentSnapshot, AgentState, AutonomyMode, ContentBlock, CreateSessionRequest, CurrentTask,
-    PermissionRequest, PersistedSession, Role, SessionConfig, SessionEvent, SessionId,
-    SessionSummary, TaskContentRecord, TaskId, TaskRecord, TaskStatus,
+    AgentSnapshot, AgentState, AutonomyMode, BlockId, BlockPatch, ContentBlock,
+    CreateSessionRequest, CurrentTask, PermissionRequest, PermissionResolution, PersistedSession,
+    Role, SessionConfig, SessionEvent, SessionEventEnvelope, SessionId, SessionSummary,
+    TaskContentRecord, TaskId, TaskRecord, TaskStatus,
 };
 use tokio::sync::broadcast;
 use ulid::Ulid;
@@ -50,8 +51,11 @@ impl std::error::Error for SessionManagerError {}
 
 #[derive(Debug, Clone)]
 pub struct PendingPermission {
+    pub block_id: BlockId,
     pub role: Role,
-    pub request: PermissionRequest,
+    pub tool_name: String,
+    pub arguments: String,
+    pub description: String,
 }
 
 #[derive(Debug, Clone)]
@@ -67,7 +71,8 @@ pub struct ActiveSession {
     pub task_history: Vec<TaskRecord>,
     pub pending_permissions: HashMap<String, PendingPermission>,
     pub pending_steer: Option<String>,
-    pub events_tx: broadcast::Sender<SessionEvent>,
+    pub events_tx: broadcast::Sender<SessionEventEnvelope>,
+    pub next_event_seq: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -159,6 +164,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             pending_permissions: HashMap::new(),
             pending_steer: None,
             events_tx,
+            next_event_seq: 0,
         };
 
         self.sessions.insert(session_id.clone(), session);
@@ -213,7 +219,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
     pub fn subscribe(
         &self,
         session_id: &SessionId,
-    ) -> Result<broadcast::Receiver<SessionEvent>, SessionManagerError> {
+    ) -> Result<broadcast::Receiver<SessionEventEnvelope>, SessionManagerError> {
         let session = self
             .sessions
             .get(session_id)
@@ -271,6 +277,13 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
 
             emit_event(
                 session,
+                SessionEvent::TaskStarted {
+                    task_id: task_id.clone(),
+                    description: description.clone(),
+                },
+            );
+            emit_event(
+                session,
                 SessionEvent::TaskStatusChanged {
                     task_id: task_id.clone(),
                     status: TaskStatus::Assigned,
@@ -326,7 +339,8 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
 
             emit_event(
                 session,
-                SessionEvent::Content {
+                SessionEvent::BlockAppend {
+                    block_id: BlockId(Ulid::new()),
                     role: Role::Captain,
                     block: ContentBlock::Text {
                         text: message.clone(),
@@ -425,7 +439,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         &mut self,
         session_id: &SessionId,
         permission_id: &str,
-        _approved: bool,
+        approved: bool,
     ) -> Result<(), SessionManagerError> {
         let session = self
             .sessions
@@ -443,6 +457,20 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             AgentState::Working {
                 plan: None,
                 activity: Some("Permission resolved".to_owned()),
+            },
+        );
+        emit_event(
+            session,
+            SessionEvent::BlockPatch {
+                block_id: pending.block_id,
+                role: pending.role,
+                patch: BlockPatch::PermissionResolve {
+                    resolution: if approved {
+                        PermissionResolution::Approved
+                    } else {
+                        PermissionResolution::Denied
+                    },
+                },
             },
         );
 
@@ -659,36 +687,72 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
 // r[resilience.state-in-backend]
 fn emit_event(session: &mut ActiveSession, event: SessionEvent) {
     match &event {
-        SessionEvent::AgentStateChanged { role, state } => match role {
-            Role::Captain => session.captain.state = state.clone(),
-            Role::Mate => session.mate.state = state.clone(),
-        },
-        SessionEvent::Content { role, block } => {
+        SessionEvent::BlockAppend {
+            block_id,
+            role,
+            block,
+        } => {
             if let Some(task) = session.current_task.as_mut() {
                 task.content_history.push(TaskContentRecord {
+                    block_id: block_id.clone(),
                     role: *role,
                     block: block.clone(),
                 });
             }
-        }
-        SessionEvent::PermissionRequested { role, request } => {
-            session.pending_permissions.insert(
-                request.permission_id.clone(),
-                PendingPermission {
-                    role: *role,
-                    request: request.clone(),
-                },
-            );
 
-            let state = AgentState::AwaitingPermission {
-                request: request.clone(),
-            };
-            match role {
-                Role::Captain => session.captain.state = state,
-                Role::Mate => session.mate.state = state,
+            if let ContentBlock::Permission {
+                tool_name,
+                arguments,
+                description,
+                ..
+            } = block
+            {
+                let permission_id = block_id.0.to_string();
+                session.pending_permissions.insert(
+                    permission_id.clone(),
+                    PendingPermission {
+                        block_id: block_id.clone(),
+                        role: *role,
+                        tool_name: tool_name.clone(),
+                        arguments: arguments.clone(),
+                        description: description.clone(),
+                    },
+                );
+
+                let state = AgentState::AwaitingPermission {
+                    request: PermissionRequest {
+                        permission_id,
+                        tool_name: tool_name.clone(),
+                        arguments: arguments.clone(),
+                        description: description.clone(),
+                    },
+                };
+                match role {
+                    Role::Captain => session.captain.state = state,
+                    Role::Mate => session.mate.state = state,
+                }
             }
         }
+        SessionEvent::BlockPatch {
+            block_id,
+            role: _,
+            patch,
+        } => {
+            if let Some(task) = session.current_task.as_mut()
+                && let Some(record) = task
+                    .content_history
+                    .iter_mut()
+                    .find(|record| record.block_id == *block_id)
+            {
+                apply_block_patch(&mut record.block, patch);
+            }
+        }
+        SessionEvent::AgentStateChanged { role, state } => match role {
+            Role::Captain => session.captain.state = state.clone(),
+            Role::Mate => session.mate.state = state.clone(),
+        },
         SessionEvent::TaskStatusChanged { .. } => {}
+        SessionEvent::TaskStarted { .. } => {}
         SessionEvent::ContextUpdated {
             role,
             remaining_percent,
@@ -698,7 +762,47 @@ fn emit_event(session: &mut ActiveSession, event: SessionEvent) {
         },
     }
 
-    let _ = session.events_tx.send(event);
+    let envelope = SessionEventEnvelope {
+        seq: session.next_event_seq,
+        event,
+    };
+    session.next_event_seq = session.next_event_seq.saturating_add(1);
+    let _ = session.events_tx.send(envelope);
+}
+
+fn apply_block_patch(block: &mut ContentBlock, patch: &BlockPatch) {
+    match patch {
+        BlockPatch::TextAppend { text } => {
+            if let ContentBlock::Text { text: existing } = block {
+                existing.push_str(text);
+            }
+        }
+        BlockPatch::ToolCallUpdate { status, result } => {
+            if let ContentBlock::ToolCall {
+                status: existing_status,
+                result: existing_result,
+                ..
+            } = block
+            {
+                *existing_status = *status;
+                *existing_result = result.clone();
+            }
+        }
+        BlockPatch::PlanReplace { steps } => {
+            if let ContentBlock::PlanUpdate { steps: existing } = block {
+                *existing = steps.clone();
+            }
+        }
+        BlockPatch::PermissionResolve { resolution } => {
+            if let ContentBlock::Permission {
+                resolution: existing_resolution,
+                ..
+            } = block
+            {
+                *existing_resolution = Some(*resolution);
+            }
+        }
+    }
 }
 
 // r[task.progress]
