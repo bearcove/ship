@@ -154,8 +154,8 @@ UI and block until the human approves or denies.
 
 r[acp.client.session-notification]
 Ship MUST implement `session_notification` to receive `SessionUpdate`s from
-the agent, including `AgentMessageChunk`, `ToolCallStart`, `ToolCallDone`,
-`PlanUpdate`, and other update types.
+the agent, including `AgentMessageChunk`, `ToolCall`, `ToolCallUpdate`,
+`Plan`, and other update types.
 
 r[acp.client.terminal-create]
 Ship MUST implement `create_terminal` to execute commands in the session's
@@ -677,8 +677,10 @@ reinitialize the agent.
 ### Plan Steps
 
 r[agent-state.plan-step]
-Each plan step MUST have a description and a status (planned, in-progress,
-completed, or failed).
+Each plan step MUST have a description, a priority (high, medium, low), and
+a status: `Pending`, `InProgress`, `Completed`, or `Failed`. These map from
+ACP's `PlanEntryStatus` (`Pending`, `InProgress`, `Completed`) with `Failed`
+added by Ship for steps that errored.
 
 ### Snapshot
 
@@ -794,9 +796,11 @@ not distinguish between replayed and live events.
 
 r[event.envelope]
 Every event sent to the frontend MUST be wrapped in a `SessionEvent` envelope
-containing: a monotonically increasing sequence number (`seq`), the originating
-agent role, and the event payload. The sequence number is per-session and
-starts at 0 for each new task. Replay events use the original sequence numbers.
+containing: a monotonically increasing sequence number (`seq`), and the event
+payload. The sequence number is per-session, starts at 0 when the session is
+created, and never resets — it increases across task boundaries. Replay events
+use the original sequence numbers. Events that are scoped to a role include
+the role in their payload; the envelope itself is role-agnostic.
 
 r[event.ordering]
 Events MUST be delivered in sequence order. If the frontend receives an event
@@ -813,10 +817,10 @@ block. The frontend uses this ID as the React key and as the index into its
 block store.
 
 r[event.block-id.tool-call]
-For tool calls, the `BlockId` MUST be derived deterministically from the ACP
-`ToolCallId` (e.g., by hashing or namespacing). This ensures that the initial
-`ToolCall` notification and all subsequent `ToolCallUpdate` notifications map
-to the same Ship block.
+For tool calls, the backend MUST generate a fresh `BlockId` (ULID) on the
+first `ToolCall` notification and maintain a `ToolCallId -> BlockId` lookup
+map for the duration of the task. Subsequent `ToolCallUpdate` notifications
+are matched to their block via this map.
 
 r[event.block-id.text]
 For agent text, the backend MUST accumulate consecutive `AgentMessageChunk`
@@ -831,9 +835,9 @@ on the first `Plan` notification and reused for all subsequent plan updates
 from the same agent within the same task.
 
 r[event.block-id.permission]
-Permission request blocks MUST use a block ID derived from the ACP
-`ToolCallId` in the `RequestPermissionRequest`. This links the permission
-visually to the tool call that triggered it.
+Permission request blocks MUST get a fresh `BlockId` (ULID). The block MUST
+also store the `ToolCallId` from the ACP `RequestPermissionRequest` so the
+frontend can visually associate it with the related tool call block.
 
 ### Event Types
 
@@ -881,6 +885,18 @@ The system MUST emit `ContextUpdated` events when an agent's context usage
 changes, including the role and remaining percentage. This is a top-level
 event.
 
+r[event.task-started]
+The system MUST emit a `TaskStarted` event when a new task is assigned. The
+payload includes the task ID and task description. On receiving this, the
+frontend MUST clear both block stores. The sequence number does NOT reset —
+it continues from the session's current value.
+
+r[event.replay-complete]
+The system MUST emit a `ReplayComplete` event after all replay events have
+been sent for a new subscriber. The payload is empty. This allows the frontend
+to transition from "loading history" to "live". `ReplayComplete` has a
+sequence number like any other event and is part of the event log.
+
 ### Content Block Types
 
 r[event.content-block.types]
@@ -896,8 +912,8 @@ Ship MUST support the following content block types, mapped from ACP
   optional `result`, optional `output`.
 - `Plan` — the agent's execution plan. Created on first ACP `Plan`
   notification, replaced in full on subsequent ones. Fields: `steps: Vec<PlanStep>`
-  where each step has `description`, `status` (pending/in-progress/completed/failed),
-  and `priority` (high/medium/low).
+  where each step has `description`, `status` (`Pending`/`InProgress`/`Completed`/`Failed`),
+  and `priority` (`High`/`Medium`/`Low`).
 - `Error` — an error message. Created when the backend detects an agent error
   condition. Fields: `message: String`.
 - `Permission` — a permission request from an agent. Created from ACP
@@ -926,10 +942,9 @@ If the block ID is not found (e.g., due to a missed event), the frontend
 MUST re-subscribe to get a full replay.
 
 r[event.store.clear-on-new-task]
-When a new task is assigned, the backend MUST emit a `TaskStarted` event
-(a top-level event, not a block event). On receiving this, the frontend MUST
-clear both block stores and the sequence counter. The new task's events start
-from sequence 0.
+On receiving a `TaskStarted` event (per `event.task-started`), the frontend
+MUST clear both block stores. The sequence counter is NOT reset — it
+continues increasing for the lifetime of the session.
 
 r[event.store.immutable-updates]
 Block store updates MUST use immutable data patterns (new object references
@@ -939,21 +954,25 @@ mutate block objects in place.
 ### Replay Semantics
 
 r[event.replay.same-events]
-Replay MUST send the same `BlockAppend` and `BlockPatch` events that were
-originally emitted, in order. The frontend processes them identically to
-live events. There is no special "replay mode" — the store is built from
-events regardless of whether they are replayed or live.
+For v1, replay MUST send the same `BlockAppend`, `BlockPatch`, and top-level
+events that were originally emitted, in the same order, with the same
+sequence numbers. The frontend processes them with the same reducer as live
+events. There is no special "replay mode" — the block store is built from
+events regardless of source.
+
+r[event.replay.followed-by-marker]
+After all replayed events have been sent, the backend MUST send a
+`ReplayComplete` event (per `event.replay-complete`). This is the signal
+that the frontend has caught up. The frontend SHOULD show a loading indicator
+until `ReplayComplete` is received.
 
 r[event.replay.snapshot-optimization]
-As a future optimization, the backend MAY send a single `Snapshot` event
-containing the full block store state instead of replaying individual events.
-This is not required for v1.
-
-r[event.replay.marker]
-The backend MUST send a `ReplayComplete` top-level event after all replay
-events have been sent. This allows the frontend to distinguish between
-"still loading history" and "caught up to live". The frontend MAY show a
-loading indicator until `ReplayComplete` is received.
+As a post-v1 optimization, the backend MAY replace event-by-event replay
+with a single `Snapshot` event containing the materialized block store state
+and the current sequence number. If implemented, `Snapshot` MUST be followed
+by `ReplayComplete` and the frontend MUST handle `Snapshot` as an alternative
+to processing individual events. This is NOT required for v1 and MUST NOT be
+implemented until the event-by-event replay is proven to be a bottleneck.
 
 ### Client-Side Session State
 
@@ -990,8 +1009,8 @@ The reducer MUST handle at minimum:
 - `AgentStateChanged` → update `captainState` or `mateState`
 - `TaskStatusChanged` → update `taskStatus`
 - `ContextUpdated` → update `captainContext` or `mateContext`
-- `TaskStarted` → clear both block stores, reset `lastSeq`, set new
-  `taskId` and `taskStatus`
+- `TaskStarted` (per `event.task-started`) → clear both block stores, set
+  new `taskId` and `taskStatus`. `lastSeq` is NOT reset.
 - `ReplayComplete` → set `replayComplete` to true
 
 r[event.client.reducer-purity]
@@ -1613,12 +1632,13 @@ r[ui.block.tool-call.search]
 Search/grep tool calls MUST show the query in the collapsed line and match
 results as a list of file:line snippets in the expanded view.
 
-### Content Block: Plan Update
+### Content Block: Plan
 
 r[ui.block.plan.layout]
-Plan updates MUST be rendered as an ordered list within a `Card`. Each step
-shows its description and a status icon: planned (circle outline), in-progress
-(`Spinner`), completed (check icon, green), failed (X icon, red).
+Plan blocks MUST be rendered as an ordered list within a `Card`. Each step
+shows its description, priority, and a status icon: `Pending` (circle
+outline), `InProgress` (`Spinner`), `Completed` (check icon, green), `Failed`
+(X icon, red).
 
 r[ui.block.plan.position]
 Plan updates MUST replace the previous plan in the stream, not append. Only
@@ -1627,8 +1647,8 @@ top of the agent panel's scroll area (below the header), not inline with
 other content blocks.
 
 r[ui.block.plan.filtering]
-The frontend MUST filter `PlanUpdate` content blocks out of the chronological
-event stream. They arrive as `ContentBlock` events (per
+The frontend MUST filter `Plan` blocks out of the chronological event stream.
+They arrive as `BlockAppend`/`BlockPatch` events (per
 `event.content-block.types`) but render in the sticky plan area, not in the
 scroll feed. All other content block types render in the chronological stream.
 
