@@ -13,19 +13,11 @@ import { connectWs } from "@bearcove/roam-ws";
 import { Tx, Rx, bindChannels } from "@bearcove/roam-core";
 
 // Named type definitions
-export interface ProjectName {
-  0: string;
-}
-
 export interface ProjectInfo {
-  name: ProjectName;
+  name: string;
   path: string;
   valid: boolean;
   invalid_reason: string | null;
-}
-
-export interface SessionId {
-  0: unknown;
 }
 
 export type Role = { tag: "Captain" } | { tag: "Mate" };
@@ -75,8 +67,8 @@ export type TaskStatus =
 export type AutonomyMode = { tag: "HumanInTheLoop" } | { tag: "Autonomous" };
 
 export interface SessionSummary {
-  id: SessionId;
-  project: ProjectName;
+  id: string;
+  project: string;
   branch_name: string;
   captain: AgentSnapshot;
   mate: AgentSnapshot;
@@ -85,19 +77,15 @@ export interface SessionSummary {
   autonomy_mode: AutonomyMode;
 }
 
-export interface TaskId {
-  0: unknown;
-}
-
 export interface TaskRecord {
-  id: TaskId;
+  id: string;
   description: string;
   status: TaskStatus;
 }
 
 export interface SessionDetail {
-  id: SessionId;
-  project: ProjectName;
+  id: string;
+  project: string;
   branch_name: string;
   captain: AgentSnapshot;
   mate: AgentSnapshot;
@@ -108,7 +96,7 @@ export interface SessionDetail {
 }
 
 export interface CreateSessionRequest {
-  project: ProjectName;
+  project: string;
   captain_kind: AgentKind;
   mate_kind: AgentKind;
   base_branch: string;
@@ -116,12 +104,8 @@ export interface CreateSessionRequest {
 }
 
 export interface CreateSessionResponse {
-  session_id: SessionId;
-  task_id: TaskId;
-}
-
-export interface BlockId {
-  0: unknown;
+  session_id: string;
+  task_id: string;
 }
 
 export type ToolCallStatus = { tag: "Running" } | { tag: "Success" } | { tag: "Failure" };
@@ -154,12 +138,12 @@ export type BlockPatch =
   | { tag: "PermissionResolve"; resolution: PermissionResolution };
 
 export type SessionEvent =
-  | { tag: "BlockAppend"; block_id: BlockId; role: Role; block: ContentBlock }
-  | { tag: "BlockPatch"; block_id: BlockId; role: Role; patch: BlockPatch }
+  | { tag: "BlockAppend"; block_id: string; role: Role; block: ContentBlock }
+  | { tag: "BlockPatch"; block_id: string; role: Role; patch: BlockPatch }
   | { tag: "AgentStateChanged"; role: Role; state: AgentState }
-  | { tag: "TaskStatusChanged"; task_id: TaskId; status: TaskStatus }
+  | { tag: "TaskStatusChanged"; task_id: string; status: TaskStatus }
   | { tag: "ContextUpdated"; role: Role; remaining_percent: number }
-  | { tag: "TaskStarted"; task_id: TaskId; description: string };
+  | { tag: "TaskStarted"; task_id: string; description: string };
 
 export interface SessionEventEnvelope {
   seq: bigint;
@@ -177,51 +161,51 @@ export type ListProjectsResponse = ProjectInfo[];
 export type AddProjectRequest = [string];
 export type AddProjectResponse = ProjectInfo;
 
-export type ListBranchesRequest = [ProjectName];
+export type ListBranchesRequest = [string];
 export type ListBranchesResponse = string[];
 
 export type ListSessionsRequest = [];
 export type ListSessionsResponse = SessionSummary[];
 
-export type GetSessionRequest = [SessionId];
+export type GetSessionRequest = [string];
 export type GetSessionResponse = SessionDetail;
 
 export type AssignRequest = [
-  SessionId, // session
+  string, // session
   string, // description
 ];
-export type AssignResponse = TaskId;
+export type AssignResponse = string;
 
 export type SteerRequest = [
-  SessionId, // session
+  string, // session
   string, // content
 ];
 export type SteerResponse = void;
 
-export type AcceptRequest = [SessionId];
+export type AcceptRequest = [string];
 export type AcceptResponse = void;
 
-export type CancelRequest = [SessionId];
+export type CancelRequest = [string];
 export type CancelResponse = void;
 
 export type ResolvePermissionRequest = [
-  SessionId, // session
+  string, // session
   string, // permission_id
   boolean, // approved
 ];
 export type ResolvePermissionResponse = void;
 
 export type RetryAgentRequest = [
-  SessionId, // session
+  string, // session
   Role, // role
 ];
 export type RetryAgentResponse = void;
 
-export type CloseSessionRequest = [SessionId];
+export type CloseSessionRequest = [string];
 export type CloseSessionResponse = void;
 
 export type SubscribeEventsRequest = [
-  SessionId, // session
+  string, // session
   Tx<SubscribeMessage>, // output
 ];
 export type SubscribeEventsResponse = void;
@@ -230,18 +214,18 @@ export type SubscribeEventsResponse = void;
 export interface ShipCaller {
   listProjects(): CallBuilder<ProjectInfo[]>;
   addProject(path: string): CallBuilder<ProjectInfo>;
-  listBranches(project: ProjectName): CallBuilder<string[]>;
+  listBranches(project: string): CallBuilder<string[]>;
   listSessions(): CallBuilder<SessionSummary[]>;
-  getSession(id: SessionId): CallBuilder<SessionDetail>;
+  getSession(id: string): CallBuilder<SessionDetail>;
   createSession(req: CreateSessionRequest): CallBuilder<CreateSessionResponse>;
-  assign(session: SessionId, description: string): CallBuilder<TaskId>;
-  steer(session: SessionId, content: string): CallBuilder<void>;
-  accept(session: SessionId): CallBuilder<void>;
-  cancel(session: SessionId): CallBuilder<void>;
-  resolvePermission(session: SessionId, permissionId: string, approved: boolean): CallBuilder<void>;
-  retryAgent(session: SessionId, role: Role): CallBuilder<void>;
-  closeSession(id: SessionId): CallBuilder<void>;
-  subscribeEvents(session: SessionId, output: Tx<SubscribeMessage>): CallBuilder<void>;
+  assign(session: string, description: string): CallBuilder<string>;
+  steer(session: string, content: string): CallBuilder<void>;
+  accept(session: string): CallBuilder<void>;
+  cancel(session: string): CallBuilder<void>;
+  resolvePermission(session: string, permissionId: string, approved: boolean): CallBuilder<void>;
+  retryAgent(session: string, role: Role): CallBuilder<void>;
+  closeSession(id: string): CallBuilder<void>;
+  subscribeEvents(session: string, output: Tx<SubscribeMessage>): CallBuilder<void>;
 }
 
 // Client implementation for Ship
@@ -278,7 +262,7 @@ export class ShipClient implements ShipCaller {
     });
   }
 
-  listBranches(project: ProjectName): CallBuilder<string[]> {
+  listBranches(project: string): CallBuilder<string[]> {
     const descriptor = ship_descriptor.methods[2];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
@@ -304,7 +288,7 @@ export class ShipClient implements ShipCaller {
     });
   }
 
-  getSession(id: SessionId): CallBuilder<SessionDetail> {
+  getSession(id: string): CallBuilder<SessionDetail> {
     const descriptor = ship_descriptor.methods[4];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
@@ -330,7 +314,7 @@ export class ShipClient implements ShipCaller {
     });
   }
 
-  assign(session: SessionId, description: string): CallBuilder<TaskId> {
+  assign(session: string, description: string): CallBuilder<string> {
     const descriptor = ship_descriptor.methods[6];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
@@ -339,11 +323,11 @@ export class ShipClient implements ShipCaller {
         descriptor,
         metadata,
       });
-      return value as TaskId;
+      return value as string;
     });
   }
 
-  steer(session: SessionId, content: string): CallBuilder<void> {
+  steer(session: string, content: string): CallBuilder<void> {
     const descriptor = ship_descriptor.methods[7];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
@@ -356,7 +340,7 @@ export class ShipClient implements ShipCaller {
     });
   }
 
-  accept(session: SessionId): CallBuilder<void> {
+  accept(session: string): CallBuilder<void> {
     const descriptor = ship_descriptor.methods[8];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
@@ -369,7 +353,7 @@ export class ShipClient implements ShipCaller {
     });
   }
 
-  cancel(session: SessionId): CallBuilder<void> {
+  cancel(session: string): CallBuilder<void> {
     const descriptor = ship_descriptor.methods[9];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
@@ -382,11 +366,7 @@ export class ShipClient implements ShipCaller {
     });
   }
 
-  resolvePermission(
-    session: SessionId,
-    permissionId: string,
-    approved: boolean,
-  ): CallBuilder<void> {
+  resolvePermission(session: string, permissionId: string, approved: boolean): CallBuilder<void> {
     const descriptor = ship_descriptor.methods[10];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
@@ -399,7 +379,7 @@ export class ShipClient implements ShipCaller {
     });
   }
 
-  retryAgent(session: SessionId, role: Role): CallBuilder<void> {
+  retryAgent(session: string, role: Role): CallBuilder<void> {
     const descriptor = ship_descriptor.methods[11];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
@@ -412,7 +392,7 @@ export class ShipClient implements ShipCaller {
     });
   }
 
-  closeSession(id: SessionId): CallBuilder<void> {
+  closeSession(id: string): CallBuilder<void> {
     const descriptor = ship_descriptor.methods[12];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
@@ -425,7 +405,7 @@ export class ShipClient implements ShipCaller {
     });
   }
 
-  subscribeEvents(session: SessionId, output: Tx<SubscribeMessage>): CallBuilder<void> {
+  subscribeEvents(session: string, output: Tx<SubscribeMessage>): CallBuilder<void> {
     const descriptor = ship_descriptor.methods[13];
     // Bind any Tx/Rx channels in arguments and collect channel IDs
     const channels = bindChannels(
@@ -462,22 +442,18 @@ export async function connectShip(url: string): Promise<ShipClient> {
 export interface ShipHandler {
   listProjects(): Promise<ProjectInfo[]> | ProjectInfo[];
   addProject(path: string): Promise<ProjectInfo> | ProjectInfo;
-  listBranches(project: ProjectName): Promise<string[]> | string[];
+  listBranches(project: string): Promise<string[]> | string[];
   listSessions(): Promise<SessionSummary[]> | SessionSummary[];
-  getSession(id: SessionId): Promise<SessionDetail> | SessionDetail;
+  getSession(id: string): Promise<SessionDetail> | SessionDetail;
   createSession(req: CreateSessionRequest): Promise<CreateSessionResponse> | CreateSessionResponse;
-  assign(session: SessionId, description: string): Promise<TaskId> | TaskId;
-  steer(session: SessionId, content: string): Promise<void> | void;
-  accept(session: SessionId): Promise<void> | void;
-  cancel(session: SessionId): Promise<void> | void;
-  resolvePermission(
-    session: SessionId,
-    permissionId: string,
-    approved: boolean,
-  ): Promise<void> | void;
-  retryAgent(session: SessionId, role: Role): Promise<void> | void;
-  closeSession(id: SessionId): Promise<void> | void;
-  subscribeEvents(session: SessionId, output: Tx<SubscribeMessage>): Promise<void> | void;
+  assign(session: string, description: string): Promise<string> | string;
+  steer(session: string, content: string): Promise<void> | void;
+  accept(session: string): Promise<void> | void;
+  cancel(session: string): Promise<void> | void;
+  resolvePermission(session: string, permissionId: string, approved: boolean): Promise<void> | void;
+  retryAgent(session: string, role: Role): Promise<void> | void;
+  closeSession(id: string): Promise<void> | void;
+  subscribeEvents(session: string, output: Tx<SubscribeMessage>): Promise<void> | void;
 }
 
 // Dispatcher for Ship
@@ -489,80 +465,80 @@ export class ShipDispatcher implements ChannelingDispatcher {
   }
 
   async dispatch(method: MethodDescriptor, args: unknown[], call: RoamCall): Promise<void> {
-    if (method.id === 0xa5b4937a64883dc8n) {
+    if (method.id === 0x22e89bd72c12574bn) {
       try {
         const result = await this.handler.listProjects();
         call.reply(result);
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0xbd6eaece0990c902n) {
+    } else if (method.id === 0x9398b29059cfa397n) {
       try {
         const result = await this.handler.addProject(args[0] as string);
         call.reply(result);
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0x7d072ee25b6e5ea3n) {
+    } else if (method.id === 0x36b0b821ec7f6b99n) {
       try {
-        const result = await this.handler.listBranches(args[0] as ProjectName);
+        const result = await this.handler.listBranches(args[0] as string);
         call.reply(result);
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0x5dcaf17cc35a4f2dn) {
+    } else if (method.id === 0xe77963f9da704cd5n) {
       try {
         const result = await this.handler.listSessions();
         call.reply(result);
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0xfc8d15113521ce86n) {
+    } else if (method.id === 0xfd868e9e62fb1869n) {
       try {
-        const result = await this.handler.getSession(args[0] as SessionId);
+        const result = await this.handler.getSession(args[0] as string);
         call.reply(result);
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0xa7e84c1d66fc9802n) {
+    } else if (method.id === 0x490e8a15a18ccb11n) {
       try {
         const result = await this.handler.createSession(args[0] as CreateSessionRequest);
         call.reply(result);
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0x02ec40406fe29f40n) {
+    } else if (method.id === 0x9b5f26f2ac00a14an) {
       try {
-        const result = await this.handler.assign(args[0] as SessionId, args[1] as string);
+        const result = await this.handler.assign(args[0] as string, args[1] as string);
         call.reply(result);
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0xe4b547a9f3048b9bn) {
+    } else if (method.id === 0x21e2296a9bb91730n) {
       try {
-        const result = await this.handler.steer(args[0] as SessionId, args[1] as string);
+        const result = await this.handler.steer(args[0] as string, args[1] as string);
         call.reply(result);
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0x15ff3c978bc3f24bn) {
+    } else if (method.id === 0xd293cd072371466an) {
       try {
-        const result = await this.handler.accept(args[0] as SessionId);
+        const result = await this.handler.accept(args[0] as string);
         call.reply(result);
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0xdf8b40f4fcd46ea9n) {
+    } else if (method.id === 0xb90b1d80f1c6c835n) {
       try {
-        const result = await this.handler.cancel(args[0] as SessionId);
+        const result = await this.handler.cancel(args[0] as string);
         call.reply(result);
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0xfcb07bbbefafe8d2n) {
+    } else if (method.id === 0xcd9793a976d5e931n) {
       try {
         const result = await this.handler.resolvePermission(
-          args[0] as SessionId,
+          args[0] as string,
           args[1] as string,
           args[2] as boolean,
         );
@@ -570,24 +546,24 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0xb6cebbef426d16a7n) {
+    } else if (method.id === 0x4eecc5ac9ec294c0n) {
       try {
-        const result = await this.handler.retryAgent(args[0] as SessionId, args[1] as Role);
+        const result = await this.handler.retryAgent(args[0] as string, args[1] as Role);
         call.reply(result);
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0x290ba1763d07a770n) {
+    } else if (method.id === 0x52fd008eebb7186an) {
       try {
-        const result = await this.handler.closeSession(args[0] as SessionId);
+        const result = await this.handler.closeSession(args[0] as string);
         call.reply(result);
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0x7e2e71c3d949fb71n) {
+    } else if (method.id === 0x800bc919b6940c03n) {
       try {
         const result = await this.handler.subscribeEvents(
-          args[0] as SessionId,
+          args[0] as string,
           args[1] as Tx<SubscribeMessage>,
         );
         (args[1] as { close(): void }).close(); // close output before reply
@@ -605,7 +581,7 @@ export const ship_descriptor: ServiceDescriptor = {
   methods: [
     {
       name: "listProjects",
-      id: 0xa5b4937a64883dc8n,
+      id: 0x22e89bd72c12574bn,
       args: { kind: "tuple", elements: [] },
       result: {
         kind: "enum",
@@ -617,7 +593,7 @@ export const ship_descriptor: ServiceDescriptor = {
               element: {
                 kind: "struct",
                 fields: {
-                  name: { kind: "struct", fields: { "0": { kind: "string" } } },
+                  name: { kind: "string" },
                   path: { kind: "string" },
                   valid: { kind: "bool" },
                   invalid_reason: { kind: "option", inner: { kind: "string" } },
@@ -642,7 +618,7 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: "addProject",
-      id: 0xbd6eaece0990c902n,
+      id: 0x9398b29059cfa397n,
       args: { kind: "tuple", elements: [{ kind: "string" }] },
       result: {
         kind: "enum",
@@ -652,7 +628,7 @@ export const ship_descriptor: ServiceDescriptor = {
             fields: {
               kind: "struct",
               fields: {
-                name: { kind: "struct", fields: { "0": { kind: "string" } } },
+                name: { kind: "string" },
                 path: { kind: "string" },
                 valid: { kind: "bool" },
                 invalid_reason: { kind: "option", inner: { kind: "string" } },
@@ -676,8 +652,8 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: "listBranches",
-      id: 0x7d072ee25b6e5ea3n,
-      args: { kind: "tuple", elements: [{ kind: "struct", fields: { "0": { kind: "string" } } }] },
+      id: 0x36b0b821ec7f6b99n,
+      args: { kind: "tuple", elements: [{ kind: "string" }] },
       result: {
         kind: "enum",
         variants: [
@@ -699,7 +675,7 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: "listSessions",
-      id: 0x5dcaf17cc35a4f2dn,
+      id: 0xe77963f9da704cd5n,
       args: { kind: "tuple", elements: [] },
       result: {
         kind: "enum",
@@ -711,8 +687,8 @@ export const ship_descriptor: ServiceDescriptor = {
               element: {
                 kind: "struct",
                 fields: {
-                  id: { kind: "struct", fields: { "0": { kind: "bytes" } } },
-                  project: { kind: "struct", fields: { "0": { kind: "string" } } },
+                  id: { kind: "string" },
+                  project: { kind: "string" },
                   branch_name: { kind: "string" },
                   captain: {
                     kind: "struct",
@@ -895,8 +871,8 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: "getSession",
-      id: 0xfc8d15113521ce86n,
-      args: { kind: "tuple", elements: [{ kind: "struct", fields: { "0": { kind: "bytes" } } }] },
+      id: 0xfd868e9e62fb1869n,
+      args: { kind: "tuple", elements: [{ kind: "string" }] },
       result: {
         kind: "enum",
         variants: [
@@ -905,8 +881,8 @@ export const ship_descriptor: ServiceDescriptor = {
             fields: {
               kind: "struct",
               fields: {
-                id: { kind: "struct", fields: { "0": { kind: "bytes" } } },
-                project: { kind: "struct", fields: { "0": { kind: "string" } } },
+                id: { kind: "string" },
+                project: { kind: "string" },
                 branch_name: { kind: "string" },
                 captain: {
                   kind: "struct",
@@ -1051,7 +1027,7 @@ export const ship_descriptor: ServiceDescriptor = {
                   inner: {
                     kind: "struct",
                     fields: {
-                      id: { kind: "struct", fields: { "0": { kind: "bytes" } } },
+                      id: { kind: "string" },
                       description: { kind: "string" },
                       status: {
                         kind: "enum",
@@ -1072,7 +1048,7 @@ export const ship_descriptor: ServiceDescriptor = {
                   element: {
                     kind: "struct",
                     fields: {
-                      id: { kind: "struct", fields: { "0": { kind: "bytes" } } },
+                      id: { kind: "string" },
                       description: { kind: "string" },
                       status: {
                         kind: "enum",
@@ -1116,14 +1092,14 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: "createSession",
-      id: 0xa7e84c1d66fc9802n,
+      id: 0x490e8a15a18ccb11n,
       args: {
         kind: "tuple",
         elements: [
           {
             kind: "struct",
             fields: {
-              project: { kind: "struct", fields: { "0": { kind: "string" } } },
+              project: { kind: "string" },
               captain_kind: {
                 kind: "enum",
                 variants: [
@@ -1151,10 +1127,7 @@ export const ship_descriptor: ServiceDescriptor = {
             name: "Ok",
             fields: {
               kind: "struct",
-              fields: {
-                session_id: { kind: "struct", fields: { "0": { kind: "bytes" } } },
-                task_id: { kind: "struct", fields: { "0": { kind: "bytes" } } },
-              },
+              fields: { session_id: { kind: "string" }, task_id: { kind: "string" } },
             },
           },
           {
@@ -1174,15 +1147,12 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: "assign",
-      id: 0x02ec40406fe29f40n,
-      args: {
-        kind: "tuple",
-        elements: [{ kind: "struct", fields: { "0": { kind: "bytes" } } }, { kind: "string" }],
-      },
+      id: 0x9b5f26f2ac00a14an,
+      args: { kind: "tuple", elements: [{ kind: "string" }, { kind: "string" }] },
       result: {
         kind: "enum",
         variants: [
-          { name: "Ok", fields: { kind: "struct", fields: { "0": { kind: "bytes" } } } },
+          { name: "Ok", fields: { kind: "string" } },
           {
             name: "Err",
             fields: {
@@ -1200,11 +1170,8 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: "steer",
-      id: 0xe4b547a9f3048b9bn,
-      args: {
-        kind: "tuple",
-        elements: [{ kind: "struct", fields: { "0": { kind: "bytes" } } }, { kind: "string" }],
-      },
+      id: 0x21e2296a9bb91730n,
+      args: { kind: "tuple", elements: [{ kind: "string" }, { kind: "string" }] },
       result: {
         kind: "enum",
         variants: [
@@ -1226,8 +1193,8 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: "accept",
-      id: 0x15ff3c978bc3f24bn,
-      args: { kind: "tuple", elements: [{ kind: "struct", fields: { "0": { kind: "bytes" } } }] },
+      id: 0xd293cd072371466an,
+      args: { kind: "tuple", elements: [{ kind: "string" }] },
       result: {
         kind: "enum",
         variants: [
@@ -1249,8 +1216,8 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: "cancel",
-      id: 0xdf8b40f4fcd46ea9n,
-      args: { kind: "tuple", elements: [{ kind: "struct", fields: { "0": { kind: "bytes" } } }] },
+      id: 0xb90b1d80f1c6c835n,
+      args: { kind: "tuple", elements: [{ kind: "string" }] },
       result: {
         kind: "enum",
         variants: [
@@ -1272,15 +1239,8 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: "resolvePermission",
-      id: 0xfcb07bbbefafe8d2n,
-      args: {
-        kind: "tuple",
-        elements: [
-          { kind: "struct", fields: { "0": { kind: "bytes" } } },
-          { kind: "string" },
-          { kind: "bool" },
-        ],
-      },
+      id: 0xcd9793a976d5e931n,
+      args: { kind: "tuple", elements: [{ kind: "string" }, { kind: "string" }, { kind: "bool" }] },
       result: {
         kind: "enum",
         variants: [
@@ -1302,11 +1262,11 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: "retryAgent",
-      id: 0xb6cebbef426d16a7n,
+      id: 0x4eecc5ac9ec294c0n,
       args: {
         kind: "tuple",
         elements: [
-          { kind: "struct", fields: { "0": { kind: "bytes" } } },
+          { kind: "string" },
           {
             kind: "enum",
             variants: [
@@ -1337,8 +1297,8 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: "closeSession",
-      id: 0x290ba1763d07a770n,
-      args: { kind: "tuple", elements: [{ kind: "struct", fields: { "0": { kind: "bytes" } } }] },
+      id: 0x52fd008eebb7186an,
+      args: { kind: "tuple", elements: [{ kind: "string" }] },
       result: {
         kind: "enum",
         variants: [
@@ -1360,11 +1320,11 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: "subscribeEvents",
-      id: 0x7e2e71c3d949fb71n,
+      id: 0x800bc919b6940c03n,
       args: {
         kind: "tuple",
         elements: [
-          { kind: "struct", fields: { "0": { kind: "bytes" } } },
+          { kind: "string" },
           {
             kind: "tx",
             element: {
@@ -1382,7 +1342,7 @@ export const ship_descriptor: ServiceDescriptor = {
                           {
                             name: "BlockAppend",
                             fields: {
-                              block_id: { kind: "struct", fields: { "0": { kind: "bytes" } } },
+                              block_id: { kind: "string" },
                               role: {
                                 kind: "enum",
                                 variants: [
@@ -1459,7 +1419,7 @@ export const ship_descriptor: ServiceDescriptor = {
                           {
                             name: "BlockPatch",
                             fields: {
-                              block_id: { kind: "struct", fields: { "0": { kind: "bytes" } } },
+                              block_id: { kind: "string" },
                               role: {
                                 kind: "enum",
                                 variants: [
@@ -1588,7 +1548,7 @@ export const ship_descriptor: ServiceDescriptor = {
                           {
                             name: "TaskStatusChanged",
                             fields: {
-                              task_id: { kind: "struct", fields: { "0": { kind: "bytes" } } },
+                              task_id: { kind: "string" },
                               status: {
                                 kind: "enum",
                                 variants: [
@@ -1618,7 +1578,7 @@ export const ship_descriptor: ServiceDescriptor = {
                           {
                             name: "TaskStarted",
                             fields: {
-                              task_id: { kind: "struct", fields: { "0": { kind: "bytes" } } },
+                              task_id: { kind: "string" },
                               description: { kind: "string" },
                             },
                           },
