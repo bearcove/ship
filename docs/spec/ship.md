@@ -211,6 +211,13 @@ A `ship-types` crate MUST define all shared types: identifiers (`SessionId`,
 (`SessionEvent`), and request/response structs. This crate MUST NOT depend on
 any runtime or framework crates.
 
+r[crate.ship-core]
+A `ship-core` crate MUST define the testability traits (`AgentDriver`,
+`WorktreeOps`, `SessionStore`) and the core session/task management logic.
+This crate depends on `ship-types` and `futures-core`. It MUST NOT depend on
+tokio or any specific async runtime. It uses async fn in traits (AFIT) for
+the driver traits.
+
 r[crate.ship-service]
 A `ship-service` crate MUST define the roam service trait (`Ship`) and its
 request/response types. This crate depends on `ship-types` and roam.
@@ -448,8 +455,10 @@ The protocol MUST support a `list_sessions` operation that returns summaries
 of all active sessions.
 
 r[proto.assign]
-The protocol MUST support an `assign` operation where the captain assigns a
-task to the mate, returning a `TaskId`.
+The protocol MUST support an `assign` operation where the human assigns a new
+task to the session, returning a `TaskId`. On assignment, the backend first
+prompts the captain for direction (per `captain.initial-prompt`), then prompts
+the mate with the task description plus the captain's direction.
 
 r[proto.steer]
 The protocol MUST support a `steer` operation where the captain provides
@@ -771,7 +780,9 @@ signal acceptance (task complete).
 
 r[captain.no-filesystem]
 The captain agent MUST NOT be configured with filesystem or terminal ACP
-capabilities. It reviews output, it does not execute.
+capabilities. It reviews output, it does not execute. The captain does have
+access to Ship's MCP tools (`ship_steer`, `ship_accept`, `ship_reject`) —
+these are MCP tools, not ACP filesystem/terminal capabilities.
 
 ### Captain Tools
 
@@ -790,13 +801,28 @@ transitions the task to accepted.
 
 r[captain.tool.reject]
 The captain MUST have access to a `ship_reject` tool that takes a `reason`
-argument (string). When the captain calls this tool, the backend cancels the
-task with the given reason.
+argument (string) and a `message` argument (string). Rejection means the
+captain believes the current approach is fundamentally wrong. The backend
+cancels the mate's in-progress prompt (if any) via ACP `cancel`, transitions
+the task to `Cancelled` with the reason, and surfaces the captain's message
+to the human. The human can then assign a new task with a different approach.
+This is the same codepath as `proto.cancel` — the only difference is the
+initiator (captain vs human) and that the captain provides a reason.
 
 r[captain.tool.implementation]
 Captain tools MUST be implemented as MCP tools served by Ship itself. The
 captain's `NewSessionRequest` MUST include Ship's MCP server in its
 `mcp_servers` list so the captain can discover and call these tools.
+
+r[captain.tool.transport]
+Ship MUST expose its captain MCP tools via a per-captain stdio proxy. For each
+captain agent, Ship spawns a pair of connected pipes: one end is passed to the
+captain's `NewSessionRequest` as a stdio MCP server entry (command + args that
+the agent will "spawn" — but it's actually the other end of the pipe pair held
+by Ship). Ship reads MCP requests from the pipe, handles `ship_steer`,
+`ship_accept`, and `ship_reject` calls, and writes MCP responses back. This
+avoids needing a network listener — the captain connects to Ship's MCP server
+the same way it connects to any other stdio MCP server.
 
 ### Captain Review Cycle
 
@@ -810,6 +836,22 @@ In human-in-the-loop mode, when the captain calls `ship_steer`, the backend
 MUST present the steer to the human for approval before forwarding to the
 mate. The human can approve as-is, edit the steer before sending, or discard
 it and write their own.
+
+### Human Direct Steer
+
+r[captain.human-override]
+When the human sends a steer directly (bypassing the captain), the backend
+MUST inject the human's steer text into the captain's context for the next
+review cycle. The captain MUST be informed that the human overrode its
+direction — the injection MUST include a note like "The human sent this steer
+directly to the mate, overriding your recommendation." The captain then
+reviews the mate's output as normal after the mate finishes.
+
+r[captain.human-override.cancel-pending]
+If the captain had a pending steer (in `SteerPending` state) when the human
+sends a direct steer, the captain's pending steer MUST be discarded. The
+task transitions from `SteerPending` to `Working` as the mate processes the
+human's steer.
 
 ## Mate Role
 
@@ -840,6 +882,13 @@ to the frontend in real time via the session event stream.
 r[mate.output.persisted]
 Mate output for each task MUST be persisted so it can be reviewed after the
 fact and survives browser reloads.
+
+r[captain.output.persisted]
+Captain output (steer text, review comments, tool calls) MUST be persisted
+alongside mate output. Both agents' content blocks are included in the event
+replay (per `event.subscribe.replay`). If the browser reloads during a steer
+review, the captain's proposed steer MUST survive and be re-presented to the
+human.
 
 ## Approvals
 
@@ -1054,6 +1103,11 @@ agent kind (`SegmentedControl`: Claude | Codex), mate agent kind
 (`SegmentedControl`), base branch (`Select` populated from git branches), and
 initial task description (`TextArea`).
 
+r[ui.session-list.nav]
+Each session `Card` MUST be a clickable link (using react-router `Link`)
+that navigates to `/sessions/{session_id}`. The entire card surface MUST be
+the click target, not a separate "View" button.
+
 r[ui.session-list.status-colors]
 Task status badges MUST use these Radix color scales: `Assigned` → gray,
 `Working` → blue, `ReviewPending` → amber, `SteerPending` → orange,
@@ -1150,6 +1204,12 @@ the latest plan is visible. It MUST be rendered as a sticky element at the
 top of the agent panel's scroll area (below the header), not inline with
 other content blocks.
 
+r[ui.block.plan.filtering]
+The frontend MUST filter `PlanUpdate` content blocks out of the chronological
+event stream. They arrive as `ContentBlock` events (per
+`event.content-block.types`) but render in the sticky plan area, not in the
+scroll feed. All other content block types render in the chronological stream.
+
 ### Content Block: Error
 
 r[ui.block.error]
@@ -1220,6 +1280,11 @@ Task bar actions depend on task status:
 - `Idle` (no active task) → "New Task" `Button` (solid, blue) which opens a
   `Dialog` with a `TextArea`
 
+r[ui.task-bar.new-task]
+The "New Task" button in idle state MUST call `proto.assign` with the task
+description from the dialog. This is the same operation used at session
+creation — there is no separate "subsequent task" operation.
+
 r[ui.task-bar.history]
 A "History" `IconButton` MUST open a `Popover` showing the session's completed
 tasks as a `DataList` with task descriptions, statuses, and timestamps.
@@ -1273,11 +1338,33 @@ The Radix `Theme` provider MUST be configured with: `appearance="dark"`,
 `accentColor="iris"`, `grayColor="slate"`, `radius="medium"`,
 `scaling="100%"`.
 
+r[ui.theme.dark-only]
+Ship is dark mode only. There MUST NOT be a theme switcher or light mode
+support. The `appearance` prop is hardcoded to `"dark"`.
+
 r[ui.theme.font]
 The app MUST use a monospace font stack for all code-related content (diffs,
 terminal output, tool arguments) and the system sans-serif stack for UI text.
 Font configuration MUST be applied via vanilla-extract global styles, not
 Radix theme overrides.
+
+### Keyboard Shortcuts
+
+r[ui.keys.permission]
+When a permission request is focused or the most recent pending request,
+pressing `Enter` MUST approve it and `Escape` MUST deny it.
+
+r[ui.keys.steer-send]
+In the steer review card and the "write your own steer" dialog, `Cmd+Enter`
+(macOS) / `Ctrl+Enter` (other platforms) MUST submit the steer.
+
+r[ui.keys.cancel]
+`Escape` MUST close any open `Dialog` or `Popover` (this is Radix default
+behavior, listed here for completeness).
+
+r[ui.keys.nav]
+`1` and `2` MUST switch focus between the captain and mate panels when no
+text input is focused.
 
 ## Testability
 
@@ -1309,8 +1396,11 @@ fakes.
 
 r[testability.trait-location]
 Testability traits (`AgentDriver`, `WorktreeOps`, `SessionStore`) MUST be
-defined in the `ship-types` crate so they are available to all crates without
-pulling in runtime dependencies.
+defined in a `ship-core` crate, not in `ship-types`. The `ship-core` crate
+depends on `ship-types` for the shared types and is allowed to depend on
+`futures-core` (for `Stream`) and use Rust async fn in traits (AFIT). It
+MUST NOT depend on tokio or any specific runtime. The `ship-server` crate
+depends on `ship-core` and provides the real implementations.
 
 ## Cost Tracking
 
