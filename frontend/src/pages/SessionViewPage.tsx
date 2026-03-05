@@ -28,6 +28,7 @@ function getIdleMessage(session: SessionDetail): string | null {
   return null;
 }
 
+// r[view.session]
 // r[ui.layout.session-view]
 export function SessionViewPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -56,6 +57,7 @@ export function SessionViewPage() {
           {session.project}
         </Text>
         <Text className={sessionBranch}>{session.branch_name}</Text>
+        {/* r[ui.autonomy.toggle] */}
         <Flex align="center" gap="2">
           <Text size="2">Autonomous</Text>
           <Switch size="2" checked={autonomous} onCheckedChange={setAutonomous} />

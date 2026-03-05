@@ -306,7 +306,11 @@ function AddProjectDialog({
     setSubmitting(true);
     try {
       const client = await shipClient;
-      await client.addProject(path);
+      const result = await client.addProject(path);
+      if (!result.valid) {
+        setError(result.invalid_reason ?? "Unknown validation error");
+        return;
+      }
       onOpenChange(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -359,6 +363,7 @@ function AddProjectDialog({
   );
 }
 
+// r[view.session-list]
 // r[ui.session-list.layout]
 export function SessionListPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -468,6 +473,7 @@ export function SessionListPage() {
         </Flex>
       ) : (
         <Flex direction="column" gap="3">
+          {/* r[ui.session-list.nav] */}
           {sessions.map((session) => (
             <Link
               key={session.id}
