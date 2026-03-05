@@ -30,7 +30,8 @@ Worktrees are **persistent** — don't remove them between passes.
    cd ~/bearcove/ship-backend && git rebase main
    ```
 4. **Between merges**: coordinator does a tracey annotation pass on main, commits, pushes.
-5. Agents rebase onto main before starting new work.
+5. Before dispatching any new prompt, coordinator rebases both agent worktrees onto the current `main` so they contain the latest docs, bug files, generated types, and coordinator-side changes.
+6. Agents then start new work from those rebased worktrees.
 
 ## What lives where
 
@@ -62,3 +63,4 @@ Done by the coordinator on main, between agent merges. Steps:
 - AGENTS.md and docs/ are safe to edit on main.
 - Tracey annotation passes happen between merges, not during agent work.
 - Always read the spec before writing annotations. Don't guess rule IDs.
+- If the coordinator adds or changes files that agent prompts depend on (for example bug tracker files, docs, or generated artifacts), the coordinator must rebase the agent worktrees before sending those prompts.
