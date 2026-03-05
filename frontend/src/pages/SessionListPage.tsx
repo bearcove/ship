@@ -1,5 +1,5 @@
-import { useState, useMemo } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useState, useMemo, useEffect } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   Badge,
   Box,
@@ -116,6 +116,10 @@ function BranchCombobox({
   const [query, setQuery] = useState(value);
   const [open, setOpen] = useState(false);
 
+  useEffect(() => {
+    setQuery(value);
+  }, [value]);
+
   const filtered = useMemo(
     () => branches.filter((b) => b.toLowerCase().includes(query.toLowerCase())).slice(0, 8),
     [branches, query],
@@ -188,6 +192,7 @@ function NewSessionDialog({
   onOpenChange: (o: boolean) => void;
   preselectedProject?: string;
 }) {
+  const navigate = useNavigate();
   const projects = useProjects().filter((p) => p.valid);
   const discovery = useAgentDiscovery();
 
@@ -199,12 +204,17 @@ function NewSessionDialog({
   const [taskDescription, setTaskDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  // r[ui.session-list.create.branch-filter]
+  useEffect(() => {
+    setBranch("main");
+  }, [projectName]);
+
   async function handleCreate() {
     if (!projectName || !taskDescription.trim()) return;
     setSubmitting(true);
     try {
       const client = await shipClient;
-      await client.createSession({
+      const result = await client.createSession({
         project: projectName,
         captain_kind: captainKind,
         mate_kind: mateKind,
@@ -212,6 +222,7 @@ function NewSessionDialog({
         task_description: taskDescription,
       });
       onOpenChange(false);
+      navigate(`/sessions/${result.session_id}`);
     } finally {
       setSubmitting(false);
     }
