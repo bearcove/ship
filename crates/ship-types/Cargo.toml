@@ -10,4 +10,4 @@ rustdoc-args = ["--html-in-header", "arborium-header.html"]
 
 [dependencies]
 ulid = { workspace = true }
-# TODO(dep.facet): add `facet` derive/core dependencies for shared type serialization.
+facet = { workspace = true }

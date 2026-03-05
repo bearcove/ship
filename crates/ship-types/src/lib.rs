@@ -1,33 +1,36 @@
 pub mod ids {
     // r[proto.id.session]
-    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    #[derive(Debug, Clone, PartialEq, Eq, Hash, facet::Facet)]
     pub struct SessionId(pub ulid::Ulid);
 
     // r[proto.id.task]
-    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    #[derive(Debug, Clone, PartialEq, Eq, Hash, facet::Facet)]
     pub struct TaskId(pub ulid::Ulid);
 
     // r[proto.id.project]
-    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    #[derive(Debug, Clone, PartialEq, Eq, Hash, facet::Facet)]
     pub struct ProjectName(pub String);
 }
 
 pub mod agent {
     // r[session.agent.kind]
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[repr(u8)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, facet::Facet)]
     pub enum AgentKind {
         Claude,
         Codex,
     }
 
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[repr(u8)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, facet::Facet)]
     pub enum Role {
         Captain,
         Mate,
     }
 
     // r[agent-state.plan-step]
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[repr(u8)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, facet::Facet)]
     pub enum PlanStepStatus {
         Planned,
         InProgress,
@@ -35,14 +38,14 @@ pub mod agent {
         Failed,
     }
 
-    #[derive(Debug, Clone, PartialEq, Eq)]
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub struct PlanStep {
         pub description: String,
         pub status: PlanStepStatus,
     }
 
     // r[approval.request.content]
-    #[derive(Debug, Clone, PartialEq, Eq)]
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub struct PermissionRequest {
         pub permission_id: String,
         pub tool_name: String,
@@ -51,7 +54,8 @@ pub mod agent {
     }
 
     // r[agent-state.derived]
-    #[derive(Debug, Clone, PartialEq, Eq)]
+    #[repr(u8)]
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub enum AgentState {
         Working {
             plan: Option<Vec<PlanStep>>,
@@ -68,7 +72,7 @@ pub mod agent {
     }
 
     // r[agent-state.snapshot]
-    #[derive(Debug, Clone, PartialEq, Eq)]
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub struct AgentSnapshot {
         pub role: Role,
         pub kind: AgentKind,
@@ -81,7 +85,8 @@ pub mod task {
     use crate::ids::TaskId;
 
     // r[task.status.enum]
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[repr(u8)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, facet::Facet)]
     pub enum TaskStatus {
         Assigned,
         Working,
@@ -98,7 +103,7 @@ pub mod task {
         }
     }
 
-    #[derive(Debug, Clone, PartialEq, Eq)]
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub struct TaskRecord {
         pub id: TaskId,
         pub description: String,
@@ -112,7 +117,8 @@ pub mod events {
     use crate::{AgentState, TaskId};
 
     // r[event.content-block.types]
-    #[derive(Debug, Clone, PartialEq, Eq)]
+    #[repr(u8)]
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub enum ContentBlock {
         Text {
             text: String,
@@ -135,7 +141,8 @@ pub mod events {
     }
 
     // r[event.subscribe]
-    #[derive(Debug, Clone, PartialEq, Eq)]
+    #[repr(u8)]
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub enum SessionEvent {
         AgentStateChanged {
             role: Role,
@@ -158,22 +165,31 @@ pub mod events {
             remaining_percent: u8,
         },
     }
+
+    // r[event.subscribe.roam-channel]
+    #[repr(u8)]
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub enum SubscribeMessage {
+        Event(SessionEvent),
+        ReplayComplete,
+    }
 }
 
 pub mod protocol {
     use crate::agent::{AgentKind, AgentSnapshot};
     use crate::ids::{ProjectName, SessionId};
-    use crate::task::TaskStatus;
+    use crate::task::{TaskRecord, TaskStatus};
 
     // r[autonomy.toggle]
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[repr(u8)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, facet::Facet)]
     pub enum AutonomyMode {
         HumanInTheLoop,
         Autonomous,
     }
 
     // r[session.create]
-    #[derive(Debug, Clone, PartialEq, Eq)]
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub struct CreateSessionRequest {
         pub project: ProjectName,
         pub captain_kind: AgentKind,
@@ -182,8 +198,24 @@ pub mod protocol {
         pub task_description: String,
     }
 
+    // r[proto.create-session]
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct CreateSessionResponse {
+        pub session_id: SessionId,
+        pub task_id: crate::ids::TaskId,
+    }
+
+    // r[proto.list-projects]
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct ProjectInfo {
+        pub name: ProjectName,
+        pub path: String,
+        pub valid: bool,
+        pub invalid_reason: Option<String>,
+    }
+
     // r[session.list]
-    #[derive(Debug, Clone, PartialEq, Eq)]
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub struct SessionSummary {
         pub id: SessionId,
         pub project: ProjectName,
@@ -193,6 +225,20 @@ pub mod protocol {
         pub current_task_description: Option<String>,
         pub task_status: Option<TaskStatus>,
         pub autonomy_mode: AutonomyMode,
+    }
+
+    // r[proto.get-session]
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct SessionDetail {
+        pub id: SessionId,
+        pub project: ProjectName,
+        pub branch_name: String,
+        pub captain: AgentSnapshot,
+        pub mate: AgentSnapshot,
+        pub current_task: Option<TaskRecord>,
+        pub task_history: Vec<TaskRecord>,
+        pub autonomy_mode: AutonomyMode,
+        pub pending_steer: Option<String>,
     }
 }
 
@@ -241,8 +287,11 @@ pub mod persistence {
 pub use agent::{
     AgentKind, AgentSnapshot, AgentState, PermissionRequest, PlanStep, PlanStepStatus, Role,
 };
-pub use events::{ContentBlock, SessionEvent};
+pub use events::{ContentBlock, SessionEvent, SubscribeMessage};
 pub use ids::{ProjectName, SessionId, TaskId};
 pub use persistence::{CurrentTask, PersistedSession, SessionConfig, TaskContentRecord};
-pub use protocol::{AutonomyMode, CreateSessionRequest, SessionSummary};
+pub use protocol::{
+    AutonomyMode, CreateSessionRequest, CreateSessionResponse, ProjectInfo, SessionDetail,
+    SessionSummary,
+};
 pub use task::{TaskRecord, TaskStatus};

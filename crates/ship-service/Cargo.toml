@@ -9,5 +9,5 @@ edition = "2024"
 rustdoc-args = ["--html-in-header", "arborium-header.html"]
 
 [dependencies]
-# TODO(dep.ship-types): add when service trait is defined
-# TODO(dep.roam): add `roam` for Ship service trait and RPC transport bindings.
+ship-types = { path = "../ship-types" }
+roam = { workspace = true }
