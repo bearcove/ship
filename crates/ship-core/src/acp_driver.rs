@@ -17,6 +17,7 @@ use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 use crate::acp_client::ShipAcpClient;
 use crate::{AgentDriver, AgentError, AgentHandle, PromptResponse, SessionId, StopReason};
+use crate::{SystemBinaryPathProbe, resolve_agent_launcher};
 
 struct AcpHandle {
     command_tx: mpsc::UnboundedSender<DriverCommand>,
@@ -280,10 +281,17 @@ async fn run_acp_worker(
     notifications_tx: mpsc::UnboundedSender<SessionEvent>,
     ready_tx: oneshot::Sender<Result<(), String>>,
 ) -> Result<(), AgentError> {
-    let mut command = match kind {
-        ship_types::AgentKind::Claude => Command::new("claude-agent-acp"),
-        ship_types::AgentKind::Codex => Command::new("codex-acp"),
-    };
+    let launcher = resolve_agent_launcher(kind, &SystemBinaryPathProbe).ok_or_else(|| {
+        let kind_name = match kind {
+            ship_types::AgentKind::Claude => "Claude",
+            ship_types::AgentKind::Codex => "Codex",
+        };
+        AgentError {
+            message: format!("no supported ACP launcher found for {kind_name}"),
+        }
+    })?;
+
+    let mut command = command_for_launcher(launcher);
 
     let mut child = command
         .current_dir(&worktree_path)
@@ -395,6 +403,12 @@ async fn run_acp_worker(
     Ok(())
 }
 
+fn command_for_launcher(launcher: crate::AgentLauncher) -> Command {
+    let mut command = Command::new(launcher.program);
+    command.args(launcher.args);
+    command
+}
+
 fn map_prompt_response(response: agent_client_protocol::PromptResponse) -> PromptResponse {
     PromptResponse {
         stop_reason: match response.stop_reason {
@@ -412,5 +426,83 @@ fn map_prompt_response(response: agent_client_protocol::PromptResponse) -> Promp
 fn acp_error(error: Error) -> AgentError {
     AgentError {
         message: error.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ship_types::AgentKind;
+
+    use super::command_for_launcher;
+    use crate::{AgentLauncher, BinaryPathProbe, resolve_agent_launcher};
+
+    #[derive(Clone, Copy)]
+    struct FakeProbe {
+        claude: bool,
+        codex: bool,
+        npx: bool,
+    }
+
+    impl BinaryPathProbe for FakeProbe {
+        fn is_available(&self, binary: &str) -> bool {
+            match binary {
+                "claude-agent-acp" => self.claude,
+                "codex-acp" => self.codex,
+                "npx" => self.npx,
+                other => panic!("unexpected binary lookup: {other}"),
+            }
+        }
+    }
+
+    // r[verify acp.binary.claude]
+    #[test]
+    fn spawn_command_uses_claude_launcher_resolution() {
+        let launcher = resolve_agent_launcher(
+            AgentKind::Claude,
+            &FakeProbe {
+                claude: false,
+                codex: false,
+                npx: true,
+            },
+        )
+        .expect("claude launcher should resolve");
+
+        let command = command_for_launcher(launcher);
+
+        assert_eq!(command.as_std().get_program(), "npx");
+        assert_eq!(
+            command.as_std().get_args().collect::<Vec<_>>(),
+            vec!["@zed-industries/claude-agent-acp"]
+        );
+    }
+
+    // r[verify acp.binary.codex]
+    #[test]
+    fn spawn_command_uses_codex_launcher_resolution() {
+        let launcher = resolve_agent_launcher(
+            AgentKind::Codex,
+            &FakeProbe {
+                claude: false,
+                codex: true,
+                npx: true,
+            },
+        )
+        .expect("codex launcher should resolve");
+
+        let command = command_for_launcher(launcher);
+
+        assert_eq!(command.as_std().get_program(), "codex-acp");
+        assert_eq!(command.as_std().get_args().count(), 0);
+    }
+
+    #[test]
+    fn command_builder_preserves_launcher_program_and_args() {
+        let command = command_for_launcher(AgentLauncher::new("npx", &["pkg", "--flag"]));
+
+        assert_eq!(command.as_std().get_program(), "npx");
+        assert_eq!(
+            command.as_std().get_args().collect::<Vec<_>>(),
+            vec!["pkg", "--flag"]
+        );
     }
 }

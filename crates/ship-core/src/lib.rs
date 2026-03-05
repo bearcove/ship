@@ -1,5 +1,6 @@
 mod acp_client;
 mod acp_driver;
+mod acp_launcher;
 mod fakes;
 mod git_worktree;
 mod json_store;
@@ -15,6 +16,9 @@ use futures_core::Stream;
 use ship_types::{AgentKind, PersistedSession, Role, SessionEvent, SessionId};
 
 pub use acp_driver::AcpAgentDriver;
+pub use acp_launcher::{
+    AgentLauncher, BinaryPathProbe, SystemBinaryPathProbe, discover_agents, resolve_agent_launcher,
+};
 pub use fakes::{
     FakeAgentDriver, FakePromptScript, FakeSessionStore, FakeWorktreeOps, SpawnRecord,
 };

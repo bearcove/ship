@@ -13,14 +13,19 @@ from the agent.
 ### Agent Binaries
 
 r[acp.binary.claude]
-For Claude agents, Ship MUST spawn the `claude-agent-acp` binary
-(`@zed-industries/claude-agent-acp` npm package). This is a Node.js process
-that wraps the Claude Agent SDK as an ACP agent.
+For Claude agents, Ship MUST support launching either the
+`claude-agent-acp` binary directly or, when `npx` is available, the npm
+package `@zed-industries/claude-agent-acp` via `npx`. Ship MUST resolve one
+concrete launch command and argument list before spawning so discovery and
+launch use the same strategy. This agent is a Node.js process that wraps the
+Claude Agent SDK as an ACP agent.
 
 r[acp.binary.codex]
-For Codex agents, Ship MUST spawn the `codex-acp` binary
-(`zed-industries/codex-acp` Rust crate). This is a native process that wraps
-codex-rs as an ACP agent.
+For Codex agents, Ship MUST support launching either the `codex-acp` binary
+directly or, when `npx` is available, the npm package
+`@zed-industries/codex-acp` via `npx`. Ship MUST resolve one concrete launch
+command and argument list before spawning so discovery and launch use the
+same strategy. This agent wraps codex-rs as an ACP agent.
 
 ### Subprocess Lifecycle
 
@@ -422,11 +427,14 @@ The Discord webhook URL MUST be configurable via the `SHIP_DISCORD_WEBHOOK`
 environment variable. If unset, Discord notifications are disabled.
 
 r[server.agent-discovery]
-On startup, Ship MUST check whether `claude-agent-acp` and `codex-acp`
-binaries are available on `PATH`. The availability of each agent kind MUST
-be surfaced in the create-session dialog — unavailable agent kinds MUST be
-disabled with a `Tooltip` explaining what's missing (e.g., "codex-acp not
-found on PATH").
+On startup, Ship MUST discover agent availability from the same launcher
+resolution it uses for spawning. Claude is available when either
+`claude-agent-acp` is on `PATH`, or `npx` is on `PATH` and Ship supports
+launching `@zed-industries/claude-agent-acp`. Codex is available when either
+`codex-acp` is on `PATH`, or `npx` is on `PATH` and Ship supports launching
+`@zed-industries/codex-acp`. The availability of each agent kind MUST be
+surfaced in the create-session dialog — unavailable agent kinds MUST be
+disabled with a `Tooltip` explaining what's missing.
 
 ## Testability
 
