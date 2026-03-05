@@ -1,3 +1,4 @@
+mod agent_discovery;
 mod ship_impl;
 
 use std::io::Write;
@@ -6,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::Duration;
 
+use agent_discovery::{SystemBinaryPathProbe, discover_agents};
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::extract::{Request, State};
@@ -118,6 +120,7 @@ async fn run_serve(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
     wait_for_tcp_readiness(vite_addr, Duration::from_secs(10)).await?;
 
     let frontend_mode = load_frontend_mode(vite_addr);
+    let agent_discovery = discover_agents(&SystemBinaryPathProbe);
     // r[server.config-dir]
     let mut project_registry = ProjectRegistry::load_default().await?;
     // r[project.validation]
@@ -127,7 +130,7 @@ async fn run_serve(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
     let sessions_dir = project_registry.config_dir().join("sessions");
     let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let state = AppState {
-        ship: ShipImpl::new(project_registry, sessions_dir, repo_root),
+        ship: ShipImpl::new(project_registry, sessions_dir, repo_root, agent_discovery),
         http_client: reqwest::Client::new(),
         frontend_mode,
     };

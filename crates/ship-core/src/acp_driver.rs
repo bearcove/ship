@@ -281,11 +281,7 @@ async fn run_acp_worker(
     ready_tx: oneshot::Sender<Result<(), String>>,
 ) -> Result<(), AgentError> {
     let mut command = match kind {
-        ship_types::AgentKind::Claude => {
-            let mut command = Command::new("npx");
-            command.arg("@zed-industries/claude-agent-acp");
-            command
-        }
+        ship_types::AgentKind::Claude => Command::new("claude-agent-acp"),
         ship_types::AgentKind::Codex => Command::new("codex-acp"),
     };
 

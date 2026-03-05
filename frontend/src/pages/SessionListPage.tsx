@@ -102,6 +102,20 @@ function AgentKindControl({
   );
 }
 
+function isAgentKindAvailable(kind: AgentKind, discovery: { claude: boolean; codex: boolean }) {
+  return kind.tag === "Claude" ? discovery.claude : discovery.codex;
+}
+
+function firstAvailableAgentKind(discovery: { claude: boolean; codex: boolean }): AgentKind | null {
+  if (discovery.claude) {
+    return { tag: "Claude" };
+  }
+  if (discovery.codex) {
+    return { tag: "Codex" };
+  }
+  return null;
+}
+
 // r[ui.session-list.create.branch-filter]
 function BranchCombobox({
   projectName,
@@ -209,6 +223,20 @@ function NewSessionDialog({
     setBranch("main");
   }, [projectName]);
 
+  useEffect(() => {
+    const fallbackKind = firstAvailableAgentKind(discovery);
+    if (!fallbackKind) {
+      return;
+    }
+
+    if (!isAgentKindAvailable(captainKind, discovery)) {
+      setCaptainKind(fallbackKind);
+    }
+    if (!isAgentKindAvailable(mateKind, discovery)) {
+      setMateKind(fallbackKind);
+    }
+  }, [captainKind, mateKind, discovery]);
+
   async function handleCreate() {
     if (!projectName || !taskDescription.trim()) return;
     setSubmitting(true);
@@ -227,6 +255,13 @@ function NewSessionDialog({
       setSubmitting(false);
     }
   }
+
+  const createDisabled =
+    !projectName ||
+    !taskDescription.trim() ||
+    submitting ||
+    !isAgentKindAvailable(captainKind, discovery) ||
+    !isAgentKindAvailable(mateKind, discovery);
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -288,11 +323,7 @@ function NewSessionDialog({
                 Cancel
               </Button>
             </Dialog.Close>
-            <Button
-              disabled={!projectName || !taskDescription.trim() || submitting}
-              loading={submitting}
-              onClick={handleCreate}
-            >
+            <Button disabled={createDisabled} loading={submitting} onClick={handleCreate}>
               Create Session
             </Button>
           </Flex>

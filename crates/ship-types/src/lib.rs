@@ -340,6 +340,13 @@ pub mod protocol {
         pub invalid_reason: Option<String>,
     }
 
+    // r[server.agent-discovery]
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct AgentDiscovery {
+        pub claude: bool,
+        pub codex: bool,
+    }
+
     // r[session.list]
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub struct SessionSummary {
@@ -423,7 +430,7 @@ pub use events::{
 pub use ids::{BlockId, ProjectName, SessionId, TaskId};
 pub use persistence::{CurrentTask, PersistedSession, SessionConfig, TaskContentRecord};
 pub use protocol::{
-    AutonomyMode, CloseSessionRequest, CloseSessionResponse, CreateSessionRequest,
+    AgentDiscovery, AutonomyMode, CloseSessionRequest, CloseSessionResponse, CreateSessionRequest,
     CreateSessionResponse, ProjectInfo, SessionDetail, SessionSummary,
 };
 pub use task::{TaskRecord, TaskStatus};

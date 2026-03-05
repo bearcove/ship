@@ -77,6 +77,11 @@ export interface SessionSummary {
   autonomy_mode: AutonomyMode;
 }
 
+export interface AgentDiscovery {
+  claude: boolean;
+  codex: boolean;
+}
+
 export interface TaskRecord {
   id: string;
   description: string;
@@ -178,6 +183,9 @@ export type ListBranchesResponse = string[];
 export type ListSessionsRequest = [];
 export type ListSessionsResponse = SessionSummary[];
 
+export type AgentDiscoveryRequest = [];
+export type AgentDiscoveryResponse = AgentDiscovery;
+
 export type GetSessionRequest = [string];
 export type GetSessionResponse = SessionDetail;
 
@@ -224,6 +232,7 @@ export interface ShipCaller {
   addProject(path: string): CallBuilder<ProjectInfo>;
   listBranches(project: string): CallBuilder<string[]>;
   listSessions(): CallBuilder<SessionSummary[]>;
+  agentDiscovery(): CallBuilder<AgentDiscovery>;
   getSession(id: string): CallBuilder<SessionDetail>;
   createSession(req: CreateSessionRequest): CallBuilder<CreateSessionResponse>;
   assign(session: string, description: string): CallBuilder<string>;
@@ -296,8 +305,21 @@ export class ShipClient implements ShipCaller {
     });
   }
 
-  getSession(id: string): CallBuilder<SessionDetail> {
+  agentDiscovery(): CallBuilder<AgentDiscovery> {
     const descriptor = ship_descriptor.methods[4];
+    return new CallBuilder(async (metadata) => {
+      const value = await this.caller.call({
+        method: "Ship.agentDiscovery",
+        args: {},
+        descriptor,
+        metadata,
+      });
+      return value as AgentDiscovery;
+    });
+  }
+
+  getSession(id: string): CallBuilder<SessionDetail> {
+    const descriptor = ship_descriptor.methods[5];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.getSession",
@@ -310,7 +332,7 @@ export class ShipClient implements ShipCaller {
   }
 
   createSession(req: CreateSessionRequest): CallBuilder<CreateSessionResponse> {
-    const descriptor = ship_descriptor.methods[5];
+    const descriptor = ship_descriptor.methods[6];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.createSession",
@@ -323,7 +345,7 @@ export class ShipClient implements ShipCaller {
   }
 
   assign(session: string, description: string): CallBuilder<string> {
-    const descriptor = ship_descriptor.methods[6];
+    const descriptor = ship_descriptor.methods[7];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.assign",
@@ -336,7 +358,7 @@ export class ShipClient implements ShipCaller {
   }
 
   steer(session: string, content: string): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[7];
+    const descriptor = ship_descriptor.methods[8];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.steer",
@@ -349,7 +371,7 @@ export class ShipClient implements ShipCaller {
   }
 
   accept(session: string): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[8];
+    const descriptor = ship_descriptor.methods[9];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.accept",
@@ -362,7 +384,7 @@ export class ShipClient implements ShipCaller {
   }
 
   cancel(session: string): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[9];
+    const descriptor = ship_descriptor.methods[10];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.cancel",
@@ -375,7 +397,7 @@ export class ShipClient implements ShipCaller {
   }
 
   resolvePermission(session: string, permissionId: string, approved: boolean): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[10];
+    const descriptor = ship_descriptor.methods[11];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.resolvePermission",
@@ -388,7 +410,7 @@ export class ShipClient implements ShipCaller {
   }
 
   retryAgent(session: string, role: Role): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[11];
+    const descriptor = ship_descriptor.methods[12];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.retryAgent",
@@ -401,7 +423,7 @@ export class ShipClient implements ShipCaller {
   }
 
   closeSession(req: CloseSessionRequest): CallBuilder<CloseSessionResponse> {
-    const descriptor = ship_descriptor.methods[12];
+    const descriptor = ship_descriptor.methods[13];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.closeSession",
@@ -414,7 +436,7 @@ export class ShipClient implements ShipCaller {
   }
 
   subscribeEvents(session: string, output: Tx<SubscribeMessage>): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[13];
+    const descriptor = ship_descriptor.methods[14];
     // Bind any Tx/Rx channels in arguments and collect channel IDs
     const channels = bindChannels(
       descriptor.args.elements,
@@ -452,6 +474,7 @@ export interface ShipHandler {
   addProject(path: string): Promise<ProjectInfo> | ProjectInfo;
   listBranches(project: string): Promise<string[]> | string[];
   listSessions(): Promise<SessionSummary[]> | SessionSummary[];
+  agentDiscovery(): Promise<AgentDiscovery> | AgentDiscovery;
   getSession(id: string): Promise<SessionDetail> | SessionDetail;
   createSession(req: CreateSessionRequest): Promise<CreateSessionResponse> | CreateSessionResponse;
   assign(session: string, description: string): Promise<string> | string;
@@ -497,6 +520,13 @@ export class ShipDispatcher implements ChannelingDispatcher {
     } else if (method.id === 0xe77963f9da704cd5n) {
       try {
         const result = await this.handler.listSessions();
+        call.reply(result);
+      } catch {
+        call.replyInternalError();
+      }
+    } else if (method.id === 0x5aec9f1d348d9c6cn) {
+      try {
+        const result = await this.handler.agentDiscovery();
         call.reply(result);
       } catch {
         call.replyInternalError();
@@ -860,6 +890,35 @@ export const ship_descriptor: ServiceDescriptor = {
                   },
                 },
               },
+            },
+          },
+          {
+            name: "Err",
+            fields: {
+              kind: "enum",
+              variants: [
+                { name: "User", fields: null },
+                { name: "UnknownMethod", fields: null },
+                { name: "InvalidPayload", fields: null },
+                { name: "Cancelled", fields: null },
+              ],
+            },
+          },
+        ],
+      },
+    },
+    {
+      name: "agentDiscovery",
+      id: 0x5aec9f1d348d9c6cn,
+      args: { kind: "tuple", elements: [] },
+      result: {
+        kind: "enum",
+        variants: [
+          {
+            name: "Ok",
+            fields: {
+              kind: "struct",
+              fields: { claude: { kind: "bool" }, codex: { kind: "bool" } },
             },
           },
           {

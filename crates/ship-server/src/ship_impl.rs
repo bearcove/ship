@@ -11,10 +11,11 @@ use ship_core::{
 };
 use ship_service::Ship;
 use ship_types::{
-    AgentKind, AgentSnapshot, AgentState, AutonomyMode, BlockId, CloseSessionRequest,
-    CloseSessionResponse, ContentBlock, CreateSessionRequest, CreateSessionResponse, CurrentTask,
-    PersistedSession, ProjectInfo, ProjectName, Role, SessionConfig, SessionDetail, SessionEvent,
-    SessionId, SessionSummary, SubscribeMessage, TaskId, TaskRecord, TaskStatus,
+    AgentDiscovery, AgentKind, AgentSnapshot, AgentState, AutonomyMode, BlockId,
+    CloseSessionRequest, CloseSessionResponse, ContentBlock, CreateSessionRequest,
+    CreateSessionResponse, CurrentTask, PersistedSession, ProjectInfo, ProjectName, Role,
+    SessionConfig, SessionDetail, SessionEvent, SessionId, SessionSummary, SubscribeMessage,
+    TaskId, TaskRecord, TaskStatus,
 };
 use tokio::sync::broadcast;
 
@@ -22,6 +23,7 @@ use tokio::sync::broadcast;
 #[derive(Clone)]
 pub struct ShipImpl {
     registry: Arc<tokio::sync::Mutex<ProjectRegistry>>,
+    agent_discovery: AgentDiscovery,
     agent_driver: Arc<AcpAgentDriver>,
     worktree_ops: Arc<GitWorktreeOps>,
     store: Arc<JsonSessionStore>,
@@ -34,9 +36,11 @@ impl ShipImpl {
         registry: ProjectRegistry,
         sessions_dir: std::path::PathBuf,
         repo_root: std::path::PathBuf,
+        agent_discovery: AgentDiscovery,
     ) -> Self {
         Self {
             registry: Arc::new(tokio::sync::Mutex::new(registry)),
+            agent_discovery,
             agent_driver: Arc::new(AcpAgentDriver::new()),
             worktree_ops: Arc::new(GitWorktreeOps),
             store: Arc::new(JsonSessionStore::new(sessions_dir)),
@@ -466,6 +470,10 @@ impl ShipImpl {
 impl Ship for ShipImpl {
     async fn list_projects(&self) -> Vec<ProjectInfo> {
         self.registry.lock().await.list()
+    }
+
+    async fn agent_discovery(&self) -> AgentDiscovery {
+        self.agent_discovery.clone()
     }
 
     async fn add_project(&self, path: String) -> ProjectInfo {
@@ -968,4 +976,49 @@ fn slugify(input: &str) -> String {
     }
 
     slug.trim_matches('-').to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use ship_core::ProjectRegistry;
+    use ship_service::Ship;
+    use ship_types::AgentDiscovery;
+
+    use super::ShipImpl;
+
+    fn make_temp_dir(test_name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("ship-impl-{test_name}-{nanos}"));
+        std::fs::create_dir_all(&dir).expect("temp dir should be created");
+        dir
+    }
+
+    // r[verify server.agent-discovery]
+    #[tokio::test]
+    async fn service_returns_startup_agent_discovery_snapshot() {
+        let dir = make_temp_dir("agent-discovery");
+        let registry = ProjectRegistry::load_in(dir.join("config"))
+            .await
+            .expect("project registry should load");
+        let expected = AgentDiscovery {
+            claude: true,
+            codex: false,
+        };
+        let ship = ShipImpl::new(
+            registry,
+            dir.join("sessions"),
+            dir.join("repo"),
+            expected.clone(),
+        );
+
+        assert_eq!(Ship::agent_discovery(&ship).await, expected);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }
