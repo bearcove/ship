@@ -1,6 +1,9 @@
 pre-commit:
   parallel: true
   jobs:
+    - name: capn
+      run: capn
+
     - name: oxfmt
       glob: "*.{js,ts,jsx,tsx,css.ts}"
       run: pnpm exec oxfmt --write {staged_files} && git add {staged_files}
@@ -11,3 +14,9 @@ pre-commit:
 
     - name: typecheck
       run: cd frontend && pnpm exec tsgo --noEmit
+
+pre-push:
+  parallel: true
+  jobs:
+    - name: capn
+      run: capn pre-push

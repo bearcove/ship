@@ -3,6 +3,11 @@ name = "ship-types"
 version = "0.1.0"
 edition = "2024"
 
+[package.metadata]
+
+[package.metadata."docs.rs"]
+rustdoc-args = ["--html-in-header", "arborium-header.html"]
+
 [dependencies]
 ulid = { workspace = true }
 # TODO(dep.facet): add `facet` derive/core dependencies for shared type serialization.
