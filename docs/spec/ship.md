@@ -474,9 +474,22 @@ r[worktree.path]
 Worktrees MUST be created under `.worktrees/ship-{session_id}/` relative to
 the repository root.
 
+r[worktree.gitignore]
+The `.worktrees/` directory MUST be added to the repository's `.gitignore`.
+
 r[worktree.base-branch]
 Worktrees MUST be created from a user-specified base branch when the session
 starts.
+
+r[worktree.branch-name]
+Each worktree MUST be created on a new branch named
+`ship/{session_short_id}/{slug}` where `session_short_id` is the first 8
+characters of the session UUID and `slug` is a kebab-case summary derived from
+the session's first task description (or "untitled" if no task yet).
+
+r[worktree.git-command]
+Worktree creation MUST use `git worktree add` with the `--track` flag pointing
+to the base branch.
 
 r[worktree.shared]
 Both agents in a session MUST operate within the same worktree.
@@ -484,6 +497,14 @@ Both agents in a session MUST operate within the same worktree.
 r[worktree.cleanup]
 Worktrees MUST be cleaned up on session close, with confirmation from the
 human.
+
+r[worktree.cleanup-uncommitted]
+If the worktree contains uncommitted changes at cleanup time, the system MUST
+warn the human and require explicit confirmation before deleting.
+
+r[worktree.cleanup-git]
+Worktree cleanup MUST use `git worktree remove` followed by branch deletion
+of the session branch (with `--force` only if the human confirms).
 
 ## Task Lifecycle
 
@@ -563,6 +584,184 @@ multi-subscriber support.
 
 r[sharing.single-writer]
 Steering MUST be single-writer: one active controller per session at a time.
+
+## Captain Role
+
+The captain is an AI agent whose job is architecture, review, and direction.
+It does not write code directly — it steers the mate.
+
+### Captain Prompting
+
+r[captain.system-prompt]
+The captain's system prompt MUST instruct it to act as a senior engineer
+reviewing the mate's work: set direction, decompose tasks, review output,
+and formulate steer instructions. It MUST NOT instruct the captain to write
+code directly.
+
+r[captain.context]
+When the mate finishes a task (or a steer cycle), the captain MUST receive
+the mate's output (content blocks, tool calls, diffs) as context for its
+next prompt.
+
+r[captain.steer-output]
+The captain's prompt response MUST be interpreted as a steer instruction for
+the mate. The backend extracts the captain's text output and sends it as the
+next `steer` to the mate.
+
+r[captain.no-tools]
+The captain agent MUST be configured without filesystem or terminal
+capabilities. It reviews output, it does not execute.
+
+### Captain Review Cycle
+
+r[captain.review.auto]
+In autonomous mode, when the mate finishes, the backend MUST automatically
+prompt the captain with the mate's output and await a steer or accept
+decision.
+
+r[captain.review.human]
+In human-in-the-loop mode, when the captain produces a steer, the backend
+MUST present it to the human for approval before forwarding to the mate.
+
+r[captain.accept-signal]
+The captain MUST be able to signal that the task is complete by including a
+structured accept marker in its response. The backend MUST detect this and
+transition the task to accepted.
+
+## Mate Role
+
+The mate is an AI agent whose job is implementation: writing code, running
+tests, executing commands.
+
+### Mate Prompting
+
+r[mate.system-prompt]
+The mate's system prompt MUST instruct it to act as an implementation-focused
+engineer: write code, run tests, follow the captain's direction. It MUST
+include the task description and any steer history.
+
+r[mate.capabilities]
+The mate agent MUST be configured with full ACP capabilities: filesystem
+read/write, terminal create/output/kill/release.
+
+r[mate.worktree-scope]
+The mate MUST operate exclusively within the session's git worktree. Its
+working directory is the worktree path.
+
+### Mate Output
+
+r[mate.output.streamed]
+All mate output (message chunks, tool calls, plan updates) MUST be streamed
+to the frontend in real time via the session event stream.
+
+r[mate.output.persisted]
+Mate output for each task MUST be persisted so it can be reviewed after the
+fact and survives browser reloads.
+
+## Approvals
+
+The approval system gates agent actions that could be destructive or
+irreversible.
+
+### Permission Requests
+
+r[approval.request.content]
+When an agent sends a `RequestPermissionRequest`, the backend MUST extract the
+tool name, arguments, and description and present them to the human via the UI.
+
+r[approval.request.display]
+Permission requests MUST be displayed inline in the agent's output stream,
+at the point where the agent paused.
+
+r[approval.request.actions]
+The UI MUST offer at minimum: approve (once), deny, and approve-all-of-type
+(for the remainder of this task).
+
+r[approval.request.blocking]
+The ACP `request_permission` call MUST block until the human responds. The
+agent is paused during this time.
+
+### Permission Policies
+
+r[approval.policy.read-default]
+File read operations SHOULD be auto-approved by default (configurable).
+
+r[approval.policy.write-prompt]
+File write operations MUST prompt the human unless auto-approved for the
+session.
+
+r[approval.policy.terminal-prompt]
+Terminal command execution MUST prompt the human unless auto-approved for the
+session.
+
+r[approval.policy.session-memory]
+Approval-all-of-type decisions MUST persist for the duration of the current
+task only, resetting when a new task is assigned.
+
+### Permission in Autonomous Mode
+
+r[approval.autonomous]
+Even in autonomous mode, permission requests from agents MUST still be
+surfaced to the human. The captain auto-steers, but it does not auto-approve
+destructive actions.
+
+## Idle Reminders
+
+When action is needed and nobody is acting, the system nudges.
+
+r[idle.mate-done]
+When the mate finishes (`StopReason::EndTurn`) and neither the captain nor
+the human has acted within a configurable timeout (default: 2 minutes), the
+system MUST emit an idle reminder event.
+
+r[idle.permission-pending]
+When a permission request has been pending for longer than a configurable
+timeout (default: 1 minute), the system MUST emit an idle reminder event.
+
+r[idle.ui-indicator]
+Idle reminder events MUST be displayed prominently in the UI (visual pulse,
+badge, or banner).
+
+## Notifications
+
+The system can notify the human outside the browser when attention is needed.
+
+### Discord
+
+r[notify.discord.webhook]
+The system MUST support sending notifications to a Discord channel via
+webhook URL, configurable per session or globally.
+
+r[notify.discord.events]
+Discord notifications MUST be sent for: permission requests pending, mate
+task completion awaiting review, idle reminders, and agent errors.
+
+r[notify.discord.content]
+Discord notification messages MUST include the session name, event type, and
+a brief summary (e.g., "Mate finished task: implement auth module — awaiting
+review").
+
+### Desktop
+
+r[notify.desktop.support]
+The UI MUST support browser desktop notifications (via the Notifications API)
+when the browser tab is not focused.
+
+r[notify.desktop.permission]
+The UI MUST request notification permission from the browser on first use.
+
+r[notify.desktop.events]
+Desktop notifications MUST be sent for the same events as Discord
+notifications.
+
+### Sound
+
+r[notify.sound.alert]
+The UI MUST play an audio alert when a permission request arrives or when an
+idle reminder fires, if the tab is not focused.
+
+r[notify.sound.toggle]
+Sound notifications MUST be togglable in the UI.
 
 ## Context Exhaustion
 
