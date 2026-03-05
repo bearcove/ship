@@ -10,7 +10,6 @@ use ship_types::{
     TaskContentRecord, TaskId, TaskRecord, TaskStatus,
 };
 use tokio::sync::broadcast;
-use ulid::Ulid;
 
 use crate::{AgentDriver, SessionStore, StopReason, WorktreeOps};
 
@@ -110,7 +109,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         req: CreateSessionRequest,
         repo_root: &Path,
     ) -> Result<(SessionId, TaskId), SessionManagerError> {
-        let session_id = SessionId(Ulid::new());
+        let session_id = SessionId::new();
         let slug = slugify(&req.task_description);
         let worktree_path = self
             .worktree_ops
@@ -259,7 +258,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             }
         }
 
-        let task_id = TaskId(Ulid::new());
+        let task_id = TaskId::new();
         {
             let session = self
                 .sessions
@@ -340,7 +339,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             emit_event(
                 session,
                 SessionEvent::BlockAppend {
-                    block_id: BlockId(Ulid::new()),
+                    block_id: BlockId::new(),
                     role: Role::Captain,
                     block: ContentBlock::Text {
                         text: message.clone(),

@@ -6,7 +6,6 @@ use std::sync::{Arc, Mutex};
 use futures_core::Stream;
 use futures_util::stream;
 use ship_types::{AgentKind, PersistedSession, Role, SessionEvent, SessionId};
-use ulid::Ulid;
 
 use crate::{
     AgentDriver, AgentError, AgentHandle, PromptResponse, SessionStore, StopReason, StoreError,
@@ -111,7 +110,7 @@ impl AgentDriver for FakeAgentDriver {
         role: Role,
         worktree_path: &Path,
     ) -> Result<AgentHandle, AgentError> {
-        let handle = AgentHandle::new(SessionId(Ulid::new()));
+        let handle = AgentHandle::new(SessionId::new());
 
         self.inner
             .lock()

@@ -206,7 +206,7 @@ async fn test_permission_flow() {
         .expect("mate should be spawned")
         .handle;
 
-    let block_id = BlockId(ulid::Ulid::new());
+    let block_id = BlockId::new();
 
     let mut rx = manager
         .subscribe(&session_id)

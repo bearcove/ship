@@ -11,7 +11,6 @@ use ship_types::{
     SessionSummary, SubscribeMessage, TaskId, TaskRecord, TaskStatus,
 };
 use tokio::sync::Mutex;
-use ulid::Ulid;
 
 // r[server.multi-repo]
 #[derive(Clone, Debug)]
@@ -27,11 +26,11 @@ impl ShipImpl {
     }
 
     fn fake_session_id() -> SessionId {
-        SessionId(Ulid::new())
+        SessionId::new()
     }
 
     fn fake_task_id() -> TaskId {
-        TaskId(Ulid::new())
+        TaskId::new()
     }
 
     fn fake_agent(role: Role, kind: AgentKind) -> AgentSnapshot {
@@ -181,8 +180,8 @@ impl Ship for ShipImpl {
 
     async fn subscribe_events(&self, _session: SessionId, output: Tx<SubscribeMessage>) {
         let task_id = Self::fake_task_id();
-        let text_block_id = BlockId(Ulid::new());
-        let permission_block_id = BlockId(Ulid::new());
+        let text_block_id = BlockId::new();
+        let permission_block_id = BlockId::new();
 
         let replay_events = vec![
             SessionEventEnvelope {

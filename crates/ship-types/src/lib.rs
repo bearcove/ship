@@ -1,18 +1,62 @@
 pub mod ids {
     // r[proto.id.session]
     #[derive(Debug, Clone, PartialEq, Eq, Hash, facet::Facet)]
-    pub struct SessionId(pub ulid::Ulid);
+    #[repr(transparent)]
+    #[facet(transparent)]
+    pub struct SessionId(pub String);
+
+    impl Default for SessionId {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    impl SessionId {
+        pub fn new() -> Self {
+            Self(ulid::Ulid::new().to_string())
+        }
+    }
 
     // r[proto.id.task]
     #[derive(Debug, Clone, PartialEq, Eq, Hash, facet::Facet)]
-    pub struct TaskId(pub ulid::Ulid);
+    #[repr(transparent)]
+    #[facet(transparent)]
+    pub struct TaskId(pub String);
+
+    impl Default for TaskId {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    impl TaskId {
+        pub fn new() -> Self {
+            Self(ulid::Ulid::new().to_string())
+        }
+    }
 
     // r[event.block-id]
     #[derive(Debug, Clone, PartialEq, Eq, Hash, facet::Facet)]
-    pub struct BlockId(pub ulid::Ulid);
+    #[repr(transparent)]
+    #[facet(transparent)]
+    pub struct BlockId(pub String);
+
+    impl Default for BlockId {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    impl BlockId {
+        pub fn new() -> Self {
+            Self(ulid::Ulid::new().to_string())
+        }
+    }
 
     // r[proto.id.project]
     #[derive(Debug, Clone, PartialEq, Eq, Hash, facet::Facet)]
+    #[repr(transparent)]
+    #[facet(transparent)]
     pub struct ProjectName(pub String);
 }
 
