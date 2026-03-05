@@ -249,6 +249,36 @@ r[dep.acp]
 The backend MUST use the `agent-client-protocol` crate
 (`agentclientprotocol/rust-sdk`) as its ACP client library.
 
+r[dep.ulid]
+Session and task identifiers MUST use ULIDs (Universally Unique
+Lexicographically Sortable Identifiers) via the `ulid` crate. ULIDs are
+sortable by creation time, so session lists and task histories sort correctly
+without a separate timestamp field.
+
+r[dep.tracing]
+The backend MUST use the `tracing` crate for structured, leveled logging.
+Every significant operation (session creation, agent spawn, ACP message
+routing, worktree management, permission handling) MUST produce trace spans
+and events. This is the diagnostic mechanism for production issues.
+
+r[dep.figue]
+The backend MUST use figue for layered configuration parsing. Figue merges
+CLI arguments, environment variables, and config files into typed Rust structs
+using facet reflection. This replaces ad-hoc `std::env::var` calls with a
+single validated config struct at startup.
+
+r[dep.roam-codegen]
+The build process MUST use `roam-codegen` to generate TypeScript type
+definitions and client stubs from the backend's roam service traits. This is
+a build-time tool, not a runtime dependency. The codegen step MUST be
+integrated into the build pipeline so generated types stay in sync with Rust
+trait changes.
+
+r[dep.reqwest]
+The backend MUST use `reqwest` as its async HTTP client for outgoing requests
+(Discord webhook POSTs). A single `reqwest::Client` instance MUST be shared
+across the server.
+
 ### Backend
 
 r[backend.rust]
@@ -269,6 +299,13 @@ The backend MUST translate between the Ship protocol and ACP calls.
 
 r[backend.worktree-management]
 The backend MUST manage git worktree creation and cleanup.
+
+r[backend.git-shell]
+The `WorktreeOps` implementation MUST shell out to the `git` CLI via
+`Command::new("git")` rather than linking against libgit2 (the `git2` crate).
+Libgit2 is a large C dependency with build complexity and its worktree support
+lags behind the git CLI. The `WorktreeOps` trait keeps this testable — tests
+use the in-memory fake, production uses the git CLI.
 
 r[backend.task-persistence]
 Task state MUST be persisted to survive server restarts.
@@ -382,8 +419,9 @@ The Vite dev server port MUST be configurable via an environment variable
 to Vite via `--host` and `--port` flags and uses it as the proxy target.
 
 r[dev-proxy.prod-static]
-In production mode (no dev proxy), the backend MUST serve the frontend from
-Vite's build output directory, with SPA fallback to `index.html`.
+Production static file serving (built frontend from disk, SPA fallback, cache
+headers) is deferred to post-v1. For v1, Ship always runs in dev mode with
+the Vite proxy.
 
 ## Views
 
@@ -440,10 +478,10 @@ The Ship RPC defines frontend-to-backend operations.
 ### Identifiers
 
 r[proto.id.session]
-Session identifiers MUST be UUIDs wrapped in a `SessionId` newtype.
+Session identifiers MUST be ULIDs wrapped in a `SessionId` newtype.
 
 r[proto.id.task]
-Task identifiers MUST be UUIDs wrapped in a `TaskId` newtype.
+Task identifiers MUST be ULIDs wrapped in a `TaskId` newtype.
 
 ### Operations
 
@@ -1108,9 +1146,8 @@ A single Ship server instance manages sessions across all registered
 projects. There is no need to run multiple Ship instances.
 
 r[server.mode]
-The server MUST run in one of two modes: **dev** (Vite proxy enabled, hot
-reload) or **prod** (serves built frontend from disk). Mode MUST be
-configurable via `SHIP_MODE` environment variable, defaulting to `dev`.
+For v1, the server always runs in dev mode (Vite proxy enabled, hot reload).
+Production mode is deferred to post-v1 (see `dev-proxy.prod-static`).
 
 r[server.config-dir]
 Ship's global configuration MUST be stored in `~/.config/ship/`. This
