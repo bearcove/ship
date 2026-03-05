@@ -22,7 +22,9 @@ import { useAgentDiscovery } from "../hooks/useAgentDiscovery";
 import { useBranches } from "../hooks/useBranches";
 import { sessionCard } from "../styles/session-list.css";
 import type { AgentKind, TaskStatus } from "../generated/ship";
+import { shipClient } from "../api/client";
 
+// r[ui.session-list.status-colors]
 const STATUS_COLOR: Record<
   TaskStatus["tag"],
   "gray" | "blue" | "amber" | "orange" | "green" | "red"
@@ -100,6 +102,7 @@ function AgentKindControl({
   );
 }
 
+// r[ui.session-list.create.branch-filter]
 function BranchCombobox({
   projectName,
   value,
@@ -175,7 +178,7 @@ function BranchCombobox({
   );
 }
 
-// r[session.create]
+// r[ui.session-list.create]
 function NewSessionDialog({
   open,
   onOpenChange,
@@ -194,6 +197,25 @@ function NewSessionDialog({
   const [mateKind, setMateKind] = useState<AgentKind>({ tag: "Claude" });
   const [branch, setBranch] = useState("main");
   const [taskDescription, setTaskDescription] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleCreate() {
+    if (!projectName || !taskDescription.trim()) return;
+    setSubmitting(true);
+    try {
+      const client = await shipClient;
+      await client.createSession({
+        project: projectName,
+        captain_kind: captainKind,
+        mate_kind: mateKind,
+        base_branch: branch,
+        task_description: taskDescription,
+      });
+      onOpenChange(false);
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -252,9 +274,13 @@ function NewSessionDialog({
                 Cancel
               </Button>
             </Dialog.Close>
-            <Dialog.Close>
-              <Button disabled={!projectName || !taskDescription.trim()}>Create Session</Button>
-            </Dialog.Close>
+            <Button
+              disabled={!projectName || !taskDescription.trim() || submitting}
+              loading={submitting}
+              onClick={handleCreate}
+            >
+              Create Session
+            </Button>
           </Flex>
         </Flex>
       </Dialog.Content>
@@ -262,6 +288,7 @@ function NewSessionDialog({
   );
 }
 
+// r[ui.add-project.dialog]
 function AddProjectDialog({
   open,
   onOpenChange,
@@ -270,7 +297,23 @@ function AddProjectDialog({
   onOpenChange: (o: boolean) => void;
 }) {
   const [path, setPath] = useState("");
-  const isInvalid = path.toLowerCase().includes("invalid");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleAdd() {
+    if (!path.trim()) return;
+    setError(null);
+    setSubmitting(true);
+    try {
+      const client = await shipClient;
+      await client.addProject(path);
+      onOpenChange(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -284,16 +327,19 @@ function AddProjectDialog({
             <TextField.Root
               placeholder="/absolute/path/to/repo"
               value={path}
-              onChange={(e) => setPath(e.target.value)}
+              onChange={(e) => {
+                setPath(e.target.value);
+                setError(null);
+              }}
             />
           </Flex>
 
-          {isInvalid && (
+          {error && (
             <Callout.Root color="red" size="1">
               <Callout.Icon>
                 <WarningCircle size={16} />
               </Callout.Icon>
-              <Callout.Text>Path does not exist or is not a git repository.</Callout.Text>
+              <Callout.Text>{error}</Callout.Text>
             </Callout.Root>
           )}
 
@@ -303,7 +349,9 @@ function AddProjectDialog({
                 Cancel
               </Button>
             </Dialog.Close>
-            <Button disabled={!path.trim() || isInvalid}>Add</Button>
+            <Button disabled={!path.trim() || submitting} loading={submitting} onClick={handleAdd}>
+              Add
+            </Button>
           </Flex>
         </Flex>
       </Dialog.Content>
@@ -345,6 +393,7 @@ export function SessionListPage() {
         </Flex>
       </Flex>
 
+      {/* r[ui.session-list.project-filter] */}
       {!noProjects && (
         <Flex mb="4" align="center" gap="2">
           <Select.Root
@@ -384,6 +433,7 @@ export function SessionListPage() {
         </Flex>
       )}
 
+      {/* r[ui.session-list.empty] */}
       {noProjects ? (
         <Flex justify="center" mt="8">
           <Callout.Root size="2" style={{ maxWidth: 400 }}>
