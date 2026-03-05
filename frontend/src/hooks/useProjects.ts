@@ -1,7 +1,28 @@
-import { MOCK_PROJECTS } from "../mocks/data";
+import { useEffect, useState } from "react";
+import { shipClient } from "../api/client";
 import type { ProjectInfo } from "../generated/ship";
 
 // r[proto.list-projects]
 export function useProjects(): ProjectInfo[] {
-  return MOCK_PROJECTS;
+  const [projects, setProjects] = useState<ProjectInfo[]>([]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function fetchProjects() {
+      const client = await shipClient;
+      const list = await client.listProjects();
+      if (active) setProjects(list);
+    }
+
+    fetchProjects();
+
+    window.addEventListener("focus", fetchProjects);
+    return () => {
+      active = false;
+      window.removeEventListener("focus", fetchProjects);
+    };
+  }, []);
+
+  return projects;
 }

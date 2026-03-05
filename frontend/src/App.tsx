@@ -5,7 +5,6 @@ import { SessionListPage } from "./pages/SessionListPage";
 import { SessionViewPage } from "./pages/SessionViewPage";
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { NotificationPrompt } from "./components/NotificationPrompt";
-import { DevToolbar } from "./components/DevToolbar";
 import { useSoundEnabled } from "./context/SoundContext";
 
 // r[ui.layout.shell]
@@ -45,8 +44,6 @@ export function App() {
           <Route path="/sessions/:sessionId" element={<SessionViewPage />} />
         </Routes>
       </Box>
-
-      {import.meta.env.DEV && <DevToolbar />}
     </Flex>
   );
 }

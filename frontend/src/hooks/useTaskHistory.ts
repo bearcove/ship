@@ -1,9 +1,24 @@
-import { useScenario } from "../context/ScenarioContext";
-import { SESSION_SCENARIOS } from "../mocks/data";
+import { useEffect, useState } from "react";
+import { shipClient } from "../api/client";
 import type { TaskRecord } from "../generated/ship";
 
 // r[session.single-task]
-export function useTaskHistory(_id: string): TaskRecord[] {
-  const { sessionScenario } = useScenario();
-  return SESSION_SCENARIOS[sessionScenario].taskHistory;
+export function useTaskHistory(id: string): TaskRecord[] {
+  const [history, setHistory] = useState<TaskRecord[]>([]);
+
+  useEffect(() => {
+    let active = true;
+
+    shipClient
+      .then((client) => client.getSession(id))
+      .then((detail) => {
+        if (active) setHistory(detail.task_history);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [id]);
+
+  return history;
 }
