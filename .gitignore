@@ -3,3 +3,5 @@ target
 node_modules
 .handoffs
 .playwright-mcp/
+.ship/
+.worktrees/
