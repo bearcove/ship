@@ -300,6 +300,7 @@ impl FakeWorktreeOps {
 }
 
 impl WorktreeOps for FakeWorktreeOps {
+    // r[worktree.path]
     async fn create_worktree(
         &self,
         session_id: &SessionId,
@@ -310,7 +311,7 @@ impl WorktreeOps for FakeWorktreeOps {
         let mut inner = self.inner.lock().expect("fake worktree ops mutex poisoned");
 
         inner.next_idx += 1;
-        let path = repo_root.join(format!(".worktrees/fake-{}", inner.next_idx));
+        let path = repo_root.join(format!(".ship/worktrees/fake-{}", inner.next_idx));
         let short_session_id: String = session_id.0.chars().take(8).collect();
         let branch_name = format!("ship/{short_session_id}/{slug}");
         inner.created.insert(

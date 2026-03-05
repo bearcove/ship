@@ -429,7 +429,10 @@ async fn test_close_session_cleans_up_clean_worktree() {
     assert_eq!(agent.killed_handles().len(), 2);
     assert_eq!(
         worktree.remove_requests(),
-        vec![(Path::new("/repo/.worktrees/fake-1").to_path_buf(), false)]
+        vec![(
+            Path::new("/repo/.ship/worktrees/fake-1").to_path_buf(),
+            false
+        )]
     );
     assert_eq!(
         worktree.deleted_branches(),

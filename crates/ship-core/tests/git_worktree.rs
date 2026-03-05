@@ -27,6 +27,7 @@ fn make_temp_dir(test_name: &str) -> PathBuf {
 
 // r[verify backend.git-shell]
 // r[verify testability.git-trait]
+// r[verify worktree.path]
 #[tokio::test]
 async fn git_worktree_create_status_and_remove() {
     let root = make_temp_dir("git-worktree");
@@ -52,6 +53,12 @@ async fn git_worktree_create_status_and_remove() {
         .expect("create_worktree should succeed");
 
     assert!(clean_worktree_path.exists(), "worktree path should exist");
+    assert_eq!(
+        clean_worktree_path,
+        repo.join(".ship")
+            .join("worktrees")
+            .join(format!("{}-{clean_slug}", &clean_session_id.0[..8]))
+    );
 
     let branches = ops
         .list_branches(&repo)

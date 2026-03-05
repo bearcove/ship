@@ -256,7 +256,7 @@ root. Each session gets a `{session_id}.json` file containing the session
 config, current task, and task history.
 
 r[backend.persistence-dir-gitignore]
-The `.ship/` persistence directory MUST be added to `.gitignore`.
+The `.ship/` Ship-owned directory MUST be added to `.gitignore`.
 
 ### Server-Side Event Architecture
 
@@ -331,11 +331,14 @@ r[worktree.isolated]
 Each session MUST operate in an isolated git worktree.
 
 r[worktree.path]
-Worktrees MUST be created under `.worktrees/ship-{session_id}/` relative to
-the repository root.
+Worktrees MUST be created under
+`.ship/worktrees/{session_short_id}-{slug}/` relative to the repository root,
+where `session_short_id` is the first 8 characters of the session ULID and
+`slug` is the kebab-case task summary used in the branch name.
 
 r[worktree.gitignore]
-The `.worktrees/` directory MUST be added to the repository's `.gitignore`.
+The `.ship/` directory entry MUST cover worktree storage; Ship MUST NOT rely on
+a separate `.worktrees/` gitignore entry.
 
 r[worktree.base-branch]
 Worktrees MUST be created from a user-specified base branch when the session

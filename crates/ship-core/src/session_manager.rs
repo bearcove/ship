@@ -511,15 +511,35 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
     }
 
     fn repo_root_for_worktree(worktree_path: &Path) -> Result<&Path, SessionManagerError> {
-        worktree_path
-            .parent()
-            .and_then(|parent| parent.parent())
-            .ok_or_else(|| {
-                SessionManagerError::Worktree(format!(
-                    "invalid worktree path: {}",
-                    worktree_path.display()
-                ))
-            })
+        let worktrees_dir = worktree_path.parent().ok_or_else(|| {
+            SessionManagerError::Worktree(format!(
+                "invalid worktree path: {}",
+                worktree_path.display()
+            ))
+        })?;
+        let ship_dir = worktrees_dir.parent().ok_or_else(|| {
+            SessionManagerError::Worktree(format!(
+                "invalid worktree path: {}",
+                worktree_path.display()
+            ))
+        })?;
+        let repo_root = ship_dir.parent().ok_or_else(|| {
+            SessionManagerError::Worktree(format!(
+                "invalid worktree path: {}",
+                worktree_path.display()
+            ))
+        })?;
+
+        if worktrees_dir.file_name().and_then(|name| name.to_str()) != Some("worktrees")
+            || ship_dir.file_name().and_then(|name| name.to_str()) != Some(".ship")
+        {
+            return Err(SessionManagerError::Worktree(format!(
+                "invalid worktree path: {}",
+                worktree_path.display()
+            )));
+        }
+
+        Ok(repo_root)
     }
 
     async fn cleanup_session_resources(

@@ -175,8 +175,9 @@ Each session operates in an isolated git worktree:
 repo/
   .git/
   ...
-  .worktrees/
-    ship-{session_id}/
+  .ship/
+    worktrees/
+      {session_short_id}-{slug}/
 ```
 
 - Created from a user-specified base branch when the session starts

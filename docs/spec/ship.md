@@ -1054,9 +1054,10 @@ exist and are git repositories. Projects with invalid paths MUST be flagged
 in the UI (not silently removed).
 
 r[project.persistence-dir]
-Each project's `.ship/` directory (for session persistence, MCP config) is
-relative to that project's repository root. Ship's own configuration (project
-list, global settings) lives in `~/.config/ship/`.
+Each project's `.ship/` directory (for session persistence, Ship-managed
+worktrees, and MCP config) is relative to that project's repository root.
+Ship's own configuration (project list, global settings) lives in
+`~/.config/ship/`.
 
 r[project.mcp-defaults]
 Each project MAY have a `.ship/mcp-servers.json` in its repository root for

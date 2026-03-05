@@ -12,6 +12,7 @@ pub struct GitWorktreeOps;
 
 // r[backend.git-shell]
 impl WorktreeOps for GitWorktreeOps {
+    // r[worktree.path]
     async fn create_worktree(
         &self,
         session_id: &SessionId,
@@ -22,10 +23,11 @@ impl WorktreeOps for GitWorktreeOps {
         let short_session_id: String = session_id.0.chars().take(8).collect();
         let branch_name = format!("ship/{short_session_id}/{slug}");
         let worktree_path = repo_root
-            .join(".worktrees")
+            .join(".ship")
+            .join("worktrees")
             .join(format!("{short_session_id}-{slug}"));
 
-        fs_err::tokio::create_dir_all(repo_root.join(".worktrees"))
+        fs_err::tokio::create_dir_all(repo_root.join(".ship").join("worktrees"))
             .await
             .map_err(|error| WorktreeError {
                 message: error.to_string(),
@@ -51,12 +53,7 @@ impl WorktreeOps for GitWorktreeOps {
     }
 
     async fn remove_worktree(&self, path: &Path, force: bool) -> Result<(), WorktreeError> {
-        let repo_root = path
-            .parent()
-            .and_then(|parent| parent.parent())
-            .ok_or_else(|| WorktreeError {
-                message: format!("invalid worktree path: {}", path.display()),
-            })?;
+        let repo_root = repo_root_for_worktree(path)?;
 
         let mut command = Command::new("git");
         command
@@ -129,6 +126,28 @@ impl WorktreeOps for GitWorktreeOps {
 
         ensure_success(output)
     }
+}
+
+fn repo_root_for_worktree(path: &Path) -> Result<&Path, WorktreeError> {
+    let worktrees_dir = path.parent().ok_or_else(|| WorktreeError {
+        message: format!("invalid worktree path: {}", path.display()),
+    })?;
+    let ship_dir = worktrees_dir.parent().ok_or_else(|| WorktreeError {
+        message: format!("invalid worktree path: {}", path.display()),
+    })?;
+    let repo_root = ship_dir.parent().ok_or_else(|| WorktreeError {
+        message: format!("invalid worktree path: {}", path.display()),
+    })?;
+
+    if worktrees_dir.file_name().and_then(|name| name.to_str()) != Some("worktrees")
+        || ship_dir.file_name().and_then(|name| name.to_str()) != Some(".ship")
+    {
+        return Err(WorktreeError {
+            message: format!("invalid worktree path: {}", path.display()),
+        });
+    }
+
+    Ok(repo_root)
 }
 
 fn ensure_success(output: Output) -> Result<(), WorktreeError> {

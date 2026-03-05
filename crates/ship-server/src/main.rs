@@ -286,6 +286,7 @@ async fn wait_for_tcp_readiness(
 }
 
 // r[backend.persistence-dir-gitignore]
+// r[worktree.gitignore]
 fn ensure_project_ship_gitignored(
     registry: &ProjectRegistry,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -317,6 +318,41 @@ fn ensure_ship_entry_for_project(project_path: &Path) -> Result<(), Box<dyn std:
     }
     file.write_all(b".ship/\n")?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::ensure_ship_entry_for_project;
+
+    fn make_temp_dir(test_name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("ship-server-{test_name}-{nanos}"));
+        std::fs::create_dir_all(&dir).expect("temp dir should be created");
+        dir
+    }
+
+    // r[verify backend.persistence-dir-gitignore]
+    // r[verify worktree.gitignore]
+    #[test]
+    fn ensure_ship_entry_appends_ship_root_once() {
+        let dir = make_temp_dir("gitignore-entry");
+        let gitignore = dir.join(".gitignore");
+
+        std::fs::write(&gitignore, "target/\n").expect("gitignore should be written");
+        ensure_ship_entry_for_project(&dir).expect("ship entry should be added");
+        ensure_ship_entry_for_project(&dir).expect("ship entry should not duplicate");
+
+        let contents = std::fs::read_to_string(&gitignore).expect("gitignore should be readable");
+        assert_eq!(contents, "target/\n.ship/\n");
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }
 
 async fn ws_handler(State(state): State<AppState>, mut request: Request) -> impl IntoResponse {
