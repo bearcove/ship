@@ -50,8 +50,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut project_registry = ProjectRegistry::load_default().await?;
     // r[project.validation]
     project_registry.validate_all().await?;
+    let sessions_dir = project_registry.config_dir().join("sessions");
+    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let state = AppState {
-        ship: ShipImpl::new(project_registry),
+        ship: ShipImpl::new(project_registry, sessions_dir, repo_root),
         http_client: reqwest::Client::new(),
         frontend_mode: frontend_mode.clone(),
     };
