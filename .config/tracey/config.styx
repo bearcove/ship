@@ -1,0 +1,20 @@
+@schema {id crate:tracey-config@1, cli tracey}
+
+specs (
+    {
+        name ship
+        include (docs/spec/**/*.md)
+        impls (
+            {
+                name rust
+                include (crates/**/*.rs src/**/*.rs)
+                exclude (target/**)
+            }
+            {
+                name typescript
+                include (frontend/**/*.ts frontend/**/*.tsx)
+                exclude (frontend/node_modules/**)
+            }
+        )
+    }
+)
