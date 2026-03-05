@@ -1,4 +1,6 @@
 mod fakes;
+mod git_worktree;
+mod json_store;
 mod project_registry;
 mod session_manager;
 
@@ -13,6 +15,8 @@ use ship_types::{AgentKind, PersistedSession, Role, SessionEvent, SessionId};
 pub use fakes::{
     FakeAgentDriver, FakePromptScript, FakeSessionStore, FakeWorktreeOps, SpawnRecord,
 };
+pub use git_worktree::GitWorktreeOps;
+pub use json_store::JsonSessionStore;
 pub use project_registry::{ProjectRegistry, ProjectRegistryError};
 pub use session_manager::{
     ActiveSession, PendingPermission, SessionManager, SessionManagerError, SessionStateView,

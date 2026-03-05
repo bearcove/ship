@@ -358,7 +358,7 @@ pub mod persistence {
     use crate::protocol::AutonomyMode;
     use crate::task::TaskRecord;
 
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, facet::Facet)]
     pub struct SessionConfig {
         pub project: ProjectName,
         pub base_branch: String,
@@ -369,21 +369,21 @@ pub mod persistence {
     }
 
     // r[mate.output.persisted]
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, facet::Facet)]
     pub struct TaskContentRecord {
         pub block_id: BlockId,
         pub role: Role,
         pub block: ContentBlock,
     }
 
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, facet::Facet)]
     pub struct CurrentTask {
         pub record: TaskRecord,
         pub content_history: Vec<TaskContentRecord>,
     }
 
     // r[session.persistent]
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, facet::Facet)]
     pub struct PersistedSession {
         pub id: SessionId,
         pub config: SessionConfig,
