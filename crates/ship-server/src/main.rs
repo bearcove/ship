@@ -210,7 +210,7 @@ async fn proxy_vite_handler(
     let mut response = Response::new(Body::from(response_body));
     *response.status_mut() = status;
     for (name, value) in &response_headers {
-        if should_skip_response_header(&name) {
+        if should_skip_response_header(name) {
             continue;
         }
         response.headers_mut().append(name.clone(), value.clone());
