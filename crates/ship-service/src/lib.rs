@@ -1,7 +1,8 @@
 use roam::Tx;
 use ship_types::{
-    CreateSessionRequest, CreateSessionResponse, ProjectInfo, ProjectName, Role, SessionDetail,
-    SessionId, SessionSummary, SubscribeMessage, TaskId,
+    CloseSessionRequest, CloseSessionResponse, CreateSessionRequest, CreateSessionResponse,
+    ProjectInfo, ProjectName, Role, SessionDetail, SessionId, SessionSummary, SubscribeMessage,
+    TaskId,
 };
 
 // r[backend.rpc]
@@ -44,7 +45,7 @@ pub trait Ship {
     async fn retry_agent(&self, session: SessionId, role: Role);
 
     // r[proto.close-session]
-    async fn close_session(&self, id: SessionId);
+    async fn close_session(&self, req: CloseSessionRequest) -> CloseSessionResponse;
 
     // r[event.subscribe.roam-channel]
     async fn subscribe_events(&self, session: SessionId, output: Tx<SubscribeMessage>);

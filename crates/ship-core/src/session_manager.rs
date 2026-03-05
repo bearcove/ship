@@ -4,10 +4,10 @@ use std::path::{Path, PathBuf};
 
 use futures_util::StreamExt;
 use ship_types::{
-    AgentSnapshot, AgentState, AutonomyMode, BlockId, BlockPatch, ContentBlock,
-    CreateSessionRequest, CurrentTask, PermissionRequest, PermissionResolution, PersistedSession,
-    Role, SessionConfig, SessionEvent, SessionEventEnvelope, SessionId, SessionSummary,
-    TaskContentRecord, TaskId, TaskRecord, TaskStatus,
+    AgentSnapshot, AgentState, AutonomyMode, BlockId, BlockPatch, CloseSessionResponse,
+    ContentBlock, CreateSessionRequest, CurrentTask, PermissionRequest, PermissionResolution,
+    PersistedSession, Role, SessionConfig, SessionEvent, SessionEventEnvelope, SessionId,
+    SessionSummary, TaskContentRecord, TaskId, TaskRecord, TaskStatus,
 };
 use tokio::sync::broadcast;
 
@@ -510,15 +510,50 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         Ok(())
     }
 
+    fn repo_root_for_worktree(worktree_path: &Path) -> Result<&Path, SessionManagerError> {
+        worktree_path
+            .parent()
+            .and_then(|parent| parent.parent())
+            .ok_or_else(|| {
+                SessionManagerError::Worktree(format!(
+                    "invalid worktree path: {}",
+                    worktree_path.display()
+                ))
+            })
+    }
+
     // r[proto.close-session]
+    // r[backend.worktree-management]
+    // r[worktree.cleanup]
+    // r[worktree.cleanup-uncommitted]
+    // r[worktree.cleanup-git]
     pub async fn close_session(
         &mut self,
         session_id: &SessionId,
-    ) -> Result<(), SessionManagerError> {
+        force: bool,
+    ) -> Result<CloseSessionResponse, SessionManagerError> {
+        let worktree_path = self
+            .sessions
+            .get(session_id)
+            .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?
+            .worktree_path
+            .clone();
+
+        if self
+            .worktree_ops
+            .has_uncommitted_changes(&worktree_path)
+            .await
+            .map_err(|error| SessionManagerError::Worktree(error.message))?
+            && !force
+        {
+            return Ok(CloseSessionResponse::RequiresConfirmation);
+        }
+
         let session = self
             .sessions
             .remove(session_id)
             .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
+        let repo_root = Self::repo_root_for_worktree(&session.worktree_path)?;
 
         self.agent_driver
             .kill(&session.captain_handle)
@@ -529,11 +564,15 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             .await
             .map_err(|error| SessionManagerError::Agent(error.message.clone()))?;
         self.worktree_ops
-            .remove_worktree(&session.worktree_path)
+            .remove_worktree(&session.worktree_path, force)
+            .await
+            .map_err(|error| SessionManagerError::Worktree(error.message))?;
+        self.worktree_ops
+            .delete_branch(&session.config.branch_name, force, repo_root)
             .await
             .map_err(|error| SessionManagerError::Worktree(error.message))?;
 
-        Ok(())
+        Ok(CloseSessionResponse::Closed)
     }
 
     pub async fn drain_notifications(

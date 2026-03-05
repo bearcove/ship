@@ -5,8 +5,8 @@ use ship_core::{
     FakeAgentDriver, FakeSessionStore, FakeWorktreeOps, SessionManager, SessionStore, StopReason,
 };
 use ship_types::{
-    AgentKind, AgentState, AutonomyMode, BlockId, ContentBlock, CreateSessionRequest, ProjectName,
-    Role, SessionEvent, SessionEventEnvelope, TaskStatus,
+    AgentKind, AgentState, AutonomyMode, BlockId, CloseSessionResponse, ContentBlock,
+    CreateSessionRequest, ProjectName, Role, SessionEvent, SessionEventEnvelope, TaskStatus,
 };
 use tokio::time::timeout;
 
@@ -401,5 +401,120 @@ async fn test_event_broadcast() {
             task_id,
             status: TaskStatus::Cancelled,
         }
+    );
+}
+
+// r[verify backend.worktree-management]
+// r[verify worktree.cleanup]
+// r[verify worktree.cleanup-git]
+#[tokio::test]
+async fn test_close_session_cleans_up_clean_worktree() {
+    let (mut manager, agent, worktree, _store) = make_manager();
+
+    agent.push_response(StopReason::EndTurn);
+    agent.push_response(StopReason::EndTurn);
+    agent.push_response(StopReason::EndTurn);
+
+    let (session_id, _) = manager
+        .create_session(make_request("Clean close"), Path::new("/repo"))
+        .await
+        .expect("create session should work");
+
+    let close = manager
+        .close_session(&session_id, false)
+        .await
+        .expect("close session should work");
+
+    assert_eq!(close, CloseSessionResponse::Closed);
+    assert_eq!(agent.killed_handles().len(), 2);
+    assert_eq!(
+        worktree.remove_requests(),
+        vec![(Path::new("/repo/.worktrees/fake-1").to_path_buf(), false)]
+    );
+    assert_eq!(
+        worktree.deleted_branches(),
+        vec![(
+            "ship/".to_owned() + &session_id.0[..8] + "/clean-close",
+            false,
+            Path::new("/repo").to_path_buf()
+        )]
+    );
+    assert!(
+        manager.get_session(&session_id).is_err(),
+        "closed session should be removed from active sessions"
+    );
+}
+
+// r[verify worktree.cleanup-uncommitted]
+#[tokio::test]
+async fn test_close_session_requires_confirmation_for_dirty_worktree() {
+    let (mut manager, agent, worktree, _store) = make_manager();
+
+    agent.push_response(StopReason::EndTurn);
+    agent.push_response(StopReason::EndTurn);
+    agent.push_response(StopReason::EndTurn);
+
+    let (session_id, _) = manager
+        .create_session(make_request("Dirty close"), Path::new("/repo"))
+        .await
+        .expect("create session should work");
+    let worktree_path = worktree
+        .created_paths()
+        .into_iter()
+        .next()
+        .expect("worktree should exist");
+    worktree.set_has_uncommitted_changes(worktree_path, true);
+
+    let close = manager
+        .close_session(&session_id, false)
+        .await
+        .expect("close session should work");
+
+    assert_eq!(close, CloseSessionResponse::RequiresConfirmation);
+    assert!(agent.killed_handles().is_empty());
+    assert!(worktree.remove_requests().is_empty());
+    assert!(worktree.deleted_branches().is_empty());
+    assert!(
+        manager.get_session(&session_id).is_ok(),
+        "session should remain active until force is confirmed"
+    );
+}
+
+// r[verify worktree.cleanup-uncommitted]
+// r[verify worktree.cleanup-git]
+#[tokio::test]
+async fn test_close_session_force_deletes_dirty_worktree() {
+    let (mut manager, agent, worktree, _store) = make_manager();
+
+    agent.push_response(StopReason::EndTurn);
+    agent.push_response(StopReason::EndTurn);
+    agent.push_response(StopReason::EndTurn);
+
+    let (session_id, _) = manager
+        .create_session(make_request("Force dirty close"), Path::new("/repo"))
+        .await
+        .expect("create session should work");
+    let worktree_path = worktree
+        .created_paths()
+        .into_iter()
+        .next()
+        .expect("worktree should exist");
+    worktree.set_has_uncommitted_changes(worktree_path.clone(), true);
+
+    let close = manager
+        .close_session(&session_id, true)
+        .await
+        .expect("forced close session should work");
+
+    assert_eq!(close, CloseSessionResponse::Closed);
+    assert_eq!(agent.killed_handles().len(), 2);
+    assert_eq!(worktree.remove_requests(), vec![(worktree_path, true)]);
+    assert_eq!(
+        worktree.deleted_branches(),
+        vec![(
+            "ship/".to_owned() + &session_id.0[..8] + "/force-dirty-close",
+            true,
+            Path::new("/repo").to_path_buf()
+        )]
     );
 }

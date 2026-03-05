@@ -108,6 +108,17 @@ export interface CreateSessionResponse {
   task_id: string;
 }
 
+export interface CloseSessionRequest {
+  id: string;
+  force: boolean;
+}
+
+export type CloseSessionResponse =
+  | { tag: "Closed" }
+  | { tag: "RequiresConfirmation" }
+  | { tag: "NotFound" }
+  | { tag: "Failed"; message: string };
+
 export type ToolCallStatus = { tag: "Running" } | { tag: "Success" } | { tag: "Failure" };
 
 export type PermissionResolution = { tag: "Approved" } | { tag: "Denied" };
@@ -201,9 +212,6 @@ export type RetryAgentRequest = [
 ];
 export type RetryAgentResponse = void;
 
-export type CloseSessionRequest = [string];
-export type CloseSessionResponse = void;
-
 export type SubscribeEventsRequest = [
   string, // session
   Tx<SubscribeMessage>, // output
@@ -224,7 +232,7 @@ export interface ShipCaller {
   cancel(session: string): CallBuilder<void>;
   resolvePermission(session: string, permissionId: string, approved: boolean): CallBuilder<void>;
   retryAgent(session: string, role: Role): CallBuilder<void>;
-  closeSession(id: string): CallBuilder<void>;
+  closeSession(req: CloseSessionRequest): CallBuilder<CloseSessionResponse>;
   subscribeEvents(session: string, output: Tx<SubscribeMessage>): CallBuilder<void>;
 }
 
@@ -392,16 +400,16 @@ export class ShipClient implements ShipCaller {
     });
   }
 
-  closeSession(id: string): CallBuilder<void> {
+  closeSession(req: CloseSessionRequest): CallBuilder<CloseSessionResponse> {
     const descriptor = ship_descriptor.methods[12];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.closeSession",
-        args: { id },
+        args: { req },
         descriptor,
         metadata,
       });
-      return value as void;
+      return value as CloseSessionResponse;
     });
   }
 
@@ -452,7 +460,7 @@ export interface ShipHandler {
   cancel(session: string): Promise<void> | void;
   resolvePermission(session: string, permissionId: string, approved: boolean): Promise<void> | void;
   retryAgent(session: string, role: Role): Promise<void> | void;
-  closeSession(id: string): Promise<void> | void;
+  closeSession(req: CloseSessionRequest): Promise<CloseSessionResponse> | CloseSessionResponse;
   subscribeEvents(session: string, output: Tx<SubscribeMessage>): Promise<void> | void;
 }
 
@@ -553,9 +561,9 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0x52fd008eebb7186an) {
+    } else if (method.id === 0xc86b919e995583afn) {
       try {
-        const result = await this.handler.closeSession(args[0] as string);
+        const result = await this.handler.closeSession(args[0] as CloseSessionRequest);
         call.reply(result);
       } catch {
         call.replyInternalError();
@@ -1297,12 +1305,26 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: "closeSession",
-      id: 0x52fd008eebb7186an,
-      args: { kind: "tuple", elements: [{ kind: "string" }] },
+      id: 0xc86b919e995583afn,
+      args: {
+        kind: "tuple",
+        elements: [{ kind: "struct", fields: { id: { kind: "string" }, force: { kind: "bool" } } }],
+      },
       result: {
         kind: "enum",
         variants: [
-          { name: "Ok", fields: { kind: "struct", fields: {} } },
+          {
+            name: "Ok",
+            fields: {
+              kind: "enum",
+              variants: [
+                { name: "Closed", fields: null },
+                { name: "RequiresConfirmation", fields: null },
+                { name: "NotFound", fields: null },
+                { name: "Failed", fields: { message: { kind: "string" } } },
+              ],
+            },
+          },
           {
             name: "Err",
             fields: {

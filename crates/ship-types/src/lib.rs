@@ -314,6 +314,23 @@ pub mod protocol {
         pub task_id: crate::ids::TaskId,
     }
 
+    // r[proto.close-session]
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct CloseSessionRequest {
+        pub id: SessionId,
+        pub force: bool,
+    }
+
+    // r[proto.close-session]
+    #[repr(u8)]
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub enum CloseSessionResponse {
+        Closed,
+        RequiresConfirmation,
+        NotFound,
+        Failed { message: String },
+    }
+
     // r[proto.list-projects]
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub struct ProjectInfo {
@@ -406,7 +423,7 @@ pub use events::{
 pub use ids::{BlockId, ProjectName, SessionId, TaskId};
 pub use persistence::{CurrentTask, PersistedSession, SessionConfig, TaskContentRecord};
 pub use protocol::{
-    AutonomyMode, CreateSessionRequest, CreateSessionResponse, ProjectInfo, SessionDetail,
-    SessionSummary,
+    AutonomyMode, CloseSessionRequest, CloseSessionResponse, CreateSessionRequest,
+    CreateSessionResponse, ProjectInfo, SessionDetail, SessionSummary,
 };
 pub use task::{TaskRecord, TaskStatus};

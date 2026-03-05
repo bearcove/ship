@@ -10,6 +10,7 @@ use crate::{WorktreeError, WorktreeOps};
 #[derive(Debug, Default, Clone, Copy)]
 pub struct GitWorktreeOps;
 
+// r[backend.git-shell]
 impl WorktreeOps for GitWorktreeOps {
     async fn create_worktree(
         &self,
@@ -49,7 +50,7 @@ impl WorktreeOps for GitWorktreeOps {
         Ok(worktree_path)
     }
 
-    async fn remove_worktree(&self, path: &Path) -> Result<(), WorktreeError> {
+    async fn remove_worktree(&self, path: &Path, force: bool) -> Result<(), WorktreeError> {
         let repo_root = path
             .parent()
             .and_then(|parent| parent.parent())
@@ -57,18 +58,20 @@ impl WorktreeOps for GitWorktreeOps {
                 message: format!("invalid worktree path: {}", path.display()),
             })?;
 
-        let output = Command::new("git")
+        let mut command = Command::new("git");
+        command
             .arg("-C")
             .arg(repo_root)
             .arg("worktree")
-            .arg("remove")
-            .arg("--force")
-            .arg(path)
-            .output()
-            .await
-            .map_err(|error| WorktreeError {
-                message: error.to_string(),
-            })?;
+            .arg("remove");
+        if force {
+            command.arg("--force");
+        }
+        command.arg(path);
+
+        let output = command.output().await.map_err(|error| WorktreeError {
+            message: error.to_string(),
+        })?;
 
         ensure_success(output)
     }

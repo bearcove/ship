@@ -11,10 +11,10 @@ use ship_core::{
 };
 use ship_service::Ship;
 use ship_types::{
-    AgentKind, AgentSnapshot, AgentState, AutonomyMode, BlockId, ContentBlock,
-    CreateSessionRequest, CreateSessionResponse, CurrentTask, PersistedSession, ProjectInfo,
-    ProjectName, Role, SessionConfig, SessionDetail, SessionEvent, SessionId, SessionSummary,
-    SubscribeMessage, TaskId, TaskRecord, TaskStatus,
+    AgentKind, AgentSnapshot, AgentState, AutonomyMode, BlockId, CloseSessionRequest,
+    CloseSessionResponse, ContentBlock, CreateSessionRequest, CreateSessionResponse, CurrentTask,
+    PersistedSession, ProjectInfo, ProjectName, Role, SessionConfig, SessionDetail, SessionEvent,
+    SessionId, SessionSummary, SubscribeMessage, TaskId, TaskRecord, TaskStatus,
 };
 use tokio::sync::broadcast;
 
@@ -105,6 +105,13 @@ impl ShipImpl {
 
     fn log_error(action: &str, error: &str) {
         tracing::warn!(%action, %error, "ship_impl call failed");
+    }
+
+    fn repo_root_for_worktree(worktree_path: &std::path::Path) -> Result<&std::path::Path, String> {
+        worktree_path
+            .parent()
+            .and_then(|parent| parent.parent())
+            .ok_or_else(|| format!("invalid worktree path: {}", worktree_path.display()))
     }
 
     async fn persist_session(&self, session_id: &SessionId) -> Result<(), String> {
@@ -787,15 +794,50 @@ impl Ship for ShipImpl {
 
     async fn retry_agent(&self, _session: SessionId, _role: Role) {}
 
-    async fn close_session(&self, id: SessionId) {
+    // r[backend.worktree-management]
+    // r[worktree.cleanup]
+    // r[worktree.cleanup-uncommitted]
+    // r[worktree.cleanup-git]
+    async fn close_session(&self, req: CloseSessionRequest) -> CloseSessionResponse {
+        let worktree_path = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let Some(session) = sessions.get(&req.id) else {
+                Self::log_error("close_session", "session not found");
+                return CloseSessionResponse::NotFound;
+            };
+            session.worktree_path.clone()
+        };
+
+        match self
+            .worktree_ops
+            .has_uncommitted_changes(&worktree_path)
+            .await
+        {
+            Ok(true) if !req.force => return CloseSessionResponse::RequiresConfirmation,
+            Ok(_) => {}
+            Err(error) => {
+                Self::log_error("close_session_has_uncommitted_changes", &error.message);
+                return CloseSessionResponse::Failed {
+                    message: error.message,
+                };
+            }
+        }
+
         let removed = {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
-            sessions.remove(&id)
+            sessions.remove(&req.id)
         };
 
         let Some(session) = removed else {
             Self::log_error("close_session", "session not found");
-            return;
+            return CloseSessionResponse::NotFound;
+        };
+        let repo_root = match Self::repo_root_for_worktree(&session.worktree_path) {
+            Ok(repo_root) => repo_root,
+            Err(error) => {
+                Self::log_error("close_session_repo_root", &error);
+                return CloseSessionResponse::Failed { message: error };
+            }
         };
 
         if let Err(error) = self.agent_driver.kill(&session.captain_handle).await {
@@ -806,11 +848,26 @@ impl Ship for ShipImpl {
         }
         if let Err(error) = self
             .worktree_ops
-            .remove_worktree(&session.worktree_path)
+            .remove_worktree(&session.worktree_path, req.force)
             .await
         {
             Self::log_error("close_session_remove_worktree", &error.message);
+            return CloseSessionResponse::Failed {
+                message: error.message,
+            };
         }
+        if let Err(error) = self
+            .worktree_ops
+            .delete_branch(&session.config.branch_name, req.force, repo_root)
+            .await
+        {
+            Self::log_error("close_session_delete_branch", &error.message);
+            return CloseSessionResponse::Failed {
+                message: error.message,
+            };
+        }
+
+        CloseSessionResponse::Closed
     }
 
     async fn subscribe_events(&self, session: SessionId, output: Tx<SubscribeMessage>) {

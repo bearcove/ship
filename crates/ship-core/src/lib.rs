@@ -133,7 +133,7 @@ pub trait WorktreeOps: Send + Sync {
         repo_root: &Path,
     ) -> Result<PathBuf, WorktreeError>;
 
-    async fn remove_worktree(&self, path: &Path) -> Result<(), WorktreeError>;
+    async fn remove_worktree(&self, path: &Path, force: bool) -> Result<(), WorktreeError>;
 
     async fn has_uncommitted_changes(&self, path: &Path) -> Result<bool, WorktreeError>;
 

@@ -213,7 +213,7 @@ impl AgentDriver for FakeAgentDriver {
 struct FakeWorktreeInner {
     next_idx: usize,
     created: HashMap<PathBuf, (SessionId, String, String, PathBuf)>,
-    removed: Vec<PathBuf>,
+    removed: Vec<(PathBuf, bool)>,
     dirty_flags: HashMap<PathBuf, bool>,
     branches: Vec<String>,
     deleted_branches: Vec<(String, bool, PathBuf)>,
@@ -255,6 +255,24 @@ impl FakeWorktreeOps {
             .lock()
             .expect("fake worktree ops mutex poisoned")
             .removed
+            .iter()
+            .map(|(path, _force)| path.clone())
+            .collect()
+    }
+
+    pub fn remove_requests(&self) -> Vec<(PathBuf, bool)> {
+        self.inner
+            .lock()
+            .expect("fake worktree ops mutex poisoned")
+            .removed
+            .clone()
+    }
+
+    pub fn deleted_branches(&self) -> Vec<(String, bool, PathBuf)> {
+        self.inner
+            .lock()
+            .expect("fake worktree ops mutex poisoned")
+            .deleted_branches
             .clone()
     }
 }
@@ -284,11 +302,11 @@ impl WorktreeOps for FakeWorktreeOps {
         Ok(path)
     }
 
-    async fn remove_worktree(&self, path: &Path) -> Result<(), WorktreeError> {
+    async fn remove_worktree(&self, path: &Path, force: bool) -> Result<(), WorktreeError> {
         let mut inner = self.inner.lock().expect("fake worktree ops mutex poisoned");
 
         inner.created.remove(path);
-        inner.removed.push(path.to_path_buf());
+        inner.removed.push((path.to_path_buf(), force));
         Ok(())
     }
 
