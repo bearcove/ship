@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use ship_core::ProjectRegistry;
 use ulid::Ulid;
@@ -8,7 +8,7 @@ fn test_root() -> PathBuf {
     std::env::temp_dir().join(format!("ship-project-registry-test-{}", Ulid::new()))
 }
 
-fn mk_repo(root: &PathBuf, name: &str) -> PathBuf {
+fn mk_repo(root: &Path, name: &str) -> PathBuf {
     let repo = root.join(name);
     fs::create_dir_all(repo.join(".git")).expect("should create fake git dir");
     repo
