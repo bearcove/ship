@@ -15,7 +15,7 @@ facet-json = { workspace = true }
 fs-err = { workspace = true }
 futures-util = "0.3"
 tokio = { version = "1", features = ["sync"] }
-ulid = { workspace = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+ulid = { workspace = true }
