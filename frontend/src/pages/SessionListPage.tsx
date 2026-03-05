@@ -20,10 +20,13 @@ import { useProjects } from "../hooks/useProjects";
 import { useSessionList } from "../hooks/useSessionList";
 import { useAgentDiscovery } from "../hooks/useAgentDiscovery";
 import { useBranches } from "../hooks/useBranches";
-import { sessionCard, idleDot } from "../styles/session-list.css";
-import type { AgentKind, TaskStatus } from "../types";
+import { sessionCard } from "../styles/session-list.css";
+import type { AgentKind, TaskStatus } from "../generated/ship";
 
-const STATUS_COLOR: Record<TaskStatus, "gray" | "blue" | "amber" | "orange" | "green" | "red"> = {
+const STATUS_COLOR: Record<
+  TaskStatus["tag"],
+  "gray" | "blue" | "amber" | "orange" | "green" | "red"
+> = {
   Assigned: "gray",
   Working: "blue",
   ReviewPending: "amber",
@@ -32,20 +35,10 @@ const STATUS_COLOR: Record<TaskStatus, "gray" | "blue" | "amber" | "orange" | "g
   Cancelled: "red",
 };
 
-function relativeTime(date: Date): string {
-  const diffMs = Date.now() - date.getTime();
-  const diffMin = Math.floor(diffMs / 60_000);
-  if (diffMin < 1) return "just now";
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}h ago`;
-  return `${Math.floor(diffHr / 24)}d ago`;
-}
-
 function AgentKindLabel({ kind }: { kind: AgentKind }) {
   return (
-    <Badge color={kind === "claude" ? "violet" : "cyan"} variant="soft" size="1">
-      {kind === "claude" ? "Claude" : "Codex"}
+    <Badge color={kind.tag === "Claude" ? "violet" : "cyan"} variant="soft" size="1">
+      {kind.tag}
     </Badge>
   );
 }
@@ -79,12 +72,16 @@ function AgentKindControl({
       <Text size="2" weight="medium">
         {label}
       </Text>
-      <SegmentedControl.Root value={value} onValueChange={(v) => onChange(v as AgentKind)} size="2">
+      <SegmentedControl.Root
+        value={value.tag}
+        onValueChange={(v) => onChange({ tag: v as "Claude" | "Codex" })}
+        size="2"
+      >
         <DisabledTooltip
           content={claudeAvailable ? undefined : "claude-agent-acp not found on PATH"}
         >
           <SegmentedControl.Item
-            value="claude"
+            value="Claude"
             style={claudeAvailable ? undefined : { opacity: 0.4, pointerEvents: "none" }}
           >
             Claude
@@ -92,7 +89,7 @@ function AgentKindControl({
         </DisabledTooltip>
         <DisabledTooltip content={codexAvailable ? undefined : "codex-acp not found on PATH"}>
           <SegmentedControl.Item
-            value="codex"
+            value="Codex"
             style={codexAvailable ? undefined : { opacity: 0.4, pointerEvents: "none" }}
           >
             Codex
@@ -193,8 +190,8 @@ function NewSessionDialog({
 
   const defaultProject = preselectedProject ?? (projects.length === 1 ? projects[0].name : "");
   const [projectName, setProjectName] = useState(defaultProject);
-  const [captainKind, setCaptainKind] = useState<AgentKind>("claude");
-  const [mateKind, setMateKind] = useState<AgentKind>("claude");
+  const [captainKind, setCaptainKind] = useState<AgentKind>({ tag: "Claude" });
+  const [mateKind, setMateKind] = useState<AgentKind>({ tag: "Claude" });
   const [branch, setBranch] = useState("main");
   const [taskDescription, setTaskDescription] = useState("");
 
@@ -431,37 +428,37 @@ export function SessionListPage() {
                 <Flex direction="column" gap="2">
                   <Flex align="center" gap="2" wrap="wrap">
                     <Badge color="gray" variant="outline" size="1">
-                      {session.projectName}
+                      {session.project}
                     </Badge>
                     <Text size="2" style={{ fontFamily: "monospace", color: "var(--gray-11)" }}>
-                      {session.branch}
+                      {session.branch_name}
                     </Text>
                     <Flex gap="1" ml="auto" align="center">
-                      {session.hasIdleReminder && <Box className={idleDot} />}
-                      <Badge color={STATUS_COLOR[session.taskStatus]} size="1">
-                        {session.taskStatus}
-                      </Badge>
+                      {session.task_status && (
+                        <Badge color={STATUS_COLOR[session.task_status.tag]} size="1">
+                          {session.task_status.tag}
+                        </Badge>
+                      )}
                     </Flex>
                   </Flex>
 
-                  <Text size="3" weight="medium" style={{ lineHeight: 1.4 }}>
-                    {session.taskDescription.length > 100
-                      ? `${session.taskDescription.slice(0, 97)}…`
-                      : session.taskDescription}
-                  </Text>
+                  {session.current_task_description && (
+                    <Text size="3" weight="medium" style={{ lineHeight: 1.4 }}>
+                      {session.current_task_description.length > 100
+                        ? `${session.current_task_description.slice(0, 97)}…`
+                        : session.current_task_description}
+                    </Text>
+                  )}
 
                   <Flex align="center" gap="2">
                     <Text size="1" color="gray">
                       Captain:
                     </Text>
-                    <AgentKindLabel kind={session.captainKind} />
+                    <AgentKindLabel kind={session.captain.kind} />
                     <Text size="1" color="gray">
                       Mate:
                     </Text>
-                    <AgentKindLabel kind={session.mateKind} />
-                    <Text size="1" color="gray" style={{ marginLeft: "auto" }}>
-                      {relativeTime(session.lastActivityAt)}
-                    </Text>
+                    <AgentKindLabel kind={session.mate.kind} />
                   </Flex>
                 </Flex>
               </Card>

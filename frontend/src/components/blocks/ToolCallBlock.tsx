@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Badge, Box, Code, Flex, Text } from "@radix-ui/themes";
 import { CaretRight, CaretDown } from "@phosphor-icons/react";
-import type { ToolCallBlock as ToolCallBlockType } from "../../types";
+import type { ContentBlock } from "../../generated/ship";
 import {
   toolCallBlock,
   toolCallHeader,
@@ -10,6 +10,8 @@ import {
   diffRemove,
   diffContext,
 } from "../../styles/session-view.css";
+
+type ToolCallBlockType = Extract<ContentBlock, { tag: "ToolCall" }>;
 
 interface Props {
   block: ToolCallBlockType;
@@ -51,13 +53,11 @@ export function ToolCallBlock({ block }: Props) {
   const [expanded, setExpanded] = useState(false);
 
   const statusColor =
-    block.status === "success" ? "green" : block.status === "failure" ? "red" : "gray";
-
-  const summary = block.filePath
-    ? block.diffSummary
-      ? `${block.filePath}  ${block.diffSummary}`
-      : block.filePath
-    : (block.command ?? block.query ?? "");
+    block.status.tag === "Success"
+      ? "green"
+      : block.status.tag === "Failure"
+        ? "red"
+        : ("gray" as const);
 
   return (
     <Box className={toolCallBlock}>
@@ -74,30 +74,28 @@ export function ToolCallBlock({ block }: Props) {
         ) : (
           <CaretRight size={12} style={{ color: "var(--gray-9)", flexShrink: 0 }} />
         )}
-        <Code size="1">{block.toolName}</Code>
-        {summary && (
-          <Text
-            size="1"
-            style={{
-              color: "var(--gray-11)",
-              fontFamily: "monospace",
-              flex: 1,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {summary}
-          </Text>
-        )}
+        <Code size="1">{block.tool_name}</Code>
+        <Text
+          size="1"
+          style={{
+            color: "var(--gray-11)",
+            fontFamily: "monospace",
+            flex: 1,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {block.arguments}
+        </Text>
         <Box ml="auto">
-          {block.status === "pending" ? (
+          {block.status.tag === "Running" ? (
             <Badge color="gray" size="1">
-              pending
+              running
             </Badge>
           ) : (
             <Badge color={statusColor} size="1">
-              {block.status === "success" ? "✓" : "✗"}
+              {block.status.tag === "Success" ? "✓" : "✗"}
             </Badge>
           )}
         </Box>

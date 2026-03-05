@@ -13,11 +13,14 @@ import {
   Tooltip,
 } from "@radix-ui/themes";
 import { ClockCounterClockwise } from "@phosphor-icons/react";
-import type { Task, TaskStatus } from "../types";
+import type { TaskRecord, TaskStatus } from "../generated/ship";
 import { useTaskHistory } from "../hooks/useTaskHistory";
 import { taskBar, taskDescription } from "../styles/session-view.css";
 
-const STATUS_COLOR: Record<TaskStatus, "gray" | "blue" | "amber" | "orange" | "green" | "red"> = {
+const STATUS_COLOR: Record<
+  TaskStatus["tag"],
+  "gray" | "blue" | "amber" | "orange" | "green" | "red"
+> = {
   Assigned: "gray",
   Working: "blue",
   ReviewPending: "amber",
@@ -25,16 +28,6 @@ const STATUS_COLOR: Record<TaskStatus, "gray" | "blue" | "amber" | "orange" | "g
   Accepted: "green",
   Cancelled: "red",
 };
-
-function relativeTime(date: Date): string {
-  const diffMs = Date.now() - date.getTime();
-  const diffMin = Math.floor(diffMs / 60_000);
-  if (diffMin < 1) return "just now";
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}h ago`;
-  return `${Math.floor(diffHr / 24)}d ago`;
-}
 
 function TaskHistoryPopover({ sessionId }: { sessionId: string }) {
   const history = useTaskHistory(sessionId);
@@ -59,19 +52,12 @@ function TaskHistoryPopover({ sessionId }: { sessionId: string }) {
             {history.map((task) => (
               <DataList.Item key={task.id}>
                 <DataList.Label>
-                  <Badge color={STATUS_COLOR[task.status]} size="1">
-                    {task.status}
+                  <Badge color={STATUS_COLOR[task.status.tag]} size="1">
+                    {task.status.tag}
                   </Badge>
                 </DataList.Label>
                 <DataList.Value>
-                  <Flex direction="column" gap="1">
-                    <Text size="2">{task.description}</Text>
-                    {task.completedAt && (
-                      <Text size="1" color="gray">
-                        {relativeTime(task.completedAt)}
-                      </Text>
-                    )}
-                  </Flex>
+                  <Text size="2">{task.description}</Text>
                 </DataList.Value>
               </DataList.Item>
             ))}
@@ -156,7 +142,7 @@ function NewTaskDialog() {
 
 interface Props {
   sessionId: string;
-  task?: Task;
+  task: TaskRecord | null;
 }
 
 // r[ui.task-bar.layout]
@@ -170,8 +156,8 @@ export function TaskBar({ sessionId, task }: Props) {
               <Text size="2">{task.description}</Text>
             </Box>
           </Tooltip>
-          <Badge color={STATUS_COLOR[task.status]} size="1" style={{ flexShrink: 0 }}>
-            {task.status}
+          <Badge color={STATUS_COLOR[task.status.tag]} size="1" style={{ flexShrink: 0 }}>
+            {task.status.tag}
           </Badge>
         </>
       ) : (
@@ -182,12 +168,12 @@ export function TaskBar({ sessionId, task }: Props) {
 
       <Flex gap="2" align="center" style={{ flexShrink: 0 }}>
         <OwnSteerDialog />
-        {task?.status === "Working" && (
+        {task?.status.tag === "Working" && (
           <Button size="2" color="red" variant="soft">
             Cancel
           </Button>
         )}
-        {task?.status === "ReviewPending" && (
+        {task?.status.tag === "ReviewPending" && (
           <>
             <Button size="2" color="green">
               Accept

@@ -1,27 +1,29 @@
 import { Card, Text } from "@radix-ui/themes";
 import { Circle, SpinnerGap, CheckCircle, XCircle } from "@phosphor-icons/react";
-import type { PlanUpdateBlock as PlanUpdateBlockType, PlanStepStatus } from "../../types";
+import type { ContentBlock, PlanStepStatus } from "../../generated/ship";
+
+type PlanUpdateBlockType = Extract<ContentBlock, { tag: "PlanUpdate" }>;
 
 interface Props {
   block: PlanUpdateBlockType;
 }
 
 function StepIcon({ status }: { status: PlanStepStatus }) {
-  switch (status) {
-    case "planned":
+  switch (status.tag) {
+    case "Planned":
       return <Circle size={14} style={{ color: "var(--gray-9)", flexShrink: 0 }} />;
-    case "in-progress":
+    case "InProgress":
       return (
         <SpinnerGap
           size={14}
           style={{ color: "var(--blue-9)", flexShrink: 0, animation: "spin 1s linear infinite" }}
         />
       );
-    case "completed":
+    case "Completed":
       return (
         <CheckCircle size={14} weight="fill" style={{ color: "var(--green-9)", flexShrink: 0 }} />
       );
-    case "failed":
+    case "Failed":
       return <XCircle size={14} weight="fill" style={{ color: "var(--red-9)", flexShrink: 0 }} />;
   }
 }
@@ -46,12 +48,12 @@ export function PlanUpdateBlock({ block }: Props) {
               size="1"
               style={{
                 color:
-                  step.status === "completed"
+                  step.status.tag === "Completed"
                     ? "var(--gray-10)"
-                    : step.status === "failed"
+                    : step.status.tag === "Failed"
                       ? "var(--red-11)"
                       : "var(--gray-12)",
-                textDecoration: step.status === "completed" ? "line-through" : undefined,
+                textDecoration: step.status.tag === "Completed" ? "line-through" : undefined,
               }}
             >
               {step.description}

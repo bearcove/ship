@@ -16,14 +16,14 @@ import {
   mobilePanel,
   idleBanner,
 } from "../styles/session-view.css";
-import type { SessionDetail } from "../types";
+import type { SessionDetail } from "../generated/ship";
 
 function getIdleMessage(session: SessionDetail): string | null {
-  if (session.activeTask?.status === "ReviewPending")
+  if (session.current_task?.status.tag === "ReviewPending")
     return "Mate has finished — review and accept, reject, or steer.";
-  if (session.activeTask?.status === "SteerPending")
+  if (session.current_task?.status.tag === "SteerPending")
     return "Captain's steer is ready — review and send to the mate.";
-  if (session.mate.state === "awaiting-permission")
+  if (session.mate.state.tag === "AwaitingPermission")
     return "Mate is waiting for permission approval.";
   return null;
 }
@@ -33,7 +33,7 @@ export function SessionViewPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
   const session = useSession(sessionId ?? "");
-  const [autonomous, setAutonomous] = useState(session.autonomyMode === "autonomous");
+  const [autonomous, setAutonomous] = useState(session.autonomy_mode.tag === "Autonomous");
   const [mobileTab, setMobileTab] = useState<"captain" | "mate">("captain");
 
   const idle = getIdleMessage(session);
@@ -53,9 +53,9 @@ export function SessionViewPage() {
     <Flex className={sessionViewRoot}>
       <Flex className={sessionTopBar}>
         <Text size="2" weight="bold">
-          {session.projectName}
+          {session.project}
         </Text>
-        <Text className={sessionBranch}>{session.branch}</Text>
+        <Text className={sessionBranch}>{session.branch_name}</Text>
         <Flex align="center" gap="2">
           <Text size="2">Autonomous</Text>
           <Switch size="2" checked={autonomous} onCheckedChange={setAutonomous} />
@@ -112,9 +112,9 @@ export function SessionViewPage() {
         </Box>
       </Box>
 
-      {session.pendingSteer && <SteerReview steer={session.pendingSteer} />}
+      {session.pending_steer && <SteerReview steer={{ captainSteer: session.pending_steer }} />}
 
-      <TaskBar sessionId={session.id} task={session.activeTask} />
+      <TaskBar sessionId={session.id} task={session.current_task} />
     </Flex>
   );
 }

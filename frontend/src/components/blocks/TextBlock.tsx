@@ -1,7 +1,9 @@
 import { Box, Code } from "@radix-ui/themes";
 import ReactMarkdown from "react-markdown";
-import type { TextBlock as TextBlockType } from "../../types";
+import type { ContentBlock } from "../../generated/ship";
 import { toolCallBody } from "../../styles/session-view.css";
+
+type TextBlockType = Extract<ContentBlock, { tag: "Text" }>;
 
 interface Props {
   block: TextBlockType;
@@ -35,7 +37,7 @@ export function TextBlock({ block }: Props) {
           },
         }}
       >
-        {block.content}
+        {block.text}
       </ReactMarkdown>
     </Box>
   );

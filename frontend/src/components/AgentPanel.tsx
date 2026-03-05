@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Badge, Box, Button, Callout, Flex, Progress, Spinner, Text } from "@radix-ui/themes";
 import { ArrowsClockwise, Warning } from "@phosphor-icons/react";
-import type { AgentInfo, ContentBlock, PlanUpdateBlock } from "../types";
+import type { AgentSnapshot, ContentBlock, PermissionResolution } from "../generated/ship";
 import { useSessionEvents } from "../hooks/useSessionEvents";
 import { TextBlock } from "./blocks/TextBlock";
 import { ToolCallBlock } from "./blocks/ToolCallBlock";
@@ -18,37 +18,39 @@ import {
 
 interface Props {
   sessionId: string;
-  agent: AgentInfo;
+  agent: AgentSnapshot;
 }
 
-function AgentStateBadge({ agent }: { agent: AgentInfo }) {
-  switch (agent.state) {
-    case "working":
+type PlanUpdateBlock = Extract<ContentBlock, { tag: "PlanUpdate" }>;
+
+function AgentStateBadge({ agent }: { agent: AgentSnapshot }) {
+  switch (agent.state.tag) {
+    case "Working":
       return (
         <Badge color="blue" size="1">
           <Spinner size="1" />
           Working
         </Badge>
       );
-    case "idle":
+    case "Idle":
       return (
         <Badge color="gray" size="1">
           Idle
         </Badge>
       );
-    case "awaiting-permission":
+    case "AwaitingPermission":
       return (
         <Badge color="amber" size="1">
           Awaiting Permission
         </Badge>
       );
-    case "context-exhausted":
+    case "ContextExhausted":
       return (
         <Badge color="red" size="1">
           Context Exhausted
         </Badge>
       );
-    case "error":
+    case "Error":
       return (
         <Badge color="red" size="1">
           <Warning size={10} />
@@ -61,7 +63,7 @@ function AgentStateBadge({ agent }: { agent: AgentInfo }) {
 function latestPlan(events: ContentBlock[]): PlanUpdateBlock | undefined {
   let last: PlanUpdateBlock | undefined;
   for (const e of events) {
-    if (e.type === "plan-update") last = e;
+    if (e.tag === "PlanUpdate") last = e;
   }
   return last;
 }
@@ -70,46 +72,47 @@ function latestPlan(events: ContentBlock[]): PlanUpdateBlock | undefined {
 export function AgentPanel({ sessionId, agent }: Props) {
   const events = useSessionEvents(sessionId, agent.role);
   const plan = latestPlan(events);
-  const [resolvedPerms, setResolvedPerms] = useState<Record<string, "approved" | "denied">>({});
+  const [resolvedPerms, setResolvedPerms] = useState<Record<number, PermissionResolution>>({});
 
-  const contextPct = agent.context
-    ? Math.round(((agent.context.total - agent.context.used) / agent.context.total) * 100)
-    : null;
-
+  const contextPct = agent.context_remaining_percent;
   const contextLow = contextPct !== null && contextPct < 20;
 
-  // Find the last unresolved permission block id
-  let lastUnresolvedPermId: string | undefined;
-  for (const e of events) {
-    if (e.type === "permission" && !e.resolution && !resolvedPerms[e.id]) {
-      lastUnresolvedPermId = e.id;
+  let lastUnresolvedPermIdx: number | undefined;
+  events.forEach((e, i) => {
+    if (e.tag === "Permission" && !e.resolution && !resolvedPerms[i]) {
+      lastUnresolvedPermIdx = i;
     }
-  }
+  });
 
-  function renderBlock(block: ContentBlock) {
-    switch (block.type) {
-      case "text":
+  function renderBlock(block: ContentBlock, idx: number) {
+    switch (block.tag) {
+      case "Text":
         return <TextBlock block={block} />;
-      case "tool-call":
+      case "ToolCall":
         return <ToolCallBlock block={block} />;
-      case "plan-update":
+      case "PlanUpdate":
         return null;
-      case "error":
+      case "Error":
         return <ErrorBlock block={block} agentState={agent.state} />;
-      case "permission": {
-        const resolution = resolvedPerms[block.id] ?? block.resolution;
-        const resolved = { ...block, resolution };
-        const isActive = block.id === lastUnresolvedPermId;
+      case "Permission": {
+        const resolution: PermissionResolution | null = resolvedPerms[idx] ?? block.resolution;
+        const resolvedBlock: Extract<ContentBlock, { tag: "Permission" }> = {
+          ...block,
+          resolution,
+        };
+        const isActive = idx === lastUnresolvedPermIdx;
         return (
           <PermissionBlock
-            block={resolved}
+            block={resolvedBlock}
             onApprove={
               isActive
-                ? () => setResolvedPerms((r) => ({ ...r, [block.id]: "approved" }))
+                ? () => setResolvedPerms((r) => ({ ...r, [idx]: { tag: "Approved" } as const }))
                 : undefined
             }
             onDeny={
-              isActive ? () => setResolvedPerms((r) => ({ ...r, [block.id]: "denied" })) : undefined
+              isActive
+                ? () => setResolvedPerms((r) => ({ ...r, [idx]: { tag: "Denied" } as const }))
+                : undefined
             }
           />
         );
@@ -121,23 +124,23 @@ export function AgentPanel({ sessionId, agent }: Props) {
     <Box className={agentPanelRoot}>
       <Box className={agentHeader}>
         <Flex className={agentHeaderRow}>
-          <Badge color={agent.kind === "claude" ? "violet" : "cyan"} variant="soft">
-            {agent.kind === "claude" ? "Claude" : "Codex"}
+          <Badge color={agent.kind.tag === "Claude" ? "violet" : "cyan"} variant="soft">
+            {agent.kind.tag}
           </Badge>
-          <Text size="1" color="gray" style={{ textTransform: "capitalize" }}>
-            {agent.role}
+          <Text size="1" color="gray">
+            {agent.role.tag}
           </Text>
           <Box ml="auto">
             <AgentStateBadge agent={agent} />
           </Box>
         </Flex>
 
-        {contextPct !== null && agent.state !== "context-exhausted" && (
+        {contextPct !== null && agent.state.tag !== "ContextExhausted" && (
           <Progress value={contextPct} color={contextLow ? "red" : "blue"} size="1" />
         )}
 
         {/* r[context.warning] */}
-        {contextLow && agent.state !== "context-exhausted" && (
+        {contextLow && agent.state.tag !== "ContextExhausted" && (
           <Callout.Root color="red" size="1" variant="soft">
             <Callout.Icon>
               <Warning size={14} />
@@ -149,7 +152,7 @@ export function AgentPanel({ sessionId, agent }: Props) {
         )}
 
         {/* r[context.manual-rotation] */}
-        {agent.state === "context-exhausted" && (
+        {agent.state.tag === "ContextExhausted" && (
           <Callout.Root color="red" size="1">
             <Callout.Icon>
               <Warning size={14} />
@@ -163,12 +166,12 @@ export function AgentPanel({ sessionId, agent }: Props) {
         )}
 
         {/* r[ui.error.agent] */}
-        {agent.state === "error" && agent.errorMessage && (
+        {agent.state.tag === "Error" && (
           <Callout.Root color="red" size="1">
             <Callout.Icon>
               <Warning size={14} />
             </Callout.Icon>
-            <Callout.Text>{agent.errorMessage}</Callout.Text>
+            <Callout.Text>{agent.state.message}</Callout.Text>
             <Button size="1" color="red" variant="soft" mt="2">
               <ArrowsClockwise size={12} />
               Retry Agent
@@ -185,9 +188,10 @@ export function AgentPanel({ sessionId, agent }: Props) {
 
       <Box className={eventStream}>
         {events
-          .filter((e) => e.type !== "plan-update")
-          .map((block) => (
-            <Box key={block.id}>{renderBlock(block)}</Box>
+          .map((block, i) => [block, i] as const)
+          .filter(([block]) => block.tag !== "PlanUpdate")
+          .map(([block, i]) => (
+            <Box key={i}>{renderBlock(block, i)}</Box>
           ))}
       </Box>
     </Box>

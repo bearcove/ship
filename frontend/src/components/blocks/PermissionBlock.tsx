@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { Badge, Box, Button, Code, Flex, Text, Tooltip } from "@radix-ui/themes";
 import { CaretDown, CaretRight } from "@phosphor-icons/react";
-import type { PermissionBlock as PermissionBlockType } from "../../types";
+import type { ContentBlock, PermissionResolution } from "../../generated/ship";
 import { permissionCard } from "../../styles/session-view.css";
+
+type PermissionBlockType = Extract<ContentBlock, { tag: "Permission" }>;
 
 interface Props {
   block: PermissionBlockType;
@@ -14,9 +16,11 @@ interface Props {
 export function PermissionBlock({ block, onApprove, onDeny }: Props) {
   const [argsExpanded, setArgsExpanded] = useState(false);
 
+  const resolution: PermissionResolution | null = block.resolution;
+
   // r[ui.keys.permission]
   useEffect(() => {
-    if (block.resolution) return;
+    if (resolution) return;
     if (!onApprove && !onDeny) return;
 
     function handler(e: KeyboardEvent) {
@@ -26,16 +30,16 @@ export function PermissionBlock({ block, onApprove, onDeny }: Props) {
     }
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [block.resolution, onApprove, onDeny]);
+  }, [resolution, onApprove, onDeny]);
 
-  if (block.resolution) {
+  if (resolution) {
     return (
       <Flex align="center" gap="2">
-        <Badge color={block.resolution === "approved" ? "green" : "red"} size="1">
-          {block.resolution === "approved" ? "✓ Approved" : "✗ Denied"}
+        <Badge color={resolution.tag === "Approved" ? "green" : "red"} size="1">
+          {resolution.tag === "Approved" ? "✓ Approved" : "✗ Denied"}
         </Badge>
         <Text size="1" color="gray">
-          <Code size="1">{block.toolName}</Code> — {block.description}
+          <Code size="1">{block.tool_name}</Code> — {block.description}
         </Text>
       </Flex>
     );
@@ -48,7 +52,7 @@ export function PermissionBlock({ block, onApprove, onDeny }: Props) {
           Permission request
         </Text>
         <Text size="2">
-          <Code size="1">{block.toolName}</Code> — {block.description}
+          <Code size="1">{block.tool_name}</Code> — {block.description}
         </Text>
       </Flex>
 
@@ -74,7 +78,7 @@ export function PermissionBlock({ block, onApprove, onDeny }: Props) {
             whiteSpace: "pre-wrap",
           }}
         >
-          {JSON.stringify(block.args, null, 2)}
+          {block.arguments}
         </Box>
       )}
 
@@ -88,7 +92,7 @@ export function PermissionBlock({ block, onApprove, onDeny }: Props) {
         </Button>
         <Tooltip content="Approve all future uses of this tool for the current task">
           <Button size="1" color="green" variant="outline" onClick={onApprove}>
-            Approve all {block.toolName}
+            Approve all {block.tool_name}
           </Button>
         </Tooltip>
         {(onApprove || onDeny) && (
