@@ -33,6 +33,26 @@ Worktrees are **persistent** — don't remove them between passes.
 5. Before dispatching any new prompt, coordinator rebases both agent worktrees onto the current `main` so they contain the latest docs, bug files, generated types, and coordinator-side changes.
 6. Agents then start new work from those rebased worktrees.
 
+## Branch shape invariants
+
+- Agent branches must stay clean fast-forward candidates for `main`.
+- After coordinator merges agent work into `main`, the corresponding worktree branch should normally be either identical to `main` or a simple descendant of it.
+- Rebasing a worktree branch onto `main` must not duplicate already-merged coordinator commits under new SHAs. If that happens, stop and repair the branch before dispatching more work.
+
+## Recovery procedure
+
+If a worktree branch stops being a clean fast-forward candidate for `main`:
+
+1. Do not merge that branch directly.
+2. Cherry-pick only the reviewed tip commits that have not already landed on `main`.
+3. Push `main`.
+4. Recreate a clean worktree branch from `main`:
+   ```
+   cd ~/bearcove/ship-frontend && git checkout -B frontend main
+   cd ~/bearcove/ship-backend && git checkout -B backend main
+   ```
+5. Only after the branch has been reset to match `main` should the next agent task begin.
+
 ## What lives where
 
 - **AGENTS.md**: instructions for agents (tooling, conventions, tracey annotation syntax). Agents read this.
@@ -64,3 +84,4 @@ Done by the coordinator on main, between agent merges. Steps:
 - Tracey annotation passes happen between merges, not during agent work.
 - Always read the spec before writing annotations. Don't guess rule IDs.
 - If the coordinator adds or changes files that agent prompts depend on (for example bug tracker files, docs, or generated artifacts), the coordinator must rebase the agent worktrees before sending those prompts.
+- Coordinator git mutations must be run sequentially, never in parallel.
