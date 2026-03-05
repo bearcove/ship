@@ -121,7 +121,23 @@ info and capabilities before any other ACP method.
 
 r[acp.conn.new-session]
 After initialization, Ship MUST call `new_session` with the worktree path
-as the working directory and any MCP servers to connect.
+as the working directory and the configured MCP servers.
+
+### MCP Server Configuration
+
+r[acp.mcp.config]
+Ship MUST support configuring a list of MCP servers that agents can connect
+to. This is specified per session at creation time or globally via server
+configuration.
+
+r[acp.mcp.passthrough]
+The MCP server list MUST be passed to the agent via `NewSessionRequest`'s
+`mcp_servers` field. Ship does not proxy MCP — the agent connects to MCP
+servers directly.
+
+r[acp.mcp.defaults]
+Ship SHOULD support a default MCP server list (e.g., tracey, filesystem) that
+is applied to all sessions unless overridden.
 
 ### Client Implementation
 
@@ -245,6 +261,15 @@ The backend MUST manage git worktree creation and cleanup.
 r[backend.task-persistence]
 Task state MUST be persisted to survive server restarts.
 
+r[backend.persistence-format]
+Session and task state MUST be serialized using facet-json and stored as JSON
+files in a `.ship/` directory relative to the repository root. Each session
+gets a `{session_id}.json` file containing the session config, current task,
+and task history.
+
+r[backend.persistence-dir-gitignore]
+The `.ship/` persistence directory MUST be added to `.gitignore`.
+
 ### Frontend
 
 r[frontend.typescript]
@@ -339,6 +364,11 @@ r[dev-proxy.vite-lifecycle]
 The backend MUST manage the Vite dev server process lifecycle: start it on
 launch, wait for TCP readiness, and kill it on shutdown.
 
+r[dev-proxy.vite-port]
+The Vite dev server port MUST be configurable via an environment variable
+(e.g., `SHIP_VITE_ADDR`, defaulting to `[::]:9141`). The backend passes this
+to Vite via `--host` and `--port` flags and uses it as the proxy target.
+
 r[dev-proxy.prod-static]
 In production mode (no dev proxy), the backend MUST serve the frontend from
 Vite's build output directory, with SPA fallback to `index.html`.
@@ -432,6 +462,17 @@ r[proto.resolve-permission]
 The protocol MUST support a `resolve_permission` operation to respond to agent
 permission requests.
 
+r[proto.close-session]
+The protocol MUST support a `close_session` operation that tears down both
+agents, triggers worktree cleanup (with confirmation), and removes the session
+from the active list. The session's persistence file is retained for history.
+
+r[proto.get-session]
+The protocol MUST support a `get_session` operation that returns the full
+session state: agent snapshots, current task (with all content blocks and
+steer history), task history, and autonomy mode. This is used for initial
+hydration when a browser connects or reconnects.
+
 ## Agent State
 
 r[agent-state.derived]
@@ -452,6 +493,34 @@ The `AwaitingPermission` state MUST include the pending permission request.
 r[agent-state.context-exhausted]
 The `ContextExhausted` state indicates the agent has hit its context window
 limit.
+
+r[agent-state.error]
+The `Error` state indicates the agent has failed. It MUST include an error
+message describing what went wrong (spawn failure, ACP protocol error, crash,
+etc.). An agent in the `Error` state cannot receive prompts until it is
+restarted.
+
+### Error Conditions
+
+r[error.spawn-failure]
+If an agent binary fails to spawn (not found, permission denied, npm not
+installed, etc.), the agent MUST transition to the `Error` state with a
+descriptive message and the session MUST remain usable for the other agent.
+
+r[error.acp-init-failure]
+If ACP `initialize` or `new_session` fails, the agent MUST transition to the
+`Error` state. The backend MUST NOT retry automatically — the human decides
+whether to retry or reconfigure.
+
+r[error.agent-crash]
+If an agent process exits unexpectedly (non-zero exit, signal), the agent MUST
+transition to the `Error` state. The backend MUST capture stderr output and
+include it in the error message.
+
+r[error.frontend-display]
+The frontend MUST display agent error states prominently, including the error
+message. It MUST offer a "retry" action that attempts to respawn and
+reinitialize the agent.
 
 ### Plan Steps
 
@@ -537,6 +606,16 @@ Tasks MUST be cancellable at any point in their lifecycle.
 r[event.subscribe]
 The frontend MUST be able to subscribe to a session's event stream.
 
+r[event.subscribe.roam-channel]
+Event subscription MUST be implemented as a roam bidirectional channel. The
+frontend opens the channel by session ID and receives `SessionEvent`s as a
+typed stream. The channel is part of the `Ship` service trait.
+
+r[event.subscribe.replay]
+When a new subscriber connects, the backend MUST replay the current task's
+content block history before streaming live events. This ensures late-joining
+browsers see the full current state without a separate hydration call.
+
 ### Event Types
 
 r[event.agent-state-changed]
@@ -598,10 +677,28 @@ reviewing the mate's work: set direction, decompose tasks, review output,
 and formulate steer instructions. It MUST NOT instruct the captain to write
 code directly.
 
+r[captain.initial-prompt]
+When a task is assigned, the backend MUST prompt the captain with the task
+description. The captain's response is the initial direction sent to the mate
+as part of the assignment prompt.
+
 r[captain.context]
-When the mate finishes a task (or a steer cycle), the captain MUST receive
-the mate's output (content blocks, tool calls, diffs) as context for its
-next prompt.
+When the mate finishes a prompt turn (`StopReason::EndTurn`), the backend MUST
+collect the mate's output (text, tool call summaries, file diffs) and inject
+it into the captain's next prompt as structured context. The captain sees what
+the mate did, not raw ACP payloads.
+
+r[captain.review-trigger]
+The backend MUST automatically prompt the captain for review whenever the mate
+finishes a prompt turn. This happens regardless of autonomy mode — the
+difference is whether the captain's steer requires human approval before
+reaching the mate.
+
+r[captain.prompt-template]
+The captain's review prompt MUST follow a template that includes: the original
+task description, the steer history so far, and the mate's latest output. The
+prompt MUST ask the captain to either provide a steer (more work needed) or
+signal acceptance (task complete).
 
 r[captain.steer-output]
 The captain's prompt response MUST be interpreted as a steer instruction for
@@ -615,18 +712,20 @@ capabilities. It reviews output, it does not execute.
 ### Captain Review Cycle
 
 r[captain.review.auto]
-In autonomous mode, when the mate finishes, the backend MUST automatically
-prompt the captain with the mate's output and await a steer or accept
-decision.
+In autonomous mode, when the captain produces a steer, the backend MUST
+forward it directly to the mate without human approval. The human can
+intervene at any time by sending their own steer or cancelling.
 
 r[captain.review.human]
 In human-in-the-loop mode, when the captain produces a steer, the backend
 MUST present it to the human for approval before forwarding to the mate.
+The human can approve as-is, edit the steer before sending, or discard it
+and write their own.
 
 r[captain.accept-signal]
 The captain MUST be able to signal that the task is complete by including a
-structured accept marker in its response. The backend MUST detect this and
-transition the task to accepted.
+structured accept marker in its response (e.g., a specific JSON block or
+keyword). The backend MUST detect this and transition the task to accepted.
 
 ## Mate Role
 
@@ -792,3 +891,11 @@ the event stream and can intervene at any time.
 r[autonomy.permission-gate]
 The permission system MUST still gate destructive actions regardless of
 autonomy mode.
+
+## Cost Tracking
+
+r[cost.not-tracked]
+Ship intentionally does NOT track token usage or API costs. Both Claude and
+Codex are expected to be used via subscriptions (Claude Pro/Team, Codex
+subscription), not metered API tokens. If a future agent kind requires API
+billing, cost tracking can be added then.
