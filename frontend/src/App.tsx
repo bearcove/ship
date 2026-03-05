@@ -27,11 +27,7 @@ export function App() {
             onClick={() => setSoundEnabled((s) => !s)}
             aria-label={soundEnabled ? "Mute sounds" : "Unmute sounds"}
           >
-            {soundEnabled ? (
-              <SpeakerHigh size={18} />
-            ) : (
-              <SpeakerSlash size={18} />
-            )}
+            {soundEnabled ? <SpeakerHigh size={18} /> : <SpeakerSlash size={18} />}
           </IconButton>
         </Flex>
       </Box>

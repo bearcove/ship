@@ -24,3 +24,18 @@ Managed by lefthook (`lefthook.yml`). Runs in parallel:
 1. `oxfmt` — formats staged .ts/.tsx files
 2. `oxlint` — lints staged .ts/.tsx files
 3. `tsgo --noEmit` — typechecks the frontend
+
+## Radix Themes docs
+
+Fetch component docs as markdown:
+
+```
+https://www.radix-ui.com/themes/docs/components/{component-name}.md
+```
+
+Examples:
+- `https://www.radix-ui.com/themes/docs/components/card.md`
+- `https://www.radix-ui.com/themes/docs/components/segmented-control.md`
+- `https://www.radix-ui.com/themes/docs/components/select.md`
+
+Use this before assuming what props a component accepts.
