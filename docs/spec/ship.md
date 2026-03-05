@@ -248,17 +248,79 @@ Task state MUST be persisted to survive server restarts.
 ### Frontend
 
 r[frontend.typescript]
-The frontend MUST be implemented in TypeScript.
+The frontend MUST be implemented in TypeScript with strict mode enabled.
 
 r[frontend.react]
-The frontend MUST use React for UI rendering.
+The frontend MUST use React 19 for UI rendering.
 
 r[frontend.vite]
-The frontend MUST use Vite as its dev server and build tool.
+The frontend MUST use Vite 6 as its dev server and build tool, with the
+`@vitejs/plugin-react` plugin.
 
 r[frontend.codegen]
 Frontend types MUST be generated from the backend's Rust traits via
 roam-codegen.
+
+#### Styling
+
+r[frontend.style.vanilla-extract]
+The frontend MUST use vanilla-extract for styling. All styles MUST be defined
+in `.css.ts` files as typed TypeScript, producing zero-runtime static CSS at
+build time.
+
+r[frontend.style.vite-plugin]
+The Vite config MUST include the `@vanilla-extract/vite-plugin` for build-time
+CSS extraction.
+
+#### Component Library
+
+r[frontend.components.radix]
+The frontend MUST use Radix Themes (`@radix-ui/themes`) as its pre-styled
+component library for buttons, dialogs, dropdowns, badges, cards, tabs, and
+layout primitives.
+
+r[frontend.components.radix-theme]
+The Radix Theme provider MUST be configured at the app root with a dark
+appearance and accent color suitable for a developer tool.
+
+r[frontend.components.radix-overrides]
+Where Radix Themes defaults are insufficient, overrides MUST be applied via
+vanilla-extract using Radix's CSS custom properties, not by fighting the
+component internals.
+
+#### Routing
+
+r[frontend.routing]
+The frontend MUST use react-router-dom v7 for client-side routing between the
+session list view and individual session views.
+
+#### Icons
+
+r[frontend.icons]
+The frontend MUST use `@phosphor-icons/react` for iconography.
+
+#### Testing
+
+r[frontend.test.vitest]
+Frontend tests MUST use vitest as the test runner.
+
+r[frontend.test.rtl]
+Frontend component tests MUST use `@testing-library/react` for rendering and
+assertions.
+
+#### Package Structure
+
+r[frontend.package.private]
+The frontend MUST be a private npm package (`"private": true`) in a `frontend/`
+directory at the repository root.
+
+r[frontend.package.type-module]
+The frontend package MUST use `"type": "module"` for ES module support.
+
+r[frontend.package.scripts]
+The frontend package MUST define at minimum these scripts: `dev` (vite dev
+server), `build` (typecheck + vite build), `typecheck` (tsc --noEmit), and
+`test` (vitest run).
 
 ### Dev Proxy
 
