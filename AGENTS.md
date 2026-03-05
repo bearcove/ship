@@ -71,3 +71,9 @@ export function SessionListPage() {
 You work in a git worktree on your own branch. Commit your work when done. The coordinator handles merging and rebasing — you don't need to worry about that.
 
 Before starting work, make sure your branch is up to date with main (`git rebase main` if needed).
+
+## Coordinator git safety
+
+- Coordinator git operations that mutate repository state MUST be run sequentially, never in parallel
+- This includes `git add`, `git commit`, `git merge`, `git rebase`, `git push`, and any command that can create `.git/index.lock`
+- Parallel tool use is only allowed for read-only git inspection such as `git status`, `git log`, `git diff`, and `git show`
