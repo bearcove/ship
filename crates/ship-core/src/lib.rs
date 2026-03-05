@@ -1,3 +1,6 @@
+mod fakes;
+mod session_manager;
+
 use core::fmt;
 use std::error::Error;
 use std::path::{Path, PathBuf};
@@ -6,9 +9,22 @@ use std::pin::Pin;
 use futures_core::Stream;
 use ship_types::{AgentKind, PersistedSession, Role, SessionEvent, SessionId};
 
+pub use fakes::{
+    FakeAgentDriver, FakePromptScript, FakeSessionStore, FakeWorktreeOps, SpawnRecord,
+};
+pub use session_manager::{
+    ActiveSession, PendingPermission, SessionManager, SessionManagerError, SessionStateView,
+};
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AgentHandle {
     id: SessionId,
+}
+
+impl AgentHandle {
+    pub(crate) fn new(id: SessionId) -> Self {
+        Self { id }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
