@@ -332,6 +332,46 @@ config, current task, and task history.
 r[backend.persistence-dir-gitignore]
 The `.ship/` persistence directory MUST be added to `.gitignore`.
 
+### Server-Side Event Architecture
+
+r[backend.event-log]
+The backend MUST maintain an append-only event log per task. Every ACP
+notification that translates to a Ship event is appended to this log. The log
+is the source of truth for replay — when a new subscriber connects, the
+backend re-sends the log entries in order.
+
+r[backend.materialized-state]
+The backend MUST also maintain a materialized `SessionState` that represents
+the current state of the session: agent states, current task status, block
+stores (per role), context levels, pending permissions. This materialized
+state is updated synchronously after each event is appended to the log.
+
+r[backend.event-pipeline]
+Every ACP notification MUST flow through a single pipeline:
+1. Translate the ACP notification to one or more Ship events (BlockAppend,
+   BlockPatch, AgentStateChanged, etc.)
+2. Append each event to the task's event log with a sequence number
+3. Apply each event to the materialized SessionState
+4. Broadcast each event to all connected subscribers
+
+This ensures the event log, materialized state, and subscriber streams are
+always consistent. There is no separate codepath for "update state" vs
+"send events" — they are the same operation.
+
+r[backend.persistence-contents]
+The persisted JSON file for a session MUST contain:
+- Session config (project, branch, agent kinds, autonomy mode)
+- Materialized agent states (for quick `get_session` responses on restart)
+- Current task metadata (id, description, status)
+- Current task event log (the full list of events, for replay)
+- Task history (completed tasks with metadata, no event logs — those are
+  discarded when a task completes)
+
+On server restart, the backend loads the JSON, reconstructs the materialized
+state by folding the event log, and resumes. Agent processes are NOT restored
+(they are re-spawned via `resilience.agent-crash-recovery` if a task was in
+progress).
+
 ### Frontend
 
 r[frontend.typescript]
@@ -569,11 +609,21 @@ history summaries, autonomy mode, and control status. This provides the
 skeleton; content blocks come via event replay.
 
 r[proto.hydration-flow]
-Frontend hydration MUST follow this sequence: first call `get_session` for
-structural state, then open the event subscription channel. The channel
-replays the current task's content block history (per
-`event.subscribe.replay`) before switching to live events. The two mechanisms
-are complementary, not alternatives.
+Frontend hydration MUST follow this sequence:
+1. Call `get_session` for structural state (project, branch, agent kinds,
+   autonomy mode, task metadata, agent snapshots). This populates the UI
+   shell immediately — the user sees the layout before content loads.
+2. Open the event subscription channel via `subscribe_events`. The backend
+   replays the current task's event log (per `event.subscribe.replay`),
+   which the client-side reducer (per `event.client.reducer`) processes to
+   build the block stores and derive agent/task states.
+3. After replay, the backend sends `ReplayComplete`. The frontend
+   transitions from "loading" to "live" and begins processing live events.
+
+The two mechanisms are complementary: `get_session` provides the skeleton
+(cheap, fast), the event channel provides the content (progressive). The
+frontend MUST NOT attempt to render content blocks from `get_session` — all
+block data comes exclusively from the event stream.
 
 ## Agent State
 
@@ -904,6 +954,71 @@ The backend MUST send a `ReplayComplete` top-level event after all replay
 events have been sent. This allows the frontend to distinguish between
 "still loading history" and "caught up to live". The frontend MAY show a
 loading indicator until `ReplayComplete` is received.
+
+### Client-Side Session State
+
+The frontend does not just store a list of events. It maintains a
+`SessionViewState` — a structured, consistent view of the session that is
+derived from the event stream. Every event is processed by a pure reducer
+function: `(state, event) -> state`.
+
+r[event.client.view-state]
+The frontend MUST maintain a `SessionViewState` for each open session
+containing:
+- `captainBlocks`: ordered block store for the captain role
+- `mateBlocks`: ordered block store for the mate role
+- `captainState`: current `AgentState` for the captain
+- `mateState`: current `AgentState` for the mate
+- `taskStatus`: current task status (or null if no active task)
+- `taskId`: current task ID (or null)
+- `captainContext`: context remaining percentage (or null)
+- `mateContext`: context remaining percentage (or null)
+- `lastSeq`: last processed sequence number
+- `replayComplete`: boolean, false until `ReplayComplete` is received
+- `connected`: boolean, WebSocket connection status
+
+r[event.client.reducer]
+The `SessionViewState` MUST be updated by a pure reducer function that
+handles every `SessionEvent` variant. The reducer MUST be a pure function
+with no side effects — given the same state and event, it always produces
+the same new state. This makes the system testable and predictable.
+
+The reducer MUST handle at minimum:
+- `BlockAppend` → insert block into the appropriate role's store
+- `BlockPatch` → find block by ID in the appropriate role's store, apply
+  the patch, produce a new block object (immutable update)
+- `AgentStateChanged` → update `captainState` or `mateState`
+- `TaskStatusChanged` → update `taskStatus`
+- `ContextUpdated` → update `captainContext` or `mateContext`
+- `TaskStarted` → clear both block stores, reset `lastSeq`, set new
+  `taskId` and `taskStatus`
+- `ReplayComplete` → set `replayComplete` to true
+
+r[event.client.reducer-purity]
+The reducer MUST NOT call APIs, dispatch actions, or trigger side effects.
+Side effects (e.g., playing a notification sound, showing a desktop
+notification) MUST be handled by a separate listener that observes state
+transitions, not by the reducer itself.
+
+r[event.client.connection-lifecycle]
+When the WebSocket connection drops, the frontend MUST set `connected` to
+false and show a connection error banner (per `ui.error.connection`). When
+the connection is re-established, the frontend MUST clear the
+`SessionViewState` and re-subscribe. The replay will rebuild the full state.
+The frontend MUST NOT attempt to merge new events with stale state from a
+previous connection.
+
+r[event.client.hydration-sequence]
+On navigating to a session view, the frontend MUST:
+1. Call `get_session` to get the structural skeleton (project, branch,
+   agent kinds, autonomy mode, task metadata). This populates the UI
+   chrome immediately.
+2. Open the event subscription channel. The backend replays events, which
+   the reducer processes to build the block stores and update agent states.
+3. On `ReplayComplete`, the UI transitions from "loading" to "live".
+
+This two-phase approach (per `proto.hydration-flow`) means the user sees
+the session layout immediately while content loads progressively.
 
 ## Resilience
 
