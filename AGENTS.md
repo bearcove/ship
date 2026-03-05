@@ -72,6 +72,8 @@ You work in a git worktree on your own branch. Commit your work when done. The c
 
 Before starting work, make sure your branch is up to date with main (`git rebase main` if needed).
 
+Stay within the scope of the assigned task. If a frontend task depends on a backend RPC, shared type, generated artifact, or other backend-owned surface that is not already present in your worktree, stop and report the missing dependency to the coordinator instead of implementing backend work from the frontend worktree. The same rule applies in reverse for backend tasks that depend on frontend work.
+
 ## Coordinator git safety
 
 - Coordinator git operations that mutate repository state MUST be run sequentially, never in parallel

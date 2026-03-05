@@ -33,6 +33,22 @@ Worktrees are **persistent** — don't remove them between passes.
 5. Before dispatching any new prompt, coordinator rebases both agent worktrees onto the current `main` so they contain the latest docs, bug files, generated types, and coordinator-side changes.
 6. Agents then start new work from those rebased worktrees.
 
+## Task dependency ordering
+
+- The coordinator must model dependencies between tasks explicitly before dispatching prompts.
+- If a frontend task depends on a backend RPC, shared type, generated artifact, or any other backend-owned surface, the backend task must land on `main` first.
+- Only after that backend dependency is merged, pushed, and the agent worktrees are refreshed from `main` may the frontend task be dispatched.
+- In that situation, the frontend prompt must treat the backend surface as an existing prerequisite, not as work to be invented during the frontend pass.
+- If the required backend surface is missing when the frontend agent starts, that is a blocker to report back to the coordinator, not an invitation to edit backend code from the frontend worktree.
+
+## Prompt scoping
+
+- Prompts must define clear ownership boundaries.
+- Frontend prompts should be scoped to `frontend/src/**` unless the task explicitly says otherwise.
+- Backend prompts should be scoped to `crates/**`, shared protocol crates, codegen, and other backend-owned files unless the task explicitly requires a paired frontend follow-up.
+- Do not give the frontend agent backend requirement IDs as implementation targets unless the task is intentionally cross-stack and sequenced that way.
+- When a task depends on another task, the dependent task should be described as the final consumer step, not as a speculative implementation against a future API.
+
 ## Branch shape invariants
 
 - Agent branches must stay clean fast-forward candidates for `main`.
@@ -85,3 +101,4 @@ Done by the coordinator on main, between agent merges. Steps:
 - Always read the spec before writing annotations. Don't guess rule IDs.
 - If the coordinator adds or changes files that agent prompts depend on (for example bug tracker files, docs, or generated artifacts), the coordinator must rebase the agent worktrees before sending those prompts.
 - Coordinator git mutations must be run sequentially, never in parallel.
+- Never touch an active agent worktree while that agent is working. Rebase, reset, or branch repair only happens between tasks.
