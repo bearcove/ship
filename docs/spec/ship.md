@@ -806,8 +806,11 @@ required.
 
 r[captain.tool.assign]
 The captain MUST have access to a `captain_assign` tool that takes a
-`description` argument (string). When called, the backend creates a new task
-and starts the mate working on it immediately.
+`description` argument (string) and an optional `keep` argument (boolean,
+default false). When called, the backend creates a new task and starts the mate
+working on it immediately. If `keep` is false or omitted, the mate's ACP
+session is torn down and a new one is started (fresh context). If `keep` is
+true, the existing mate ACP session is reused.
 
 r[captain.tool.steer]
 The captain MUST have access to a `captain_steer` tool that takes a `message`

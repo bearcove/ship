@@ -690,12 +690,65 @@ impl ShipImpl {
         self.persist_session(session_id).await
     }
 
+    async fn restart_mate(&self, session_id: &SessionId) -> Result<(), String> {
+        let (old_handle, mate_kind, worktree_path, extra_servers) = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions
+                .get(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            let worktree_path = session
+                .worktree_path
+                .clone()
+                .ok_or_else(|| "session has no worktree path".to_owned())?;
+            (
+                session.mate_handle.clone(),
+                session.config.mate_kind,
+                worktree_path,
+                session.config.mcp_servers.clone(),
+            )
+        };
+
+        if let Some(handle) = old_handle {
+            let _ = self.agent_driver.kill(&handle).await;
+        }
+
+        let mate_ship_mcp = self.install_mate_mcp_server(session_id).await?;
+        let mate_config = AgentSessionConfig {
+            worktree_path,
+            mcp_servers: {
+                let mut servers = extra_servers;
+                servers.push(mate_ship_mcp);
+                servers
+            },
+        };
+
+        let new_handle = self
+            .agent_driver
+            .spawn(mate_kind, Role::Mate, &mate_config)
+            .await
+            .map_err(|error| error.message)?;
+
+        {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            if let Some(session) = sessions.get_mut(session_id) {
+                session.mate_handle = Some(new_handle);
+            }
+        }
+
+        Ok(())
+    }
+
     async fn captain_tool_assign(
         &self,
         session_id: &SessionId,
         description: String,
+        keep: bool,
     ) -> Result<String, String> {
         let task_id = self.start_task(session_id, description.clone()).await?;
+
+        if !keep {
+            self.restart_mate(session_id).await?;
+        }
 
         let this = self.clone();
         let session_id = session_id.clone();
@@ -1936,10 +1989,10 @@ impl CaptainMcpSessionService {
 
 impl CaptainMcp for CaptainMcpSessionService {
     // r[captain.tool.assign]
-    async fn captain_assign(&self, description: String) -> McpToolCallResponse {
+    async fn captain_assign(&self, description: String, keep: bool) -> McpToolCallResponse {
         Self::response(
             self.ship
-                .captain_tool_assign(&self.session_id, description)
+                .captain_tool_assign(&self.session_id, description, keep)
                 .await,
         )
     }

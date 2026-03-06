@@ -66,7 +66,7 @@ pub trait Ship {
 #[roam::service]
 pub trait CaptainMcp {
     // r[captain.tool.assign]
-    async fn captain_assign(&self, description: String) -> McpToolCallResponse;
+    async fn captain_assign(&self, description: String, keep: bool) -> McpToolCallResponse;
 
     // r[captain.tool.steer]
     async fn captain_steer(&self, message: String) -> McpToolCallResponse;

@@ -57,8 +57,12 @@ impl ServerHandler for CaptainMcpHandler {
                 let Some(description) = arguments.get("description").and_then(Value::as_str) else {
                     return Ok(tool_result("missing required argument: description", true));
                 };
+                let keep = arguments
+                    .get("keep")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
                 self.client
-                    .captain_assign(description.to_owned())
+                    .captain_assign(description.to_owned(), keep)
                     .await
                     .map_err(call_tool_rpc_error)?
             }
@@ -189,11 +193,12 @@ fn tool_definitions() -> Vec<ToolDefinition> {
     vec![
         ToolDefinition {
             name: "captain_assign",
-            description: "Assign a task to the mate. The mate will start working on it immediately.",
+            description: "Assign a task to the mate. The mate will start working on it immediately. Set keep=true to reuse the mate's existing context; omit or set false to restart the mate with a fresh context (default).",
             input_schema: json!({
                 "type": "object",
                 "properties": {
-                    "description": { "type": "string" }
+                    "description": { "type": "string" },
+                    "keep": { "type": "boolean" }
                 },
                 "required": ["description"],
                 "additionalProperties": false,

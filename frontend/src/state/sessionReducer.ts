@@ -5,13 +5,7 @@ import type {
   SessionStartupState,
   TaskStatus,
 } from "../generated/ship";
-import {
-  type BlockStore,
-  createBlockStore,
-  appendBlock,
-  patchBlock,
-  clearBlocks,
-} from "./blockStore";
+import { type BlockStore, createBlockStore, appendBlock, patchBlock } from "./blockStore";
 
 // r[event.client.view-state]
 export interface SessionViewState {
@@ -180,7 +174,6 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
             currentTaskId: ev.task_id,
             currentTaskDescription: ev.description,
             currentTaskStatus: { tag: "Assigned" },
-            mateBlocks: clearBlocks(),
           };
       }
     }
