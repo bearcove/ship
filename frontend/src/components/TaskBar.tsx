@@ -70,60 +70,6 @@ function TaskHistoryPopover({ sessionId }: { sessionId: string }) {
   );
 }
 
-// r[ui.steer-review.own-steer]
-function OwnSteerDialog({ sessionId }: { sessionId: string }) {
-  const [open, setOpen] = useState(false);
-  const [text, setText] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  async function handleSend() {
-    if (!text.trim() || loading) return;
-    setLoading(true);
-    try {
-      const client = await getShipClient();
-      await client.steer(sessionId, text);
-      setOpen(false);
-      setText("");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <Dialog.Root open={open} onOpenChange={setOpen}>
-      <Dialog.Trigger>
-        <Button size="2" variant="outline" color="gray">
-          Write your own steer
-        </Button>
-      </Dialog.Trigger>
-      <Dialog.Content maxWidth="480px">
-        <Dialog.Title>Steer the Mate directly</Dialog.Title>
-        <Dialog.Description size="2" color="gray">
-          Send instructions directly to the Mate for the current task.
-        </Dialog.Description>
-        <Flex direction="column" gap="3" mt="2">
-          <TextArea
-            placeholder="Write instructions for the mate…"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            rows={5}
-          />
-          <Flex gap="2" justify="end">
-            <Dialog.Close>
-              <Button variant="soft" color="gray" disabled={loading}>
-                Cancel
-              </Button>
-            </Dialog.Close>
-            <Button disabled={!text.trim()} loading={loading} onClick={handleSend}>
-              Send
-            </Button>
-          </Flex>
-        </Flex>
-      </Dialog.Content>
-    </Dialog.Root>
-  );
-}
-
 // r[ui.task-bar.new-task]
 function NewTaskDialog({ sessionId }: { sessionId: string }) {
   const [open, setOpen] = useState(false);
@@ -230,7 +176,6 @@ export function TaskBar({ sessionId, task }: Props) {
 
       {/* r[ui.task-bar.actions] */}
       <Flex gap="2" align="center" style={{ flexShrink: 0 }}>
-        <OwnSteerDialog sessionId={sessionId} />
         {task?.status.tag === "Working" && (
           <Button
             size="2"

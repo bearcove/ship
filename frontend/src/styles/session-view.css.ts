@@ -16,11 +16,53 @@ export const sessionTopBar = style({
   flexShrink: 0,
 });
 
+export const sessionBreadcrumbs = style({
+  display: "flex",
+  alignItems: "center",
+  gap: "var(--space-2)",
+  minWidth: 0,
+  marginRight: "auto",
+  flexWrap: "wrap",
+});
+
+export const sessionBreadcrumbButton = style({
+  all: "unset",
+  cursor: "pointer",
+  color: "var(--gray-12)",
+  fontSize: "var(--font-size-2)",
+  fontWeight: "var(--font-weight-medium)",
+  selectors: {
+    "&:hover": {
+      color: "var(--iris-11)",
+    },
+  },
+});
+
+export const sessionBreadcrumbSeparator = style({
+  color: "var(--gray-9)",
+  fontSize: "var(--font-size-2)",
+});
+
 export const sessionBranch = style({
   fontFamily: "monospace",
   fontSize: "var(--font-size-2)",
   color: "var(--gray-11)",
-  marginRight: "auto",
+  minWidth: 0,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+});
+
+export const autonomyControls = style({
+  display: "flex",
+  alignItems: "center",
+  gap: "var(--space-2)",
+  flexShrink: 0,
+});
+
+export const autonomyBadge = style({
+  minWidth: 118,
+  justifyContent: "center",
 });
 
 export const panelGrid = style({
@@ -109,6 +151,10 @@ export const agentHeaderRow = style({
   gap: "var(--space-2)",
 });
 
+export const agentHeaderMeta = style({
+  marginLeft: "auto",
+});
+
 export const stickyPlan = style({
   position: "sticky",
   top: 0,
@@ -124,6 +170,7 @@ export const eventStream = style({
   flexDirection: "column",
   gap: "var(--space-2)",
   padding: "var(--space-3)",
+  minHeight: 0,
 });
 
 export const taskBar = style({
@@ -141,6 +188,29 @@ export const taskDescription = style({
   textOverflow: "ellipsis",
   whiteSpace: "nowrap",
   minWidth: 0,
+});
+
+export const composerRoot = style({
+  borderTop: "1px solid var(--gray-a4)",
+  padding: "var(--space-2) var(--space-3) var(--space-3)",
+  flexShrink: 0,
+  background: "var(--gray-1)",
+});
+
+export const composerStatus = style({
+  fontWeight: "var(--font-weight-medium)",
+});
+
+export const composerHint = style({
+  textAlign: "right",
+});
+
+export const composerInput = style({
+  resize: "vertical",
+});
+
+export const composerActions = style({
+  flexShrink: 0,
 });
 
 export const toolCallBlock = style({

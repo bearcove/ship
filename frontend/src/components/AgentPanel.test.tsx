@@ -71,7 +71,13 @@ describe("AgentPanel plan rendering", () => {
   // r[verify ui.block.plan.filtering]
   it("shows only the latest plan above the feed and filters plan updates from the chronological stream", () => {
     const { container } = renderWithTheme(
-      <AgentPanel sessionId="session-1" agent={agent} blocks={blocks} loading={false} />,
+      <AgentPanel
+        sessionId="session-1"
+        agent={agent}
+        blocks={blocks}
+        loading={false}
+        taskStatus={{ tag: "ReviewPending" }}
+      />,
     );
 
     const planList = screen.getByRole("list");

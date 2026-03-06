@@ -1,7 +1,18 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Badge, Box, Button, Callout, Flex, Spinner, Switch, Tabs, Text } from "@radix-ui/themes";
-import { Clock, X } from "@phosphor-icons/react";
+import {
+  Badge,
+  Box,
+  Callout,
+  Flex,
+  IconButton,
+  Spinner,
+  Switch,
+  Tabs,
+  Text,
+} from "@radix-ui/themes";
+import { Clock, SpeakerHigh, SpeakerSlash } from "@phosphor-icons/react";
+import { useSoundEnabled } from "../context/SoundContext";
 import { useSession } from "../hooks/useSession";
 import { useSessionState } from "../hooks/useSessionState";
 import { AgentHeader } from "../components/AgentHeader";
@@ -10,6 +21,11 @@ import { TaskBar } from "../components/TaskBar";
 import { SteerReview } from "../components/SteerReview";
 import { ConnectionBanner } from "../components/ConnectionBanner";
 import {
+  autonomyBadge,
+  autonomyControls,
+  sessionBreadcrumbButton,
+  sessionBreadcrumbs,
+  sessionBreadcrumbSeparator,
   sessionViewRoot,
   sessionTopBar,
   sessionBranch,
@@ -39,6 +55,7 @@ function getIdleMessage(
 export function SessionViewPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
+  const { soundEnabled, setSoundEnabled } = useSoundEnabled();
   // r[event.client.hydration-sequence]: Step 1 — structural state
   const session = useSession(sessionId ?? "");
   // r[event.client.hydration-sequence]: Step 2/3 — event subscription + replay
@@ -94,27 +111,36 @@ export function SessionViewPage() {
   return (
     <Flex className={sessionViewRoot}>
       <Flex className={sessionTopBar}>
-        <Text size="2" weight="bold">
-          {session.project}
-        </Text>
-        <Text className={sessionBranch}>{session.branch_name}</Text>
+        <Flex className={sessionBreadcrumbs}>
+          <button type="button" className={sessionBreadcrumbButton} onClick={() => navigate("/")}>
+            ship
+          </button>
+          <Text className={sessionBreadcrumbSeparator}>::</Text>
+          <button
+            type="button"
+            className={sessionBreadcrumbButton}
+            onClick={() => navigate(`/?project=${encodeURIComponent(session.project)}`)}
+          >
+            {session.project}
+          </button>
+          <Text className={sessionBreadcrumbSeparator}>::</Text>
+          <Text className={sessionBranch}>{session.branch_name}</Text>
+        </Flex>
         {/* r[ui.autonomy.toggle] */}
-        <Flex align="center" gap="2">
-          <Text size="2">Autonomous</Text>
+        <Flex className={autonomyControls}>
           <Switch size="2" checked={autonomous} onCheckedChange={setAutonomous} />
-          <Badge color={autonomous ? "blue" : "gray"} size="1">
+          <Badge className={autonomyBadge} color={autonomous ? "blue" : "gray"} size="1">
             {autonomous ? "Autonomous" : "Human-in-the-loop"}
           </Badge>
         </Flex>
-        <Button
+        <IconButton
           variant="ghost"
           size="2"
-          color="gray"
-          onClick={() => navigate("/")}
-          aria-label="Close session"
+          onClick={() => setSoundEnabled(!soundEnabled)}
+          aria-label={soundEnabled ? "Mute sounds" : "Unmute sounds"}
         >
-          <X size={16} />
-        </Button>
+          {soundEnabled ? <SpeakerHigh size={18} /> : <SpeakerSlash size={18} />}
+        </IconButton>
       </Flex>
 
       <ConnectionBanner
@@ -156,6 +182,7 @@ export function SessionViewPage() {
               blocks={eventState.captainBlocks.blocks}
               loading={isReplaying}
               loadingLabel={replayLabel}
+              taskStatus={liveTask?.status ?? null}
             />
           </Box>
           <Box className={panelColumn}>
@@ -166,6 +193,7 @@ export function SessionViewPage() {
               blocks={eventState.mateBlocks.blocks}
               loading={isReplaying}
               loadingLabel={replayLabel}
+              taskStatus={liveTask?.status ?? null}
             />
           </Box>
         </Box>
@@ -180,6 +208,7 @@ export function SessionViewPage() {
                 blocks={eventState.captainBlocks.blocks}
                 loading={isReplaying}
                 loadingLabel={replayLabel}
+                taskStatus={liveTask?.status ?? null}
               />
             </>
           ) : (
@@ -191,6 +220,7 @@ export function SessionViewPage() {
                 blocks={eventState.mateBlocks.blocks}
                 loading={isReplaying}
                 loadingLabel={replayLabel}
+                taskStatus={liveTask?.status ?? null}
               />
             </>
           )}

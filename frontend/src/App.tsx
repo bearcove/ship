@@ -1,4 +1,4 @@
-import { Routes, Route, Link } from "react-router-dom";
+import { Routes, Route, Link, useLocation } from "react-router-dom";
 import { Flex, Box, Text, IconButton } from "@radix-ui/themes";
 import { SpeakerHigh, SpeakerSlash } from "@phosphor-icons/react";
 import { SessionListPage } from "./pages/SessionListPage";
@@ -9,33 +9,37 @@ import { useSoundEnabled } from "./context/SoundContext";
 
 // r[ui.layout.shell]
 export function App() {
+  const location = useLocation();
   const { soundEnabled, setSoundEnabled } = useSoundEnabled();
+  const inSessionView = location.pathname.startsWith("/sessions/");
 
   return (
     <Flex direction="column" style={{ height: "100vh" }}>
-      <Box
-        px="4"
-        py="2"
-        style={{
-          borderBottom: "1px solid var(--gray-a5)",
-        }}
-      >
-        <Flex align="center" justify="between">
-          <Link to="/" style={{ textDecoration: "none", color: "inherit" }}>
-            <Text size="3" weight="bold">
-              Ship
-            </Text>
-          </Link>
-          <IconButton
-            variant="ghost"
-            size="2"
-            onClick={() => setSoundEnabled(!soundEnabled)}
-            aria-label={soundEnabled ? "Mute sounds" : "Unmute sounds"}
-          >
-            {soundEnabled ? <SpeakerHigh size={18} /> : <SpeakerSlash size={18} />}
-          </IconButton>
-        </Flex>
-      </Box>
+      {!inSessionView && (
+        <Box
+          px="4"
+          py="2"
+          style={{
+            borderBottom: "1px solid var(--gray-a5)",
+          }}
+        >
+          <Flex align="center" justify="between">
+            <Link to="/" style={{ textDecoration: "none", color: "inherit" }}>
+              <Text size="3" weight="bold">
+                Ship
+              </Text>
+            </Link>
+            <IconButton
+              variant="ghost"
+              size="2"
+              onClick={() => setSoundEnabled(!soundEnabled)}
+              aria-label={soundEnabled ? "Mute sounds" : "Unmute sounds"}
+            >
+              {soundEnabled ? <SpeakerHigh size={18} /> : <SpeakerSlash size={18} />}
+            </IconButton>
+          </Flex>
+        </Box>
+      )}
 
       <ConnectionBanner
         connected={true}

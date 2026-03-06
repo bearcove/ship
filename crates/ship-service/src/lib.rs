@@ -35,6 +35,9 @@ pub trait Ship {
     // r[proto.steer]
     async fn steer(&self, session: SessionId, content: String);
 
+    // r[acp.prompt]
+    async fn prompt_captain(&self, session: SessionId, content: String);
+
     // r[proto.accept]
     async fn accept(&self, session: SessionId);
 

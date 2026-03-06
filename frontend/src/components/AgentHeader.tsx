@@ -1,7 +1,8 @@
-import { Badge, Box, Button, Callout, Flex, Progress, Spinner, Text } from "@radix-ui/themes";
+import { Badge, Box, Button, Callout, Flex, Progress, Text } from "@radix-ui/themes";
 import { ArrowsClockwise, Warning } from "@phosphor-icons/react";
 import type { AgentSnapshot } from "../generated/ship";
-import { agentHeader, agentHeaderRow } from "../styles/session-view.css";
+import { AgentKindIcon } from "./AgentKindIcon";
+import { agentHeader, agentHeaderMeta, agentHeaderRow } from "../styles/session-view.css";
 
 interface Props {
   agent: AgentSnapshot;
@@ -10,19 +11,6 @@ interface Props {
 // r[ui.agent-header.state-indicator]
 function AgentStateBadge({ agent }: { agent: AgentSnapshot }) {
   switch (agent.state.tag) {
-    case "Working":
-      return (
-        <Badge color="blue" size="1">
-          <Spinner size="1" />
-          Working
-        </Badge>
-      );
-    case "Idle":
-      return (
-        <Badge color="gray" size="1">
-          Idle
-        </Badge>
-      );
     case "AwaitingPermission":
       return (
         <Badge color="amber" size="1">
@@ -42,6 +30,9 @@ function AgentStateBadge({ agent }: { agent: AgentSnapshot }) {
           Error
         </Badge>
       );
+    case "Working":
+    case "Idle":
+      return null;
   }
 }
 
@@ -57,10 +48,8 @@ export function AgentHeader({ agent }: Props) {
         <Text size="2" weight="medium">
           {agent.role.tag}
         </Text>
-        <Badge color={agent.kind.tag === "Claude" ? "violet" : "cyan"} variant="soft" size="1">
-          {agent.kind.tag}
-        </Badge>
-        <Box ml="auto">
+        <AgentKindIcon kind={agent.kind} />
+        <Box className={agentHeaderMeta}>
           <AgentStateBadge agent={agent} />
         </Box>
       </Flex>

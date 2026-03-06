@@ -25,16 +25,16 @@ vi.mock("./pages/SessionViewPage", () => ({
 // r[verify frontend.test.rtl]
 describe("App shell navigation", () => {
   // r[verify ui.layout.shell]
-  it("uses the Ship title as a home link back to the session list", async () => {
+  it("uses the Ship title as a home link on the session list shell", async () => {
     renderWithTheme(
-      <MemoryRouter initialEntries={["/sessions/session-1"]}>
+      <MemoryRouter initialEntries={["/"]}>
         <SoundProvider>
           <App />
         </SoundProvider>
       </MemoryRouter>,
     );
 
-    expect(screen.getByText("Session view page")).toBeInTheDocument();
+    expect(screen.getByText("Session list page")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("link", { name: "Ship" }));
 

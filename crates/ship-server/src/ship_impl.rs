@@ -1043,6 +1043,13 @@ impl Ship for ShipImpl {
         }
     }
 
+    // r[acp.prompt]
+    async fn prompt_captain(&self, session: SessionId, content: String) {
+        if let Err(error) = self.prompt_agent(&session, Role::Captain, content).await {
+            Self::log_error("prompt_captain", &error);
+        }
+    }
+
     async fn accept(&self, session: SessionId) {
         {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");

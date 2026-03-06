@@ -1,12 +1,13 @@
 import { useRef, useEffect } from "react";
 import { Box, Flex, Spinner, Text } from "@radix-ui/themes";
-import type { AgentSnapshot, ContentBlock } from "../generated/ship";
+import type { AgentSnapshot, ContentBlock, TaskStatus } from "../generated/ship";
 import type { BlockEntry } from "../state/blockStore";
 import { TextBlock } from "./blocks/TextBlock";
 import { ToolCallBlock } from "./blocks/ToolCallBlock";
 import { PlanUpdateBlock as PlanUpdateBlockComponent } from "./blocks/PlanUpdateBlock";
 import { ErrorBlock } from "./blocks/ErrorBlock";
 import { PermissionBlock } from "./blocks/PermissionBlock";
+import { InlineAgentComposer } from "./InlineAgentComposer";
 import { getShipClient } from "../api/client";
 import {
   agentPanelRoot,
@@ -21,6 +22,7 @@ interface Props {
   blocks: BlockEntry[];
   loading?: boolean;
   loadingLabel?: string;
+  taskStatus: TaskStatus | null;
 }
 
 type PlanUpdateBlock = Extract<ContentBlock, { tag: "PlanUpdate" }>;
@@ -37,7 +39,7 @@ function latestPlan(entries: BlockEntry[]): PlanUpdateBlock | undefined {
 // r[view.agent-panel.state]
 // r[ui.block.plan.position]
 // r[ui.block.plan.filtering]
-export function AgentPanel({ sessionId, agent, blocks, loading, loadingLabel }: Props) {
+export function AgentPanel({ sessionId, agent, blocks, loading, loadingLabel, taskStatus }: Props) {
   const plan = latestPlan(blocks);
 
   let lastUnresolvedPermBlockId: string | undefined;
@@ -126,6 +128,13 @@ export function AgentPanel({ sessionId, agent, blocks, loading, loadingLabel }: 
             ))}
         </Box>
       </Box>
+
+      <InlineAgentComposer
+        sessionId={sessionId}
+        role={agent.role}
+        agentStateTag={agent.state.tag}
+        taskStatus={taskStatus}
+      />
     </Box>
   );
 }
