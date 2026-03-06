@@ -1,10 +1,16 @@
 import { screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AgentSnapshot } from "../generated/ship";
 import type { BlockEntry } from "../state/blockStore";
 import { renderWithTheme } from "../test/render";
 import { AgentPanel } from "./AgentPanel";
 import { agentPanelScrollArea, eventStream, stickyPlan } from "../styles/session-view.css";
+
+vi.mock("../api/client", () => ({
+  shipClient: Promise.resolve({
+    resolvePermission: async () => undefined,
+  }),
+}));
 
 const agent: AgentSnapshot = {
   role: { tag: "Captain" },
