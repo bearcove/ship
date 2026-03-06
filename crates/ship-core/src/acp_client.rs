@@ -8,16 +8,16 @@ use std::time::Duration;
 use agent_client_protocol::{
     Client, ContentBlock, CreateTerminalRequest, CreateTerminalResponse, Error,
     KillTerminalCommandRequest, KillTerminalCommandResponse, PermissionOptionKind,
-    ReadTextFileRequest, ReadTextFileResponse, ReleaseTerminalRequest, ReleaseTerminalResponse,
-    RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
-    Result as AcpResult, SelectedPermissionOutcome, SessionNotification, SessionUpdate,
-    TerminalExitStatus, TerminalId, TerminalOutputRequest, TerminalOutputResponse, ToolCallStatus,
-    WaitForTerminalExitRequest, WaitForTerminalExitResponse, WriteTextFileRequest,
+    PlanEntryPriority, ReadTextFileRequest, ReadTextFileResponse, ReleaseTerminalRequest,
+    ReleaseTerminalResponse, RequestPermissionOutcome, RequestPermissionRequest,
+    RequestPermissionResponse, Result as AcpResult, SelectedPermissionOutcome, SessionNotification,
+    SessionUpdate, TerminalExitStatus, TerminalId, TerminalOutputRequest, TerminalOutputResponse,
+    ToolCallStatus, WaitForTerminalExitRequest, WaitForTerminalExitResponse, WriteTextFileRequest,
     WriteTextFileResponse,
 };
 use ship_types::{
     AgentState, BlockId, BlockPatch, ContentBlock as ShipContentBlock, PermissionRequest, PlanStep,
-    PlanStepStatus, Role, SessionEvent, ToolCallStatus as ShipToolCallStatus,
+    PlanStepPriority, PlanStepStatus, Role, SessionEvent, ToolCallStatus as ShipToolCallStatus,
 };
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::{Child, Command};
@@ -153,18 +153,8 @@ impl ShipAcpClient {
                                 .into_iter()
                                 .map(|entry| PlanStep {
                                     description: entry.content,
-                                    status: match entry.status {
-                                        agent_client_protocol::PlanEntryStatus::Pending => {
-                                            PlanStepStatus::Planned
-                                        }
-                                        agent_client_protocol::PlanEntryStatus::InProgress => {
-                                            PlanStepStatus::InProgress
-                                        }
-                                        agent_client_protocol::PlanEntryStatus::Completed => {
-                                            PlanStepStatus::Completed
-                                        }
-                                        _ => PlanStepStatus::Failed,
-                                    },
+                                    priority: map_plan_priority(entry.priority),
+                                    status: map_plan_status(entry.status),
                                 })
                                 .collect(),
                         ),
@@ -561,6 +551,24 @@ fn map_tool_status(status: ToolCallStatus) -> ShipToolCallStatus {
     }
 }
 
+fn map_plan_priority(priority: PlanEntryPriority) -> PlanStepPriority {
+    match priority {
+        PlanEntryPriority::High => PlanStepPriority::High,
+        PlanEntryPriority::Medium => PlanStepPriority::Medium,
+        PlanEntryPriority::Low => PlanStepPriority::Low,
+        _ => PlanStepPriority::Medium,
+    }
+}
+
+fn map_plan_status(status: agent_client_protocol::PlanEntryStatus) -> PlanStepStatus {
+    match status {
+        agent_client_protocol::PlanEntryStatus::Pending => PlanStepStatus::Planned,
+        agent_client_protocol::PlanEntryStatus::InProgress => PlanStepStatus::InProgress,
+        agent_client_protocol::PlanEntryStatus::Completed => PlanStepStatus::Completed,
+        _ => PlanStepStatus::Failed,
+    }
+}
+
 fn remaining_context_percent(used: u64, size: u64) -> Option<u8> {
     if size == 0 {
         return None;
@@ -574,7 +582,10 @@ fn remaining_context_percent(used: u64, size: u64) -> Option<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use agent_client_protocol::{ContentChunk, SessionNotification, TextContent, UsageUpdate};
+    use agent_client_protocol::{
+        ContentChunk, Plan, PlanEntry, PlanEntryStatus, SessionNotification, TextContent,
+        UsageUpdate,
+    };
 
     fn make_client() -> ShipAcpClient {
         let (tx, _rx) = mpsc::unbounded_channel();
@@ -660,6 +671,57 @@ mod tests {
                 role: Role::Mate,
                 patch: BlockPatch::TextAppend {
                     text: "Again".to_owned(),
+                },
+            }]
+        );
+    }
+
+    // r[verify acp.plans]
+    // r[verify agent-state.plan-step]
+    #[test]
+    fn plan_updates_map_priority_and_status() {
+        let client = make_client();
+        let events = client.map_session_update(SessionUpdate::Plan(Plan::new(vec![
+            PlanEntry::new(
+                "Fix blocking bug",
+                PlanEntryPriority::High,
+                PlanEntryStatus::Pending,
+            ),
+            PlanEntry::new(
+                "Refresh snapshots",
+                PlanEntryPriority::Medium,
+                PlanEntryStatus::InProgress,
+            ),
+            PlanEntry::new(
+                "Polish docs",
+                PlanEntryPriority::Low,
+                PlanEntryStatus::Completed,
+            ),
+        ])));
+
+        assert_eq!(
+            events,
+            vec![SessionEvent::AgentStateChanged {
+                role: Role::Mate,
+                state: AgentState::Working {
+                    plan: Some(vec![
+                        PlanStep {
+                            description: "Fix blocking bug".to_owned(),
+                            priority: PlanStepPriority::High,
+                            status: PlanStepStatus::Planned,
+                        },
+                        PlanStep {
+                            description: "Refresh snapshots".to_owned(),
+                            priority: PlanStepPriority::Medium,
+                            status: PlanStepStatus::InProgress,
+                        },
+                        PlanStep {
+                            description: "Polish docs".to_owned(),
+                            priority: PlanStepPriority::Low,
+                            status: PlanStepStatus::Completed,
+                        },
+                    ]),
+                    activity: Some("ACP plan update".to_owned()),
                 },
             }]
         );

@@ -813,6 +813,16 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
 // r[backend.event-pipeline]
 // r[backend.event-log]
 pub fn apply_event(session: &mut ActiveSession, event: SessionEvent) {
+    if let SessionEvent::AgentStateChanged {
+        role,
+        state: AgentState::Working {
+            plan: Some(steps), ..
+        },
+    } = &event
+    {
+        sync_plan_block(session, *role, steps.clone());
+    }
+
     let envelope = SessionEventEnvelope {
         seq: session.next_event_seq,
         event,
@@ -825,6 +835,45 @@ pub fn apply_event(session: &mut ActiveSession, event: SessionEvent) {
 
     apply_event_to_materialized_state(session, &envelope.event);
     let _ = session.events_tx.send(envelope);
+}
+
+fn sync_plan_block(session: &mut ActiveSession, role: Role, steps: Vec<ship_types::PlanStep>) {
+    if let Some(block_id) = find_plan_block_id(session, role) {
+        apply_event(
+            session,
+            SessionEvent::BlockPatch {
+                // r[event.block-id.plan]
+                block_id,
+                role,
+                // r[event.patch.plan-replace]
+                patch: BlockPatch::PlanReplace { steps },
+            },
+        );
+        return;
+    }
+
+    apply_event(
+        session,
+        SessionEvent::BlockAppend {
+            // r[event.block-id.plan]
+            block_id: BlockId::new(),
+            role,
+            block: ContentBlock::PlanUpdate { steps },
+        },
+    );
+}
+
+fn find_plan_block_id(session: &ActiveSession, role: Role) -> Option<BlockId> {
+    session
+        .current_task
+        .as_ref()?
+        .content_history
+        .iter()
+        .rev()
+        .find(|record| {
+            record.role == role && matches!(record.block, ContentBlock::PlanUpdate { .. })
+        })
+        .map(|record| record.block_id.clone())
 }
 
 // r[backend.materialized-state]

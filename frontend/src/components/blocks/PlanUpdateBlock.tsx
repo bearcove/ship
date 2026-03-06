@@ -1,6 +1,6 @@
-import { Box, Card, Flex, Spinner, Text } from "@radix-ui/themes";
+import { Badge, Box, Card, Flex, Spinner, Text } from "@radix-ui/themes";
 import { Circle, CheckCircle, XCircle } from "@phosphor-icons/react";
-import type { ContentBlock, PlanStepStatus } from "../../generated/ship";
+import type { ContentBlock, PlanStepPriority, PlanStepStatus } from "../../generated/ship";
 
 type PlanUpdateBlockType = Extract<ContentBlock, { tag: "PlanUpdate" }>;
 
@@ -37,6 +37,28 @@ function StepIcon({ status }: { status: PlanStepStatus }) {
   }
 }
 
+function priorityColor(priority: PlanStepPriority): "red" | "amber" | "gray" {
+  switch (priority.tag) {
+    case "High":
+      return "red";
+    case "Medium":
+      return "amber";
+    case "Low":
+      return "gray";
+  }
+}
+
+function priorityLabel(priority: PlanStepPriority): string {
+  switch (priority.tag) {
+    case "High":
+      return "high";
+    case "Medium":
+      return "medium";
+    case "Low":
+      return "low";
+  }
+}
+
 // r[ui.block.plan.layout]
 export function PlanUpdateBlock({ block }: Props) {
   return (
@@ -52,16 +74,21 @@ export function PlanUpdateBlock({ block }: Props) {
       >
         {block.steps.map((step, i) => (
           <li key={i}>
-            <Flex align="center" gap="2">
+            <Flex align="center" gap="2" justify="between">
+              <Flex align="center" gap="2" style={{ minWidth: 0 }}>
+                <Text
+                  size="1"
+                  style={{
+                    color: step.status.tag === "Failed" ? "var(--red-11)" : "var(--gray-12)",
+                  }}
+                >
+                  {step.description}
+                </Text>
+                <Badge color={priorityColor(step.priority)} variant="soft" radius="full">
+                  {priorityLabel(step.priority)}
+                </Badge>
+              </Flex>
               <StepIcon status={step.status} />
-              <Text
-                size="1"
-                style={{
-                  color: step.status.tag === "Failed" ? "var(--red-11)" : "var(--gray-12)",
-                }}
-              >
-                {step.description}
-              </Text>
             </Flex>
           </li>
         ))}

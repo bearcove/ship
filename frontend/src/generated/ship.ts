@@ -24,6 +24,8 @@ export type Role = { tag: "Captain" } | { tag: "Mate" };
 
 export type AgentKind = { tag: "Claude" } | { tag: "Codex" };
 
+export type PlanStepPriority = { tag: "High" } | { tag: "Medium" } | { tag: "Low" };
+
 export type PlanStepStatus =
   | { tag: "Planned" }
   | { tag: "InProgress" }
@@ -32,6 +34,7 @@ export type PlanStepStatus =
 
 export interface PlanStep {
   description: string;
+  priority: PlanStepPriority;
   status: PlanStepStatus;
 }
 
@@ -551,7 +554,7 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0xe77963f9da704cd5n) {
+    } else if (method.id === 0xa734914703583f16n) {
       try {
         const result = await this.handler.listSessions();
         call.reply(result);
@@ -565,7 +568,7 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0xfd868e9e62fb1869n) {
+    } else if (method.id === 0xb1fbd88f7e4fd5b2n) {
       try {
         const result = await this.handler.getSession(args[0] as string);
         call.reply(result);
@@ -632,7 +635,7 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0x800bc919b6940c03n) {
+    } else if (method.id === 0x4b6e8bd51901e470n) {
       try {
         const result = await this.handler.subscribeEvents(
           args[0] as string,
@@ -747,7 +750,7 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: "listSessions",
-      id: 0xe77963f9da704cd5n,
+      id: 0xa734914703583f16n,
       args: { kind: "tuple", elements: [] },
       result: {
         kind: "enum",
@@ -793,6 +796,14 @@ export const ship_descriptor: ServiceDescriptor = {
                                     kind: "struct",
                                     fields: {
                                       description: { kind: "string" },
+                                      priority: {
+                                        kind: "enum",
+                                        variants: [
+                                          { name: "High", fields: null },
+                                          { name: "Medium", fields: null },
+                                          { name: "Low", fields: null },
+                                        ],
+                                      },
                                       status: {
                                         kind: "enum",
                                         variants: [
@@ -862,6 +873,14 @@ export const ship_descriptor: ServiceDescriptor = {
                                     kind: "struct",
                                     fields: {
                                       description: { kind: "string" },
+                                      priority: {
+                                        kind: "enum",
+                                        variants: [
+                                          { name: "High", fields: null },
+                                          { name: "Medium", fields: null },
+                                          { name: "Low", fields: null },
+                                        ],
+                                      },
                                       status: {
                                         kind: "enum",
                                         variants: [
@@ -972,7 +991,7 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: "getSession",
-      id: 0xfd868e9e62fb1869n,
+      id: 0xb1fbd88f7e4fd5b2n,
       args: { kind: "tuple", elements: [{ kind: "string" }] },
       result: {
         kind: "enum",
@@ -1016,6 +1035,14 @@ export const ship_descriptor: ServiceDescriptor = {
                                   kind: "struct",
                                   fields: {
                                     description: { kind: "string" },
+                                    priority: {
+                                      kind: "enum",
+                                      variants: [
+                                        { name: "High", fields: null },
+                                        { name: "Medium", fields: null },
+                                        { name: "Low", fields: null },
+                                      ],
+                                    },
                                     status: {
                                       kind: "enum",
                                       variants: [
@@ -1085,6 +1112,14 @@ export const ship_descriptor: ServiceDescriptor = {
                                   kind: "struct",
                                   fields: {
                                     description: { kind: "string" },
+                                    priority: {
+                                      kind: "enum",
+                                      variants: [
+                                        { name: "High", fields: null },
+                                        { name: "Medium", fields: null },
+                                        { name: "Low", fields: null },
+                                      ],
+                                    },
                                     status: {
                                       kind: "enum",
                                       variants: [
@@ -1504,7 +1539,7 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: "subscribeEvents",
-      id: 0x800bc919b6940c03n,
+      id: 0x4b6e8bd51901e470n,
       args: {
         kind: "tuple",
         elements: [
@@ -1563,6 +1598,14 @@ export const ship_descriptor: ServiceDescriptor = {
                                           kind: "struct",
                                           fields: {
                                             description: { kind: "string" },
+                                            priority: {
+                                              kind: "enum",
+                                              variants: [
+                                                { name: "High", fields: null },
+                                                { name: "Medium", fields: null },
+                                                { name: "Low", fields: null },
+                                              ],
+                                            },
                                             status: {
                                               kind: "enum",
                                               variants: [
@@ -1638,6 +1681,14 @@ export const ship_descriptor: ServiceDescriptor = {
                                           kind: "struct",
                                           fields: {
                                             description: { kind: "string" },
+                                            priority: {
+                                              kind: "enum",
+                                              variants: [
+                                                { name: "High", fields: null },
+                                                { name: "Medium", fields: null },
+                                                { name: "Low", fields: null },
+                                              ],
+                                            },
                                             status: {
                                               kind: "enum",
                                               variants: [
@@ -1692,6 +1743,14 @@ export const ship_descriptor: ServiceDescriptor = {
                                             kind: "struct",
                                             fields: {
                                               description: { kind: "string" },
+                                              priority: {
+                                                kind: "enum",
+                                                variants: [
+                                                  { name: "High", fields: null },
+                                                  { name: "Medium", fields: null },
+                                                  { name: "Low", fields: null },
+                                                ],
+                                              },
                                               status: {
                                                 kind: "enum",
                                                 variants: [

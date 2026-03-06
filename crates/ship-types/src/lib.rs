@@ -79,6 +79,14 @@ pub mod agent {
     // r[agent-state.plan-step]
     #[repr(u8)]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, facet::Facet)]
+    pub enum PlanStepPriority {
+        High,
+        Medium,
+        Low,
+    }
+
+    #[repr(u8)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, facet::Facet)]
     pub enum PlanStepStatus {
         Planned,
         InProgress,
@@ -89,6 +97,7 @@ pub mod agent {
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub struct PlanStep {
         pub description: String,
+        pub priority: PlanStepPriority,
         pub status: PlanStepStatus,
     }
 
@@ -472,7 +481,8 @@ pub mod persistence {
 }
 
 pub use agent::{
-    AgentKind, AgentSnapshot, AgentState, PermissionRequest, PlanStep, PlanStepStatus, Role,
+    AgentKind, AgentSnapshot, AgentState, PermissionRequest, PlanStep, PlanStepPriority,
+    PlanStepStatus, Role,
 };
 pub use events::{
     BlockPatch, ContentBlock, PermissionResolution, SessionEvent, SessionEventEnvelope,

@@ -2,12 +2,13 @@ use std::path::Path;
 use std::time::Duration;
 
 use ship_core::{
-    FakeAgentDriver, FakeSessionStore, FakeWorktreeOps, SessionManager, SessionStore, StopReason,
+    FakeAgentDriver, FakePromptScript, FakeSessionStore, FakeWorktreeOps, SessionManager,
+    SessionStore, StopReason,
 };
 use ship_types::{
-    AgentKind, AgentState, AutonomyMode, BlockId, CloseSessionResponse, ContentBlock,
-    CreateSessionRequest, McpServerConfig, McpStdioServerConfig, ProjectName, Role, SessionEvent,
-    SessionEventEnvelope, TaskStatus,
+    AgentKind, AgentState, AutonomyMode, BlockId, BlockPatch, CloseSessionResponse, ContentBlock,
+    CreateSessionRequest, McpServerConfig, McpStdioServerConfig, PlanStep, PlanStepPriority,
+    PlanStepStatus, ProjectName, Role, SessionEvent, SessionEventEnvelope, TaskStatus,
 };
 use tokio::time::timeout;
 
@@ -57,6 +58,14 @@ fn drain_replay(rx: &mut tokio::sync::broadcast::Receiver<SessionEventEnvelope>)
             Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => continue,
             Err(tokio::sync::broadcast::error::TryRecvError::Closed) => return,
         }
+    }
+}
+
+fn plan_step(description: &str, priority: PlanStepPriority, status: PlanStepStatus) -> PlanStep {
+    PlanStep {
+        description: description.to_owned(),
+        priority,
+        status,
     }
 }
 
@@ -210,6 +219,120 @@ async fn test_task_lifecycle() {
     assert!(state.current_task.is_none());
     assert_eq!(state.task_history.len(), 1);
     assert_eq!(state.task_history[0].status, TaskStatus::Accepted);
+}
+
+// r[verify event.block-id.plan]
+// r[verify event.patch.plan-replace]
+#[tokio::test]
+async fn plan_updates_reuse_block_id_and_replace_the_full_step_list() {
+    let (mut manager, agent, _worktree, _store) = make_manager();
+
+    let first_plan = vec![
+        plan_step(
+            "Map the ACP shape",
+            PlanStepPriority::High,
+            PlanStepStatus::Planned,
+        ),
+        plan_step(
+            "Remove stale fields",
+            PlanStepPriority::Low,
+            PlanStepStatus::InProgress,
+        ),
+    ];
+    let second_plan = vec![plan_step(
+        "Render priority in the UI",
+        PlanStepPriority::Medium,
+        PlanStepStatus::Completed,
+    )];
+
+    agent.push_script(FakePromptScript {
+        expected_handle: None,
+        response: Ok(ship_core::PromptResponse {
+            stop_reason: StopReason::EndTurn,
+        }),
+        events: Vec::new(),
+    });
+    agent.push_script(FakePromptScript {
+        expected_handle: None,
+        response: Ok(ship_core::PromptResponse {
+            stop_reason: StopReason::EndTurn,
+        }),
+        events: vec![
+            SessionEvent::AgentStateChanged {
+                role: Role::Mate,
+                state: AgentState::Working {
+                    plan: Some(first_plan.clone()),
+                    activity: Some("planning".to_owned()),
+                },
+            },
+            SessionEvent::AgentStateChanged {
+                role: Role::Mate,
+                state: AgentState::Working {
+                    plan: Some(second_plan.clone()),
+                    activity: Some("replanning".to_owned()),
+                },
+            },
+        ],
+    });
+    agent.push_script(FakePromptScript {
+        expected_handle: None,
+        response: Ok(ship_core::PromptResponse {
+            stop_reason: StopReason::EndTurn,
+        }),
+        events: Vec::new(),
+    });
+
+    let (session_id, _) = manager
+        .create_session(
+            make_request("Exercise plan block semantics"),
+            Path::new("/repo"),
+        )
+        .await
+        .expect("session should be created");
+
+    let state = manager
+        .get_session(&session_id)
+        .expect("session should exist");
+    let task = state.current_task.expect("current task should exist");
+
+    let plan_blocks = task
+        .content_history
+        .iter()
+        .filter(|record| matches!(record.block, ContentBlock::PlanUpdate { .. }))
+        .collect::<Vec<_>>();
+    assert_eq!(plan_blocks.len(), 1);
+
+    let final_steps = match &plan_blocks[0].block {
+        ContentBlock::PlanUpdate { steps } => steps.clone(),
+        other => panic!("unexpected final block: {other:?}"),
+    };
+    assert_eq!(final_steps, second_plan);
+    assert_ne!(final_steps, first_plan);
+
+    let plan_events = task
+        .event_log
+        .iter()
+        .filter_map(|envelope| match &envelope.event {
+            SessionEvent::BlockAppend {
+                block_id,
+                role,
+                block: ContentBlock::PlanUpdate { steps },
+            } if *role == Role::Mate => Some(("append", block_id.clone(), steps.clone())),
+            SessionEvent::BlockPatch {
+                block_id,
+                role,
+                patch: BlockPatch::PlanReplace { steps },
+            } if *role == Role::Mate => Some(("patch", block_id.clone(), steps.clone())),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(plan_events.len(), 2);
+    assert_eq!(plan_events[0].0, "append");
+    assert_eq!(plan_events[0].2, first_plan);
+    assert_eq!(plan_events[1].0, "patch");
+    assert_eq!(plan_events[1].1, plan_events[0].1);
+    assert_eq!(plan_events[1].2, second_plan);
 }
 
 // r[verify proto.cancel]
