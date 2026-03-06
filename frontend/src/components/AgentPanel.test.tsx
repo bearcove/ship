@@ -1,14 +1,18 @@
-import { screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentSnapshot } from "../generated/ship";
 import type { BlockEntry } from "../state/blockStore";
 import { renderWithTheme } from "../test/render";
 import { AgentPanel } from "./AgentPanel";
 import { agentPanelScrollArea, eventStream, stickyPlan } from "../styles/session-view.css";
 
+const apiMocks = vi.hoisted(() => ({
+  resolvePermission: vi.fn(async () => undefined),
+}));
+
 vi.mock("../api/client", () => ({
   getShipClient: async () => ({
-    resolvePermission: async () => undefined,
+    resolvePermission: apiMocks.resolvePermission,
   }),
 }));
 
@@ -63,6 +67,10 @@ const blocks: BlockEntry[] = [
   },
 ];
 
+beforeEach(() => {
+  apiMocks.resolvePermission.mockClear();
+});
+
 // r[verify frontend.test.vitest]
 // r[verify frontend.test.rtl]
 describe("AgentPanel plan rendering", () => {
@@ -114,5 +122,126 @@ describe("AgentPanel plan rendering", () => {
     expect(feed).toHaveTextContent("Feed update two.");
     expect(feed).not.toHaveTextContent("Queue the UI patch");
     expect(feed).not.toHaveTextContent("Render the sticky plan");
+  });
+
+  // r[verify view.permission-dialog]
+  it("keeps the latest unresolved permission request actionable in the feed", async () => {
+    apiMocks.resolvePermission.mockClear();
+
+    renderWithTheme(
+      <AgentPanel
+        sessionId="session-1"
+        agent={{
+          ...agent,
+          state: {
+            tag: "AwaitingPermission",
+            request: {
+              permission_id: "perm-2",
+              tool_call_id: "toolu_2",
+              tool_name: "Read File",
+              arguments: '{"path":"src/lib.rs"}',
+              description: "Read file",
+              kind: { tag: "Read" },
+              target: {
+                tag: "File",
+                path: "/repo/src/lib.rs",
+                display_path: "src/lib.rs",
+                line: null,
+              },
+              raw_input: null,
+              options: [
+                {
+                  option_id: "allow-once",
+                  label: "Allow once",
+                  kind: { tag: "AllowOnce" },
+                },
+                {
+                  option_id: "reject-once",
+                  label: "Reject once",
+                  kind: { tag: "RejectOnce" },
+                },
+              ],
+            },
+          },
+        }}
+        blocks={[
+          ...blocks,
+          {
+            blockId: "perm-1",
+            role: { tag: "Captain" },
+            block: {
+              tag: "Permission",
+              permission_id: "perm-1",
+              tool_call_id: "toolu_1",
+              tool_name: "Read File",
+              description: "Read file",
+              arguments: '{"path":"src/old.rs"}',
+              kind: { tag: "Read" },
+              target: {
+                tag: "File",
+                path: "/repo/src/old.rs",
+                display_path: "src/old.rs",
+                line: null,
+              },
+              raw_input: null,
+              options: [
+                {
+                  option_id: "allow-once-old",
+                  label: "Allow once",
+                  kind: { tag: "AllowOnce" },
+                },
+              ],
+              resolution: null,
+            },
+          },
+          {
+            blockId: "perm-2",
+            role: { tag: "Captain" },
+            block: {
+              tag: "Permission",
+              permission_id: "perm-2",
+              tool_call_id: "toolu_2",
+              tool_name: "Read File",
+              description: "Read file",
+              arguments: '{"path":"src/lib.rs"}',
+              kind: { tag: "Read" },
+              target: {
+                tag: "File",
+                path: "/repo/src/lib.rs",
+                display_path: "src/lib.rs",
+                line: null,
+              },
+              raw_input: null,
+              options: [
+                {
+                  option_id: "allow-once",
+                  label: "Allow once",
+                  kind: { tag: "AllowOnce" },
+                },
+                {
+                  option_id: "reject-once",
+                  label: "Reject once",
+                  kind: { tag: "RejectOnce" },
+                },
+              ],
+              resolution: null,
+            },
+          },
+        ]}
+        loading={false}
+        startupState={{ tag: "Ready" }}
+        taskStatus={{ tag: "Working" }}
+      />,
+    );
+
+    const approveButtons = screen.getAllByRole("button", { name: "Approve" });
+    expect(approveButtons).toHaveLength(2);
+    expect(approveButtons[0]).toBeDisabled();
+    expect(approveButtons[1]).toBeEnabled();
+
+    fireEvent.click(approveButtons[1]);
+    await waitFor(() => {
+      expect(apiMocks.resolvePermission).toHaveBeenCalledWith("session-1", "perm-2", "allow-once");
+    });
   });
 });

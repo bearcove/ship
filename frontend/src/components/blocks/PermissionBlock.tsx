@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Badge, Box, Button, Code, Flex, Text } from "@radix-ui/themes";
+import { type ReactElement, useEffect, useState } from "react";
+import { Badge, Box, Button, Code, Flex, Text, Tooltip } from "@radix-ui/themes";
 import { CaretDown, CaretRight } from "@phosphor-icons/react";
 import type { ContentBlock } from "../../generated/ship";
 import { formatDisplayText } from "../../utils/displayPath";
@@ -9,6 +9,8 @@ import {
   firstRejectOption,
   jsonValueToString,
   optionTone,
+  permissionOptionLabel,
+  permissionOptionTooltip,
   summarizeTarget,
 } from "./toolPayload";
 
@@ -34,6 +36,17 @@ function RawJson({ value }: { value: string }) {
       {value}
     </Box>
   );
+}
+
+function ButtonWithOptionalTooltip({
+  content,
+  children,
+}: {
+  content: string | undefined;
+  children: ReactElement;
+}) {
+  if (!content) return children;
+  return <Tooltip content={content}>{children}</Tooltip>;
 }
 
 // r[acp.permissions]
@@ -124,18 +137,23 @@ export function PermissionBlock({ block, onResolve }: Props) {
       <Flex gap="2" align="center" wrap="wrap">
         {(block.options ?? []).map((option) => {
           const tone = optionTone(option.kind);
+          const label = permissionOptionLabel(option, block.tool_name);
           return (
-            <Button
+            <ButtonWithOptionalTooltip
               key={option.option_id}
-              size="1"
-              color={tone.color}
-              variant={tone.variant}
-              disabled={!onResolve || pendingOptionId !== null}
-              loading={pendingOptionId === option.option_id}
-              onClick={() => void runAction(option.option_id)}
+              content={permissionOptionTooltip(option)}
             >
-              {option.label}
-            </Button>
+              <Button
+                size="1"
+                color={tone.color}
+                variant={tone.variant}
+                disabled={!onResolve || pendingOptionId !== null}
+                loading={pendingOptionId === option.option_id}
+                onClick={() => void runAction(option.option_id)}
+              >
+                {label}
+              </Button>
+            </ButtonWithOptionalTooltip>
           );
         })}
       </Flex>

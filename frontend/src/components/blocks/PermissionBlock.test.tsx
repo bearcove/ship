@@ -45,11 +45,40 @@ describe("PermissionBlock", () => {
     renderWithTheme(<PermissionBlock block={block} onResolve={onResolve} />);
 
     expect(screen.getByText("Permission request")).toBeInTheDocument();
-    expect(screen.getByText("Allow once")).toBeInTheDocument();
-    expect(screen.getByText("Allow always")).toBeInTheDocument();
-    expect(screen.getByText("Reject once")).toBeInTheDocument();
+    expect(screen.getByText(/src\/lib\.rs/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve all Write File" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Deny" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Allow always" }));
+    fireEvent.click(screen.getByRole("button", { name: "Approve all Write File" }));
     expect(onResolve).toHaveBeenCalledWith("allow-always");
+  });
+
+  // r[verify view.permission-dialog]
+  // r[verify ui.permission.actions]
+  it("shortens worktree paths in the details view", async () => {
+    renderWithTheme(
+      <PermissionBlock
+        block={{
+          ...block,
+          raw_input: {
+            tag: "Object",
+            entries: [
+              {
+                key: "path",
+                value: {
+                  tag: "String",
+                  value:
+                    "/Users/amos/bearcove/ship-fullstack/.ship/worktrees/fullstack/frontend/src/lib.rs",
+                },
+              },
+            ],
+          },
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Details"));
+    expect(screen.getByText(/"path": "frontend\/src\/lib\.rs"/)).toBeInTheDocument();
   });
 });

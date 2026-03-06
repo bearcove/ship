@@ -302,13 +302,6 @@ function renderAnsiLine(line: string): Array<{ text: string; style: AnsiStyle }>
   return parts;
 }
 
-function extractMarkdownFence(text: string): { language: string | null; body: string } | null {
-  const match = /^```([^\n`]*)\n([\s\S]*?)\n```$/u.exec(text.trim());
-  if (!match) return null;
-  const language = match[1]?.trim() || null;
-  return { language, body: match[2] };
-}
-
 function TerminalTranscript({
   command,
   output,
@@ -329,17 +322,19 @@ function TerminalTranscript({
           </Badge>
         )}
       </Flex>
-      <Box>
-        {lines.map((line, lineIndex) => (
-          <Box key={lineIndex} className={terminalLine}>
-            {renderAnsiLine(line).map((part, partIndex) => (
-              <span key={partIndex} style={part.style}>
-                {part.text || "\u00a0"}
-              </span>
-            ))}
-          </Box>
-        ))}
-      </Box>
+      <ScrollArea scrollbars="vertical" style={{ maxHeight: "20rem" }}>
+        <Box>
+          {lines.map((line, lineIndex) => (
+            <Box key={lineIndex} className={terminalLine}>
+              {renderAnsiLine(line).map((part, partIndex) => (
+                <span key={partIndex} style={part.style}>
+                  {part.text || "\u00a0"}
+                </span>
+              ))}
+            </Box>
+          ))}
+        </Box>
+      </ScrollArea>
     </Box>
   );
 }
@@ -358,18 +353,9 @@ function terminalExitLabel(
 }
 
 function RichTextContent({ text }: { text: string }) {
-  const displayText = formatDisplayText(text);
-  const fence = extractMarkdownFence(displayText);
-  if (
-    fence &&
-    (fence.language === "console" || fence.language === "terminal" || fence.language === "sh")
-  ) {
-    return <TerminalTranscript output={fence.body} />;
-  }
-
   return (
     <Box className={toolCallContentSection}>
-      <ReactMarkdown>{displayText}</ReactMarkdown>
+      <ReactMarkdown>{formatDisplayText(text)}</ReactMarkdown>
     </Box>
   );
 }
@@ -433,6 +419,17 @@ function commandFromTarget(target: ToolTarget | null): string | undefined {
   return target?.tag === "Command" ? target.command : undefined;
 }
 
+function toolCallStatusLabel(status: ToolCallBlockType["status"]): string {
+  switch (status.tag) {
+    case "Running":
+      return "Running";
+    case "Success":
+      return "Success";
+    case "Failure":
+      return "Failed";
+  }
+}
+
 // r[acp.content-blocks]
 // r[acp.terminals]
 // r[ui.block.tool-call.layout]
@@ -476,6 +473,7 @@ export function ToolCallBlock({ block }: Props) {
               color: "var(--gray-11)",
               fontFamily: "monospace",
               flex: 1,
+              minWidth: 0,
               overflow: "hidden",
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
@@ -487,11 +485,15 @@ export function ToolCallBlock({ block }: Props) {
         <Box ml="auto" style={{ flexShrink: 0 }}>
           {isRunning ? (
             <Badge color="gray" size="1">
-              <Spinner size="1" />
+              <Flex align="center" gap="1">
+                <Spinner size="1" />
+                <span>{toolCallStatusLabel(block.status)}</span>
+              </Flex>
             </Badge>
           ) : (
             <Badge color={statusColor} size="1">
-              {block.status.tag === "Success" ? "✓" : "✗"}
+              {block.status.tag === "Success" ? "✓ " : "✗ "}
+              {toolCallStatusLabel(block.status)}
             </Badge>
           )}
         </Box>

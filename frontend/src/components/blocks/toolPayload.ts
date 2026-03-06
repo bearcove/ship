@@ -114,6 +114,27 @@ export function optionTone(kind: PermissionOptionKind): {
   }
 }
 
+export function permissionOptionLabel(option: PermissionOption, toolName: string): string {
+  switch (option.kind.tag) {
+    case "AllowOnce":
+      return "Approve";
+    case "AllowAlways":
+      return `Approve all ${formatDisplayText(toolName)}`;
+    case "RejectOnce":
+    case "RejectAlways":
+      return "Deny";
+    case "Other":
+      return option.label;
+  }
+}
+
+export function permissionOptionTooltip(option: PermissionOption): string | undefined {
+  if (option.kind.tag === "AllowAlways") {
+    return "Applies for the remainder of the current task.";
+  }
+  return undefined;
+}
+
 export function firstAllowOption(options: PermissionOption[] | null): PermissionOption | null {
   return (
     options?.find(

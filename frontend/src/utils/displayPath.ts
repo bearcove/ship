@@ -1,9 +1,9 @@
 const HOME_PREFIX = "/Users/amos/";
 
 function shortenAbsolutePath(path: string): string {
-  const worktreeIndex = path.indexOf("/.ship/worktrees/");
-  if (worktreeIndex >= 0) {
-    return path.slice(worktreeIndex + 1);
+  const worktreeMatch = path.match(/\/\.ship\/worktrees\/[^/]+\//u);
+  if (worktreeMatch) {
+    return path.slice(worktreeMatch.index! + worktreeMatch[0].length);
   }
   if (path.startsWith(HOME_PREFIX)) {
     return `~/${path.slice(HOME_PREFIX.length)}`;
