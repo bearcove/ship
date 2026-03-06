@@ -1,7 +1,7 @@
-import { useEffect, useReducer, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import { channel } from "@bearcove/roam-core";
-import type { SubscribeMessage } from "../generated/ship";
-import { shipClient } from "../api/client";
+import type { SessionDetail, SubscribeMessage } from "../generated/ship";
+import { getShipClient, invalidateShipClient } from "../api/client";
 import {
   type SessionViewState,
   initialSessionViewState,
@@ -10,66 +10,183 @@ import {
 
 const RECONNECT_DELAY_MS = 3000;
 
+function describeError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  if (
+    error &&
+    typeof error === "object" &&
+    "message" in error &&
+    typeof error.message === "string"
+  ) {
+    return error.message;
+  }
+  return String(error);
+}
+
+function log(level: "debug" | "info" | "warn", message: string, details: Record<string, unknown>) {
+  const method = level === "warn" ? console.warn : level === "info" ? console.info : console.debug;
+  method(`[ship/session] ${message}`, details);
+}
+
 // r[proto.hydration-flow]
 // r[event.client.hydration-sequence]
 // r[event.client.connection-lifecycle]
 // r[event.subscribe]
-export function useSessionState(sessionId: string): SessionViewState {
+export function useSessionState(
+  sessionId: string,
+  session: SessionDetail | null,
+): SessionViewState {
   const [state, dispatch] = useReducer(sessionReducer, undefined, initialSessionViewState);
   const [retryCount, setRetryCount] = useState(0);
+  const stateRef = useRef(state);
+  const sessionRef = useRef(session);
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
+  useEffect(() => {
+    sessionRef.current = session;
+    if (session) {
+      dispatch({ type: "hydrate", session });
+    }
+  }, [session]);
+
+  useEffect(() => {
+    if (state.lastSeq !== null && state.lastEventKind) {
+      log("debug", "applied session event", {
+        sessionId,
+        seq: state.lastSeq,
+        eventKind: state.lastEventKind,
+        phase: state.phase,
+      });
+    }
+  }, [sessionId, state.lastEventKind, state.lastSeq, state.phase]);
+
+  useEffect(() => {
+    if (state.phase === "replaying") {
+      log("info", "replay in progress", {
+        sessionId,
+        replayEventCount: state.replayEventCount,
+        attempt: state.connectionAttempt,
+      });
+    }
+    if (state.phase === "live") {
+      log("info", "replay complete", {
+        sessionId,
+        replayEventCount: state.replayEventCount,
+        lastSeq: state.lastSeq,
+      });
+    }
+  }, [sessionId, state.connectionAttempt, state.lastSeq, state.phase, state.replayEventCount]);
 
   useEffect(() => {
     let cancelled = false;
-    // signalStop is set once the stopSignal Promise is created inside subscribe().
-    // Calling it resolves the stopSignal, immediately unblocking the receive loop.
-    let signalStop: (() => void) | null = null;
+    let reconnectTimer: number | null = null;
+    let signalStop: ((reason: string) => void) | null = null;
 
     async function subscribe() {
-      const client = await shipClient;
-      if (cancelled) return;
+      const attempt = retryCount + 1;
+      dispatch({ type: "connected", attempt });
+      if (sessionRef.current) {
+        dispatch({ type: "hydrate", session: sessionRef.current });
+      }
+      log("info", "starting session subscription", {
+        sessionId,
+        attempt,
+        forceNewClient: retryCount > 0,
+      });
 
-      dispatch({ type: "connected" });
+      const client = await getShipClient({ forceNew: retryCount > 0 });
+      if (cancelled) return;
 
       const [tx, rx] = channel<SubscribeMessage>();
 
-      // Resolves to null when the receive loop should stop (cleanup or RPC end).
-      const stopSignal = new Promise<null>((resolve) => {
-        signalStop = () => resolve(null);
+      const stopSignal = new Promise<string>((resolve) => {
+        signalStop = resolve;
       });
 
-      // Start the subscription RPC eagerly (binds channel, sends request).
-      // When it ends (success or error), unblock the receive loop via stopSignal.
       const subscribeCall = client.subscribeEvents(sessionId, tx);
       void subscribeCall.then(
-        () => signalStop?.(),
-        () => signalStop?.(),
+        () => {
+          log("info", "subscription RPC ended", { sessionId, attempt });
+          signalStop?.("subscription RPC ended");
+        },
+        (error) => {
+          const reason = `subscription RPC failed: ${describeError(error)}`;
+          log("warn", "subscription RPC failed", { sessionId, attempt, reason });
+          invalidateShipClient(reason);
+          signalStop?.(reason);
+        },
       );
 
+      let stopReason: string | null = null;
+
       while (true) {
-        // Race between the next channel message and a stop signal.
-        // This ensures cleanup (cancelled = true + signalStop()) unblocks immediately
-        // instead of waiting for the next message or channel close.
-        const msg = await Promise.race([rx.recv(), stopSignal]);
-        if (msg === null || cancelled) break;
-        if (msg.tag === "Event") {
-          dispatch({ type: "event", envelope: msg.value });
-        } else if (msg.tag === "ReplayComplete") {
+        const next = await Promise.race([
+          rx.recv().then((msg) => ({ tag: "message" as const, msg })),
+          stopSignal.then((reason) => ({ tag: "stop" as const, reason })),
+        ]);
+        if (next.tag === "stop") {
+          stopReason = next.reason;
+          break;
+        }
+        if (cancelled) break;
+        if (next.msg === null) {
+          stopReason = "subscription channel closed";
+          log("warn", "subscription channel closed", { sessionId, attempt });
+          invalidateShipClient(stopReason);
+          break;
+        }
+
+        if (next.msg.tag === "Event") {
+          const nextSeq = Number(next.msg.value.seq);
+          const lastSeq = stateRef.current.lastSeq;
+          log("debug", "received session event", {
+            sessionId,
+            seq: nextSeq,
+            eventKind: next.msg.value.event.tag,
+            phase: stateRef.current.phase,
+          });
+          if (lastSeq !== null && nextSeq !== lastSeq + 1) {
+            stopReason = `sequence gap detected: expected ${lastSeq + 1}, received ${nextSeq}`;
+            log("warn", "sequence gap detected", {
+              sessionId,
+              expectedSeq: lastSeq + 1,
+              receivedSeq: nextSeq,
+            });
+            invalidateShipClient(stopReason);
+            signalStop?.(stopReason);
+            continue;
+          }
+          dispatch({ type: "event", envelope: next.msg.value });
+        } else if (next.msg.tag === "ReplayComplete") {
+          log("info", "received replay complete marker", {
+            sessionId,
+            attempt,
+            replayEventCount: stateRef.current.replayEventCount,
+          });
           dispatch({ type: "replay-complete" });
         }
       }
 
       if (!cancelled) {
-        dispatch({ type: "disconnected" });
-        setTimeout(() => {
+        const reason = stopReason ?? "subscription stopped without a close reason";
+        dispatch({ type: "disconnected", reason });
+        reconnectTimer = window.setTimeout(() => {
           if (!cancelled) setRetryCount((c) => c + 1);
         }, RECONNECT_DELAY_MS);
       }
     }
 
-    subscribe().catch(() => {
+    subscribe().catch((error) => {
       if (!cancelled) {
-        dispatch({ type: "disconnected" });
-        setTimeout(() => {
+        const reason = `subscription setup failed: ${describeError(error)}`;
+        log("warn", "session subscription setup failed", { sessionId, reason });
+        invalidateShipClient(reason);
+        dispatch({ type: "disconnected", reason });
+        reconnectTimer = window.setTimeout(() => {
           if (!cancelled) setRetryCount((c) => c + 1);
         }, RECONNECT_DELAY_MS);
       }
@@ -77,9 +194,12 @@ export function useSessionState(sessionId: string): SessionViewState {
 
     return () => {
       cancelled = true;
-      signalStop?.(); // Unblock the receive loop immediately on cleanup
+      if (reconnectTimer !== null) {
+        window.clearTimeout(reconnectTimer);
+      }
+      signalStop?.("subscription cleanup");
     };
-  }, [sessionId, retryCount]);
+  }, [retryCount, sessionId]);
 
   return state;
 }

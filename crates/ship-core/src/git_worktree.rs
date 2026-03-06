@@ -20,6 +20,15 @@ impl WorktreeOps for GitWorktreeOps {
         slug: &str,
         repo_root: &Path,
     ) -> Result<PathBuf, WorktreeError> {
+        tracing::info!(
+            session_id = %session_id.0,
+            base_branch = %base_branch,
+            slug = %slug,
+            repo_root = %repo_root.display(),
+            "resolving base ref before worktree creation"
+        );
+        ensure_valid_base_ref(repo_root, base_branch).await?;
+
         let short_session_id: String = session_id.0.chars().take(8).collect();
         let branch_name = format!("ship/{short_session_id}/{slug}");
         let worktree_path = repo_root
@@ -49,6 +58,13 @@ impl WorktreeOps for GitWorktreeOps {
             })?;
 
         ensure_success(output)?;
+        tracing::info!(
+            session_id = %session_id.0,
+            base_branch = %base_branch,
+            branch_name = %branch_name,
+            worktree_path = %worktree_path.display(),
+            "created git worktree"
+        );
         Ok(worktree_path)
     }
 
@@ -169,6 +185,91 @@ fn ensure_success_stdout(output: Output) -> Result<String, WorktreeError> {
     let stderr = String::from_utf8_lossy(&output.stderr);
     Err(WorktreeError {
         message: stderr.trim().to_owned(),
+    })
+}
+
+async fn ensure_valid_base_ref(repo_root: &Path, base_branch: &str) -> Result<(), WorktreeError> {
+    let verify_target = format!("{base_branch}^{{commit}}");
+    let verify_output = Command::new("git")
+        .arg("-C")
+        .arg(repo_root)
+        .arg("rev-parse")
+        .arg("--verify")
+        .arg("--quiet")
+        .arg(&verify_target)
+        .output()
+        .await
+        .map_err(|error| WorktreeError {
+            message: format!("failed to resolve base ref '{base_branch}': {error}"),
+        })?;
+
+    if verify_output.status.success() {
+        tracing::debug!(
+            base_branch = %base_branch,
+            repo_root = %repo_root.display(),
+            "resolved base ref to a commit"
+        );
+        return Ok(());
+    }
+
+    let head_branch_output = Command::new("git")
+        .arg("-C")
+        .arg(repo_root)
+        .arg("symbolic-ref")
+        .arg("--quiet")
+        .arg("--short")
+        .arg("HEAD")
+        .output()
+        .await
+        .map_err(|error| WorktreeError {
+            message: format!("failed to inspect HEAD while resolving '{base_branch}': {error}"),
+        })?;
+
+    let head_branch = if head_branch_output.status.success() {
+        Some(
+            String::from_utf8_lossy(&head_branch_output.stdout)
+                .trim()
+                .to_owned(),
+        )
+    } else {
+        None
+    };
+
+    let head_commit_output = Command::new("git")
+        .arg("-C")
+        .arg(repo_root)
+        .arg("rev-parse")
+        .arg("--verify")
+        .arg("--quiet")
+        .arg("HEAD^{commit}")
+        .output()
+        .await
+        .map_err(|error| WorktreeError {
+            message: format!(
+                "failed to inspect HEAD commit while resolving '{base_branch}': {error}"
+            ),
+        })?;
+
+    if head_branch.as_deref() == Some(base_branch) && !head_commit_output.status.success() {
+        tracing::warn!(
+            base_branch = %base_branch,
+            repo_root = %repo_root.display(),
+            "base branch is unborn"
+        );
+        return Err(WorktreeError {
+            message: format!(
+                "base branch '{base_branch}' is unborn: the repository has no commits on that branch yet"
+            ),
+        });
+    }
+
+    tracing::warn!(
+        base_branch = %base_branch,
+        repo_root = %repo_root.display(),
+        "base branch/ref does not resolve to a commit"
+    );
+    Err(WorktreeError {
+        message: format!("base branch/ref '{base_branch}' does not resolve to a commit"),
     })
 }
 

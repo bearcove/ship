@@ -141,3 +141,55 @@ async fn git_worktree_create_status_and_remove() {
 
     let _ = std::fs::remove_dir_all(&root);
 }
+
+// r[verify worktree.base-branch]
+#[tokio::test]
+async fn git_worktree_rejects_invalid_or_unborn_base_branch() {
+    let root = make_temp_dir("git-worktree-invalid-base");
+    let repo = root.join("repo");
+    std::fs::create_dir_all(&repo).expect("repo dir should be created");
+
+    run_git(&["init"], &repo);
+    run_git(&["config", "user.name", "Ship Test"], &repo);
+    run_git(&["config", "user.email", "ship@example.com"], &repo);
+    run_git(&["checkout", "-b", "main"], &repo);
+
+    let ops = GitWorktreeOps;
+    let unborn_error = ops
+        .create_worktree(
+            &SessionId("01J00000000000000000000010".to_owned()),
+            "main",
+            "unborn-base",
+            &repo,
+        )
+        .await
+        .expect_err("unborn branch should be rejected");
+    assert!(
+        unborn_error.message.contains("is unborn"),
+        "unexpected unborn error: {}",
+        unborn_error.message
+    );
+
+    std::fs::write(repo.join("README.md"), "seed\n").expect("seed file should write");
+    run_git(&["add", "README.md"], &repo);
+    run_git(&["commit", "-m", "seed"], &repo);
+
+    let invalid_error = ops
+        .create_worktree(
+            &SessionId("01J00000000000000000000011".to_owned()),
+            "missing-branch",
+            "invalid-base",
+            &repo,
+        )
+        .await
+        .expect_err("invalid branch should be rejected");
+    assert!(
+        invalid_error
+            .message
+            .contains("does not resolve to a commit"),
+        "unexpected invalid error: {}",
+        invalid_error.message
+    );
+
+    let _ = std::fs::remove_dir_all(&root);
+}

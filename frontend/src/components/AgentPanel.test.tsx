@@ -7,7 +7,7 @@ import { AgentPanel } from "./AgentPanel";
 import { agentPanelScrollArea, eventStream, stickyPlan } from "../styles/session-view.css";
 
 vi.mock("../api/client", () => ({
-  shipClient: Promise.resolve({
+  getShipClient: async () => ({
     resolvePermission: async () => undefined,
   }),
 }));

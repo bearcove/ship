@@ -569,6 +569,48 @@ async fn test_event_broadcast() {
     );
 }
 
+// r[verify event.subscribe.replay]
+// r[verify event.replay.per-subscriber]
+#[tokio::test]
+async fn replay_is_sent_only_to_the_new_subscriber() {
+    let (mut manager, agent, _worktree, _store) = make_manager();
+
+    agent.push_response(StopReason::EndTurn);
+    agent.push_response(StopReason::ContextExhausted);
+
+    let (session_id, task_id) = manager
+        .create_session(make_request("Replay isolation"), Path::new("/repo"))
+        .await
+        .expect("create session should work");
+
+    let mut first = manager
+        .subscribe(&session_id)
+        .expect("first subscribe should work");
+    drain_replay(&mut first);
+
+    let mut second = manager
+        .subscribe(&session_id)
+        .expect("second subscribe should work");
+
+    let replay_started = timeout(Duration::from_secs(1), second.recv())
+        .await
+        .expect("second subscriber should receive replay")
+        .expect("broadcast should be open");
+    assert_eq!(
+        replay_started.event,
+        SessionEvent::TaskStarted {
+            task_id: task_id.clone(),
+            description: "Replay isolation".to_owned(),
+        }
+    );
+
+    let no_replayed_event = timeout(Duration::from_millis(100), first.recv()).await;
+    assert!(
+        no_replayed_event.is_err(),
+        "existing subscriber must not receive replay for a later subscriber"
+    );
+}
+
 // r[verify backend.worktree-management]
 // r[verify worktree.cleanup]
 // r[verify worktree.cleanup-git]

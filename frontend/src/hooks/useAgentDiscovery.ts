@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { shipClient } from "../api/client";
+import { getShipClient } from "../api/client";
 import type { AgentDiscovery } from "../generated/ship";
 
 // r[server.agent-discovery]
@@ -10,7 +10,7 @@ export function useAgentDiscovery(): AgentDiscovery {
     let active = true;
 
     async function fetchDiscovery() {
-      const client = await shipClient;
+      const client = await getShipClient();
       const result = await client.agentDiscovery();
       if (active) {
         setDiscovery(result);

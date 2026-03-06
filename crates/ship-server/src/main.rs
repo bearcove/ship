@@ -337,6 +337,7 @@ async fn ws_handler(State(state): State<AppState>, mut request: Request) -> impl
 
     let ship = state.ship.clone();
     tokio::spawn(async move {
+        tracing::info!("accepting websocket upgrade");
         let ws_stream = match websocket.await {
             Ok(stream) => stream,
             Err(error) => {
@@ -344,6 +345,7 @@ async fn ws_handler(State(state): State<AppState>, mut request: Request) -> impl
                 return;
             }
         };
+        tracing::info!("websocket upgrade complete");
 
         let link = roam_websocket::WsLink::new(ws_stream);
         match roam::acceptor(link)
@@ -352,10 +354,11 @@ async fn ws_handler(State(state): State<AppState>, mut request: Request) -> impl
         {
             Ok((caller_guard, _session_handle)) => {
                 let _caller_guard = caller_guard;
+                tracing::info!("roam websocket session established");
                 std::future::pending::<()>().await;
             }
             Err(error) => {
-                tracing::warn!(?error, "failed to establish roam websocket session");
+                tracing::warn!(?error, "roam websocket session closed or failed");
             }
         }
     });

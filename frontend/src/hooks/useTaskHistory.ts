@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { shipClient } from "../api/client";
+import { getShipClient } from "../api/client";
 import type { TaskRecord } from "../generated/ship";
 
 // r[session.single-task]
@@ -9,7 +9,7 @@ export function useTaskHistory(id: string): TaskRecord[] {
   useEffect(() => {
     let active = true;
 
-    shipClient
+    getShipClient()
       .then((client) => client.getSession(id))
       .then((detail) => {
         if (active) setHistory(detail.task_history);

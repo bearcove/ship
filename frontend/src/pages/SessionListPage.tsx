@@ -22,7 +22,7 @@ import { useAgentDiscovery } from "../hooks/useAgentDiscovery";
 import { useBranches } from "../hooks/useBranches";
 import { sessionCard } from "../styles/session-list.css";
 import type { AgentKind, TaskStatus } from "../generated/ship";
-import { shipClient } from "../api/client";
+import { getShipClient } from "../api/client";
 import { agentKindTooltip } from "./session-list-utils";
 
 // r[ui.session-list.status-colors]
@@ -246,7 +246,7 @@ function NewSessionDialog({
     setCreateError(null);
     setSubmitting(true);
     try {
-      const client = await shipClient;
+      const client = await getShipClient();
       const result = await client.createSession({
         project: projectName,
         captain_kind: captainKind,
@@ -365,7 +365,7 @@ function AddProjectDialog({
     setError(null);
     setSubmitting(true);
     try {
-      const client = await shipClient;
+      const client = await getShipClient();
       const result = await client.addProject(path);
       if (!result.valid) {
         setError(result.invalid_reason ?? "Unknown validation error");

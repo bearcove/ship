@@ -15,43 +15,84 @@ describe("sessionReducer connection lifecycle", () => {
   });
 
   it("connected action transitions to replaying phase", () => {
-    const state = sessionReducer(freshState(), { type: "connected" });
+    const state = sessionReducer(freshState(), { type: "connected", attempt: 1 });
     expect(state.connected).toBe(true);
     expect(state.phase).toBe("replaying");
+    expect(state.connectionAttempt).toBe(1);
   });
 
   it("replay-complete transitions to live phase", () => {
-    const after_connected = sessionReducer(freshState(), { type: "connected" });
+    const after_connected = sessionReducer(freshState(), { type: "connected", attempt: 1 });
     const state = sessionReducer(after_connected, { type: "replay-complete" });
     expect(state.phase).toBe("live");
     expect(state.connected).toBe(true);
   });
 
   it("disconnected resets state and marks disconnected", () => {
-    const after_connected = sessionReducer(freshState(), { type: "connected" });
-    const state = sessionReducer(after_connected, { type: "disconnected" });
+    const after_connected = sessionReducer(freshState(), { type: "connected", attempt: 1 });
+    const state = sessionReducer(after_connected, {
+      type: "disconnected",
+      reason: "socket closed",
+    });
     expect(state.connected).toBe(false);
     expect(state.phase).toBe("loading");
     expect(state.captainBlocks.blocks).toHaveLength(0);
     expect(state.mateBlocks.blocks).toHaveLength(0);
+    expect(state.disconnectReason).toBe("socket closed");
   });
 
   it("reconnect cycle: disconnected then connected resets and enters replaying", () => {
     let state = freshState();
-    state = sessionReducer(state, { type: "connected" });
+    state = sessionReducer(state, { type: "connected", attempt: 1 });
     state = sessionReducer(state, { type: "replay-complete" });
     // connection drops
-    state = sessionReducer(state, { type: "disconnected" });
+    state = sessionReducer(state, { type: "disconnected", reason: "dropped" });
     expect(state.connected).toBe(false);
     // reconnect
-    state = sessionReducer(state, { type: "connected" });
+    state = sessionReducer(state, { type: "connected", attempt: 2 });
     expect(state.connected).toBe(true);
     expect(state.phase).toBe("replaying");
+    expect(state.connectionAttempt).toBe(2);
   });
 });
 
 // r[verify event.client.reducer]
 describe("sessionReducer event handling", () => {
+  it("hydrates agent snapshots and current task from session detail", () => {
+    const state = sessionReducer(freshState(), {
+      type: "hydrate",
+      session: {
+        id: "session-1",
+        project: "ship",
+        branch_name: "ship/123/test",
+        captain: {
+          role: { tag: "Captain" },
+          kind: { tag: "Claude" },
+          state: { tag: "Idle" },
+          context_remaining_percent: 75,
+        },
+        mate: {
+          role: { tag: "Mate" },
+          kind: { tag: "Codex" },
+          state: { tag: "Working", plan: null, activity: "Running" },
+          context_remaining_percent: 55,
+        },
+        current_task: {
+          id: "task-1",
+          description: "Investigate replay",
+          status: { tag: "Working" },
+        },
+        task_history: [],
+        autonomy_mode: { tag: "HumanInTheLoop" },
+        pending_steer: null,
+      },
+    });
+    expect(state.captain?.kind.tag).toBe("Claude");
+    expect(state.mate?.state.tag).toBe("Working");
+    expect(state.currentTaskId).toBe("task-1");
+    expect(state.currentTaskStatus?.tag).toBe("Working");
+  });
+
   it("ignores events for unknown agent snapshots (AgentStateChanged without snapshot)", () => {
     const state = freshState();
     const next = sessionReducer(state, {
@@ -126,5 +167,7 @@ describe("sessionReducer event handling", () => {
       },
     });
     expect(state.lastSeq).toBe(999);
+    expect(state.lastEventKind).toBe("TaskStatusChanged");
+    expect(state.eventCount).toBe(1);
   });
 });

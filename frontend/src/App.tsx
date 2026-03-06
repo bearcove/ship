@@ -35,7 +35,15 @@ export function App() {
         </Flex>
       </Box>
 
-      <ConnectionBanner connected={true} />
+      <ConnectionBanner
+        connected={true}
+        phase="live"
+        disconnectReason={null}
+        replayEventCount={0}
+        connectionAttempt={0}
+        lastSeq={null}
+        lastEventKind={null}
+      />
       <NotificationPrompt />
 
       <Box style={{ flex: 1, overflow: "auto" }}>

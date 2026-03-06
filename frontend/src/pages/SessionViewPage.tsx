@@ -42,16 +42,13 @@ export function SessionViewPage() {
   // r[event.client.hydration-sequence]: Step 1 — structural state
   const session = useSession(sessionId ?? "");
   // r[event.client.hydration-sequence]: Step 2/3 — event subscription + replay
-  const eventState = useSessionState(sessionId ?? "");
+  const eventState = useSessionState(sessionId ?? "", session);
   const [autonomous, setAutonomous] = useState(false);
   const [mobileTab, setMobileTab] = useState<"captain" | "mate">("captain");
 
   useEffect(() => {
     if (session) setAutonomous(session.autonomy_mode.tag === "Autonomous");
   }, [session]);
-
-  const mateAwaitingPermission =
-    eventState.mate !== null && eventState.mate.state.tag === "AwaitingPermission";
 
   // r[ui.keys.nav]
   useEffect(() => {
@@ -72,12 +69,19 @@ export function SessionViewPage() {
     );
   }
 
-  const idle = getIdleMessage(eventState.currentTaskStatus, mateAwaitingPermission);
-  const isReplaying = eventState.phase !== "live";
-
-  // Use live agent snapshots from event state if available, fall back to session detail
   const captain = eventState.captain ?? session.captain;
   const mate = eventState.mate ?? session.mate;
+  const mateAwaitingPermission = mate.state.tag === "AwaitingPermission";
+  const idle = getIdleMessage(
+    eventState.currentTaskStatus ?? session.current_task?.status ?? null,
+    mateAwaitingPermission,
+  );
+  const isReplaying = eventState.phase !== "live";
+  const replayLabel = eventState.connected
+    ? eventState.replayEventCount > 0
+      ? `Replaying ${eventState.replayEventCount} event${eventState.replayEventCount === 1 ? "" : "s"}…`
+      : "Connected — waiting for replay…"
+    : "Waiting for reconnect…";
 
   return (
     <Flex className={sessionViewRoot}>
@@ -105,7 +109,15 @@ export function SessionViewPage() {
         </Button>
       </Flex>
 
-      <ConnectionBanner connected={eventState.connected} />
+      <ConnectionBanner
+        connected={eventState.connected}
+        phase={eventState.phase}
+        disconnectReason={eventState.disconnectReason}
+        replayEventCount={eventState.replayEventCount}
+        connectionAttempt={eventState.connectionAttempt}
+        lastSeq={eventState.lastSeq}
+        lastEventKind={eventState.lastEventKind}
+      />
 
       <Box className={mobileTabs} px="3" pt="2">
         <Tabs.Root value={mobileTab} onValueChange={(v) => setMobileTab(v as "captain" | "mate")}>
@@ -135,6 +147,7 @@ export function SessionViewPage() {
               agent={captain}
               blocks={eventState.captainBlocks.blocks}
               loading={isReplaying}
+              loadingLabel={replayLabel}
             />
           </Box>
           <Box className={panelColumn}>
@@ -144,6 +157,7 @@ export function SessionViewPage() {
               agent={mate}
               blocks={eventState.mateBlocks.blocks}
               loading={isReplaying}
+              loadingLabel={replayLabel}
             />
           </Box>
         </Box>
@@ -157,6 +171,7 @@ export function SessionViewPage() {
                 agent={captain}
                 blocks={eventState.captainBlocks.blocks}
                 loading={isReplaying}
+                loadingLabel={replayLabel}
               />
             </>
           ) : (
@@ -167,6 +182,7 @@ export function SessionViewPage() {
                 agent={mate}
                 blocks={eventState.mateBlocks.blocks}
                 loading={isReplaying}
+                loadingLabel={replayLabel}
               />
             </>
           )}

@@ -7,7 +7,7 @@ import { ToolCallBlock } from "./blocks/ToolCallBlock";
 import { PlanUpdateBlock as PlanUpdateBlockComponent } from "./blocks/PlanUpdateBlock";
 import { ErrorBlock } from "./blocks/ErrorBlock";
 import { PermissionBlock } from "./blocks/PermissionBlock";
-import { shipClient } from "../api/client";
+import { getShipClient } from "../api/client";
 import {
   agentPanelRoot,
   agentPanelScrollArea,
@@ -20,6 +20,7 @@ interface Props {
   agent: AgentSnapshot;
   blocks: BlockEntry[];
   loading?: boolean;
+  loadingLabel?: string;
 }
 
 type PlanUpdateBlock = Extract<ContentBlock, { tag: "PlanUpdate" }>;
@@ -36,7 +37,7 @@ function latestPlan(entries: BlockEntry[]): PlanUpdateBlock | undefined {
 // r[view.agent-panel.state]
 // r[ui.block.plan.position]
 // r[ui.block.plan.filtering]
-export function AgentPanel({ sessionId, agent, blocks, loading }: Props) {
+export function AgentPanel({ sessionId, agent, blocks, loading, loadingLabel }: Props) {
   const plan = latestPlan(blocks);
 
   let lastUnresolvedPermBlockId: string | undefined;
@@ -84,7 +85,7 @@ export function AgentPanel({ sessionId, agent, blocks, loading }: Props) {
 
         async function resolve(approved: boolean) {
           if (!permissionId) return;
-          const client = await shipClient;
+          const client = await getShipClient();
           await client.resolvePermission(sessionId, permissionId, approved);
         }
 
@@ -105,7 +106,7 @@ export function AgentPanel({ sessionId, agent, blocks, loading }: Props) {
         <Flex align="center" gap="2" px="3" py="2" style={{ flexShrink: 0 }}>
           <Spinner size="1" />
           <Text size="1" color="gray">
-            Replaying events…
+            {loadingLabel ?? "Replaying events…"}
           </Text>
         </Flex>
       )}

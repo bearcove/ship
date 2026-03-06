@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { shipClient } from "../api/client";
+import { getShipClient } from "../api/client";
 import type { SessionDetail } from "../generated/ship";
 
 // r[proto.get-session]
@@ -9,7 +9,7 @@ export function useSession(id: string): SessionDetail | null {
 
   useEffect(() => {
     let cancelled = false;
-    shipClient
+    getShipClient()
       .then((client) => client.getSession(id))
       .then((detail) => {
         if (!cancelled) setSession(detail);

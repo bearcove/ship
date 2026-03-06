@@ -1,4 +1,9 @@
-import type { AgentSnapshot, SessionEventEnvelope, TaskStatus } from "../generated/ship";
+import type {
+  AgentSnapshot,
+  SessionDetail,
+  SessionEventEnvelope,
+  TaskStatus,
+} from "../generated/ship";
 import {
   type BlockStore,
   createBlockStore,
@@ -17,7 +22,12 @@ export interface SessionViewState {
   currentTaskStatus: TaskStatus | null;
   connected: boolean;
   phase: "loading" | "replaying" | "live";
-  lastSeq: number;
+  lastSeq: number | null;
+  lastEventKind: string | null;
+  eventCount: number;
+  replayEventCount: number;
+  disconnectReason: string | null;
+  connectionAttempt: number;
 }
 
 export function initialSessionViewState(): SessionViewState {
@@ -30,37 +40,70 @@ export function initialSessionViewState(): SessionViewState {
     currentTaskStatus: null,
     connected: true,
     phase: "loading",
-    lastSeq: 0,
+    lastSeq: null,
+    lastEventKind: null,
+    eventCount: 0,
+    replayEventCount: 0,
+    disconnectReason: null,
+    connectionAttempt: 0,
   };
 }
 
 export type SessionAction =
+  | { type: "hydrate"; session: SessionDetail }
   | { type: "event"; envelope: SessionEventEnvelope }
   | { type: "replay-complete" }
-  | { type: "connected" }
-  | { type: "disconnected" };
+  | { type: "connected"; attempt: number }
+  | { type: "disconnected"; reason: string };
 
 // r[event.client.reducer]
 // r[event.client.reducer-purity]
 export function sessionReducer(state: SessionViewState, action: SessionAction): SessionViewState {
   switch (action.type) {
+    case "hydrate":
+      return {
+        ...state,
+        captain: action.session.captain,
+        mate: action.session.mate,
+        currentTaskId: action.session.current_task?.id ?? null,
+        currentTaskStatus: action.session.current_task?.status ?? null,
+      };
+
     case "replay-complete":
       return { ...state, phase: "live" };
 
     // r[event.client.connection-lifecycle]
     case "connected":
-      return { ...state, connected: true, phase: "replaying" };
+      return {
+        ...initialSessionViewState(),
+        connected: true,
+        phase: "replaying",
+        connectionAttempt: action.attempt,
+      };
 
     // r[event.client.connection-lifecycle]
     case "disconnected":
       return {
         ...initialSessionViewState(),
         connected: false,
+        lastSeq: state.lastSeq,
+        lastEventKind: state.lastEventKind,
+        eventCount: state.eventCount,
+        replayEventCount: state.replayEventCount,
+        disconnectReason: action.reason,
+        connectionAttempt: state.connectionAttempt,
       };
 
     case "event": {
       const { envelope } = action;
-      const nextState = { ...state, lastSeq: Number(envelope.seq) };
+      const nextState = {
+        ...state,
+        lastSeq: Number(envelope.seq),
+        lastEventKind: envelope.event.tag,
+        eventCount: state.eventCount + 1,
+        replayEventCount:
+          state.phase === "replaying" ? state.replayEventCount + 1 : state.replayEventCount,
+      };
       const ev = envelope.event;
 
       switch (ev.tag) {

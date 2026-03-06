@@ -276,6 +276,7 @@ async fn run_acp_worker(
     notifications_tx: mpsc::UnboundedSender<SessionEvent>,
     ready_tx: oneshot::Sender<Result<(), String>>,
 ) -> Result<(), AgentError> {
+    tracing::info!(role = ?role, kind = ?kind, worktree_path = %config.worktree_path.display(), "starting ACP worker");
     let launcher = resolve_agent_launcher(kind, &SystemBinaryPathProbe).ok_or_else(|| {
         let kind_name = match kind {
             ship_types::AgentKind::Claude => "Claude",
@@ -298,6 +299,7 @@ async fn run_acp_worker(
         .map_err(|error| AgentError {
             message: format!("failed to spawn ACP process: {error}"),
         })?;
+    tracing::info!(role = ?role, kind = ?kind, worktree_path = %config.worktree_path.display(), "spawned ACP process");
 
     let child_stdin = child.stdin.take().ok_or_else(|| AgentError {
         message: "failed to capture ACP stdin".to_owned(),
@@ -341,12 +343,14 @@ async fn run_acp_worker(
         .initialize(initialize_request)
         .await
         .map_err(acp_error)?;
+    tracing::debug!(role = ?role, kind = ?kind, "initialized ACP connection");
 
     let session_id = connection
         .new_session(build_new_session_request(&config))
         .await
         .map_err(acp_error)?
         .session_id;
+    tracing::info!(role = ?role, kind = ?kind, acp_session_id = ?session_id, "started ACP session");
 
     let _ = ready_tx.send(Ok(()));
 

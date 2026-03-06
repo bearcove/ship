@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use futures_util::StreamExt;
 use roam::Tx;
@@ -19,6 +20,7 @@ use ship_types::{
     SubscribeMessage, TaskId, TaskRecord, TaskStatus,
 };
 use tokio::sync::broadcast;
+use tokio::task::JoinHandle;
 
 // r[server.multi-repo]
 #[derive(Clone)]
@@ -107,6 +109,117 @@ impl ShipImpl {
 
     fn log_error(action: &str, error: &str) {
         tracing::warn!(%action, %error, "ship_impl call failed");
+    }
+
+    fn event_kind(event: &SessionEvent) -> &'static str {
+        match event {
+            SessionEvent::BlockAppend { .. } => "BlockAppend",
+            SessionEvent::BlockPatch { .. } => "BlockPatch",
+            SessionEvent::AgentStateChanged { .. } => "AgentStateChanged",
+            SessionEvent::TaskStatusChanged { .. } => "TaskStatusChanged",
+            SessionEvent::ContextUpdated { .. } => "ContextUpdated",
+            SessionEvent::TaskStarted { .. } => "TaskStarted",
+        }
+    }
+
+    fn event_role(event: &SessionEvent) -> Option<Role> {
+        match event {
+            SessionEvent::BlockAppend { role, .. }
+            | SessionEvent::BlockPatch { role, .. }
+            | SessionEvent::AgentStateChanged { role, .. }
+            | SessionEvent::ContextUpdated { role, .. } => Some(*role),
+            SessionEvent::TaskStatusChanged { .. } | SessionEvent::TaskStarted { .. } => None,
+        }
+    }
+
+    fn event_block_id(event: &SessionEvent) -> Option<&str> {
+        match event {
+            SessionEvent::BlockAppend { block_id, .. }
+            | SessionEvent::BlockPatch { block_id, .. } => Some(&block_id.0),
+            SessionEvent::AgentStateChanged { .. }
+            | SessionEvent::TaskStatusChanged { .. }
+            | SessionEvent::ContextUpdated { .. }
+            | SessionEvent::TaskStarted { .. } => None,
+        }
+    }
+
+    fn event_task_id(event: &SessionEvent) -> Option<&str> {
+        match event {
+            SessionEvent::TaskStatusChanged { task_id, .. }
+            | SessionEvent::TaskStarted { task_id, .. } => Some(&task_id.0),
+            SessionEvent::BlockAppend { .. }
+            | SessionEvent::BlockPatch { .. }
+            | SessionEvent::AgentStateChanged { .. }
+            | SessionEvent::ContextUpdated { .. } => None,
+        }
+    }
+
+    async fn cleanup_partial_creation(
+        &self,
+        repo_root: &std::path::Path,
+        worktree_path: &std::path::Path,
+        branch_name: &str,
+        captain_handle: Option<&ship_core::AgentHandle>,
+        mate_handle: Option<&ship_core::AgentHandle>,
+    ) {
+        if let Some(handle) = captain_handle
+            && let Err(error) = self.agent_driver.kill(handle).await
+        {
+            tracing::warn!(%branch_name, error = %error.message, "failed to kill captain during session creation rollback");
+        }
+        if let Some(handle) = mate_handle
+            && let Err(error) = self.agent_driver.kill(handle).await
+        {
+            tracing::warn!(%branch_name, error = %error.message, "failed to kill mate during session creation rollback");
+        }
+
+        if worktree_path.exists()
+            && let Err(error) = self.worktree_ops.remove_worktree(worktree_path, true).await
+        {
+            tracing::warn!(
+                worktree_path = %worktree_path.display(),
+                error = %error.message,
+                "failed to remove worktree during session creation rollback"
+            );
+        }
+
+        match self.worktree_ops.list_branches(repo_root).await {
+            Ok(branches) if branches.iter().any(|branch| branch == branch_name) => {
+                if let Err(error) = self
+                    .worktree_ops
+                    .delete_branch(branch_name, true, repo_root)
+                    .await
+                {
+                    tracing::warn!(%branch_name, error = %error.message, "failed to delete branch during session creation rollback");
+                }
+            }
+            Ok(_) => {}
+            Err(error) => {
+                tracing::warn!(%branch_name, error = %error.message, "failed to inspect branches during session creation rollback");
+            }
+        }
+    }
+
+    async fn rollback_created_session(&self, session_id: &SessionId) {
+        let session = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            sessions.get(session_id).cloned()
+        };
+
+        if let Some(session) = session {
+            if let Err(error) = self.cleanup_session_resources(&session, true).await {
+                tracing::warn!(session_id = %session_id.0, %error, "failed to clean up rolled back session resources");
+            }
+        }
+
+        self.sessions
+            .lock()
+            .expect("sessions mutex poisoned")
+            .remove(session_id);
+
+        if let Err(error) = self.store.delete_session(session_id).await {
+            tracing::warn!(session_id = %session_id.0, error = %error.message, "failed to delete rolled back persisted session");
+        }
     }
 
     // r[acp.mcp.config]
@@ -234,6 +347,14 @@ impl ShipImpl {
 
         let mut stream = self.agent_driver.notifications(&handle);
         while let Some(event) = stream.next().await {
+            tracing::debug!(
+                session_id = %session_id.0,
+                role = ?role,
+                event_kind = Self::event_kind(&event),
+                block_id = Self::event_block_id(&event),
+                task_id = Self::event_task_id(&event),
+                "applying agent notification"
+            );
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let Some(session) = sessions.get_mut(session_id) else {
                 break;
@@ -245,12 +366,42 @@ impl ShipImpl {
         Ok(())
     }
 
+    fn spawn_notification_pump(
+        &self,
+        session_id: SessionId,
+        role: Role,
+    ) -> (tokio::sync::oneshot::Sender<()>, JoinHandle<()>) {
+        let this = self.clone();
+        let (stop_tx, mut stop_rx) = tokio::sync::oneshot::channel();
+        let handle = tokio::spawn(async move {
+            tracing::debug!(session_id = %session_id.0, role = ?role, "starting prompt notification pump");
+            loop {
+                tokio::select! {
+                    _ = &mut stop_rx => break,
+                    _ = tokio::time::sleep(Duration::from_millis(50)) => {
+                        if let Err(error) = this.drain_notifications(&session_id, role).await {
+                            tracing::warn!(session_id = %session_id.0, role = ?role, %error, "notification pump failed");
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if let Err(error) = this.drain_notifications(&session_id, role).await {
+                tracing::warn!(session_id = %session_id.0, role = ?role, %error, "final notification drain failed");
+            }
+            tracing::debug!(session_id = %session_id.0, role = ?role, "stopped prompt notification pump");
+        });
+        (stop_tx, handle)
+    }
+
     async fn prompt_agent(
         &self,
         session_id: &SessionId,
         role: Role,
         prompt: String,
     ) -> Result<ship_core::StopReason, String> {
+        tracing::info!(session_id = %session_id.0, role = ?role, prompt_len = prompt.len(), "starting agent prompt");
         let handle = {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let session = sessions
@@ -272,11 +423,14 @@ impl ShipImpl {
 
         self.persist_session(session_id).await?;
 
+        let (stop_tx, pump_handle) = self.spawn_notification_pump(session_id.clone(), role);
         let response = self
             .agent_driver
             .prompt(&handle, &prompt)
             .await
             .map_err(|error| error.message)?;
+        let _ = stop_tx.send(());
+        let _ = pump_handle.await;
 
         {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
@@ -291,8 +445,8 @@ impl ShipImpl {
             }
         }
 
-        self.drain_notifications(session_id, role).await?;
         self.persist_session(session_id).await?;
+        tracing::info!(session_id = %session_id.0, role = ?role, stop_reason = ?response.stop_reason, "agent prompt completed");
 
         Ok(response.stop_reason)
     }
@@ -364,6 +518,7 @@ impl ShipImpl {
     }
 
     async fn run_task_prompt_flow(&self, session_id: SessionId, task_description: String) {
+        tracing::info!(session_id = %session_id.0, task_description, "starting task prompt flow");
         let captain_prompt =
             format!("Provide implementation direction for this task:\n{task_description}");
 
@@ -409,6 +564,7 @@ impl ShipImpl {
         if let Err(error) = self.handle_mate_stop_reason(&session_id, stop_reason).await {
             Self::log_error("handle_mate_stop_reason", &error);
         }
+        tracing::info!(session_id = %session_id.0, "task prompt flow finished");
     }
 
     fn spawn_task_flow(&self, session_id: SessionId, task_description: String) {
@@ -425,6 +581,7 @@ impl ShipImpl {
         description: String,
     ) -> Result<TaskId, String> {
         let task_id = TaskId::new();
+        tracing::info!(session_id = %session_id.0, task_id = %task_id.0, "starting task");
 
         {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
@@ -559,6 +716,17 @@ impl Ship for ShipImpl {
     }
 
     async fn create_session(&self, req: CreateSessionRequest) -> CreateSessionResponse {
+        let session_id = SessionId::new();
+        let slug = slugify(&req.task_description);
+        let branch_name = format!("ship/{}/{slug}", short_id(&session_id));
+        tracing::info!(
+            session_id = %session_id.0,
+            project = %req.project.0,
+            base_branch = %req.base_branch,
+            captain_kind = ?req.captain_kind,
+            mate_kind = ?req.mate_kind,
+            "create_session requested"
+        );
         let (repo_root, mcp_servers) = match self
             .resolve_session_mcp_servers(&req.project, req.mcp_servers.clone())
             .await
@@ -569,9 +737,7 @@ impl Ship for ShipImpl {
                 return CreateSessionResponse::Failed { message: error };
             }
         };
-
-        let session_id = SessionId::new();
-        let slug = slugify(&req.task_description);
+        tracing::info!(session_id = %session_id.0, repo_root = %repo_root.display(), "resolved project and MCP configuration");
         let worktree_path = match self
             .worktree_ops
             .create_worktree(&session_id, &req.base_branch, &slug, &repo_root)
@@ -579,19 +745,29 @@ impl Ship for ShipImpl {
         {
             Ok(path) => path,
             Err(error) => {
-                Self::log_error("create_worktree", &error.message);
+                tracing::warn!(
+                    session_id = %session_id.0,
+                    base_branch = %req.base_branch,
+                    error = %error.message,
+                    "failed to create worktree"
+                );
                 return CreateSessionResponse::Failed {
                     message: error.message,
                 };
             }
         };
-
-        let branch_name = format!("ship/{}/{slug}", short_id(&session_id));
+        tracing::info!(
+            session_id = %session_id.0,
+            branch_name = %branch_name,
+            worktree_path = %worktree_path.display(),
+            "created session worktree"
+        );
         let agent_session_config = AgentSessionConfig {
             worktree_path: worktree_path.clone(),
             mcp_servers: mcp_servers.clone(),
         };
 
+        tracing::info!(session_id = %session_id.0, role = ?Role::Captain, agent_kind = ?req.captain_kind, "spawning agent");
         let captain_handle = match self
             .agent_driver
             .spawn(req.captain_kind, Role::Captain, &agent_session_config)
@@ -599,13 +775,17 @@ impl Ship for ShipImpl {
         {
             Ok(handle) => handle,
             Err(error) => {
-                Self::log_error("spawn_captain", &error.message);
+                tracing::warn!(session_id = %session_id.0, role = ?Role::Captain, error = %error.message, "failed to spawn agent");
+                self.cleanup_partial_creation(&repo_root, &worktree_path, &branch_name, None, None)
+                    .await;
                 return CreateSessionResponse::Failed {
-                    message: error.message,
+                    message: format!("failed to spawn captain agent: {}", error.message),
                 };
             }
         };
+        tracing::info!(session_id = %session_id.0, role = ?Role::Captain, "agent spawned");
 
+        tracing::info!(session_id = %session_id.0, role = ?Role::Mate, agent_kind = ?req.mate_kind, "spawning agent");
         let mate_handle = match self
             .agent_driver
             .spawn(req.mate_kind, Role::Mate, &agent_session_config)
@@ -613,12 +793,21 @@ impl Ship for ShipImpl {
         {
             Ok(handle) => handle,
             Err(error) => {
-                Self::log_error("spawn_mate", &error.message);
+                tracing::warn!(session_id = %session_id.0, role = ?Role::Mate, error = %error.message, "failed to spawn agent");
+                self.cleanup_partial_creation(
+                    &repo_root,
+                    &worktree_path,
+                    &branch_name,
+                    Some(&captain_handle),
+                    None,
+                )
+                .await;
                 return CreateSessionResponse::Failed {
-                    message: error.message,
+                    message: format!("failed to spawn mate agent: {}", error.message),
                 };
             }
         };
+        tracing::info!(session_id = %session_id.0, role = ?Role::Mate, "agent spawned");
 
         let (events_tx, _) = broadcast::channel(256);
 
@@ -662,14 +851,19 @@ impl Ship for ShipImpl {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             sessions.insert(session_id.clone(), session);
         }
+        tracing::info!(session_id = %session_id.0, "session inserted into active map");
 
         let task_id = match self.start_task(&session_id, req.task_description).await {
             Ok(task_id) => task_id,
             Err(error) => {
-                Self::log_error("start_task", &error);
-                TaskId::new()
+                tracing::warn!(session_id = %session_id.0, %error, "session creation failed while starting first task");
+                self.rollback_created_session(&session_id).await;
+                return CreateSessionResponse::Failed {
+                    message: format!("failed to start initial task: {error}"),
+                };
             }
         };
+        tracing::info!(session_id = %session_id.0, task_id = %task_id.0, "create_session completed");
 
         CreateSessionResponse::Created {
             session_id,
@@ -942,6 +1136,7 @@ impl Ship for ShipImpl {
     }
 
     async fn subscribe_events(&self, session: SessionId, output: Tx<SubscribeMessage>) {
+        tracing::info!(session_id = %session.0, "subscriber connected");
         let session_data = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             sessions.get(&session).map(|active| {
@@ -954,31 +1149,56 @@ impl Ship for ShipImpl {
             })
         };
         let Some((mut receiver, replay)) = session_data else {
+            tracing::warn!(session_id = %session.0, "subscribe requested for unknown session");
             let _ = output.close(Default::default()).await;
             return;
         };
+        tracing::info!(session_id = %session.0, replay_events = replay.len(), "starting event replay");
 
         for event in replay {
+            tracing::debug!(
+                session_id = %session.0,
+                seq = event.seq,
+                event_kind = Self::event_kind(&event.event),
+                role = ?Self::event_role(&event.event),
+                block_id = Self::event_block_id(&event.event),
+                task_id = Self::event_task_id(&event.event),
+                "sending replay event to subscriber"
+            );
             if output.send(SubscribeMessage::Event(event)).await.is_err() {
+                tracing::warn!(session_id = %session.0, "subscriber disconnected during replay");
                 return;
             }
         }
 
         if output.send(SubscribeMessage::ReplayComplete).await.is_err() {
+            tracing::warn!(session_id = %session.0, "subscriber disconnected before replay completion marker");
             return;
         }
+        tracing::info!(session_id = %session.0, "replay complete");
 
         loop {
             match receiver.recv().await {
                 Ok(event) => {
+                    tracing::debug!(
+                        session_id = %session.0,
+                        seq = event.seq,
+                        event_kind = Self::event_kind(&event.event),
+                        role = ?Self::event_role(&event.event),
+                        block_id = Self::event_block_id(&event.event),
+                        task_id = Self::event_task_id(&event.event),
+                        "sending live event to subscriber"
+                    );
                     if output.send(SubscribeMessage::Event(event)).await.is_err() {
+                        tracing::warn!(session_id = %session.0, "subscriber disconnected during live stream");
                         return;
                     }
                 }
                 Err(broadcast::error::RecvError::Lagged(skipped)) => {
-                    tracing::warn!(%skipped, "subscribe live stream lagged");
+                    tracing::warn!(session_id = %session.0, %skipped, "subscribe live stream lagged");
                 }
                 Err(broadcast::error::RecvError::Closed) => {
+                    tracing::info!(session_id = %session.0, "session event stream closed");
                     let _ = output.close(Default::default()).await;
                     return;
                 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { shipClient } from "../api/client";
+import { getShipClient } from "../api/client";
 import type { ProjectInfo } from "../generated/ship";
 
 // r[proto.list-projects]
@@ -10,7 +10,7 @@ export function useProjects(): ProjectInfo[] {
     let active = true;
 
     async function fetchProjects() {
-      const client = await shipClient;
+      const client = await getShipClient();
       const list = await client.listProjects();
       if (active) setProjects(list);
     }

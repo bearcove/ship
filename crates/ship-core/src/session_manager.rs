@@ -236,15 +236,33 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             .get(session_id)
             .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
 
-        let rx = session.events_tx.subscribe();
+        let mut live_rx = session.events_tx.subscribe();
+        let replay = session
+            .current_task
+            .as_ref()
+            .map(|task| task.event_log.clone())
+            .unwrap_or_default();
+        let (subscriber_tx, subscriber_rx) = broadcast::channel(256);
 
-        if let Some(task) = session.current_task.as_ref() {
-            for envelope in &task.event_log {
-                let _ = session.events_tx.send(envelope.clone());
-            }
+        for envelope in replay {
+            let _ = subscriber_tx.send(envelope);
         }
 
-        Ok(rx)
+        tokio::spawn(async move {
+            loop {
+                match live_rx.recv().await {
+                    Ok(envelope) => {
+                        if subscriber_tx.send(envelope).is_err() {
+                            break;
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        });
+
+        Ok(subscriber_rx)
     }
 
     // r[autonomy.toggle]

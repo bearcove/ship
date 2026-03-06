@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { shipClient } from "../api/client";
+import { getShipClient } from "../api/client";
 import type { SessionSummary } from "../generated/ship";
 
 // r[proto.list-sessions]
@@ -10,7 +10,7 @@ export function useSessionList(projectFilter?: string): SessionSummary[] {
     let active = true;
 
     async function fetchSessions() {
-      const client = await shipClient;
+      const client = await getShipClient();
       const list = await client.listSessions();
       if (active) setSessions(list);
     }

@@ -15,7 +15,7 @@ import {
 import { ClockCounterClockwise } from "@phosphor-icons/react";
 import type { TaskRecord, TaskStatus } from "../generated/ship";
 import { useTaskHistory } from "../hooks/useTaskHistory";
-import { shipClient } from "../api/client";
+import { getShipClient } from "../api/client";
 import { taskBar, taskDescription } from "../styles/session-view.css";
 
 const STATUS_COLOR: Record<
@@ -80,7 +80,7 @@ function OwnSteerDialog({ sessionId }: { sessionId: string }) {
     if (!text.trim() || loading) return;
     setLoading(true);
     try {
-      const client = await shipClient;
+      const client = await getShipClient();
       await client.steer(sessionId, text);
       setOpen(false);
       setText("");
@@ -134,7 +134,7 @@ function NewTaskDialog({ sessionId }: { sessionId: string }) {
     if (!text.trim() || loading) return;
     setLoading(true);
     try {
-      const client = await shipClient;
+      const client = await getShipClient();
       await client.assign(sessionId, text);
       setOpen(false);
       setText("");
@@ -191,7 +191,7 @@ export function TaskBar({ sessionId, task }: Props) {
     if (actionLoading) return;
     setActionLoading(true);
     try {
-      const client = await shipClient;
+      const client = await getShipClient();
       await client.accept(sessionId);
     } finally {
       setActionLoading(false);
@@ -202,7 +202,7 @@ export function TaskBar({ sessionId, task }: Props) {
     if (actionLoading) return;
     setActionLoading(true);
     try {
-      const client = await shipClient;
+      const client = await getShipClient();
       await client.cancel(sessionId);
     } finally {
       setActionLoading(false);

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { shipClient } from "../api/client";
+import { getShipClient } from "../api/client";
 
 // r[proto.list-branches]
 export function useBranches(projectName: string): string[] {
@@ -10,7 +10,7 @@ export function useBranches(projectName: string): string[] {
     let active = true;
 
     async function fetchBranches() {
-      const client = await shipClient;
+      const client = await getShipClient();
       const list = await client.listBranches(projectName);
       if (active) setBranches(list);
     }

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Box, Button, Card, Flex, Text, TextArea } from "@radix-ui/themes";
-import { shipClient } from "../api/client";
+import { getShipClient } from "../api/client";
 import { steerReviewCard } from "../styles/session-view.css";
 
 interface Props {
@@ -21,7 +21,7 @@ export function SteerReview({ sessionId, steerText, onDismiss }: Props) {
     if (loading) return;
     setLoading(true);
     try {
-      const client = await shipClient;
+      const client = await getShipClient();
       await client.steer(sessionId, text);
     } finally {
       setLoading(false);
