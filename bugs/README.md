@@ -39,3 +39,6 @@ Open bugs:
 - [026-session-startup-takes-too-long-and-looks-like-timeout-behavior.md](bugs/026-session-startup-takes-too-long-and-looks-like-timeout-behavior.md)
 - [027-structured-toolcall-schema-drift-breaks-subscription.md](bugs/027-structured-toolcall-schema-drift-breaks-subscription.md)
 - [028-session-feed-does-not-render-the-conversation-model-clearly.md](bugs/028-session-feed-does-not-render-the-conversation-model-clearly.md)
+- [029-captain-greeting-is-blocked-on-full-session-startup.md](bugs/029-captain-greeting-is-blocked-on-full-session-startup.md)
+- [030-captain-steer-queue-is-not-actually-queued.md](bugs/030-captain-steer-queue-is-not-actually-queued.md)
+- [031-session-feed-needs-chat-bubble-alignment.md](bugs/031-session-feed-needs-chat-bubble-alignment.md)
