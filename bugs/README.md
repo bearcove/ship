@@ -32,3 +32,5 @@ Open bugs:
 - [019-server-hardcodes-the-captain-mate-workflow.md](bugs/019-server-hardcodes-the-captain-mate-workflow.md)
 - [020-captain-mcp-tools-not-implemented.md](bugs/020-captain-mcp-tools-not-implemented.md)
 - [021-websocket-client-invalidation-leaks-connections.md](bugs/021-websocket-client-invalidation-leaks-connections.md)
+- [022-session-startup-status-belongs-in-feed.md](bugs/022-session-startup-status-belongs-in-feed.md)
+- [023-session-startup-should-not-disable-steer-input.md](bugs/023-session-startup-should-not-disable-steer-input.md)
