@@ -9,7 +9,6 @@ use roam::{
     AcceptedConnection, ConnectionAcceptor, ConnectionSettings, Driver, Metadata, MetadataEntry,
     MetadataFlags, MetadataValue,
 };
-use serde_json::json;
 use ship_core::{
     AcpAgentDriver, ActiveSession, AgentDriver, AgentSessionConfig, GitWorktreeOps,
     JsonSessionStore, ProjectRegistry, SessionStore, WorktreeOps, apply_event,
@@ -23,7 +22,7 @@ use ship_types::{
     CreateSessionResponse, CurrentTask, McpServerConfig, McpStdioServerConfig, McpToolCallResponse,
     PersistedSession, ProjectInfo, ProjectName, Role, SessionConfig, SessionDetail, SessionEvent,
     SessionId, SessionStartupStage, SessionStartupState, SessionSummary, SubscribeMessage, TaskId,
-    TaskRecord, TaskStatus, ToolCallContent, ToolCallStatus,
+    TaskRecord, TaskStatus,
 };
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
@@ -530,42 +529,6 @@ impl ShipImpl {
         ShipMcpConnectionAcceptor { ship: self.clone() }
     }
 
-    async fn append_captain_tool_call(
-        &self,
-        session_id: &SessionId,
-        tool_name: &str,
-        arguments: String,
-        content: Vec<ToolCallContent>,
-    ) -> Result<(), String> {
-        {
-            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
-            let session = sessions
-                .get_mut(session_id)
-                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-            apply_event(
-                session,
-                SessionEvent::BlockAppend {
-                    block_id: BlockId::new(),
-                    role: Role::Captain,
-                    block: ContentBlock::ToolCall {
-                        tool_call_id: None,
-                        tool_name: tool_name.to_owned(),
-                        arguments,
-                        kind: Some(ship_types::ToolCallKind::Other),
-                        target: Some(ship_types::ToolTarget::None),
-                        raw_input: None,
-                        raw_output: None,
-                        locations: Vec::new(),
-                        status: ToolCallStatus::Success,
-                        content,
-                        error: None,
-                    },
-                },
-            );
-        }
-        self.persist_session(session_id).await
-    }
-
     async fn append_human_message(
         &self,
         session_id: &SessionId,
@@ -733,15 +696,6 @@ impl ShipImpl {
         description: String,
     ) -> Result<String, String> {
         let task_id = self.start_task(session_id, description.clone()).await?;
-        self.append_captain_tool_call(
-            session_id,
-            "captain_assign",
-            json!({ "description": description }).to_string(),
-            vec![ToolCallContent::Text {
-                text: format!("Task {} assigned to the mate.", task_id.0),
-            }],
-        )
-        .await?;
 
         let this = self.clone();
         let session_id = session_id.clone();
@@ -788,16 +742,6 @@ impl ShipImpl {
             }
         }
 
-        self.append_captain_tool_call(
-            session_id,
-            "captain_steer",
-            json!({ "message": message }).to_string(),
-            vec![ToolCallContent::Text {
-                text: "Steer sent to the mate.".to_owned(),
-            }],
-        )
-        .await?;
-
         Ok("Steer sent to the mate.".to_owned())
     }
 
@@ -820,15 +764,6 @@ impl ShipImpl {
         }
 
         self.accept_task(session_id, summary.clone()).await?;
-        self.append_captain_tool_call(
-            session_id,
-            "captain_accept",
-            json!({ "summary": summary }).to_string(),
-            vec![ToolCallContent::Text {
-                text: "Accepted the active task.".to_owned(),
-            }],
-        )
-        .await?;
         Ok("Accepted the active task.".to_owned())
     }
 
@@ -851,22 +786,13 @@ impl ShipImpl {
         }
 
         self.cancel_task(session_id, reason.clone()).await?;
-        self.append_captain_tool_call(
-            session_id,
-            "captain_cancel",
-            json!({ "reason": reason }).to_string(),
-            vec![ToolCallContent::Text {
-                text: reason.as_deref().unwrap_or("Task cancelled.").to_owned(),
-            }],
-        )
-        .await?;
         Ok("Task cancelled.".to_owned())
     }
 
     async fn captain_tool_notify_human(
         &self,
         session_id: &SessionId,
-        message: String,
+        _message: String,
     ) -> Result<String, String> {
         let (tx, rx) = tokio::sync::oneshot::channel::<String>();
         {
@@ -879,16 +805,6 @@ impl ShipImpl {
                 .or_insert_with(PendingMcpOps::new);
             entry.human_reply = Some(tx);
         }
-
-        self.append_captain_tool_call(
-            session_id,
-            "captain_notify_human",
-            json!({ "message": message }).to_string(),
-            vec![ToolCallContent::Text {
-                text: "Waiting for human response...".to_owned(),
-            }],
-        )
-        .await?;
 
         match rx.await {
             Ok(reply) => Ok(reply),
@@ -2498,16 +2414,16 @@ mod tests {
 
     // r[verify captain.tool.steer]
     #[tokio::test]
-    async fn captain_tool_steer_queues_review_in_human_mode() {
+    async fn captain_tool_steer_dispatches_directly_to_mate() {
         let (dir, ship, session_id) =
-            create_session_for_workflow_test("captain-tool-steer-review").await;
+            create_session_for_workflow_test("captain-tool-steer-direct").await;
 
         let result = ship
             .captain_tool_steer(&session_id, "Ask the mate to add coverage".to_owned())
             .await
             .expect("captain tool should succeed");
 
-        assert_eq!(result, "Steer queued for human review.");
+        assert_eq!(result, "Steer sent to the mate.");
 
         let detail = Ship::get_session(&ship, session_id.clone()).await;
         assert_eq!(
@@ -2516,12 +2432,9 @@ mod tests {
                 .as_ref()
                 .expect("task should exist")
                 .status,
-            TaskStatus::SteerPending
+            TaskStatus::Working
         );
-        assert_eq!(
-            detail.pending_steer.as_deref(),
-            Some("Ask the mate to add coverage")
-        );
+        assert_eq!(detail.pending_steer, None);
 
         let _ = std::fs::remove_dir_all(dir);
     }
