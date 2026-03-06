@@ -3,6 +3,7 @@ import {
   Badge,
   Box,
   Button,
+  Callout,
   DataList,
   Dialog,
   Flex,
@@ -75,15 +76,23 @@ function NewTaskDialog({ sessionId }: { sessionId: string }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleAssign() {
     if (!text.trim() || loading) return;
     setLoading(true);
+    setError(null);
     try {
       const client = await getShipClient();
-      await client.assign(sessionId, text);
+      const result = await client.assign(sessionId, text);
+      if (result.tag === "Failed") {
+        setError(result.message);
+        return;
+      }
       setOpen(false);
       setText("");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error));
     } finally {
       setLoading(false);
     }
@@ -101,6 +110,11 @@ function NewTaskDialog({ sessionId }: { sessionId: string }) {
         <Dialog.Description size="2" color="gray">
           Describe the task to assign to the Captain and Mate.
         </Dialog.Description>
+        {error && (
+          <Callout.Root color="red" mt="3">
+            <Callout.Text>{error}</Callout.Text>
+          </Callout.Root>
+        )}
         <Flex direction="column" gap="3" mt="2">
           <TextArea
             placeholder="Describe the task…"
@@ -132,13 +146,17 @@ interface Props {
 // r[ui.task-bar.layout]
 export function TaskBar({ sessionId, task }: Props) {
   const [actionLoading, setActionLoading] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   async function handleAccept() {
     if (actionLoading) return;
     setActionLoading(true);
+    setActionError(null);
     try {
       const client = await getShipClient();
       await client.accept(sessionId);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
     } finally {
       setActionLoading(false);
     }
@@ -147,9 +165,12 @@ export function TaskBar({ sessionId, task }: Props) {
   async function handleCancel() {
     if (actionLoading) return;
     setActionLoading(true);
+    setActionError(null);
     try {
       const client = await getShipClient();
       await client.cancel(sessionId);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
     } finally {
       setActionLoading(false);
     }
@@ -175,23 +196,14 @@ export function TaskBar({ sessionId, task }: Props) {
       )}
 
       {/* r[ui.task-bar.actions] */}
-      <Flex gap="2" align="center" style={{ flexShrink: 0 }}>
-        {task?.status.tag === "Working" && (
-          <Button
-            size="2"
-            color="red"
-            variant="soft"
-            loading={actionLoading}
-            onClick={handleCancel}
-          >
-            Cancel
-          </Button>
+      <Flex direction="column" align="end" gap="2" style={{ flexShrink: 0 }}>
+        {actionError && (
+          <Text size="1" color="red">
+            {actionError}
+          </Text>
         )}
-        {(task?.status.tag === "ReviewPending" || task?.status.tag === "SteerPending") && (
-          <>
-            <Button size="2" color="green" loading={actionLoading} onClick={handleAccept}>
-              Accept
-            </Button>
+        <Flex gap="2" align="center">
+          {task?.status.tag === "Working" && (
             <Button
               size="2"
               color="red"
@@ -201,10 +213,26 @@ export function TaskBar({ sessionId, task }: Props) {
             >
               Cancel
             </Button>
-          </>
-        )}
-        {!task && <NewTaskDialog sessionId={sessionId} />}
-        <TaskHistoryPopover sessionId={sessionId} />
+          )}
+          {(task?.status.tag === "ReviewPending" || task?.status.tag === "SteerPending") && (
+            <>
+              <Button size="2" color="green" loading={actionLoading} onClick={handleAccept}>
+                Accept
+              </Button>
+              <Button
+                size="2"
+                color="red"
+                variant="soft"
+                loading={actionLoading}
+                onClick={handleCancel}
+              >
+                Cancel
+              </Button>
+            </>
+          )}
+          {!task && <NewTaskDialog sessionId={sessionId} />}
+          <TaskHistoryPopover sessionId={sessionId} />
+        </Flex>
       </Flex>
     </Flex>
   );

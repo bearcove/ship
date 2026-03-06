@@ -14,8 +14,8 @@ use ship_core::{
 };
 use ship_service::Ship;
 use ship_types::{
-    AgentDiscovery, AgentKind, AgentSnapshot, AgentState, AutonomyMode, BlockId,
-    CloseSessionRequest, CloseSessionResponse, ContentBlock, CreateSessionRequest,
+    AgentDiscovery, AgentKind, AgentSnapshot, AgentState, AssignTaskResponse, AutonomyMode,
+    BlockId, CloseSessionRequest, CloseSessionResponse, ContentBlock, CreateSessionRequest,
     CreateSessionResponse, CurrentTask, McpServerConfig, PersistedSession, ProjectInfo,
     ProjectName, Role, SessionConfig, SessionDetail, SessionEvent, SessionId, SessionSummary,
     SubscribeMessage, TaskId, TaskRecord, TaskStatus,
@@ -981,12 +981,12 @@ impl Ship for ShipImpl {
         }
     }
 
-    async fn assign(&self, session: SessionId, description: String) -> TaskId {
+    async fn assign(&self, session: SessionId, description: String) -> AssignTaskResponse {
         match self.start_task(&session, description).await {
-            Ok(task_id) => task_id,
+            Ok(task_id) => AssignTaskResponse::Assigned { task_id },
             Err(error) => {
                 Self::log_error("assign", &error);
-                TaskId::new()
+                AssignTaskResponse::Failed { message: error }
             }
         }
     }

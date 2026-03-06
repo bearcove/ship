@@ -397,6 +397,14 @@ pub mod protocol {
         },
     }
 
+    // r[proto.assign]
+    #[repr(u8)]
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub enum AssignTaskResponse {
+        Assigned { task_id: crate::ids::TaskId },
+        Failed { message: String },
+    }
+
     // r[proto.close-session]
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub struct CloseSessionRequest {
@@ -515,8 +523,9 @@ pub use events::{
 pub use ids::{BlockId, ProjectName, SessionId, TaskId};
 pub use persistence::{CurrentTask, PersistedSession, SessionConfig, TaskContentRecord};
 pub use protocol::{
-    AgentDiscovery, AutonomyMode, CloseSessionRequest, CloseSessionResponse, CreateSessionRequest,
-    CreateSessionResponse, McpEnvVar, McpHeader, McpHttpServerConfig, McpServerConfig,
-    McpSseServerConfig, McpStdioServerConfig, ProjectInfo, SessionDetail, SessionSummary,
+    AgentDiscovery, AssignTaskResponse, AutonomyMode, CloseSessionRequest, CloseSessionResponse,
+    CreateSessionRequest, CreateSessionResponse, McpEnvVar, McpHeader, McpHttpServerConfig,
+    McpServerConfig, McpSseServerConfig, McpStdioServerConfig, ProjectInfo, SessionDetail,
+    SessionSummary,
 };
 pub use task::{TaskRecord, TaskStatus};

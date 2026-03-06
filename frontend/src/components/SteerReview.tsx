@@ -16,13 +16,17 @@ export function SteerReview({ sessionId, steerText, onDismiss }: Props) {
   const editTextRef = useRef(editText);
   editTextRef.current = editText;
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleSend(text: string) {
     if (loading) return;
     setLoading(true);
+    setError(null);
     try {
       const client = await getShipClient();
       await client.steer(sessionId, text);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error));
     } finally {
       setLoading(false);
     }
@@ -73,6 +77,11 @@ export function SteerReview({ sessionId, steerText, onDismiss }: Props) {
               Send
             </Button>
           </Flex>
+          {error && (
+            <Text size="1" color="red">
+              {error}
+            </Text>
+          )}
         </Flex>
       </Card>
     );
@@ -120,6 +129,11 @@ export function SteerReview({ sessionId, steerText, onDismiss }: Props) {
             ⌘↵ to send
           </Text>
         </Flex>
+        {error && (
+          <Text size="1" color="red">
+            {error}
+          </Text>
+        )}
       </Flex>
     </Card>
   );

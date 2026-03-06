@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use agent_client_protocol::{
@@ -24,12 +25,14 @@ use crate::{SystemBinaryPathProbe, resolve_agent_launcher};
 struct AcpHandle {
     command_tx: mpsc::UnboundedSender<DriverCommand>,
     notifications_rx: Arc<Mutex<mpsc::UnboundedReceiver<SessionEvent>>>,
+    prompt_in_flight: Arc<AtomicBool>,
     worker_thread: Option<std::thread::JoinHandle<()>>,
 }
 
 enum DriverCommand {
     Prompt {
         content: String,
+        prompt_in_flight: Arc<AtomicBool>,
         response: oneshot::Sender<Result<PromptResponse, AgentError>>,
     },
     Cancel {
@@ -102,6 +105,7 @@ impl AgentDriver for AcpAgentDriver {
 
         match ready_rx.await {
             Ok(Ok(())) => {
+                let prompt_in_flight = Arc::new(AtomicBool::new(false));
                 self.handles
                     .lock()
                     .expect("acp handles mutex poisoned")
@@ -110,6 +114,7 @@ impl AgentDriver for AcpAgentDriver {
                         AcpHandle {
                             command_tx,
                             notifications_rx: Arc::new(Mutex::new(notifications_rx)),
+                            prompt_in_flight,
                             worker_thread: Some(worker_thread),
                         },
                     );
@@ -127,29 +132,39 @@ impl AgentDriver for AcpAgentDriver {
         handle: &AgentHandle,
         content: &str,
     ) -> Result<PromptResponse, AgentError> {
-        let command_tx = {
+        let (command_tx, prompt_in_flight) = {
             let handles = self.handles.lock().expect("acp handles mutex poisoned");
-            handles
-                .get(handle)
-                .ok_or_else(|| AgentError {
-                    message: "agent handle not found".to_owned(),
-                })?
-                .command_tx
-                .clone()
+            let acp = handles.get(handle).ok_or_else(|| AgentError {
+                message: "agent handle not found".to_owned(),
+            })?;
+            (acp.command_tx.clone(), acp.prompt_in_flight.clone())
         };
+
+        if prompt_in_flight.swap(true, Ordering::SeqCst) {
+            return Err(AgentError {
+                message: "prompt already in flight".to_owned(),
+            });
+        }
 
         let (response_tx, response_rx) = oneshot::channel();
         command_tx
             .send(DriverCommand::Prompt {
                 content: content.to_owned(),
+                prompt_in_flight: prompt_in_flight.clone(),
                 response: response_tx,
             })
-            .map_err(|error| AgentError {
-                message: format!("failed to send prompt command: {error}"),
+            .map_err(|error| {
+                prompt_in_flight.store(false, Ordering::SeqCst);
+                AgentError {
+                    message: format!("failed to send prompt command: {error}"),
+                }
             })?;
 
-        response_rx.await.map_err(|error| AgentError {
-            message: format!("prompt response channel closed: {error}"),
+        response_rx.await.map_err(|error| {
+            prompt_in_flight.store(false, Ordering::SeqCst);
+            AgentError {
+                message: format!("prompt response channel closed: {error}"),
+            }
         })?
     }
 
@@ -357,7 +372,11 @@ async fn run_acp_worker(
 
     while let Some(command) = command_rx.recv().await {
         match command {
-            DriverCommand::Prompt { content, response } => {
+            DriverCommand::Prompt {
+                content,
+                prompt_in_flight,
+                response,
+            } => {
                 client.begin_prompt_turn();
                 let connection = connection.clone();
                 let session_id = session_id.clone();
@@ -370,6 +389,7 @@ async fn run_acp_worker(
                         .await
                         .map(map_prompt_response)
                         .map_err(acp_error);
+                    prompt_in_flight.store(false, Ordering::SeqCst);
                     let _ = response.send(result);
                 });
             }
@@ -441,16 +461,23 @@ fn acp_error(error: Error) -> AgentError {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::path::{Path, PathBuf};
+    use std::sync::atomic::AtomicBool;
+    use std::sync::{Arc, Mutex};
 
     use agent_client_protocol::McpServer;
     use ship_types::{
         AgentKind, McpEnvVar, McpHeader, McpHttpServerConfig, McpServerConfig, McpSseServerConfig,
         McpStdioServerConfig,
     };
+    use tokio::sync::mpsc;
 
-    use super::{build_new_session_request, command_for_launcher};
-    use crate::{AgentLauncher, AgentSessionConfig, BinaryPathProbe, resolve_agent_launcher};
+    use super::{AcpAgentDriver, AcpHandle, build_new_session_request, command_for_launcher};
+    use crate::{
+        AgentDriver, AgentHandle, AgentLauncher, AgentSessionConfig, BinaryPathProbe, SessionId,
+        resolve_agent_launcher,
+    };
 
     #[derive(Clone, Copy)]
     struct FakeProbe {
@@ -582,5 +609,31 @@ mod tests {
                     && server.env[0].name == "HOME"
                     && server.env[0].value == "/tmp/home"
         ));
+    }
+
+    #[tokio::test]
+    async fn prompt_rejects_overlapping_in_flight_requests() {
+        let handle = AgentHandle::new(SessionId::new());
+        let (command_tx, _command_rx) = mpsc::unbounded_channel();
+        let (_notifications_tx, notifications_rx) = mpsc::unbounded_channel();
+
+        let driver = AcpAgentDriver {
+            handles: Mutex::new(HashMap::from([(
+                handle.clone(),
+                AcpHandle {
+                    command_tx,
+                    notifications_rx: Arc::new(Mutex::new(notifications_rx)),
+                    prompt_in_flight: Arc::new(AtomicBool::new(true)),
+                    worker_thread: None,
+                },
+            )])),
+        };
+
+        let error = driver
+            .prompt(&handle, "hello")
+            .await
+            .expect_err("prompt should be rejected while another is in flight");
+
+        assert_eq!(error.message, "prompt already in flight");
     }
 }
