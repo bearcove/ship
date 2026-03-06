@@ -304,6 +304,17 @@ impl ShipImpl {
         Ok((project_root, mcp_servers))
     }
 
+    async fn resolve_project_root(
+        &self,
+        project: &ProjectName,
+    ) -> Result<std::path::PathBuf, String> {
+        let registry = self.registry.lock().await;
+        registry
+            .get(&project.0)
+            .map(|project| std::path::PathBuf::from(project.path))
+            .ok_or_else(|| format!("project not found: {}", project.0))
+    }
+
     fn startup_message(stage: SessionStartupStage) -> &'static str {
         match stage {
             SessionStartupStage::ResolvingMcp => "Resolving MCP configuration",
@@ -782,7 +793,7 @@ impl ShipImpl {
             )
             .await;
 
-        let (project, base_branch, session_override) = {
+        let (project, base_branch, resolved_mcp_servers) = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let Some(session) = sessions.get(&session_id) else {
                 return;
@@ -790,18 +801,11 @@ impl ShipImpl {
             (
                 session.config.project.clone(),
                 session.config.base_branch.clone(),
-                if session.config.mcp_servers.is_empty() {
-                    None
-                } else {
-                    Some(session.config.mcp_servers.clone())
-                },
+                session.config.mcp_servers.clone(),
             )
         };
 
-        let (repo_root, resolved_mcp_servers) = match self
-            .resolve_session_mcp_servers(&project, session_override)
-            .await
-        {
+        let repo_root = match self.resolve_project_root(&project).await {
             Ok(value) => value,
             Err(error) => {
                 self.fail_startup(&session_id, stage, error).await;
@@ -1394,6 +1398,17 @@ impl Ship for ShipImpl {
             };
         }
 
+        let effective_mcp_servers = match self
+            .resolve_session_mcp_servers(&req.project, req.mcp_servers.clone())
+            .await
+        {
+            Ok((_, mcp_servers)) => mcp_servers,
+            Err(error) => {
+                Self::log_error("resolve_session_mcp_servers", &error);
+                return CreateSessionResponse::Failed { message: error };
+            }
+        };
+
         let session_id = SessionId::new();
         let branch_name = format!("ship/{}/session", short_id(&session_id));
         let (events_tx, _) = broadcast::channel(256);
@@ -1406,7 +1421,7 @@ impl Ship for ShipImpl {
                 captain_kind: req.captain_kind,
                 mate_kind: req.mate_kind,
                 autonomy_mode: AutonomyMode::HumanInTheLoop,
-                mcp_servers: req.mcp_servers.unwrap_or_default(),
+                mcp_servers: effective_mcp_servers,
             },
             worktree_path: None,
             captain_handle: None,
@@ -1685,7 +1700,7 @@ mod tests {
     use std::time::Duration;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use ship_core::ProjectRegistry;
+    use ship_core::{ProjectRegistry, SessionStore};
     use ship_service::Ship;
     use ship_types::{
         AgentDiscovery, AgentKind, CreateSessionRequest, CreateSessionResponse, McpServerConfig,
@@ -1820,7 +1835,83 @@ mod tests {
         )
         .await;
 
-        assert!(matches!(response, CreateSessionResponse::Created { .. }));
+        assert!(matches!(response, CreateSessionResponse::Failed { .. }));
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    // r[verify acp.mcp.config]
+    // r[verify acp.mcp.defaults]
+    // r[verify project.mcp-defaults]
+    #[tokio::test]
+    async fn create_session_snapshots_effective_mcp_defaults_into_session_config() {
+        let dir = make_temp_dir("create-session-snapshots-mcp-defaults");
+        let config_dir = dir.join("config");
+        let project_root = dir.join("project");
+        std::fs::create_dir_all(&config_dir).expect("config dir should exist");
+        std::fs::create_dir_all(project_root.join(".ship")).expect("project ship dir should exist");
+        std::fs::write(
+            config_dir.join("mcp-servers.json"),
+            r#"[{"name":"global","command":"/usr/bin/global-mcp","args":[],"env":[]}]"#,
+        )
+        .expect("global mcp defaults should be written");
+        std::fs::write(
+            project_root.join(".ship/mcp-servers.json"),
+            r#"[{"name":"project","command":"/usr/bin/project-mcp","args":[],"env":[]}]"#,
+        )
+        .expect("project mcp defaults should be written");
+
+        let mut registry = ProjectRegistry::load_in(config_dir)
+            .await
+            .expect("project registry should load");
+        registry
+            .add(&project_root)
+            .await
+            .expect("project should be added");
+
+        let ship = ShipImpl::new(
+            registry,
+            dir.join("sessions"),
+            AgentDiscovery {
+                claude: true,
+                codex: true,
+            },
+        );
+
+        let response = Ship::create_session(
+            &ship,
+            CreateSessionRequest {
+                project: ProjectName("project".to_owned()),
+                captain_kind: AgentKind::Claude,
+                mate_kind: AgentKind::Codex,
+                base_branch: "main".to_owned(),
+                mcp_servers: None,
+            },
+        )
+        .await;
+
+        let session_id = match response {
+            CreateSessionResponse::Created { session_id } => session_id,
+            CreateSessionResponse::Failed { message } => {
+                panic!("create session should succeed: {message}")
+            }
+        };
+
+        let session = ship
+            .store
+            .load_session(&session_id)
+            .await
+            .expect("session store should load")
+            .expect("session should be persisted");
+        assert_eq!(
+            session.config.mcp_servers,
+            vec![McpServerConfig::Stdio(McpStdioServerConfig {
+                name: "project".to_owned(),
+                command: "/usr/bin/project-mcp".to_owned(),
+                args: Vec::new(),
+                env: Vec::new(),
+            })]
+        );
 
         let _ = std::fs::remove_dir_all(dir);
     }

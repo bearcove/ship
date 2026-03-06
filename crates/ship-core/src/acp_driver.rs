@@ -345,15 +345,7 @@ async fn run_acp_worker(
         }
     });
 
-    let initialize_request = InitializeRequest::new(ProtocolVersion::LATEST)
-        .client_info(Implementation::new("ship", env!("CARGO_PKG_VERSION")))
-        .client_capabilities(
-            ClientCapabilities::new()
-                .terminal(true)
-                .fs(FileSystemCapability::new()
-                    .read_text_file(true)
-                    .write_text_file(true)),
-        );
+    let initialize_request = build_initialize_request(role);
 
     connection
         .initialize(initialize_request)
@@ -427,6 +419,26 @@ async fn run_acp_worker(
     Ok(())
 }
 
+fn build_initialize_request(role: Role) -> InitializeRequest {
+    let client_capabilities = match role {
+        // r[captain.no-filesystem]
+        Role::Captain => ClientCapabilities::new()
+            .terminal(false)
+            .fs(FileSystemCapability::new()
+                .read_text_file(false)
+                .write_text_file(false)),
+        Role::Mate => ClientCapabilities::new()
+            .terminal(true)
+            .fs(FileSystemCapability::new()
+                .read_text_file(true)
+                .write_text_file(true)),
+    };
+
+    InitializeRequest::new(ProtocolVersion::LATEST)
+        .client_info(Implementation::new("ship", env!("CARGO_PKG_VERSION")))
+        .client_capabilities(client_capabilities)
+}
+
 fn command_for_launcher(launcher: crate::AgentLauncher) -> Command {
     let mut command = Command::new(launcher.program);
     command.args(launcher.args);
@@ -469,11 +481,14 @@ mod tests {
     use agent_client_protocol::McpServer;
     use ship_types::{
         AgentKind, McpEnvVar, McpHeader, McpHttpServerConfig, McpServerConfig, McpSseServerConfig,
-        McpStdioServerConfig,
+        McpStdioServerConfig, Role,
     };
     use tokio::sync::mpsc;
 
-    use super::{AcpAgentDriver, AcpHandle, build_new_session_request, command_for_launcher};
+    use super::{
+        AcpAgentDriver, AcpHandle, build_initialize_request, build_new_session_request,
+        command_for_launcher,
+    };
     use crate::{
         AgentDriver, AgentHandle, AgentLauncher, AgentSessionConfig, BinaryPathProbe, SessionId,
         resolve_agent_launcher,
@@ -635,5 +650,23 @@ mod tests {
             .expect_err("prompt should be rejected while another is in flight");
 
         assert_eq!(error.message, "prompt already in flight");
+    }
+
+    // r[verify captain.no-filesystem]
+    #[test]
+    fn captain_initialize_request_disables_filesystem_and_terminal_capabilities() {
+        let request = build_initialize_request(Role::Captain);
+        assert!(!request.client_capabilities.terminal);
+        assert!(!request.client_capabilities.fs.read_text_file);
+        assert!(!request.client_capabilities.fs.write_text_file);
+    }
+
+    // r[verify mate.capabilities]
+    #[test]
+    fn mate_initialize_request_keeps_filesystem_and_terminal_capabilities() {
+        let request = build_initialize_request(Role::Mate);
+        assert!(request.client_capabilities.terminal);
+        assert!(request.client_capabilities.fs.read_text_file);
+        assert!(request.client_capabilities.fs.write_text_file);
     }
 }

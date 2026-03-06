@@ -31,6 +31,10 @@ async fn create_session_with_task(
         .create_session(make_request(), Path::new("/repo"))
         .await
         .expect("create session should succeed");
+    manager
+        .start_session(&session_id, Path::new("/repo"))
+        .await
+        .expect("session startup should succeed");
     let task_id = manager
         .assign(&session_id, description.to_owned())
         .await
@@ -90,26 +94,13 @@ fn plan_step(description: &str, priority: PlanStepPriority, status: PlanStepStat
 async fn test_create_session() {
     let (mut manager, agent, worktree, store) = make_manager();
 
-    agent.push_response(StopReason::EndTurn);
-    agent.push_response(StopReason::EndTurn);
-    agent.push_response(StopReason::EndTurn);
-
     let session_id = manager
         .create_session(make_request(), Path::new("/repo"))
         .await
         .expect("create session should succeed");
 
-    let spawns = agent.spawn_records();
-    assert_eq!(spawns.len(), 2);
-    assert!(spawns.iter().any(|spawn| spawn.role == Role::Captain));
-    assert!(spawns.iter().any(|spawn| spawn.role == Role::Mate));
-    assert!(
-        spawns
-            .iter()
-            .all(|spawn| spawn.session_config.mcp_servers.is_empty())
-    );
-
-    assert_eq!(worktree.created_paths().len(), 1);
+    assert!(agent.spawn_records().is_empty());
+    assert!(worktree.created_paths().is_empty());
 
     let persisted = store
         .load_session(&session_id)
@@ -120,9 +111,70 @@ async fn test_create_session() {
     assert!(persisted.current_task.is_none());
     assert_eq!(
         persisted.startup_state,
-        ship_types::SessionStartupState::Ready
+        ship_types::SessionStartupState::Pending
     );
     assert!(persisted.config.mcp_servers.is_empty());
+}
+
+// r[verify session.create]
+#[tokio::test]
+async fn test_start_session_brings_up_runtime_after_persistence() {
+    let (mut manager, agent, worktree, store) = make_manager();
+
+    agent.push_response(StopReason::EndTurn);
+    agent.push_response(StopReason::EndTurn);
+
+    let session_id = manager
+        .create_session(make_request(), Path::new("/repo"))
+        .await
+        .expect("create session should succeed");
+
+    manager
+        .start_session(&session_id, Path::new("/repo"))
+        .await
+        .expect("session startup should succeed");
+
+    let spawns = agent.spawn_records();
+    assert_eq!(spawns.len(), 2);
+    assert!(spawns.iter().any(|spawn| spawn.role == Role::Captain));
+    assert!(spawns.iter().any(|spawn| spawn.role == Role::Mate));
+    assert!(
+        spawns
+            .iter()
+            .all(|spawn| spawn.session_config.mcp_servers.is_empty())
+    );
+    assert_eq!(worktree.created_paths().len(), 1);
+
+    let persisted = store
+        .load_session(&session_id)
+        .await
+        .expect("store load should work")
+        .expect("session should be persisted");
+    assert_eq!(
+        persisted.startup_state,
+        ship_types::SessionStartupState::Ready
+    );
+}
+
+// r[verify proto.assign]
+#[tokio::test]
+async fn test_assign_requires_startup_to_finish() {
+    let (mut manager, _agent, _worktree, _store) = make_manager();
+
+    let session_id = manager
+        .create_session(make_request(), Path::new("/repo"))
+        .await
+        .expect("create session should succeed");
+
+    let error = manager
+        .assign(&session_id, "Do work".to_owned())
+        .await
+        .expect_err("assign should fail before startup is ready");
+
+    assert!(matches!(
+        error,
+        ship_core::SessionManagerError::SessionStartupNotReady
+    ));
 }
 
 // r[verify acp.mcp.config]
@@ -146,6 +198,13 @@ async fn test_create_session_persists_session_mcp_override() {
         .await
         .expect("create session should succeed");
 
+    assert!(agent.spawn_records().is_empty());
+
+    manager
+        .start_session(&session_id, Path::new("/repo"))
+        .await
+        .expect("session startup should succeed");
+
     let spawns = agent.spawn_records();
     assert_eq!(spawns.len(), 2);
     assert_eq!(spawns[0].session_config.mcp_servers.len(), 1);
@@ -166,7 +225,6 @@ async fn test_create_session_persists_session_mcp_override() {
 async fn test_task_lifecycle() {
     let (mut manager, agent, _worktree, _store) = make_manager();
 
-    agent.push_response(StopReason::EndTurn);
     agent.push_response(StopReason::EndTurn);
     agent.push_response(StopReason::EndTurn);
 
@@ -583,17 +641,20 @@ async fn replay_is_sent_only_to_the_new_subscriber() {
         .subscribe(&session_id)
         .expect("second subscribe should work");
 
-    let replay_started = timeout(Duration::from_secs(1), second.recv())
-        .await
-        .expect("second subscriber should receive replay")
-        .expect("broadcast should be open");
-    assert_eq!(
-        replay_started.event,
-        SessionEvent::TaskStarted {
-            task_id: task_id.clone(),
-            description: "Replay isolation".to_owned(),
+    loop {
+        let replay_event = timeout(Duration::from_secs(1), second.recv())
+            .await
+            .expect("second subscriber should receive replay")
+            .expect("broadcast should be open");
+        if replay_event.event
+            == (SessionEvent::TaskStarted {
+                task_id: task_id.clone(),
+                description: "Replay isolation".to_owned(),
+            })
+        {
+            break;
         }
-    );
+    }
 
     let no_replayed_event = timeout(Duration::from_millis(100), first.recv()).await;
     assert!(
@@ -611,12 +672,15 @@ async fn test_close_session_cleans_up_clean_worktree() {
 
     agent.push_response(StopReason::EndTurn);
     agent.push_response(StopReason::EndTurn);
-    agent.push_response(StopReason::EndTurn);
 
     let session_id = manager
         .create_session(make_request(), Path::new("/repo"))
         .await
         .expect("create session should work");
+    manager
+        .start_session(&session_id, Path::new("/repo"))
+        .await
+        .expect("session startup should work");
 
     let close = manager
         .close_session(&session_id, false)
@@ -661,12 +725,15 @@ async fn test_close_session_requires_confirmation_for_dirty_worktree() {
 
     agent.push_response(StopReason::EndTurn);
     agent.push_response(StopReason::EndTurn);
-    agent.push_response(StopReason::EndTurn);
 
     let session_id = manager
         .create_session(make_request(), Path::new("/repo"))
         .await
         .expect("create session should work");
+    manager
+        .start_session(&session_id, Path::new("/repo"))
+        .await
+        .expect("session startup should work");
     let worktree_path = worktree
         .created_paths()
         .into_iter()
@@ -697,12 +764,15 @@ async fn test_close_session_force_deletes_dirty_worktree() {
 
     agent.push_response(StopReason::EndTurn);
     agent.push_response(StopReason::EndTurn);
-    agent.push_response(StopReason::EndTurn);
 
     let session_id = manager
         .create_session(make_request(), Path::new("/repo"))
         .await
         .expect("create session should work");
+    manager
+        .start_session(&session_id, Path::new("/repo"))
+        .await
+        .expect("session startup should work");
     let worktree_path = worktree
         .created_paths()
         .into_iter()
@@ -744,12 +814,15 @@ async fn test_close_session_keeps_session_when_cleanup_fails() {
 
     agent.push_response(StopReason::EndTurn);
     agent.push_response(StopReason::EndTurn);
-    agent.push_response(StopReason::EndTurn);
 
     let session_id = manager
         .create_session(make_request(), Path::new("/repo"))
         .await
         .expect("create session should work");
+    manager
+        .start_session(&session_id, Path::new("/repo"))
+        .await
+        .expect("session startup should work");
     let worktree_path = worktree
         .created_paths()
         .into_iter()

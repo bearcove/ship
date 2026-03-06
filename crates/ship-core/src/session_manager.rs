@@ -7,7 +7,8 @@ use ship_types::{
     AgentSnapshot, AgentState, AutonomyMode, BlockId, BlockPatch, CloseSessionResponse,
     ContentBlock, CreateSessionRequest, CurrentTask, PermissionRequest, PermissionResolution,
     PersistedSession, Role, SessionConfig, SessionEvent, SessionEventEnvelope, SessionId,
-    SessionStartupState, SessionSummary, TaskContentRecord, TaskId, TaskRecord, TaskStatus,
+    SessionStartupStage, SessionStartupState, SessionSummary, TaskContentRecord, TaskId,
+    TaskRecord, TaskStatus,
 };
 use tokio::sync::broadcast;
 
@@ -24,6 +25,7 @@ pub enum SessionManagerError {
     Worktree(String),
     Store(String),
     PermissionNotFound(String),
+    SessionStartupNotReady,
 }
 
 impl fmt::Display for SessionManagerError {
@@ -43,6 +45,7 @@ impl fmt::Display for SessionManagerError {
             Self::PermissionNotFound(permission_id) => {
                 write!(f, "permission not found: {permission_id}")
             }
+            Self::SessionStartupNotReady => f.write_str("session startup is not complete"),
         }
     }
 }
@@ -113,35 +116,12 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
     pub async fn create_session(
         &mut self,
         req: CreateSessionRequest,
-        repo_root: &Path,
+        _repo_root: &Path,
     ) -> Result<SessionId, SessionManagerError> {
         let session_id = SessionId::new();
         let slug = "session".to_owned();
-        let worktree_path = self
-            .worktree_ops
-            .create_worktree(&session_id, &req.base_branch, &slug, repo_root)
-            .await
-            .map_err(|error| SessionManagerError::Worktree(error.message))?;
-
         let branch_name = format!("ship/{}/{slug}", short_id(&session_id));
         let mcp_servers = req.mcp_servers.clone().unwrap_or_default();
-        let agent_session_config = AgentSessionConfig {
-            worktree_path: worktree_path.clone(),
-            mcp_servers: mcp_servers.clone(),
-        };
-
-        let captain_handle = self
-            .agent_driver
-            .spawn(req.captain_kind, Role::Captain, &agent_session_config)
-            .await
-            .map_err(|error| SessionManagerError::Agent(error.message))?;
-
-        let mate_handle = self
-            .agent_driver
-            .spawn(req.mate_kind, Role::Mate, &agent_session_config)
-            .await
-            .map_err(|error| SessionManagerError::Agent(error.message))?;
-
         let (events_tx, _) = broadcast::channel(256);
 
         let session = ActiveSession {
@@ -155,9 +135,9 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                 autonomy_mode: AutonomyMode::HumanInTheLoop,
                 mcp_servers,
             },
-            worktree_path: Some(worktree_path),
-            captain_handle: Some(captain_handle),
-            mate_handle: Some(mate_handle),
+            worktree_path: None,
+            captain_handle: None,
+            mate_handle: None,
             captain: AgentSnapshot {
                 role: Role::Captain,
                 kind: req.captain_kind,
@@ -170,7 +150,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                 state: AgentState::Idle,
                 context_remaining_percent: None,
             },
-            startup_state: SessionStartupState::Ready,
+            startup_state: SessionStartupState::Pending,
             session_event_log: Vec::new(),
             current_task: None,
             task_history: Vec::new(),
@@ -185,6 +165,119 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         self.sessions.insert(session_id.clone(), session);
         self.persist_session(&session_id).await?;
         Ok(session_id)
+    }
+
+    pub async fn start_session(
+        &mut self,
+        session_id: &SessionId,
+        repo_root: &Path,
+    ) -> Result<(), SessionManagerError> {
+        self.set_startup_state(
+            session_id,
+            SessionStartupState::Running {
+                stage: SessionStartupStage::CreatingWorktree,
+                message: "Creating worktree".to_owned(),
+            },
+        )
+        .await?;
+
+        let (base_branch, branch_name, captain_kind, mate_kind, mcp_servers) = {
+            let session = self
+                .sessions
+                .get(session_id)
+                .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
+            (
+                session.config.base_branch.clone(),
+                session.config.branch_name.clone(),
+                session.config.captain_kind,
+                session.config.mate_kind,
+                session.config.mcp_servers.clone(),
+            )
+        };
+
+        let worktree_path = self
+            .worktree_ops
+            .create_worktree(session_id, &base_branch, "session", repo_root)
+            .await
+            .map_err(|error| SessionManagerError::Worktree(error.message))?;
+
+        {
+            let session = self
+                .sessions
+                .get_mut(session_id)
+                .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
+            session.worktree_path = Some(worktree_path.clone());
+            session.config.branch_name = branch_name;
+        }
+        self.persist_session(session_id).await?;
+
+        let agent_session_config = AgentSessionConfig {
+            worktree_path: worktree_path.clone(),
+            mcp_servers: mcp_servers.clone(),
+        };
+
+        self.set_startup_state(
+            session_id,
+            SessionStartupState::Running {
+                stage: SessionStartupStage::StartingCaptain,
+                message: "Starting captain".to_owned(),
+            },
+        )
+        .await?;
+        let captain_handle = self
+            .agent_driver
+            .spawn(captain_kind, Role::Captain, &agent_session_config)
+            .await
+            .map_err(|error| SessionManagerError::Agent(error.message))?;
+        {
+            let session = self
+                .sessions
+                .get_mut(session_id)
+                .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
+            session.captain_handle = Some(captain_handle);
+        }
+        self.persist_session(session_id).await?;
+
+        self.set_startup_state(
+            session_id,
+            SessionStartupState::Running {
+                stage: SessionStartupStage::StartingMate,
+                message: "Starting mate".to_owned(),
+            },
+        )
+        .await?;
+        let mate_handle = self
+            .agent_driver
+            .spawn(mate_kind, Role::Mate, &agent_session_config)
+            .await
+            .map_err(|error| SessionManagerError::Agent(error.message))?;
+        {
+            let session = self
+                .sessions
+                .get_mut(session_id)
+                .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
+            session.mate_handle = Some(mate_handle);
+        }
+        self.set_startup_state(session_id, SessionStartupState::Ready)
+            .await
+    }
+
+    async fn set_startup_state(
+        &mut self,
+        session_id: &SessionId,
+        state: SessionStartupState,
+    ) -> Result<(), SessionManagerError> {
+        let session = self
+            .sessions
+            .get_mut(session_id)
+            .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
+        apply_event(
+            session,
+            SessionEvent::SessionStartupChanged {
+                state: state.clone(),
+            },
+        );
+        self.persist_session(session_id).await
     }
 
     // r[proto.list-sessions]
@@ -304,6 +397,9 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                 .sessions
                 .get(session_id)
                 .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
+            if session.startup_state != SessionStartupState::Ready {
+                return Err(SessionManagerError::SessionStartupNotReady);
+            }
             if session.current_task.is_some() {
                 return Err(SessionManagerError::ActiveTaskAlreadyExists);
             }
