@@ -45,7 +45,12 @@ pub trait Ship {
     async fn cancel(&self, session: SessionId);
 
     // r[proto.resolve-permission]
-    async fn resolve_permission(&self, session: SessionId, permission_id: String, approved: bool);
+    async fn resolve_permission(
+        &self,
+        session: SessionId,
+        permission_id: String,
+        option_id: String,
+    );
 
     // r[proto.retry-agent]
     async fn retry_agent(&self, session: SessionId, role: Role);

@@ -2,7 +2,12 @@ import { Fragment, useMemo, useState } from "react";
 import { Badge, Box, Code, Flex, ScrollArea, Spinner, Text } from "@radix-ui/themes";
 import { CaretDown, CaretRight } from "@phosphor-icons/react";
 import ReactMarkdown from "react-markdown";
-import type { ContentBlock, ToolCallContent, ToolCallLocation } from "../../generated/ship";
+import type {
+  ContentBlock,
+  ToolCallContent,
+  ToolCallLocation,
+  ToolTarget,
+} from "../../generated/ship";
 import { formatDisplayPath, formatDisplayText } from "../../utils/displayPath";
 import {
   diffAdd,
@@ -18,6 +23,7 @@ import {
   toolCallBody,
   toolCallHeader,
 } from "../../styles/session-view.css";
+import { displayTargetPath, diffStats, jsonValueToString, summarizeTarget } from "./toolPayload";
 
 type ToolCallBlockType = Extract<ContentBlock, { tag: "ToolCall" }>;
 
@@ -25,25 +31,13 @@ interface Props {
   block: ToolCallBlockType;
 }
 
-type ToolKind = "read" | "write" | "terminal" | "search" | "other";
-
-function classifyTool(toolName: string): ToolKind {
-  const name = toolName.toLowerCase();
-  if (["read", "read file", "read_file", "readtextfile"].includes(name)) return "read";
-  if (["write", "write file", "write_file", "edit", "notebookedit"].includes(name)) return "write";
-  if (["bash", "terminal", "run", "create terminal", "create_terminal"].includes(name))
-    return "terminal";
-  if (["grep", "glob", "search"].includes(name)) return "search";
-  return "other";
-}
-
-function parseArgs(raw: string): Record<string, string> {
+function parseLegacyArgs(raw: string): Record<string, string> {
   try {
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === "object") {
       return Object.fromEntries(
-        Object.entries(parsed).map(([k, value]) => [
-          k,
+        Object.entries(parsed).map(([key, value]) => [
+          key,
           typeof value === "string"
             ? formatDisplayText(value)
             : formatDisplayText(JSON.stringify(value, null, 2)),
@@ -56,106 +50,80 @@ function parseArgs(raw: string): Record<string, string> {
   return {};
 }
 
-function firstPath(locations: ToolCallLocation[], args: Record<string, string>): string {
-  const path = args.path ?? args.file_path ?? locations[0]?.path ?? "";
+function firstLegacyPath(locations: ToolCallLocation[], args: Record<string, string>): string {
+  const path =
+    args.path ?? args.file_path ?? locations[0]?.display_path ?? locations[0]?.path ?? "";
   return path ? formatDisplayPath(path) : "";
 }
 
-function buildUnifiedDiff(content: Extract<ToolCallContent, { tag: "Diff" }>): string {
-  const oldLines = (content.old_text ?? "").split("\n");
-  const newLines = content.new_text.split("\n");
-  return [
-    `--- a/${content.path}`,
-    `+++ b/${content.path}`,
-    ...oldLines.filter(Boolean).map((line) => `-${line}`),
-    ...newLines.filter(Boolean).map((line) => `+${line}`),
-  ].join("\n");
-}
-
-function changedLineCounts(oldText: string, newText: string): { added: number; removed: number } {
-  const oldLines = oldText.split("\n");
-  const newLines = newText.split("\n");
-
-  let prefix = 0;
-  while (
-    prefix < oldLines.length &&
-    prefix < newLines.length &&
-    oldLines[prefix] === newLines[prefix]
-  ) {
-    prefix += 1;
-  }
-
-  let oldSuffix = oldLines.length - 1;
-  let newSuffix = newLines.length - 1;
-  while (
-    oldSuffix >= prefix &&
-    newSuffix >= prefix &&
-    oldLines[oldSuffix] === newLines[newSuffix]
-  ) {
-    oldSuffix -= 1;
-    newSuffix -= 1;
-  }
-
-  return {
-    added: Math.max(0, newSuffix - prefix + 1),
-    removed: Math.max(0, oldSuffix - prefix + 1),
-  };
-}
-
-function diffStats(contents: ToolCallContent[]): string {
-  const diff = contents.find((item) => item.tag === "Diff");
-  if (!diff) return "";
-  const { added, removed } = changedLineCounts(diff.old_text ?? "", diff.new_text);
-  return `+${added} -${removed}`;
-}
-
-export function collapsedSummary(
+function legacyCollapsedSummary(
   toolName: string,
   args: Record<string, string>,
   contents: ToolCallContent[],
   locations: ToolCallLocation[],
 ): string {
-  const kind = classifyTool(toolName);
-  switch (kind) {
-    case "read":
-      return firstPath(locations, args);
-    case "write": {
-      const path = firstPath(locations, args);
-      const stats = diffStats(contents);
-      return stats ? `${path}  ${stats}` : path;
-    }
-    case "terminal": {
-      const terminal = contents.find((item) => item.tag === "Terminal");
-      return args.command ?? args.cmd ?? terminal?.terminal_id ?? "";
-    }
-    case "search":
-      return args.pattern ?? args.query ?? args.glob ?? args.include ?? "";
-    default:
-      return firstPath(locations, args) || args.command || args.pattern || "";
+  const name = toolName.toLowerCase();
+  if (["read", "read file", "read_file", "readtextfile"].includes(name)) {
+    return firstLegacyPath(locations, args);
   }
+  if (["write", "write file", "write_file", "edit", "notebookedit"].includes(name)) {
+    const path = firstLegacyPath(locations, args);
+    const stats = diffStats(contents);
+    return stats ? `${path}  ${stats}` : path;
+  }
+  if (["bash", "terminal", "run", "create terminal", "create_terminal"].includes(name)) {
+    return args.command ?? args.cmd ?? "";
+  }
+  if (["grep", "glob", "search"].includes(name)) {
+    return args.pattern ?? args.query ?? args.glob ?? args.include ?? "";
+  }
+  return firstLegacyPath(locations, args) || args.command || args.pattern || "";
+}
+
+function buildUnifiedDiff(content: Extract<ToolCallContent, { tag: "Diff" }>): string {
+  const oldLines = (content.old_text ?? "").split("\n");
+  const newLines = content.new_text.split("\n");
+  const displayPath = displayTargetPath(content.path, content.display_path);
+  return [
+    `--- a/${displayPath}`,
+    `+++ b/${displayPath}`,
+    ...oldLines.filter(Boolean).map((line) => `-${line}`),
+    ...newLines.filter(Boolean).map((line) => `+${line}`),
+  ].join("\n");
+}
+
+export function collapsedSummary(block: ToolCallBlockType): string {
+  const summary = summarizeTarget(block.target, block.kind, block.content);
+  if (summary) return summary;
+  return legacyCollapsedSummary(
+    block.tool_name,
+    parseLegacyArgs(block.arguments),
+    block.content,
+    block.locations,
+  );
 }
 
 function DiffView({ content }: { content: string }) {
   return (
     <ScrollArea style={{ maxHeight: "20rem", maxWidth: "100%" }}>
       <Box style={{ fontFamily: "monospace", fontSize: "var(--font-size-1)", whiteSpace: "pre" }}>
-        {content.split("\n").map((line, i) => {
+        {content.split("\n").map((line, index) => {
           if (line.startsWith("+") && !line.startsWith("+++")) {
             return (
-              <span key={i} className={diffAdd}>
+              <span key={index} className={diffAdd}>
                 {line}
               </span>
             );
           }
           if (line.startsWith("-") && !line.startsWith("---")) {
             return (
-              <span key={i} className={diffRemove}>
+              <span key={index} className={diffRemove}>
                 {line}
               </span>
             );
           }
           return (
-            <span key={i} className={diffContext}>
+            <span key={index} className={diffContext}>
               {line}
             </span>
           );
@@ -165,23 +133,44 @@ function DiffView({ content }: { content: string }) {
   );
 }
 
-function ToolArguments({ args, raw }: { args: Record<string, string>; raw: string }) {
-  const entries = Object.entries(args);
-  if (entries.length === 0) {
-    if (!raw || raw === "{}") return null;
-    return (
-      <Code size="1" style={{ whiteSpace: "pre-wrap", color: "var(--gray-11)" }}>
-        {formatDisplayText(raw)}
-      </Code>
-    );
+function StructuredTarget({ target }: { target: ToolTarget | null }) {
+  if (!target || target.tag === "None") return null;
+
+  const rows: Array<[string, string]> = [];
+  switch (target.tag) {
+    case "File":
+      rows.push(["path", displayTargetPath(target.path, target.display_path)]);
+      if (target.line) rows.push(["line", String(target.line)]);
+      break;
+    case "Move":
+      rows.push(["from", displayTargetPath(target.source_path, target.source_display_path)]);
+      rows.push([
+        "to",
+        displayTargetPath(target.destination_path, target.destination_display_path),
+      ]);
+      break;
+    case "Search":
+      if (target.query) rows.push(["query", target.query]);
+      if (target.glob) rows.push(["glob", target.glob]);
+      if (target.path) {
+        rows.push(["path", displayTargetPath(target.path, target.display_path)]);
+      }
+      break;
+    case "Command":
+      rows.push(["command", target.command]);
+      if (target.cwd) {
+        rows.push(["cwd", target.display_cwd ?? formatDisplayPath(target.cwd)]);
+      }
+      break;
   }
 
+  if (rows.length === 0) return null;
   return (
     <Box className={toolCallArgumentGrid}>
-      {entries.map(([key, value]) => (
-        <Fragment key={key}>
+      {rows.map(([label, value]) => (
+        <Fragment key={`${label}:${value}`}>
           <Text size="1" className={toolCallLabel}>
-            {key}
+            {label}
           </Text>
           <Text size="1" className={toolCallValue}>
             {value}
@@ -192,13 +181,46 @@ function ToolArguments({ args, raw }: { args: Record<string, string>; raw: strin
   );
 }
 
+function RawJson({ value }: { value: string }) {
+  return (
+    <Code size="1" style={{ whiteSpace: "pre-wrap", color: "var(--gray-11)" }}>
+      {value}
+    </Code>
+  );
+}
+
+function ToolArguments({
+  target,
+  rawInput,
+  raw,
+}: {
+  target: ToolTarget | null;
+  rawInput: ToolCallBlockType["raw_input"];
+  raw: string;
+}) {
+  const hasStructuredTarget = target !== null && target.tag !== "None";
+  const rawInputText = jsonValueToString(rawInput);
+  if (hasStructuredTarget && rawInputText) {
+    return (
+      <Flex direction="column" gap="2">
+        <StructuredTarget target={target} />
+        <RawJson value={rawInputText} />
+      </Flex>
+    );
+  }
+  if (hasStructuredTarget) return <StructuredTarget target={target} />;
+  if (rawInputText) return <RawJson value={rawInputText} />;
+  if (!raw || raw === "{}") return null;
+  return <RawJson value={formatDisplayText(raw)} />;
+}
+
 function ToolLocations({ locations }: { locations: ToolCallLocation[] }) {
   if (locations.length === 0) return null;
   return (
     <Flex direction="column" gap="1">
       {locations.map((location) => (
         <Code key={`${location.path}:${location.line ?? 0}`} size="1">
-          {formatDisplayPath(location.path)}
+          {displayTargetPath(location.path, location.display_path)}
           {location.line ? `:${location.line}` : ""}
         </Code>
       ))}
@@ -287,11 +309,26 @@ function extractMarkdownFence(text: string): { language: string | null; body: st
   return { language, body: match[2] };
 }
 
-function TerminalTranscript({ command, output }: { command?: string; output: string }) {
+function TerminalTranscript({
+  command,
+  output,
+  exitLabel,
+}: {
+  command?: string;
+  output: string;
+  exitLabel?: string;
+}) {
   const lines = useMemo(() => output.split("\n"), [output]);
   return (
     <Box className={terminalRoot}>
-      {command && <Code size="1">$ {command}</Code>}
+      <Flex align="center" justify="between" gap="2">
+        {command ? <Code size="1">$ {command}</Code> : <span />}
+        {exitLabel && (
+          <Badge color={exitLabel === "exit 0" ? "gray" : "red"} size="1">
+            {exitLabel}
+          </Badge>
+        )}
+      </Flex>
       <Box>
         {lines.map((line, lineIndex) => (
           <Box key={lineIndex} className={terminalLine}>
@@ -305,6 +342,19 @@ function TerminalTranscript({ command, output }: { command?: string; output: str
       </Box>
     </Box>
   );
+}
+
+function terminalExitLabel(
+  content: Extract<ToolCallContent, { tag: "Terminal" }>,
+): string | undefined {
+  if (!content.snapshot?.exit) return undefined;
+  if (content.snapshot.exit.exit_code !== null) {
+    return `exit ${content.snapshot.exit.exit_code}`;
+  }
+  if (content.snapshot.exit.signal) {
+    return `signal ${content.snapshot.exit.signal}`;
+  }
+  return undefined;
 }
 
 function RichTextContent({ text }: { text: string }) {
@@ -324,13 +374,7 @@ function RichTextContent({ text }: { text: string }) {
   );
 }
 
-function ToolContents({
-  contents,
-  args,
-}: {
-  contents: ToolCallContent[];
-  args: Record<string, string>;
-}) {
+function ToolContents({ contents, command }: { contents: ToolCallContent[]; command?: string }) {
   if (contents.length === 0) return null;
   return (
     <Flex direction="column" gap="2">
@@ -339,37 +383,68 @@ function ToolContents({
           case "Text":
             return <RichTextContent key={index} text={content.text} />;
           case "Diff":
-            return (
-              <DiffView
-                key={index}
-                content={buildUnifiedDiff({ ...content, path: formatDisplayPath(content.path) })}
-              />
-            );
+            return <DiffView key={index} content={buildUnifiedDiff(content)} />;
           case "Terminal":
-            return (
-              <Flex key={index} direction="column" gap="2">
-                {args.command && <Code size="1">$ {args.command}</Code>}
-                <Badge color="gray" size="1">
+            if (!content.snapshot) {
+              return (
+                <Badge key={index} color="gray" size="1">
                   terminal {content.terminal_id}
                 </Badge>
-              </Flex>
+              );
+            }
+            return (
+              <TerminalTranscript
+                key={index}
+                command={command}
+                output={content.snapshot.output}
+                exitLabel={terminalExitLabel(content)}
+              />
             );
+          case "Raw":
+            return <RawJson key={index} value={jsonValueToString(content.data)} />;
         }
       })}
     </Flex>
   );
 }
 
+function ToolError({ block }: { block: ToolCallBlockType }) {
+  if (!block.error) return null;
+  return (
+    <Flex
+      direction="column"
+      gap="2"
+      p="2"
+      style={{
+        borderRadius: "var(--radius-2)",
+        background: "var(--red-a3)",
+        border: "1px solid var(--red-a5)",
+      }}
+    >
+      <Text size="2" color="red" weight="medium">
+        {block.error.message}
+      </Text>
+      {block.error.details && <RawJson value={jsonValueToString(block.error.details)} />}
+    </Flex>
+  );
+}
+
+function commandFromTarget(target: ToolTarget | null): string | undefined {
+  return target?.tag === "Command" ? target.command : undefined;
+}
+
+// r[acp.content-blocks]
+// r[acp.terminals]
 // r[ui.block.tool-call.layout]
 // r[ui.block.tool-call.collapsed-default]
 // r[ui.block.tool-call.diff]
 // r[ui.block.tool-call.terminal]
 // r[ui.block.tool-call.search]
+// r[view.no-terminal]
 export function ToolCallBlock({ block }: Props) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
 
-  const args = parseArgs(block.arguments);
-  const summary = collapsedSummary(block.tool_name, args, block.content, block.locations);
+  const summary = collapsedSummary(block);
   const isRunning = block.status.tag === "Running";
   const statusColor =
     block.status.tag === "Success"
@@ -424,9 +499,13 @@ export function ToolCallBlock({ block }: Props) {
       {expanded && (
         <Box className={toolCallBody}>
           <Flex direction="column" gap="2">
-            <ToolArguments args={args} raw={block.arguments} />
+            <ToolArguments target={block.target} rawInput={block.raw_input} raw={block.arguments} />
             <ToolLocations locations={block.locations} />
-            <ToolContents contents={block.content} args={args} />
+            <ToolContents contents={block.content} command={commandFromTarget(block.target)} />
+            {block.raw_output && block.content.length === 0 && !block.error && (
+              <RawJson value={jsonValueToString(block.raw_output)} />
+            )}
+            <ToolError block={block} />
           </Flex>
         </Box>
       )}

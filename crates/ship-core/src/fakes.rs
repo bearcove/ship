@@ -194,7 +194,7 @@ impl AgentDriver for FakeAgentDriver {
         &self,
         _handle: &AgentHandle,
         _permission_id: &str,
-        _approved: bool,
+        _option_id: &str,
     ) -> Result<(), AgentError> {
         Ok(())
     }

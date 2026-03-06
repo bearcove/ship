@@ -7,9 +7,9 @@ use ship_core::{
 };
 use ship_types::{
     AgentKind, AgentState, AutonomyMode, BlockId, BlockPatch, CloseSessionResponse, ContentBlock,
-    CreateSessionRequest, McpServerConfig, McpStdioServerConfig, PlanStep, PlanStepPriority,
-    PlanStepStatus, ProjectName, Role, SessionEvent, SessionEventEnvelope, SessionId, TaskId,
-    TaskStatus,
+    CreateSessionRequest, McpServerConfig, McpStdioServerConfig, PermissionOption,
+    PermissionOptionKind, PlanStep, PlanStepPriority, PlanStepStatus, ProjectName, Role,
+    SessionEvent, SessionEventEnvelope, SessionId, TaskId, TaskStatus, ToolCallKind, ToolTarget,
 };
 use tokio::time::timeout;
 
@@ -442,6 +442,19 @@ async fn test_permission_flow() {
         .handle;
 
     let block_id = BlockId::new();
+    let permission_id = "permission-1".to_owned();
+    let permission_options = Some(vec![
+        PermissionOption {
+            option_id: "allow-once".to_owned(),
+            label: "Allow once".to_owned(),
+            kind: PermissionOptionKind::AllowOnce,
+        },
+        PermissionOption {
+            option_id: "reject-once".to_owned(),
+            label: "Reject once".to_owned(),
+            kind: PermissionOptionKind::RejectOnce,
+        },
+    ]);
 
     let mut rx = manager
         .subscribe(&session_id)
@@ -454,9 +467,19 @@ async fn test_permission_flow() {
             block_id: block_id.clone(),
             role: Role::Mate,
             block: ContentBlock::Permission {
+                permission_id: Some(permission_id.clone()),
+                tool_call_id: Some("tool-1".to_owned()),
                 tool_name: "write_file".to_owned(),
                 arguments: "{\"path\":\"src/lib.rs\"}".to_owned(),
                 description: "Write file".to_owned(),
+                kind: Some(ToolCallKind::Edit),
+                target: Some(ToolTarget::File {
+                    path: "/repo/src/lib.rs".to_owned(),
+                    display_path: Some("src/lib.rs".to_owned()),
+                    line: None,
+                }),
+                raw_input: None,
+                options: permission_options.clone(),
                 resolution: None,
             },
         }],
@@ -477,9 +500,19 @@ async fn test_permission_flow() {
                 block_id: block_id.clone(),
                 role: Role::Mate,
                 block: ContentBlock::Permission {
+                    permission_id: Some(permission_id.clone()),
+                    tool_call_id: Some("tool-1".to_owned()),
                     tool_name: "write_file".to_owned(),
                     arguments: "{\"path\":\"src/lib.rs\"}".to_owned(),
                     description: "Write file".to_owned(),
+                    kind: Some(ToolCallKind::Edit),
+                    target: Some(ToolTarget::File {
+                        path: "/repo/src/lib.rs".to_owned(),
+                        display_path: Some("src/lib.rs".to_owned()),
+                        line: None,
+                    }),
+                    raw_input: None,
+                    options: permission_options.clone(),
                     resolution: None,
                 },
             })
@@ -494,16 +527,26 @@ async fn test_permission_flow() {
             block_id: block_id.clone(),
             role: Role::Mate,
             block: ContentBlock::Permission {
+                permission_id: Some(permission_id.clone()),
+                tool_call_id: Some("tool-1".to_owned()),
                 tool_name: "write_file".to_owned(),
                 arguments: "{\"path\":\"src/lib.rs\"}".to_owned(),
                 description: "Write file".to_owned(),
+                kind: Some(ToolCallKind::Edit),
+                target: Some(ToolTarget::File {
+                    path: "/repo/src/lib.rs".to_owned(),
+                    display_path: Some("src/lib.rs".to_owned()),
+                    line: None,
+                }),
+                raw_input: None,
+                options: permission_options.clone(),
                 resolution: None,
             },
         }
     );
 
     manager
-        .resolve_permission(&session_id, &block_id.0.to_string(), true)
+        .resolve_permission(&session_id, &permission_id, "allow-once")
         .await
         .expect("resolve permission should work");
 

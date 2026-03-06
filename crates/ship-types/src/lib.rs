@@ -61,6 +61,8 @@ pub mod ids {
 }
 
 pub mod agent {
+    use crate::structured::{JsonValue, PermissionOption, ToolCallKind, ToolTarget};
+
     // r[session.agent.kind]
     #[repr(u8)]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, facet::Facet)]
@@ -105,9 +107,14 @@ pub mod agent {
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub struct PermissionRequest {
         pub permission_id: String,
+        pub tool_call_id: Option<String>,
         pub tool_name: String,
         pub arguments: String,
         pub description: String,
+        pub kind: Option<ToolCallKind>,
+        pub target: Option<ToolTarget>,
+        pub raw_input: Option<JsonValue>,
+        pub options: Option<Vec<PermissionOption>>,
     }
 
     // r[agent-state.derived]
@@ -135,6 +142,104 @@ pub mod agent {
         pub kind: AgentKind,
         pub state: AgentState,
         pub context_remaining_percent: Option<u8>,
+    }
+}
+
+pub mod structured {
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct JsonEntry {
+        pub key: String,
+        pub value: JsonValue,
+    }
+
+    #[repr(u8)]
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub enum JsonValue {
+        Null,
+        Bool { value: bool },
+        Number { value: String },
+        String { value: String },
+        Array { items: Vec<JsonValue> },
+        Object { entries: Vec<JsonEntry> },
+    }
+
+    #[repr(u8)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, facet::Facet)]
+    pub enum ToolCallKind {
+        Read,
+        Edit,
+        Delete,
+        Move,
+        Search,
+        Execute,
+        Think,
+        Fetch,
+        SwitchMode,
+        Other,
+    }
+
+    #[repr(u8)]
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub enum ToolTarget {
+        None,
+        File {
+            path: String,
+            display_path: Option<String>,
+            line: Option<u32>,
+        },
+        Move {
+            source_path: String,
+            source_display_path: Option<String>,
+            destination_path: String,
+            destination_display_path: Option<String>,
+        },
+        Search {
+            query: Option<String>,
+            path: Option<String>,
+            display_path: Option<String>,
+            glob: Option<String>,
+        },
+        Command {
+            command: String,
+            cwd: Option<String>,
+            display_cwd: Option<String>,
+        },
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct TerminalExit {
+        pub exit_code: Option<u32>,
+        pub signal: Option<String>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct TerminalSnapshot {
+        pub output: String,
+        pub truncated: bool,
+        pub exit: Option<TerminalExit>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct ToolCallError {
+        pub message: String,
+        pub details: Option<JsonValue>,
+    }
+
+    #[repr(u8)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, facet::Facet)]
+    pub enum PermissionOptionKind {
+        AllowOnce,
+        AllowAlways,
+        RejectOnce,
+        RejectAlways,
+        Other,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct PermissionOption {
+        pub option_id: String,
+        pub label: String,
+        pub kind: PermissionOptionKind,
     }
 }
 
@@ -200,6 +305,7 @@ pub mod events {
     use crate::agent::{AgentState, PlanStep, Role};
     use crate::ids::BlockId;
     use crate::session::SessionStartupState;
+    use crate::structured::{JsonValue, TerminalSnapshot, ToolCallError, ToolCallKind, ToolTarget};
     use crate::task::TaskStatus;
 
     #[repr(u8)]
@@ -220,6 +326,7 @@ pub mod events {
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub struct ToolCallLocation {
         pub path: String,
+        pub display_path: Option<String>,
         pub line: Option<u32>,
     }
 
@@ -231,11 +338,16 @@ pub mod events {
         },
         Diff {
             path: String,
+            display_path: Option<String>,
             old_text: Option<String>,
             new_text: String,
         },
         Terminal {
             terminal_id: String,
+            snapshot: Option<TerminalSnapshot>,
+        },
+        Raw {
+            data: JsonValue,
         },
     }
 
@@ -247,11 +359,17 @@ pub mod events {
             text: String,
         },
         ToolCall {
+            tool_call_id: Option<String>,
             tool_name: String,
             arguments: String,
+            kind: Option<ToolCallKind>,
+            target: Option<ToolTarget>,
+            raw_input: Option<JsonValue>,
+            raw_output: Option<JsonValue>,
             locations: Vec<ToolCallLocation>,
             status: ToolCallStatus,
             content: Vec<ToolCallContent>,
+            error: Option<ToolCallError>,
         },
         PlanUpdate {
             steps: Vec<PlanStep>,
@@ -260,9 +378,15 @@ pub mod events {
             message: String,
         },
         Permission {
+            permission_id: Option<String>,
+            tool_call_id: Option<String>,
             tool_name: String,
             description: String,
             arguments: String,
+            kind: Option<ToolCallKind>,
+            target: Option<ToolTarget>,
+            raw_input: Option<JsonValue>,
+            options: Option<Vec<crate::structured::PermissionOption>>,
             resolution: Option<PermissionResolution>,
         },
     }
@@ -277,9 +401,15 @@ pub mod events {
         },
         // r[event.patch.tool-call-update]
         ToolCallUpdate {
+            tool_name: Option<String>,
+            kind: Option<ToolCallKind>,
+            target: Option<ToolTarget>,
+            raw_input: Option<JsonValue>,
+            raw_output: Option<JsonValue>,
             status: ToolCallStatus,
             locations: Option<Vec<ToolCallLocation>>,
             content: Option<Vec<ToolCallContent>>,
+            error: Option<ToolCallError>,
         },
         // r[event.patch.plan-replace]
         PlanReplace {
@@ -560,4 +690,8 @@ pub use protocol::{
     SessionSummary,
 };
 pub use session::{SessionStartupStage, SessionStartupState};
+pub use structured::{
+    JsonEntry, JsonValue, PermissionOption, PermissionOptionKind, TerminalExit, TerminalSnapshot,
+    ToolCallError, ToolCallKind, ToolTarget,
+};
 pub use task::{TaskRecord, TaskStatus};

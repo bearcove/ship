@@ -128,7 +128,7 @@ pub trait AgentDriver: Send + Sync {
         &self,
         handle: &AgentHandle,
         permission_id: &str,
-        approved: bool,
+        option_id: &str,
     ) -> Result<(), AgentError>;
 
     async fn kill(&self, handle: &AgentHandle) -> Result<(), AgentError>;

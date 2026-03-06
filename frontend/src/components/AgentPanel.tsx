@@ -96,24 +96,15 @@ export function AgentPanel({
       // r[ui.permission.actions]
       case "Permission": {
         const isActive = blockId === lastUnresolvedPermBlockId;
-        const permissionId =
-          isActive && agent.state.tag === "AwaitingPermission"
-            ? agent.state.request.permission_id
-            : null;
+        const permissionId = isActive ? (block.permission_id ?? null) : null;
 
-        async function resolve(approved: boolean) {
+        async function resolve(optionId: string) {
           if (!permissionId) return;
           const client = await getShipClient();
-          await client.resolvePermission(sessionId, permissionId, approved);
+          await client.resolvePermission(sessionId, permissionId, optionId);
         }
 
-        return (
-          <PermissionBlock
-            block={block}
-            onApprove={permissionId ? () => resolve(true) : undefined}
-            onDeny={permissionId ? () => resolve(false) : undefined}
-          />
-        );
+        return <PermissionBlock block={block} onResolve={permissionId ? resolve : undefined} />;
       }
     }
   }

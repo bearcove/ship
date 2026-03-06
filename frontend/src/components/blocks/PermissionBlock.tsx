@@ -1,66 +1,94 @@
 import { useEffect, useState } from "react";
-import { Badge, Box, Button, Code, Flex, Text, Tooltip } from "@radix-ui/themes";
+import { Badge, Box, Button, Code, Flex, Text } from "@radix-ui/themes";
 import { CaretDown, CaretRight } from "@phosphor-icons/react";
-import type { ContentBlock, PermissionResolution } from "../../generated/ship";
+import type { ContentBlock } from "../../generated/ship";
 import { formatDisplayText } from "../../utils/displayPath";
 import { permissionCard } from "../../styles/session-view.css";
+import {
+  firstAllowOption,
+  firstRejectOption,
+  jsonValueToString,
+  optionTone,
+  summarizeTarget,
+} from "./toolPayload";
 
 type PermissionBlockType = Extract<ContentBlock, { tag: "Permission" }>;
 
 interface Props {
   block: PermissionBlockType;
-  onApprove?: () => Promise<void> | void;
-  onDeny?: () => Promise<void> | void;
+  onResolve?: (optionId: string) => Promise<void> | void;
 }
 
+function RawJson({ value }: { value: string }) {
+  return (
+    <Box
+      style={{
+        fontFamily: "monospace",
+        fontSize: "var(--font-size-1)",
+        background: "var(--gray-a3)",
+        borderRadius: "var(--radius-2)",
+        padding: "var(--space-2)",
+        whiteSpace: "pre-wrap",
+      }}
+    >
+      {value}
+    </Box>
+  );
+}
+
+// r[acp.permissions]
 // r[ui.permission.layout]
-export function PermissionBlock({ block, onApprove, onDeny }: Props) {
+export function PermissionBlock({ block, onResolve }: Props) {
   const [argsExpanded, setArgsExpanded] = useState(false);
-  const [pendingAction, setPendingAction] = useState<"approve" | "deny" | null>(null);
+  const [pendingOptionId, setPendingOptionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const resolution: PermissionResolution | null = block.resolution;
-  const displayTool = formatDisplayText(block.tool_name);
-  const displayDescription = formatDisplayText(block.description);
-  const displayArguments = formatDisplayText(block.arguments);
+  const summary =
+    summarizeTarget(block.target, block.kind, []) || formatDisplayText(block.description);
+  const rawInputText = jsonValueToString(block.raw_input) || formatDisplayText(block.arguments);
+  const allowOption = firstAllowOption(block.options);
+  const rejectOption = firstRejectOption(block.options);
 
-  async function runAction(kind: "approve" | "deny") {
-    const action = kind === "approve" ? onApprove : onDeny;
-    if (!action || pendingAction) return;
-    setPendingAction(kind);
+  async function runAction(optionId: string) {
+    if (!onResolve || pendingOptionId) return;
+    setPendingOptionId(optionId);
     setError(null);
     try {
-      await action();
+      await onResolve(optionId);
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : String(actionError));
     } finally {
-      setPendingAction(null);
+      setPendingOptionId(null);
     }
   }
 
   // r[ui.keys.permission]
   useEffect(() => {
-    if (resolution) return;
-    if (!onApprove && !onDeny) return;
+    if (block.resolution) return;
+    if (!onResolve) return;
 
-    function handler(e: KeyboardEvent) {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (e.key === "y") void runAction("approve");
-      if (e.key === "n") void runAction("deny");
+    function handler(event: KeyboardEvent) {
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+      if (event.key === "y" && allowOption) void runAction(allowOption.option_id);
+      if (event.key === "n" && rejectOption) void runAction(rejectOption.option_id);
     }
+
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [resolution, onApprove, onDeny, pendingAction]);
+  }, [allowOption, block.resolution, onResolve, pendingOptionId, rejectOption]);
 
   // r[ui.permission.resolved]
-  if (resolution) {
+  if (block.resolution) {
     return (
       <Flex align="center" gap="2">
-        <Badge color={resolution.tag === "Approved" ? "green" : "red"} size="1">
-          {resolution.tag === "Approved" ? "✓ Approved" : "✗ Denied"}
+        <Badge color={block.resolution.tag === "Approved" ? "green" : "red"} size="1">
+          {block.resolution.tag === "Approved" ? "✓ Approved" : "✗ Denied"}
         </Badge>
         <Text size="1" color="gray">
-          <Code size="1">{displayTool}</Code> — {displayDescription}
+          <Code size="1">{formatDisplayText(block.tool_name)}</Code>
+          {summary ? ` — ${summary}` : ""}
         </Text>
       </Flex>
     );
@@ -73,7 +101,8 @@ export function PermissionBlock({ block, onApprove, onDeny }: Props) {
           Permission request
         </Text>
         <Text size="2" style={{ overflowWrap: "anywhere" }}>
-          <Code size="1">{displayTool}</Code> — {displayDescription}
+          <Code size="1">{formatDisplayText(block.tool_name)}</Code>
+          {summary ? ` — ${summary}` : ""}
         </Text>
       </Flex>
 
@@ -81,64 +110,40 @@ export function PermissionBlock({ block, onApprove, onDeny }: Props) {
         align="center"
         gap="1"
         style={{ cursor: "pointer" }}
-        onClick={() => setArgsExpanded((e) => !e)}
+        onClick={() => setArgsExpanded((open) => !open)}
       >
         {argsExpanded ? <CaretDown size={12} /> : <CaretRight size={12} />}
         <Text size="1" color="gray">
-          Arguments
+          Details
         </Text>
       </Flex>
-      {argsExpanded && (
-        <Box
-          style={{
-            fontFamily: "monospace",
-            fontSize: "var(--font-size-1)",
-            background: "var(--gray-a3)",
-            borderRadius: "var(--radius-2)",
-            padding: "var(--space-2)",
-            whiteSpace: "pre-wrap",
-          }}
-        >
-          {displayArguments}
-        </Box>
-      )}
+      {argsExpanded && <RawJson value={rawInputText} />}
 
       {/* r[ui.permission.actions] */}
       {/* r[ui.permission.viewer-mode] */}
-      <Flex gap="2" align="center">
-        <Button
-          size="1"
-          color="green"
-          variant="solid"
-          disabled={!onApprove || pendingAction !== null}
-          loading={pendingAction === "approve"}
-          onClick={() => void runAction("approve")}
-        >
-          Approve
-        </Button>
-        <Button
-          size="1"
-          color="red"
-          variant="soft"
-          disabled={!onDeny || pendingAction !== null}
-          loading={pendingAction === "deny"}
-          onClick={() => void runAction("deny")}
-        >
-          Deny
-        </Button>
-        <Tooltip content="Approve all future uses of this tool for the current task">
-          <Button
-            size="1"
-            color="green"
-            variant="outline"
-            disabled={!onApprove || pendingAction !== null}
-            loading={pendingAction === "approve"}
-            onClick={() => void runAction("approve")}
-          >
-            Approve all {displayTool}
-          </Button>
-        </Tooltip>
+      <Flex gap="2" align="center" wrap="wrap">
+        {(block.options ?? []).map((option) => {
+          const tone = optionTone(option.kind);
+          return (
+            <Button
+              key={option.option_id}
+              size="1"
+              color={tone.color}
+              variant={tone.variant}
+              disabled={!onResolve || pendingOptionId !== null}
+              loading={pendingOptionId === option.option_id}
+              onClick={() => void runAction(option.option_id)}
+            >
+              {option.label}
+            </Button>
+          );
+        })}
       </Flex>
+      {!block.options?.length && (
+        <Text size="1" color="gray">
+          No permission options available for this request.
+        </Text>
+      )}
       {error && (
         <Text size="1" color="red">
           {error}

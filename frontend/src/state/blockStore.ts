@@ -58,9 +58,15 @@ function applyPatch(block: ContentBlock, patch: BlockPatch): ContentBlock | null
       if (block.tag !== "ToolCall") return null;
       return {
         ...block,
+        tool_name: patch.tool_name ?? block.tool_name,
+        kind: patch.kind ?? block.kind,
+        target: patch.target ?? block.target,
+        raw_input: patch.raw_input ?? block.raw_input,
+        raw_output: patch.raw_output ?? block.raw_output,
         status: patch.status,
         locations: patch.locations ?? block.locations,
         content: patch.content ?? block.content,
+        error: patch.error ?? block.error,
       };
     case "PlanReplace":
       if (block.tag !== "PlanUpdate") return null;

@@ -562,11 +562,17 @@ impl ShipImpl {
                     block_id: BlockId::new(),
                     role: Role::Captain,
                     block: ContentBlock::ToolCall {
+                        tool_call_id: None,
                         tool_name: tool_name.to_owned(),
                         arguments,
+                        kind: Some(ship_types::ToolCallKind::Other),
+                        target: Some(ship_types::ToolTarget::None),
+                        raw_input: None,
+                        raw_output: None,
                         locations: Vec::new(),
                         status: ToolCallStatus::Success,
                         content,
+                        error: None,
                     },
                 },
             );
@@ -1533,8 +1539,13 @@ impl Ship for ShipImpl {
         }
     }
 
-    async fn resolve_permission(&self, session: SessionId, permission_id: String, approved: bool) {
-        let (pending_role, handle) = {
+    async fn resolve_permission(
+        &self,
+        session: SessionId,
+        permission_id: String,
+        option_id: String,
+    ) {
+        let (pending, handle) = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let Some(active) = sessions.get(&session) else {
                 Self::log_error("resolve_permission", "session not found");
@@ -1554,17 +1565,38 @@ impl Ship for ShipImpl {
                 Self::log_error("resolve_permission", "agent not ready");
                 return;
             };
-            (pending.role, handle)
+            (pending.clone(), handle)
         };
 
         if let Err(error) = self
             .agent_driver
-            .resolve_permission(&handle, &permission_id, approved)
+            .resolve_permission(&handle, &permission_id, &option_id)
             .await
         {
             Self::log_error("resolve_permission", &error.message);
             return;
         }
+
+        let resolution = pending
+            .request
+            .options
+            .as_ref()
+            .and_then(|options| options.iter().find(|option| option.option_id == option_id))
+            .map(|option| match option.kind {
+                ship_types::PermissionOptionKind::AllowOnce
+                | ship_types::PermissionOptionKind::AllowAlways => {
+                    ship_types::PermissionResolution::Approved
+                }
+                ship_types::PermissionOptionKind::RejectOnce
+                | ship_types::PermissionOptionKind::RejectAlways
+                | ship_types::PermissionOptionKind::Other => {
+                    ship_types::PermissionResolution::Denied
+                }
+            });
+        let Some(resolution) = resolution else {
+            Self::log_error("resolve_permission", "permission option not found");
+            return;
+        };
 
         {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
@@ -1575,7 +1607,7 @@ impl Ship for ShipImpl {
 
             set_agent_state(
                 active,
-                pending_role,
+                pending.role,
                 AgentState::Working {
                     plan: None,
                     activity: Some("Permission resolved".to_owned()),
@@ -1584,15 +1616,9 @@ impl Ship for ShipImpl {
             apply_event(
                 active,
                 SessionEvent::BlockPatch {
-                    block_id: BlockId(permission_id.clone()),
-                    role: pending_role,
-                    patch: ship_types::BlockPatch::PermissionResolve {
-                        resolution: if approved {
-                            ship_types::PermissionResolution::Approved
-                        } else {
-                            ship_types::PermissionResolution::Denied
-                        },
-                    },
+                    block_id: pending.block_id,
+                    role: pending.role,
+                    patch: ship_types::BlockPatch::PermissionResolve { resolution },
                 },
             );
         }

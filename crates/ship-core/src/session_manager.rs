@@ -25,6 +25,7 @@ pub enum SessionManagerError {
     Worktree(String),
     Store(String),
     PermissionNotFound(String),
+    PermissionOptionNotFound(String),
     SessionStartupNotReady,
 }
 
@@ -45,6 +46,9 @@ impl fmt::Display for SessionManagerError {
             Self::PermissionNotFound(permission_id) => {
                 write!(f, "permission not found: {permission_id}")
             }
+            Self::PermissionOptionNotFound(option_id) => {
+                write!(f, "permission option not found: {option_id}")
+            }
             Self::SessionStartupNotReady => f.write_str("session startup is not complete"),
         }
     }
@@ -56,9 +60,7 @@ impl std::error::Error for SessionManagerError {}
 pub struct PendingPermission {
     pub block_id: BlockId,
     pub role: Role,
-    pub tool_name: String,
-    pub arguments: String,
-    pub description: String,
+    pub request: PermissionRequest,
 }
 
 #[derive(Debug, Clone)]
@@ -570,7 +572,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         &mut self,
         session_id: &SessionId,
         permission_id: &str,
-        approved: bool,
+        option_id: &str,
     ) -> Result<(), SessionManagerError> {
         let (pending, handle) = {
             let session = self
@@ -594,9 +596,23 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         };
 
         self.agent_driver
-            .resolve_permission(&handle, permission_id, approved)
+            .resolve_permission(&handle, permission_id, option_id)
             .await
             .map_err(|error| SessionManagerError::Agent(error.message))?;
+
+        let resolution = pending
+            .request
+            .options
+            .as_ref()
+            .and_then(|options| options.iter().find(|option| option.option_id == option_id))
+            .map(|option| match option.kind {
+                ship_types::PermissionOptionKind::AllowOnce
+                | ship_types::PermissionOptionKind::AllowAlways => PermissionResolution::Approved,
+                ship_types::PermissionOptionKind::RejectOnce
+                | ship_types::PermissionOptionKind::RejectAlways
+                | ship_types::PermissionOptionKind::Other => PermissionResolution::Denied,
+            })
+            .ok_or_else(|| SessionManagerError::PermissionOptionNotFound(option_id.to_owned()))?;
 
         let session = self
             .sessions
@@ -616,13 +632,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             SessionEvent::BlockPatch {
                 block_id: pending.block_id,
                 role: pending.role,
-                patch: BlockPatch::PermissionResolve {
-                    resolution: if approved {
-                        PermissionResolution::Approved
-                    } else {
-                        PermissionResolution::Denied
-                    },
-                },
+                patch: BlockPatch::PermissionResolve { resolution },
             },
         );
 
@@ -1013,32 +1023,42 @@ pub fn apply_event_to_materialized_state(session: &mut ActiveSession, event: &Se
             }
 
             if let ContentBlock::Permission {
+                permission_id,
+                tool_call_id,
                 tool_name,
                 arguments,
                 description,
+                kind,
+                target,
+                raw_input,
+                options,
                 ..
             } = block
             {
-                let permission_id = block_id.0.to_string();
+                let permission_id = permission_id
+                    .clone()
+                    .unwrap_or_else(|| block_id.0.to_string());
+                let request = PermissionRequest {
+                    permission_id: permission_id.clone(),
+                    tool_call_id: tool_call_id.clone(),
+                    tool_name: tool_name.clone(),
+                    arguments: arguments.clone(),
+                    description: description.clone(),
+                    kind: *kind,
+                    target: target.clone(),
+                    raw_input: raw_input.clone(),
+                    options: options.clone(),
+                };
                 session.pending_permissions.insert(
                     permission_id.clone(),
                     PendingPermission {
                         block_id: block_id.clone(),
                         role: *role,
-                        tool_name: tool_name.clone(),
-                        arguments: arguments.clone(),
-                        description: description.clone(),
+                        request: request.clone(),
                     },
                 );
 
-                let state = AgentState::AwaitingPermission {
-                    request: PermissionRequest {
-                        permission_id,
-                        tool_name: tool_name.clone(),
-                        arguments: arguments.clone(),
-                        description: description.clone(),
-                    },
-                };
+                let state = AgentState::AwaitingPermission { request };
                 match role {
                     Role::Captain => session.captain.state = state,
                     Role::Mate => session.mate.state = state,
@@ -1105,23 +1125,53 @@ pub fn apply_block_patch(block: &mut ContentBlock, patch: &BlockPatch) {
             }
         }
         BlockPatch::ToolCallUpdate {
+            tool_name,
+            kind,
+            target,
+            raw_input,
+            raw_output,
             status,
             locations,
             content,
+            error,
         } => {
             if let ContentBlock::ToolCall {
+                tool_name: existing_tool_name,
+                kind: existing_kind,
+                target: existing_target,
+                raw_input: existing_raw_input,
+                raw_output: existing_raw_output,
                 locations: existing_locations,
                 status: existing_status,
                 content: existing_content,
+                error: existing_error,
                 ..
             } = block
             {
+                if let Some(tool_name) = tool_name {
+                    *existing_tool_name = tool_name.clone();
+                }
+                if let Some(kind) = kind {
+                    *existing_kind = Some(*kind);
+                }
+                if let Some(target) = target {
+                    *existing_target = Some(target.clone());
+                }
+                if let Some(raw_input) = raw_input {
+                    *existing_raw_input = Some(raw_input.clone());
+                }
+                if let Some(raw_output) = raw_output {
+                    *existing_raw_output = Some(raw_output.clone());
+                }
                 *existing_status = *status;
                 if let Some(locations) = locations {
                     *existing_locations = locations.clone();
                 }
                 if let Some(content) = content {
                     *existing_content = content.clone();
+                }
+                if let Some(error) = error {
+                    *existing_error = Some(error.clone());
                 }
             }
         }

@@ -40,7 +40,7 @@ enum DriverCommand {
     },
     ResolvePermission {
         permission_id: String,
-        approved: bool,
+        option_id: String,
         response: oneshot::Sender<Result<(), AgentError>>,
     },
     Kill {
@@ -222,7 +222,7 @@ impl AgentDriver for AcpAgentDriver {
         &self,
         handle: &AgentHandle,
         permission_id: &str,
-        approved: bool,
+        option_id: &str,
     ) -> Result<(), AgentError> {
         let command_tx = {
             let handles = self.handles.lock().expect("acp handles mutex poisoned");
@@ -239,7 +239,7 @@ impl AgentDriver for AcpAgentDriver {
         command_tx
             .send(DriverCommand::ResolvePermission {
                 permission_id: permission_id.to_owned(),
-                approved,
+                option_id: option_id.to_owned(),
                 response: response_tx,
             })
             .map_err(|error| AgentError {
@@ -395,11 +395,11 @@ async fn run_acp_worker(
             }
             DriverCommand::ResolvePermission {
                 permission_id,
-                approved,
+                option_id,
                 response,
             } => {
                 let result = client
-                    .resolve_permission(&permission_id, approved)
+                    .resolve_permission(&permission_id, &option_id)
                     .map_err(|message| AgentError { message });
                 let _ = response.send(result);
             }
