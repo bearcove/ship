@@ -2277,7 +2277,6 @@ dependencies = [
  "roam",
  "roam-websocket",
  "rust-mcp-sdk",
- "serde",
  "serde_json",
  "ship-core",
  "ship-service",
