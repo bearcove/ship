@@ -8,7 +8,12 @@ import { PlanUpdateBlock as PlanUpdateBlockComponent } from "./blocks/PlanUpdate
 import { ErrorBlock } from "./blocks/ErrorBlock";
 import { PermissionBlock } from "./blocks/PermissionBlock";
 import { shipClient } from "../api/client";
-import { agentPanelRoot, eventStream, stickyPlan } from "../styles/session-view.css";
+import {
+  agentPanelRoot,
+  agentPanelScrollArea,
+  eventStream,
+  stickyPlan,
+} from "../styles/session-view.css";
 
 interface Props {
   sessionId: string;
@@ -29,6 +34,8 @@ function latestPlan(entries: BlockEntry[]): PlanUpdateBlock | undefined {
 
 // r[ui.event-stream.grouping]
 // r[view.agent-panel.state]
+// r[ui.block.plan.position]
+// r[ui.block.plan.filtering]
 export function AgentPanel({ sessionId, agent, blocks, loading }: Props) {
   const plan = latestPlan(blocks);
 
@@ -103,18 +110,20 @@ export function AgentPanel({ sessionId, agent, blocks, loading }: Props) {
         </Flex>
       )}
 
-      {plan && (
-        <Box className={stickyPlan}>
-          <PlanUpdateBlockComponent block={plan} />
-        </Box>
-      )}
+      <Box ref={scrollRef} className={agentPanelScrollArea} onScroll={handleScroll}>
+        {plan && (
+          <Box className={stickyPlan}>
+            <PlanUpdateBlockComponent block={plan} />
+          </Box>
+        )}
 
-      <Box ref={scrollRef} className={eventStream} onScroll={handleScroll}>
-        {blocks
-          .filter((entry) => entry.block.tag !== "PlanUpdate")
-          .map((entry) => (
-            <Box key={entry.blockId}>{renderBlock(entry)}</Box>
-          ))}
+        <Box className={eventStream}>
+          {blocks
+            .filter((entry) => entry.block.tag !== "PlanUpdate")
+            .map((entry) => (
+              <Box key={entry.blockId}>{renderBlock(entry)}</Box>
+            ))}
+        </Box>
       </Box>
     </Box>
   );

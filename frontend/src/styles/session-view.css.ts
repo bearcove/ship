@@ -1,4 +1,4 @@
-import { style } from "@vanilla-extract/css";
+import { globalStyle, style } from "@vanilla-extract/css";
 
 export const sessionViewRoot = style({
   display: "flex",
@@ -87,6 +87,13 @@ export const agentPanelRoot = style({
   overflow: "hidden",
 });
 
+export const agentPanelScrollArea = style({
+  flex: 1,
+  overflowY: "auto",
+  display: "flex",
+  flexDirection: "column",
+});
+
 export const agentHeader = style({
   display: "flex",
   flexDirection: "column",
@@ -103,18 +110,20 @@ export const agentHeaderRow = style({
 });
 
 export const stickyPlan = style({
+  position: "sticky",
+  top: 0,
+  zIndex: 1,
   flexShrink: 0,
   padding: "var(--space-2) var(--space-3)",
   borderBottom: "1px solid var(--gray-a4)",
+  background: "var(--gray-1)",
 });
 
 export const eventStream = style({
-  flex: 1,
-  overflowY: "auto",
-  padding: "var(--space-3)",
   display: "flex",
   flexDirection: "column",
   gap: "var(--space-2)",
+  padding: "var(--space-3)",
 });
 
 export const taskBar = style({
@@ -179,6 +188,52 @@ export const diffRemove = style({
 export const diffContext = style({
   display: "block",
   color: "var(--gray-11)",
+});
+
+export const textBlockRoot = style({
+  color: "var(--gray-12)",
+  fontSize: "var(--font-size-2)",
+  lineHeight: "var(--line-height-3)",
+});
+
+globalStyle(`${textBlockRoot} :where(p, ul, ol, blockquote)`, {
+  margin: "0 0 var(--space-2)",
+});
+
+globalStyle(
+  `${textBlockRoot} :where(p:last-child, ul:last-child, ol:last-child, blockquote:last-child)`,
+  {
+    marginBottom: "0",
+  },
+);
+
+globalStyle(`${textBlockRoot} :where(ul, ol)`, {
+  paddingLeft: "var(--space-5)",
+});
+
+globalStyle(`${textBlockRoot} :where(pre)`, {
+  margin: 0,
+});
+
+export const textBlockCodeBlock = style({
+  overflow: "hidden",
+  borderRadius: "var(--radius-2)",
+});
+
+globalStyle(`${textBlockCodeBlock} pre`, {
+  margin: 0,
+  overflowX: "auto",
+});
+
+export const textBlockCodeFallback = style({
+  margin: 0,
+  padding: "var(--space-2)",
+  borderRadius: "var(--radius-2)",
+  background: "var(--gray-a2)",
+  fontFamily: "monospace",
+  fontSize: "var(--font-size-1)",
+  whiteSpace: "pre-wrap",
+  overflowX: "auto",
 });
 
 export const steerReviewCard = style({

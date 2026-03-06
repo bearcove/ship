@@ -9,6 +9,10 @@ const hmrClientPort = process.env.SHIP_VITE_HMR_CLIENT_PORT
 export default defineConfig({
   clearScreen: false,
   plugins: [react(), vanillaExtractPlugin()],
+  test: {
+    environment: "jsdom",
+    setupFiles: "./src/test/setup.ts",
+  },
   server: {
     host: "127.0.0.1",
     strictPort: true,
