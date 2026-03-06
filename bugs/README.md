@@ -34,3 +34,8 @@ Open bugs:
 - [021-websocket-client-invalidation-leaks-connections.md](bugs/021-websocket-client-invalidation-leaks-connections.md)
 - [022-session-startup-status-belongs-in-feed.md](bugs/022-session-startup-status-belongs-in-feed.md)
 - [023-session-startup-should-not-disable-steer-input.md](bugs/023-session-startup-should-not-disable-steer-input.md)
+- [024-session-list-empty-state-duplicates-primary-cta.md](bugs/024-session-list-empty-state-duplicates-primary-cta.md)
+- [025-session-list-filter-context-does-not-feel-persistent.md](bugs/025-session-list-filter-context-does-not-feel-persistent.md)
+- [026-session-startup-takes-too-long-and-looks-like-timeout-behavior.md](bugs/026-session-startup-takes-too-long-and-looks-like-timeout-behavior.md)
+- [027-structured-toolcall-schema-drift-breaks-subscription.md](bugs/027-structured-toolcall-schema-drift-breaks-subscription.md)
+- [028-session-feed-does-not-render-the-conversation-model-clearly.md](bugs/028-session-feed-does-not-render-the-conversation-model-clearly.md)
