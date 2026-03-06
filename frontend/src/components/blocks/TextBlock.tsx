@@ -68,8 +68,12 @@ export function TextBlock({ block }: Props) {
       <ReactMarkdown
         components={{
           code({ children, className }: { children?: React.ReactNode; className?: string }) {
-            const code = String(children ?? "").replace(/\n$/, "");
-            const isBlock = Boolean(className?.startsWith("language-")) || code.includes("\n");
+            const rawCode = String(children ?? "");
+            const isBlock =
+              Boolean(className?.startsWith("language-")) ||
+              rawCode.includes("\n") ||
+              rawCode.endsWith("\n");
+            const code = rawCode.replace(/\n$/, "");
             if (isBlock) {
               return <MarkdownCodeBlock className={className} code={code} />;
             }

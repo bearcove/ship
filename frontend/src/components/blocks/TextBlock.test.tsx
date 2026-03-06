@@ -25,4 +25,18 @@ describe("TextBlock", () => {
       expect(container.querySelector(".shiki")).toBeInTheDocument();
     });
   });
+
+  // r[verify ui.block.text]
+  it("renders unlabeled fenced code blocks through the block-code path", () => {
+    renderWithTheme(
+      <TextBlock
+        block={{
+          tag: "Text",
+          text: "```\nplain block\n```",
+        }}
+      />,
+    );
+
+    expect(screen.getByText("plain block").closest("pre")).toBeInTheDocument();
+  });
 });
