@@ -160,8 +160,8 @@ describe("SessionViewPage UX slice", () => {
     const captainInput = screen.getAllByLabelText("Captain steer input")[0];
     const mateInput = screen.getAllByLabelText("Mate steer input")[0];
 
-    expect(screen.getAllByText("Working").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Idle").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Review pending").length).toBeGreaterThan(0);
+    expect(screen.getByText("Awaiting review")).toBeInTheDocument();
 
     fireEvent.change(captainInput, { target: { value: "Ask the captain to tighten the review." } });
     fireEvent.keyDown(captainInput, { key: "Enter", metaKey: true });
@@ -179,5 +179,30 @@ describe("SessionViewPage UX slice", () => {
     await waitFor(() => {
       expect(mocks.steer).toHaveBeenCalledWith("session-1", "Apply the captain notes directly.");
     });
+  });
+
+  // r[verify ui.task-bar.actions]
+  // r[verify ui.steer-review.layout]
+  it("shows captain steer review without stale accept actions in steer-pending state", async () => {
+    mocks.session = {
+      ...makeSession(),
+      current_task: {
+        id: "task-1",
+        description: "Ship the captain-led workflow",
+        status: { tag: "SteerPending" },
+      },
+      pending_steer: "Tell the mate to tighten the review loop.",
+    };
+
+    renderPage();
+
+    expect(screen.getByText(/Captain drafted the next steer/)).toBeInTheDocument();
+    expect(screen.getByText("Captain's steer — awaiting your review")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send to Mate" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Accept mate work" })).not.toBeInTheDocument();
+    expect(screen.getAllByText("Captain steer pending").length).toBeGreaterThan(0);
+    expect(
+      screen.getByText("Send your own steer here to override the captain's pending draft."),
+    ).toBeInTheDocument();
   });
 });

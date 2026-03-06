@@ -18,6 +18,21 @@ interface Props {
   taskStatus: TaskStatus | null;
 }
 
+function stateLabel(agentStateTag: Props["agentStateTag"]): string {
+  switch (agentStateTag) {
+    case "Working":
+      return "Working";
+    case "Idle":
+      return "Ready";
+    case "AwaitingPermission":
+      return "Needs permission";
+    case "ContextExhausted":
+      return "Context exhausted";
+    case "Error":
+      return "Error";
+  }
+}
+
 function getStatusCopy(
   role: Role,
   agentStateTag: Props["agentStateTag"],
@@ -35,32 +50,88 @@ function getStatusCopy(
     };
   }
 
+  if (agentStateTag === "AwaitingPermission") {
+    return {
+      label: stateLabel(agentStateTag),
+      hint: "Approve the pending permission request before sending more guidance.",
+      disabled: true,
+    };
+  }
+
+  if (agentStateTag === "ContextExhausted") {
+    return {
+      label: stateLabel(agentStateTag),
+      hint: "Rotate or retry the agent before sending more guidance.",
+      disabled: true,
+    };
+  }
+
+  if (agentStateTag === "Error") {
+    return {
+      label: stateLabel(agentStateTag),
+      hint: "Retry the agent before sending more guidance.",
+      disabled: true,
+    };
+  }
+
   if (role.tag === "Mate") {
-    if (taskStatus?.tag === "ReviewPending" || taskStatus?.tag === "SteerPending") {
+    if (taskStatus === null) {
       return {
-        label: agentStateTag === "Working" ? "Working" : "Idle",
-        hint: "Send direct steer to the mate.",
+        label: "No active task",
+        hint: "Assign a task before steering the mate directly.",
+        disabled: true,
+      };
+    }
+
+    if (taskStatus.tag === "SteerPending") {
+      return {
+        label: "Captain steer pending",
+        hint: "Send your own steer here to override the captain's pending draft.",
+        disabled: false,
+      };
+    }
+
+    if (taskStatus.tag === "ReviewPending") {
+      return {
+        label: "Awaiting review",
+        hint: "Need to bypass the captain? Send human steer directly to the mate.",
         disabled: false,
       };
     }
 
     return {
-      label: agentStateTag === "Working" ? "Working" : "Idle",
-      hint: "Mate direct steer becomes available when review is pending.",
-      disabled: true,
+      label: stateLabel(agentStateTag),
+      hint: "Human steer can redirect the mate at any time during the task.",
+      disabled: false,
     };
   }
 
   if (taskStatus === null) {
     return {
-      label: agentStateTag === "Working" ? "Working" : "Idle",
+      label: stateLabel(agentStateTag),
       hint: "Talk to the captain directly. Assign a task when you want work to start.",
       disabled: false,
     };
   }
 
+  if (taskStatus.tag === "SteerPending") {
+    return {
+      label: "Steer pending",
+      hint: "Ask the captain to revise or clarify the pending steer before you send it.",
+      disabled: false,
+    };
+  }
+
+  if (taskStatus.tag === "ReviewPending") {
+    return {
+      label: "Review pending",
+      hint: "Ask the captain to review the mate's latest work or draft the next steer.",
+      disabled: false,
+    };
+  }
+
   return {
-    label: agentStateTag === "Working" ? "Working" : "Idle",
+    label: stateLabel(agentStateTag),
     hint: "Send direct guidance to the captain.",
     disabled: false,
   };
@@ -107,7 +178,7 @@ export function InlineAgentComposer({
 
   return (
     <Flex className={composerRoot} direction="column" gap="2">
-      <Flex align="center" justify="between" gap="2">
+      <Flex direction="column" gap="1">
         <Text className={composerStatus} size="1" color="gray">
           {status.label}
         </Text>

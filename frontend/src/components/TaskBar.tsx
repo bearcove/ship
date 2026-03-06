@@ -218,13 +218,13 @@ export function TaskBar({ sessionId, startupState, task }: Props) {
               loading={actionLoading}
               onClick={handleCancel}
             >
-              Cancel
+              Cancel task
             </Button>
           )}
-          {(task?.status.tag === "ReviewPending" || task?.status.tag === "SteerPending") && (
+          {task?.status.tag === "ReviewPending" && (
             <>
               <Button size="2" color="green" loading={actionLoading} onClick={handleAccept}>
-                Accept
+                Accept mate work
               </Button>
               <Button
                 size="2"
@@ -233,9 +233,20 @@ export function TaskBar({ sessionId, startupState, task }: Props) {
                 loading={actionLoading}
                 onClick={handleCancel}
               >
-                Cancel
+                Cancel task
               </Button>
             </>
+          )}
+          {task?.status.tag === "SteerPending" && (
+            <Button
+              size="2"
+              color="red"
+              variant="soft"
+              loading={actionLoading}
+              onClick={handleCancel}
+            >
+              Cancel task
+            </Button>
           )}
           {!task && <NewTaskDialog sessionId={sessionId} startupState={startupState} />}
           <TaskHistoryPopover sessionId={sessionId} />

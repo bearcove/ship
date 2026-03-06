@@ -39,10 +39,10 @@ function getIdleMessage(
     return "Session startup failed.";
   }
   if (taskStatus?.tag === "ReviewPending")
-    return "Mate has finished — review and accept, reject, or steer.";
+    return "Mate finished — review the work or send the next steer.";
   if (taskStatus?.tag === "SteerPending")
-    return "Captain's steer is ready — review and send to the mate.";
-  if (mateAwaitingPermission) return "Mate is waiting for permission approval.";
+    return "Captain drafted the next steer — review it above or override it with your own.";
+  if (mateAwaitingPermission) return "Mate needs permission approval before it can continue.";
   return null;
 }
 
