@@ -1,16 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import {
-  Badge,
-  Box,
-  Callout,
-  Flex,
-  IconButton,
-  Spinner,
-  Switch,
-  Tabs,
-  Text,
-} from "@radix-ui/themes";
+import { Box, Callout, Flex, IconButton, Spinner, Switch, Tabs, Text } from "@radix-ui/themes";
 import { Clock, SpeakerHigh, SpeakerSlash } from "@phosphor-icons/react";
 import { useSoundEnabled } from "../context/SoundContext";
 import { useSession } from "../hooks/useSession";
@@ -128,10 +118,17 @@ export function SessionViewPage() {
         </Flex>
         {/* r[ui.autonomy.toggle] */}
         <Flex className={autonomyControls}>
-          <Switch size="2" checked={autonomous} onCheckedChange={setAutonomous} />
-          <Badge className={autonomyBadge} color={autonomous ? "blue" : "gray"} size="1">
-            {autonomous ? "Autonomous" : "Human-in-the-loop"}
-          </Badge>
+          <Switch
+            size="2"
+            checked={autonomous}
+            onCheckedChange={setAutonomous}
+            aria-label={autonomous ? "Autonomous mode enabled" : "Human-in-the-loop mode enabled"}
+          />
+          <Box
+            className={autonomyBadge}
+            aria-hidden="true"
+            data-mode={autonomous ? "auto" : "hitl"}
+          />
         </Flex>
         <IconButton
           variant="ghost"

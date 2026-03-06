@@ -135,7 +135,10 @@ describe("SessionViewPage UX slice", () => {
     expect(screen.getByText("feature/breadcrumbs")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /close session/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /mute sounds/i })).toBeInTheDocument();
-    expect(screen.getByText("Human-in-the-loop")).toBeInTheDocument();
+    expect(
+      screen.getByRole("switch", { name: "Human-in-the-loop mode enabled" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Human-in-the-loop")).not.toBeInTheDocument();
     expect(screen.queryByText("Autonomous")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "roam" }));
