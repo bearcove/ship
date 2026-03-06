@@ -353,6 +353,7 @@ async fn run_acp_worker(
         .map_err(acp_error)?;
     tracing::debug!(role = ?role, kind = ?kind, "initialized ACP connection");
 
+    tracing::info!(role = ?role, kind = ?kind, "starting ACP session creation");
     let session_id = connection
         .new_session(build_new_session_request(&config))
         .await

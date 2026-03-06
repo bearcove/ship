@@ -2,6 +2,7 @@ use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Instant;
 
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -51,6 +52,7 @@ pub async fn serve(listener: UnixListener, tools: Vec<ToolDefinition>, handler: 
     loop {
         match listener.accept().await {
             Ok((stream, _)) => {
+                tracing::info!("captain mcp accepted connection");
                 let tools = tools.clone();
                 let handler = handler.clone();
                 tokio::spawn(async move {
@@ -68,7 +70,9 @@ pub async fn serve(listener: UnixListener, tools: Vec<ToolDefinition>, handler: 
 }
 
 pub async fn run_proxy(socket_path: PathBuf) -> io::Result<()> {
+    tracing::info!(socket = %socket_path.display(), "captain mcp proxy connecting to unix socket");
     let stream = UnixStream::connect(socket_path).await?;
+    tracing::info!("captain mcp proxy connected to unix socket");
     let (mut socket_reader, mut socket_writer) = stream.into_split();
     let mut stdin = tokio::io::stdin();
     let mut stdout = tokio::io::stdout();
@@ -96,6 +100,7 @@ async fn serve_connection(
     let mut reader = BufReader::new(reader);
 
     while let Some(message) = read_message(&mut reader).await? {
+        let request_started_at = Instant::now();
         let request: JsonRpcRequest = match serde_json::from_value(message) {
             Ok(request) => request,
             Err(error) => {
@@ -113,6 +118,7 @@ async fn serve_connection(
                 continue;
             }
         };
+        tracing::info!(method = request.method, "captain mcp received request");
 
         let Some(id) = request.id.clone() else {
             continue;
@@ -185,6 +191,11 @@ async fn serve_connection(
         };
 
         write_message(&mut writer, &response).await?;
+        tracing::info!(
+            method = request.method,
+            elapsed_ms = request_started_at.elapsed().as_millis(),
+            "captain mcp sent response"
+        );
     }
 
     Ok(())
