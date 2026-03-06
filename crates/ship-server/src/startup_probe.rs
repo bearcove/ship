@@ -33,9 +33,19 @@ struct ProbeState {
     ship: ShipImpl,
 }
 
-struct CaptainMcpServerArgs {
+struct McpServerArgs {
     session_id: SessionId,
     server_ws_url: String,
+}
+
+enum McpServerKind {
+    Captain,
+    Mate,
+}
+
+struct DetectedMcpServer {
+    kind: McpServerKind,
+    args: McpServerArgs,
 }
 
 struct ProbeArgs {
@@ -142,12 +152,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }))
         .init();
 
-    if let Some(args) = parse_captain_mcp_server_args() {
-        captain_mcp::run_stdio_server(captain_mcp::CaptainMcpServerArgs {
-            session_id: args.session_id,
-            server_ws_url: args.server_ws_url,
-        })
-        .await?;
+    if let Some(detected) = detect_mcp_server() {
+        match detected.kind {
+            McpServerKind::Captain => {
+                captain_mcp::run_captain_stdio_server(captain_mcp::CaptainMcpServerArgs {
+                    session_id: detected.args.session_id,
+                    server_ws_url: detected.args.server_ws_url,
+                })
+                .await?;
+            }
+            McpServerKind::Mate => {
+                captain_mcp::run_mate_stdio_server(captain_mcp::MateMcpServerArgs {
+                    session_id: detected.args.session_id,
+                    server_ws_url: detected.args.server_ws_url,
+                })
+                .await?;
+            }
+        }
         return Ok(());
     }
 
@@ -285,12 +306,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn parse_captain_mcp_server_args() -> Option<CaptainMcpServerArgs> {
+fn detect_mcp_server() -> Option<DetectedMcpServer> {
     let mut args = env::args().skip(1);
     let command = args.next()?;
-    if command != "mcp-server" {
-        return None;
-    }
+    let kind = match command.as_str() {
+        "captain-mcp-server" => McpServerKind::Captain,
+        "mate-mcp-server" => McpServerKind::Mate,
+        _ => return None,
+    };
 
     let session_flag = args.next()?;
     if session_flag != "--session" {
@@ -303,9 +326,12 @@ fn parse_captain_mcp_server_args() -> Option<CaptainMcpServerArgs> {
         return None;
     }
 
-    Some(CaptainMcpServerArgs {
-        session_id,
-        server_ws_url: args.next()?,
+    Some(DetectedMcpServer {
+        kind,
+        args: McpServerArgs {
+            session_id,
+            server_ws_url: args.next()?,
+        },
     })
 }
 
@@ -334,7 +360,7 @@ async fn ws_handler(State(state): State<ProbeState>, mut request: Request) -> im
 
         let link = roam_websocket::WsLink::new(ws_stream);
         match roam::acceptor(link)
-            .on_connection(ship.captain_mcp_connection_acceptor())
+            .on_connection(ship.ship_mcp_connection_acceptor())
             .establish::<ShipClient>(ShipDispatcher::new(ship))
             .await
         {

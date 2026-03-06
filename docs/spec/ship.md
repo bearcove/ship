@@ -789,42 +789,75 @@ these are MCP tools, not ACP filesystem/terminal capabilities.
 
 ### Captain Tools
 
-The captain communicates decisions to Ship via ACP extension tools, exposed
-as MCP tools on the captain's session. This avoids fragile text parsing.
-
-r[captain.tool.steer]
-The captain MUST have access to a `ship_steer` tool that takes a `message`
-argument (string). When the captain calls this tool, the backend interprets
-the message as a steer instruction for the mate on the current task.
-
-r[captain.tool.accept]
-The captain MUST have access to a `ship_accept` tool that takes an optional
-`summary` argument (string). When the captain calls this tool, the backend
-transitions the task to accepted.
-
-r[captain.tool.reject]
-The captain MUST have access to a `ship_reject` tool that takes a required
-`reason` argument (string) and an optional `message` argument (string).
-Rejection means the captain believes the current approach is fundamentally
-wrong. The backend cancels the mate's in-progress prompt (if any) via ACP
-`cancel`, transitions the task to `Cancelled` with the reason, and surfaces
-the captain's message to the human. The human can then assign a new task with
-a different approach. This is the same codepath as `proto.cancel` — the only
-difference is the initiator (captain vs human) and that the captain provides
-a reason.
+The captain communicates decisions to Ship via MCP tools on its session.
+The human discusses goals with the captain; the captain assigns tasks to the
+mate and manages the work cycle. This avoids fragile text parsing.
 
 r[captain.tool.implementation]
 Captain tools MUST be implemented as MCP tools served by Ship itself. The
-captain's `NewSessionRequest` MUST include Ship's MCP server in its
+captain's `NewSessionRequest` MUST include Ship's captain MCP server in its
 `mcp_servers` list so the captain can discover and call these tools.
 
 r[captain.tool.transport]
-Ship MUST expose its captain MCP tools via a per-captain stdio proxy. For each
-captain session, Ship creates a private local transport owned by the server and
-passes a stdio MCP server entry in the captain's `NewSessionRequest`. The
-captain spawns Ship's stdio proxy command, Ship handles `ship_steer`,
-`ship_accept`, and `ship_reject` requests for that specific session, and no
-public network listener is required.
+Ship MUST expose captain MCP tools via a per-session stdio proxy. For each
+captain session, Ship spawns a dedicated stdio MCP server process and passes
+it in the captain's `NewSessionRequest`. No public network listener is
+required.
+
+r[captain.tool.assign]
+The captain MUST have access to a `captain_assign` tool that takes a
+`description` argument (string). When called, the backend creates a new task
+and starts the mate working on it immediately.
+
+r[captain.tool.steer]
+The captain MUST have access to a `captain_steer` tool that takes a `message`
+argument (string). This is fire-and-forget: if the mate is blocked on
+`mate_ask_captain` or `mate_submit`, the message resolves that pending call;
+otherwise it is injected into the mate's stream directly.
+
+r[captain.tool.accept]
+The captain MUST have access to a `captain_accept` tool that takes an optional
+`summary` argument (string). When called, the backend resolves any pending
+`mate_submit` with an accepted outcome and transitions the task to accepted.
+
+r[captain.tool.cancel]
+The captain MUST have access to a `captain_cancel` tool that takes an optional
+`reason` argument (string). The backend cancels the mate's in-progress work,
+resolves any pending `mate_submit` with a cancelled outcome, and transitions
+the task to `Cancelled`.
+
+r[captain.tool.notify-human]
+The captain MUST have access to a `captain_notify_human` tool that takes a
+`message` argument (string). This blocks until the human responds via the UI,
+then returns the human's reply text to the captain.
+
+### Mate Tools
+
+r[mate.tool.implementation]
+Mate tools MUST be implemented as MCP tools served by Ship itself. The mate's
+`NewSessionRequest` MUST include Ship's mate MCP server in its `mcp_servers`
+list. A separate per-session stdio proxy is spawned for the mate.
+
+r[mate.tool.send-update]
+The mate MUST have access to a `mate_send_update` tool that takes a `message`
+argument (string). The message is injected into the captain's context as a
+user message and the captain is prompted. Returns immediately without waiting
+for a response.
+
+r[mate.tool.ask-captain]
+The mate MUST have access to a `mate_ask_captain` tool that takes a `question`
+argument (string). The question is injected into the captain's context and the
+captain is prompted. This call blocks until the captain calls `captain_steer`,
+at which point the captain's message is returned as the answer.
+
+r[mate.tool.submit]
+The mate MUST have access to a `mate_submit` tool that takes a `summary`
+argument (string). The mate calls this when it believes its work is complete.
+The backend transitions the task to `ReviewPending`, notifies the captain, and
+blocks until the captain responds:
+- `captain_accept` → returns an accepted message; task transitions to accepted.
+- `captain_steer` → returns captain feedback; mate continues working.
+- `captain_cancel` → returns a cancellation error; task transitions to cancelled.
 
 ### Captain Review Cycle
 

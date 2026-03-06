@@ -1,4 +1,7 @@
 #[path = "captain_mcp_server.rs"]
-mod server;
+mod captain_server;
+#[path = "mate_mcp_server.rs"]
+mod mate_server;
 
-pub use server::{CaptainMcpServerArgs, run_stdio_server};
+pub use captain_server::{CaptainMcpServerArgs, run_stdio_server as run_captain_stdio_server};
+pub use mate_server::{MateMcpServerArgs, run_stdio_server as run_mate_stdio_server};

@@ -1,7 +1,7 @@
 use roam::Tx;
 use ship_types::{
-    AgentDiscovery, AssignTaskResponse, CaptainToolCallResponse, CloseSessionRequest,
-    CloseSessionResponse, CreateSessionRequest, CreateSessionResponse, ProjectInfo, ProjectName,
+    AgentDiscovery, AssignTaskResponse, CloseSessionRequest, CloseSessionResponse,
+    CreateSessionRequest, CreateSessionResponse, McpToolCallResponse, ProjectInfo, ProjectName,
     Role, SessionDetail, SessionId, SessionSummary, SubscribeMessage,
 };
 
@@ -62,11 +62,34 @@ pub trait Ship {
     async fn subscribe_events(&self, session: SessionId, output: Tx<SubscribeMessage>);
 }
 
+// r[captain.tool.implementation]
 #[roam::service]
 pub trait CaptainMcp {
-    async fn steer(&self, message: String) -> CaptainToolCallResponse;
+    // r[captain.tool.assign]
+    async fn captain_assign(&self, description: String) -> McpToolCallResponse;
 
-    async fn accept(&self, summary: Option<String>) -> CaptainToolCallResponse;
+    // r[captain.tool.steer]
+    async fn captain_steer(&self, message: String) -> McpToolCallResponse;
 
-    async fn reject(&self, reason: String, message: Option<String>) -> CaptainToolCallResponse;
+    // r[captain.tool.accept]
+    async fn captain_accept(&self, summary: Option<String>) -> McpToolCallResponse;
+
+    // r[captain.tool.cancel]
+    async fn captain_cancel(&self, reason: Option<String>) -> McpToolCallResponse;
+
+    // r[captain.tool.notify-human]
+    async fn captain_notify_human(&self, message: String) -> McpToolCallResponse;
+}
+
+// r[mate.tool.implementation]
+#[roam::service]
+pub trait MateMcp {
+    // r[mate.tool.send-update]
+    async fn mate_send_update(&self, message: String) -> McpToolCallResponse;
+
+    // r[mate.tool.ask-captain]
+    async fn mate_ask_captain(&self, question: String) -> McpToolCallResponse;
+
+    // r[mate.tool.submit]
+    async fn mate_submit(&self, summary: String) -> McpToolCallResponse;
 }

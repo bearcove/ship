@@ -10,10 +10,10 @@ use rust_mcp_sdk::schema::{
 };
 use rust_mcp_sdk::{McpServer, StdioTransport, ToMcpServerHandler, TransportOptions};
 use serde_json::{Value, json};
-use ship_service::CaptainMcpClient;
+use ship_service::MateMcpClient;
 use ship_types::SessionId;
 
-pub struct CaptainMcpServerArgs {
+pub struct MateMcpServerArgs {
     pub session_id: SessionId,
     pub server_ws_url: String,
 }
@@ -26,13 +26,13 @@ struct ToolDefinition {
 }
 
 #[derive(Clone)]
-struct CaptainMcpHandler {
-    client: CaptainMcpClient,
+struct MateMcpHandler {
+    client: MateMcpClient,
     tools: Arc<Vec<ToolDefinition>>,
 }
 
 #[async_trait]
-impl ServerHandler for CaptainMcpHandler {
+impl ServerHandler for MateMcpHandler {
     async fn handle_list_tools_request(
         &self,
         _params: Option<PaginatedRequestParams>,
@@ -52,55 +52,33 @@ impl ServerHandler for CaptainMcpHandler {
     ) -> Result<CallToolResult, CallToolError> {
         let arguments = params.arguments.map(Value::Object).unwrap_or(Value::Null);
         let result = match params.name.as_str() {
-            // r[captain.tool.assign]
-            "captain_assign" => {
-                let Some(description) = arguments.get("description").and_then(Value::as_str) else {
-                    return Ok(tool_result("missing required argument: description", true));
-                };
-                self.client
-                    .captain_assign(description.to_owned())
-                    .await
-                    .map_err(call_tool_rpc_error)?
-            }
-            // r[captain.tool.steer]
-            "captain_steer" => {
+            // r[mate.tool.send-update]
+            "mate_send_update" => {
                 let Some(message) = arguments.get("message").and_then(Value::as_str) else {
                     return Ok(tool_result("missing required argument: message", true));
                 };
                 self.client
-                    .captain_steer(message.to_owned())
+                    .mate_send_update(message.to_owned())
                     .await
                     .map_err(call_tool_rpc_error)?
             }
-            // r[captain.tool.accept]
-            "captain_accept" => {
-                let summary = arguments
-                    .get("summary")
-                    .and_then(Value::as_str)
-                    .map(ToOwned::to_owned);
-                self.client
-                    .captain_accept(summary)
-                    .await
-                    .map_err(call_tool_rpc_error)?
-            }
-            // r[captain.tool.cancel]
-            "captain_cancel" => {
-                let reason = arguments
-                    .get("reason")
-                    .and_then(Value::as_str)
-                    .map(ToOwned::to_owned);
-                self.client
-                    .captain_cancel(reason)
-                    .await
-                    .map_err(call_tool_rpc_error)?
-            }
-            // r[captain.tool.notify-human]
-            "captain_notify_human" => {
-                let Some(message) = arguments.get("message").and_then(Value::as_str) else {
-                    return Ok(tool_result("missing required argument: message", true));
+            // r[mate.tool.ask-captain]
+            "mate_ask_captain" => {
+                let Some(question) = arguments.get("question").and_then(Value::as_str) else {
+                    return Ok(tool_result("missing required argument: question", true));
                 };
                 self.client
-                    .captain_notify_human(message.to_owned())
+                    .mate_ask_captain(question.to_owned())
+                    .await
+                    .map_err(call_tool_rpc_error)?
+            }
+            // r[mate.tool.submit]
+            "mate_submit" => {
+                let Some(summary) = arguments.get("summary").and_then(Value::as_str) else {
+                    return Ok(tool_result("missing required argument: summary", true));
+                };
+                self.client
+                    .mate_submit(summary.to_owned())
                     .await
                     .map_err(call_tool_rpc_error)?
             }
@@ -111,7 +89,7 @@ impl ServerHandler for CaptainMcpHandler {
     }
 }
 
-pub async fn run_stdio_server(args: CaptainMcpServerArgs) -> Result<(), String> {
+pub async fn run_stdio_server(args: MateMcpServerArgs) -> Result<(), String> {
     let ws_stream = tokio_tungstenite::connect_async(&args.server_ws_url)
         .await
         .map_err(|error| format!("failed to connect to ship server websocket: {error}"))?
@@ -129,15 +107,15 @@ pub async fn run_stdio_server(args: CaptainMcpServerArgs) -> Result<(), String> 
                 max_concurrent_requests: 64,
             },
             vec![
-                metadata_string("ship-service", "captain-mcp"),
+                metadata_string("ship-service", "mate-mcp"),
                 metadata_string_owned("ship-session-id", args.session_id.0.clone()),
             ],
         )
         .await
-        .map_err(|error| format!("failed to open captain MCP connection: {error:?}"))?;
+        .map_err(|error| format!("failed to open mate MCP connection: {error:?}"))?;
 
     let mut driver = roam::Driver::new(connection, ());
-    let client = CaptainMcpClient::from(driver.caller());
+    let client = MateMcpClient::from(driver.caller());
     let _driver_task = tokio::spawn(async move {
         driver.run().await;
     });
@@ -147,7 +125,7 @@ pub async fn run_stdio_server(args: CaptainMcpServerArgs) -> Result<(), String> 
     let server = server_runtime::create_server(McpServerOptions {
         server_details: server_details(),
         transport,
-        handler: CaptainMcpHandler {
+        handler: MateMcpHandler {
             client,
             tools: Arc::new(tool_definitions()),
         }
@@ -159,7 +137,7 @@ pub async fn run_stdio_server(args: CaptainMcpServerArgs) -> Result<(), String> 
     server
         .start()
         .await
-        .map_err(|error| format!("captain MCP server failed: {error}"))?;
+        .map_err(|error| format!("mate MCP server failed: {error}"))?;
     Ok(())
 }
 
@@ -169,7 +147,7 @@ fn server_details() -> InitializeResult {
             name: "ship".to_owned(),
             version: env!("CARGO_PKG_VERSION").to_owned(),
             title: Some("Ship".to_owned()),
-            description: Some("Ship captain MCP server".to_owned()),
+            description: Some("Ship mate MCP server".to_owned()),
             icons: Vec::new(),
             website_url: None,
         },
@@ -188,20 +166,8 @@ fn server_details() -> InitializeResult {
 fn tool_definitions() -> Vec<ToolDefinition> {
     vec![
         ToolDefinition {
-            name: "captain_assign",
-            description: "Assign a task to the mate. The mate will start working on it immediately.",
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "description": { "type": "string" }
-                },
-                "required": ["description"],
-                "additionalProperties": false,
-            }),
-        },
-        ToolDefinition {
-            name: "captain_steer",
-            description: "Send direction to the mate on the current task. Fire-and-forget: returns immediately.",
+            name: "mate_send_update",
+            description: "Send a progress update to the captain. Returns immediately without waiting for a response.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -212,36 +178,26 @@ fn tool_definitions() -> Vec<ToolDefinition> {
             }),
         },
         ToolDefinition {
-            name: "captain_accept",
-            description: "Accept the mate's submitted work. Only valid after the mate calls mate_submit.",
+            name: "mate_ask_captain",
+            description: "Ask the captain a question and wait for their response. Blocks until the captain replies via captain_steer.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "question": { "type": "string" }
+                },
+                "required": ["question"],
+                "additionalProperties": false,
+            }),
+        },
+        ToolDefinition {
+            name: "mate_submit",
+            description: "Submit completed work for captain review. Blocks until the captain accepts, steers, or cancels.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
                     "summary": { "type": "string" }
                 },
-                "additionalProperties": false,
-            }),
-        },
-        ToolDefinition {
-            name: "captain_cancel",
-            description: "Cancel the current task.",
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "reason": { "type": "string" }
-                },
-                "additionalProperties": false,
-            }),
-        },
-        ToolDefinition {
-            name: "captain_notify_human",
-            description: "Ask the human for guidance. Blocks until the human responds.",
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "message": { "type": "string" }
-                },
-                "required": ["message"],
+                "required": ["summary"],
                 "additionalProperties": false,
             }),
         },
@@ -273,7 +229,7 @@ fn tool_result(text: &str, is_error: bool) -> CallToolResult {
 }
 
 fn call_tool_rpc_error(error: impl std::fmt::Debug) -> CallToolError {
-    CallToolError::from_message(format!("captain MCP RPC failed: {error:?}"))
+    CallToolError::from_message(format!("mate MCP RPC failed: {error:?}"))
 }
 
 fn metadata_string<'a>(key: &'a str, value: &'a str) -> MetadataEntry<'a> {

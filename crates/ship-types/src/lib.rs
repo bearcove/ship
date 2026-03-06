@@ -566,7 +566,7 @@ pub mod protocol {
     }
 
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
-    pub struct CaptainToolCallResponse {
+    pub struct McpToolCallResponse {
         pub text: String,
         pub is_error: bool,
     }
@@ -702,9 +702,9 @@ pub use events::{
 pub use ids::{BlockId, ProjectName, SessionId, TaskId};
 pub use persistence::{CurrentTask, PersistedSession, SessionConfig, TaskContentRecord};
 pub use protocol::{
-    AgentDiscovery, AssignTaskResponse, AutonomyMode, CaptainToolCallResponse, CloseSessionRequest,
-    CloseSessionResponse, CreateSessionRequest, CreateSessionResponse, McpEnvVar, McpHeader,
-    McpHttpServerConfig, McpServerConfig, McpSseServerConfig, McpStdioServerConfig, ProjectInfo,
+    AgentDiscovery, AssignTaskResponse, AutonomyMode, CloseSessionRequest, CloseSessionResponse,
+    CreateSessionRequest, CreateSessionResponse, McpEnvVar, McpHeader, McpHttpServerConfig,
+    McpServerConfig, McpSseServerConfig, McpStdioServerConfig, McpToolCallResponse, ProjectInfo,
     SessionDetail, SessionSummary,
 };
 pub use session::{SessionStartupStage, SessionStartupState};

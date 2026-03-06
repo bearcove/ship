@@ -16,18 +16,42 @@ use ship_core::{
     archive_terminal_task, current_task_status, rebuild_materialized_from_event_log,
     resolve_mcp_servers, set_agent_state, transition_task,
 };
-use ship_service::{CaptainMcp, CaptainMcpDispatcher, Ship};
+use ship_service::{CaptainMcp, CaptainMcpDispatcher, MateMcp, MateMcpDispatcher, Ship};
 use ship_types::{
     AgentDiscovery, AgentKind, AgentSnapshot, AgentState, AssignTaskResponse, AutonomyMode,
-    BlockId, CaptainToolCallResponse, CloseSessionRequest, CloseSessionResponse, ContentBlock,
-    CreateSessionRequest, CreateSessionResponse, CurrentTask, McpServerConfig,
-    McpStdioServerConfig, PersistedSession, ProjectInfo, ProjectName, Role, SessionConfig,
-    SessionDetail, SessionEvent, SessionId, SessionStartupStage, SessionStartupState,
-    SessionSummary, SubscribeMessage, TaskId, TaskRecord, TaskStatus, ToolCallContent,
-    ToolCallStatus,
+    BlockId, CloseSessionRequest, CloseSessionResponse, ContentBlock, CreateSessionRequest,
+    CreateSessionResponse, CurrentTask, McpServerConfig, McpStdioServerConfig, McpToolCallResponse,
+    PersistedSession, ProjectInfo, ProjectName, Role, SessionConfig, SessionDetail, SessionEvent,
+    SessionId, SessionStartupStage, SessionStartupState, SessionSummary, SubscribeMessage, TaskId,
+    TaskRecord, TaskStatus, ToolCallContent, ToolCallStatus,
 };
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
+
+pub enum MateReviewOutcome {
+    Accepted { summary: Option<String> },
+    Feedback { message: String },
+    Cancelled { reason: Option<String> },
+}
+
+struct PendingMcpOps {
+    /// Sender to unblock `captain_notify_human` when the human responds.
+    human_reply: Option<tokio::sync::oneshot::Sender<String>>,
+    /// Sender to unblock `mate_ask_captain` when the captain steers.
+    captain_reply: Option<tokio::sync::oneshot::Sender<String>>,
+    /// Sender to unblock `mate_submit` when the captain accepts/steers/cancels.
+    mate_review: Option<tokio::sync::oneshot::Sender<MateReviewOutcome>>,
+}
+
+impl PendingMcpOps {
+    fn new() -> Self {
+        Self {
+            human_reply: None,
+            captain_reply: None,
+            mate_review: None,
+        }
+    }
+}
 
 // r[server.multi-repo]
 #[derive(Clone)]
@@ -38,6 +62,7 @@ pub struct ShipImpl {
     worktree_ops: Arc<GitWorktreeOps>,
     store: Arc<JsonSessionStore>,
     sessions: Arc<Mutex<HashMap<SessionId, ActiveSession>>>,
+    pending_mcp_ops: Arc<Mutex<HashMap<SessionId, PendingMcpOps>>>,
     server_ws_url: Arc<Mutex<String>>,
     startup_started_at: Arc<Mutex<HashMap<SessionId, Instant>>>,
 }
@@ -55,6 +80,7 @@ impl ShipImpl {
             worktree_ops: Arc::new(GitWorktreeOps),
             store: Arc::new(JsonSessionStore::new(sessions_dir)),
             sessions: Arc::new(Mutex::new(HashMap::new())),
+            pending_mcp_ops: Arc::new(Mutex::new(HashMap::new())),
             server_ws_url: Arc::new(Mutex::new("ws://127.0.0.1:9/ws".to_owned())),
             startup_started_at: Arc::new(Mutex::new(HashMap::new())),
         }
@@ -464,7 +490,7 @@ impl ShipImpl {
             name: "ship".to_owned(),
             command: command.display().to_string(),
             args: vec![
-                "mcp-server".to_owned(),
+                "captain-mcp-server".to_owned(),
                 "--session".to_owned(),
                 session_id.0.clone(),
                 "--server-ws-url".to_owned(),
@@ -474,8 +500,34 @@ impl ShipImpl {
         }))
     }
 
-    pub fn captain_mcp_connection_acceptor(&self) -> CaptainMcpConnectionAcceptor {
-        CaptainMcpConnectionAcceptor { ship: self.clone() }
+    async fn install_mate_mcp_server(
+        &self,
+        session_id: &SessionId,
+    ) -> Result<McpServerConfig, String> {
+        let command = std::env::current_exe()
+            .map_err(|error| format!("failed to locate current executable: {error}"))?;
+        let server_ws_url = self
+            .server_ws_url
+            .lock()
+            .expect("server websocket url mutex poisoned")
+            .clone();
+
+        Ok(McpServerConfig::Stdio(McpStdioServerConfig {
+            name: "ship".to_owned(),
+            command: command.display().to_string(),
+            args: vec![
+                "mate-mcp-server".to_owned(),
+                "--session".to_owned(),
+                session_id.0.clone(),
+                "--server-ws-url".to_owned(),
+                server_ws_url,
+            ],
+            env: Vec::new(),
+        }))
+    }
+
+    pub fn ship_mcp_connection_acceptor(&self) -> ShipMcpConnectionAcceptor {
+        ShipMcpConnectionAcceptor { ship: self.clone() }
     }
 
     async fn append_captain_tool_call(
@@ -541,50 +593,6 @@ impl ShipImpl {
         self.persist_session(session_id).await
     }
 
-    async fn queue_captain_steer_for_review(
-        &self,
-        session_id: &SessionId,
-        content: String,
-    ) -> Result<(), String> {
-        let mut replaced_pending_steer = false;
-        {
-            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
-            let active = sessions
-                .get_mut(session_id)
-                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-
-            let status = current_task_status(active).map_err(|error| error.to_string())?;
-            if status != TaskStatus::Assigned && status != TaskStatus::ReviewPending {
-                if status == TaskStatus::SteerPending {
-                    active.pending_steer = Some(content.clone());
-                    replaced_pending_steer = true;
-                } else {
-                    return Err("invalid task transition".to_owned());
-                }
-            }
-
-            if !replaced_pending_steer {
-                apply_event(
-                    active,
-                    SessionEvent::BlockAppend {
-                        block_id: BlockId::new(),
-                        role: Role::Captain,
-                        block: ContentBlock::Text {
-                            text: content.clone(),
-                            source: ship_types::TextSource::AgentMessage,
-                        },
-                    },
-                );
-
-                transition_task(active, TaskStatus::SteerPending)
-                    .map_err(|error| error.to_string())?;
-                active.pending_steer = Some(content);
-            }
-        }
-
-        self.persist_session(session_id).await
-    }
-
     async fn dispatch_steer_to_mate(
         &self,
         session_id: &SessionId,
@@ -600,6 +608,7 @@ impl ShipImpl {
             if status != TaskStatus::Assigned
                 && status != TaskStatus::ReviewPending
                 && status != TaskStatus::SteerPending
+                && status != TaskStatus::Working
             {
                 return Err("invalid task transition".to_owned());
             }
@@ -628,30 +637,6 @@ impl ShipImpl {
         });
 
         Ok(())
-    }
-
-    async fn captain_delegate_to_mate(
-        &self,
-        session_id: &SessionId,
-        content: String,
-    ) -> Result<AutonomyMode, String> {
-        let mode = {
-            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
-            sessions
-                .get(session_id)
-                .ok_or_else(|| format!("session not found: {}", session_id.0))?
-                .config
-                .autonomy_mode
-        };
-
-        if mode == AutonomyMode::Autonomous {
-            self.dispatch_steer_to_mate(session_id, content).await?;
-        } else {
-            self.queue_captain_steer_for_review(session_id, content)
-                .await?;
-        }
-
-        Ok(mode)
     }
 
     async fn accept_task(
@@ -742,33 +727,78 @@ impl ShipImpl {
         self.persist_session(session_id).await
     }
 
+    async fn captain_tool_assign(
+        &self,
+        session_id: &SessionId,
+        description: String,
+    ) -> Result<String, String> {
+        let task_id = self.start_task(session_id, description.clone()).await?;
+        self.append_captain_tool_call(
+            session_id,
+            "captain_assign",
+            json!({ "description": description }).to_string(),
+            vec![ToolCallContent::Text {
+                text: format!("Task {} assigned to the mate.", task_id.0),
+            }],
+        )
+        .await?;
+
+        let this = self.clone();
+        let session_id = session_id.clone();
+        tokio::spawn(async move {
+            if let Err(error) = this.dispatch_steer_to_mate(&session_id, description).await {
+                Self::log_error("captain_assign dispatch_steer_to_mate", &error);
+            }
+        });
+
+        Ok(format!("Task {} assigned to the mate.", task_id.0))
+    }
+
     async fn captain_tool_steer(
         &self,
         session_id: &SessionId,
         message: String,
     ) -> Result<String, String> {
-        let mode = self
-            .captain_delegate_to_mate(session_id, message.clone())
-            .await?;
+        // If the mate is blocked waiting for a reply (mate_ask_captain or mate_submit feedback),
+        // resolve that first. Otherwise inject directly into the mate's stream.
+        let pending_reply = self
+            .pending_mcp_ops
+            .lock()
+            .expect("pending_mcp_ops mutex poisoned")
+            .get_mut(session_id)
+            .and_then(|ops| ops.captain_reply.take());
+
+        if let Some(tx) = pending_reply {
+            let _ = tx.send(message.clone());
+        } else {
+            let pending_review = self
+                .pending_mcp_ops
+                .lock()
+                .expect("pending_mcp_ops mutex poisoned")
+                .get_mut(session_id)
+                .and_then(|ops| ops.mate_review.take());
+
+            if let Some(tx) = pending_review {
+                let _ = tx.send(MateReviewOutcome::Feedback {
+                    message: message.clone(),
+                });
+            } else {
+                self.dispatch_steer_to_mate(session_id, message.clone())
+                    .await?;
+            }
+        }
+
         self.append_captain_tool_call(
             session_id,
-            "ship_steer",
+            "captain_steer",
             json!({ "message": message }).to_string(),
             vec![ToolCallContent::Text {
-                text: if mode == AutonomyMode::Autonomous {
-                    "Forwarded steer to the mate.".to_owned()
-                } else {
-                    "Queued steer for human review.".to_owned()
-                },
+                text: "Steer sent to the mate.".to_owned(),
             }],
         )
         .await?;
 
-        Ok(if mode == AutonomyMode::Autonomous {
-            "Steer sent to the mate.".to_owned()
-        } else {
-            "Steer queued for human review.".to_owned()
-        })
+        Ok("Steer sent to the mate.".to_owned())
     }
 
     async fn captain_tool_accept(
@@ -776,10 +806,23 @@ impl ShipImpl {
         session_id: &SessionId,
         summary: Option<String>,
     ) -> Result<String, String> {
+        let pending_review = self
+            .pending_mcp_ops
+            .lock()
+            .expect("pending_mcp_ops mutex poisoned")
+            .get_mut(session_id)
+            .and_then(|ops| ops.mate_review.take());
+
+        if let Some(tx) = pending_review {
+            let _ = tx.send(MateReviewOutcome::Accepted {
+                summary: summary.clone(),
+            });
+        }
+
         self.accept_task(session_id, summary.clone()).await?;
         self.append_captain_tool_call(
             session_id,
-            "ship_accept",
+            "captain_accept",
             json!({ "summary": summary }).to_string(),
             vec![ToolCallContent::Text {
                 text: "Accepted the active task.".to_owned(),
@@ -789,27 +832,186 @@ impl ShipImpl {
         Ok("Accepted the active task.".to_owned())
     }
 
-    async fn captain_tool_reject(
+    async fn captain_tool_cancel(
         &self,
         session_id: &SessionId,
-        reason: String,
-        message: Option<String>,
+        reason: Option<String>,
     ) -> Result<String, String> {
-        let detail = message
-            .clone()
-            .map(|message| format!("{reason}: {message}"))
-            .unwrap_or_else(|| reason.clone());
-        self.cancel_task(session_id, Some(detail.clone())).await?;
+        let pending_review = self
+            .pending_mcp_ops
+            .lock()
+            .expect("pending_mcp_ops mutex poisoned")
+            .get_mut(session_id)
+            .and_then(|ops| ops.mate_review.take());
+
+        if let Some(tx) = pending_review {
+            let _ = tx.send(MateReviewOutcome::Cancelled {
+                reason: reason.clone(),
+            });
+        }
+
+        self.cancel_task(session_id, reason.clone()).await?;
         self.append_captain_tool_call(
             session_id,
-            "ship_reject",
-            json!({ "reason": reason, "message": message }).to_string(),
+            "captain_cancel",
+            json!({ "reason": reason }).to_string(),
             vec![ToolCallContent::Text {
-                text: detail.clone(),
+                text: reason.as_deref().unwrap_or("Task cancelled.").to_owned(),
             }],
         )
         .await?;
-        Ok("Rejected the active task.".to_owned())
+        Ok("Task cancelled.".to_owned())
+    }
+
+    async fn captain_tool_notify_human(
+        &self,
+        session_id: &SessionId,
+        message: String,
+    ) -> Result<String, String> {
+        let (tx, rx) = tokio::sync::oneshot::channel::<String>();
+        {
+            let mut ops = self
+                .pending_mcp_ops
+                .lock()
+                .expect("pending_mcp_ops mutex poisoned");
+            let entry = ops
+                .entry(session_id.clone())
+                .or_insert_with(PendingMcpOps::new);
+            entry.human_reply = Some(tx);
+        }
+
+        self.append_captain_tool_call(
+            session_id,
+            "captain_notify_human",
+            json!({ "message": message }).to_string(),
+            vec![ToolCallContent::Text {
+                text: "Waiting for human response...".to_owned(),
+            }],
+        )
+        .await?;
+
+        match rx.await {
+            Ok(reply) => Ok(reply),
+            Err(_) => Err("human reply channel closed".to_owned()),
+        }
+    }
+
+    async fn mate_tool_send_update(
+        &self,
+        session_id: &SessionId,
+        message: String,
+    ) -> Result<String, String> {
+        // Inject the update into the captain's stream as a user message, then prompt the captain.
+        let injected = format!("The mate sent you an update: {message}");
+        self.append_human_message(session_id, Role::Captain, injected.clone())
+            .await?;
+
+        let this = self.clone();
+        let session_id = session_id.clone();
+        tokio::spawn(async move {
+            if let Err(error) = this
+                .prompt_agent(&session_id, Role::Captain, injected)
+                .await
+            {
+                Self::log_error("mate_send_update prompt_captain", &error);
+            }
+        });
+
+        Ok("Update sent to the captain.".to_owned())
+    }
+
+    async fn mate_tool_ask_captain(
+        &self,
+        session_id: &SessionId,
+        question: String,
+    ) -> Result<String, String> {
+        let (tx, rx) = tokio::sync::oneshot::channel::<String>();
+        {
+            let mut ops = self
+                .pending_mcp_ops
+                .lock()
+                .expect("pending_mcp_ops mutex poisoned");
+            let entry = ops
+                .entry(session_id.clone())
+                .or_insert_with(PendingMcpOps::new);
+            entry.captain_reply = Some(tx);
+        }
+
+        let injected = format!("The mate has a question for you: {question}");
+        self.append_human_message(session_id, Role::Captain, injected.clone())
+            .await?;
+
+        let this = self.clone();
+        let session_id_clone = session_id.clone();
+        tokio::spawn(async move {
+            if let Err(error) = this
+                .prompt_agent(&session_id_clone, Role::Captain, injected)
+                .await
+            {
+                Self::log_error("mate_ask_captain prompt_captain", &error);
+            }
+        });
+
+        match rx.await {
+            Ok(reply) => Ok(reply),
+            Err(_) => Err("captain reply channel closed".to_owned()),
+        }
+    }
+
+    async fn mate_tool_submit(
+        &self,
+        session_id: &SessionId,
+        summary: String,
+    ) -> Result<String, String> {
+        let (tx, rx) = tokio::sync::oneshot::channel::<MateReviewOutcome>();
+        {
+            let mut ops = self
+                .pending_mcp_ops
+                .lock()
+                .expect("pending_mcp_ops mutex poisoned");
+            let entry = ops
+                .entry(session_id.clone())
+                .or_insert_with(PendingMcpOps::new);
+            entry.mate_review = Some(tx);
+        }
+
+        {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            if let Some(active) = sessions.get_mut(session_id) {
+                let _ = transition_task(active, TaskStatus::ReviewPending);
+            }
+        }
+        self.persist_session(session_id).await?;
+
+        let injected = format!("The mate has submitted their work for review: {summary}");
+        self.append_human_message(session_id, Role::Captain, injected.clone())
+            .await?;
+
+        let this = self.clone();
+        let session_id_clone = session_id.clone();
+        tokio::spawn(async move {
+            if let Err(error) = this
+                .prompt_agent(&session_id_clone, Role::Captain, injected)
+                .await
+            {
+                Self::log_error("mate_submit prompt_captain", &error);
+            }
+        });
+
+        match rx.await {
+            Ok(MateReviewOutcome::Accepted { summary }) => Ok(format!(
+                "Work accepted. {}",
+                summary.as_deref().unwrap_or("")
+            )),
+            Ok(MateReviewOutcome::Feedback { message }) => {
+                Ok(format!("Captain feedback (please revise): {message}"))
+            }
+            Ok(MateReviewOutcome::Cancelled { reason }) => Err(format!(
+                "Task cancelled: {}",
+                reason.as_deref().unwrap_or("no reason given")
+            )),
+            Err(_) => Err("review channel closed".to_owned()),
+        }
     }
 
     async fn start_session_runtime(&self, session_id: SessionId) {
@@ -864,15 +1066,23 @@ impl ShipImpl {
         let _ = self.persist_session(&session_id).await;
 
         let step_started_at = Instant::now();
-        let captain_ship_mcp = match self.install_captain_mcp_server(&session_id).await {
-            Ok(config) => config,
-            Err(error) => {
+        let (captain_ship_mcp, mate_ship_mcp) = match tokio::join!(
+            self.install_captain_mcp_server(&session_id),
+            self.install_mate_mcp_server(&session_id),
+        ) {
+            (Ok(c), Ok(m)) => (c, m),
+            (Err(error), _) | (_, Err(error)) => {
                 self.fail_startup(&session_id, SessionStartupStage::StartingCaptain, error)
                     .await;
                 return;
             }
         };
-        self.log_startup_step_elapsed(&session_id, "install-captain-mcp-server", step_started_at);
+        self.log_startup_step_elapsed(&session_id, "install-mcp-servers", step_started_at);
+
+        self.pending_mcp_ops
+            .lock()
+            .expect("pending_mcp_ops mutex poisoned")
+            .insert(session_id.clone(), PendingMcpOps::new());
 
         let stage = SessionStartupStage::StartingCaptain;
         let _ = self.set_startup_stage(&session_id, stage).await;
@@ -891,7 +1101,11 @@ impl ShipImpl {
         };
         let mate_config = AgentSessionConfig {
             worktree_path: worktree_path.clone(),
-            mcp_servers: resolved_mcp_servers.clone(),
+            mcp_servers: {
+                let mut servers = resolved_mcp_servers.clone();
+                servers.push(mate_ship_mcp);
+                servers
+            },
         };
         let captain_started_at = Instant::now();
         let mate_started_at = Instant::now();
@@ -1714,11 +1928,11 @@ impl Ship for ShipImpl {
     }
 }
 
-pub struct CaptainMcpConnectionAcceptor {
+pub struct ShipMcpConnectionAcceptor {
     ship: ShipImpl,
 }
 
-impl ConnectionAcceptor for CaptainMcpConnectionAcceptor {
+impl ConnectionAcceptor for ShipMcpConnectionAcceptor {
     fn accept(
         &self,
         _conn_id: roam::ConnectionId,
@@ -1728,10 +1942,6 @@ impl ConnectionAcceptor for CaptainMcpConnectionAcceptor {
         let Some(service_name) = metadata_string(metadata, "ship-service") else {
             return Err(rejection_metadata("missing ship-service metadata"));
         };
-        if service_name != "captain-mcp" {
-            return Err(rejection_metadata("unknown virtual connection service"));
-        }
-
         let Some(session_id) = metadata_string(metadata, "ship-session-id") else {
             return Err(rejection_metadata("missing ship-session-id metadata"));
         };
@@ -1747,22 +1957,43 @@ impl ConnectionAcceptor for CaptainMcpConnectionAcceptor {
         }
 
         let ship = self.ship.clone();
-        Ok(AcceptedConnection {
-            settings: ConnectionSettings {
-                parity: peer_settings.parity.other(),
-                max_concurrent_requests: 64,
-            },
-            metadata: Vec::new(),
-            setup: Box::new(move |connection| {
-                tokio::spawn(async move {
-                    let mut driver = Driver::new(
-                        connection,
-                        CaptainMcpDispatcher::new(CaptainMcpSessionService { ship, session_id }),
-                    );
-                    driver.run().await;
-                });
+        let settings = ConnectionSettings {
+            parity: peer_settings.parity.other(),
+            max_concurrent_requests: 64,
+        };
+
+        match service_name {
+            "captain-mcp" => Ok(AcceptedConnection {
+                settings,
+                metadata: Vec::new(),
+                setup: Box::new(move |connection| {
+                    tokio::spawn(async move {
+                        let mut driver = Driver::new(
+                            connection,
+                            CaptainMcpDispatcher::new(CaptainMcpSessionService {
+                                ship,
+                                session_id,
+                            }),
+                        );
+                        driver.run().await;
+                    });
+                }),
             }),
-        })
+            "mate-mcp" => Ok(AcceptedConnection {
+                settings,
+                metadata: Vec::new(),
+                setup: Box::new(move |connection| {
+                    tokio::spawn(async move {
+                        let mut driver = Driver::new(
+                            connection,
+                            MateMcpDispatcher::new(MateMcpSessionService { ship, session_id }),
+                        );
+                        driver.run().await;
+                    });
+                }),
+            }),
+            _ => Err(rejection_metadata("unknown ship-service")),
+        }
     }
 }
 
@@ -1773,13 +2004,13 @@ struct CaptainMcpSessionService {
 }
 
 impl CaptainMcpSessionService {
-    fn response(result: Result<String, String>) -> CaptainToolCallResponse {
+    fn response(result: Result<String, String>) -> McpToolCallResponse {
         match result {
-            Ok(text) => CaptainToolCallResponse {
+            Ok(text) => McpToolCallResponse {
                 text,
                 is_error: false,
             },
-            Err(text) => CaptainToolCallResponse {
+            Err(text) => McpToolCallResponse {
                 text,
                 is_error: true,
             },
@@ -1788,7 +2019,17 @@ impl CaptainMcpSessionService {
 }
 
 impl CaptainMcp for CaptainMcpSessionService {
-    async fn steer(&self, message: String) -> CaptainToolCallResponse {
+    // r[captain.tool.assign]
+    async fn captain_assign(&self, description: String) -> McpToolCallResponse {
+        Self::response(
+            self.ship
+                .captain_tool_assign(&self.session_id, description)
+                .await,
+        )
+    }
+
+    // r[captain.tool.steer]
+    async fn captain_steer(&self, message: String) -> McpToolCallResponse {
         Self::response(
             self.ship
                 .captain_tool_steer(&self.session_id, message)
@@ -1796,7 +2037,8 @@ impl CaptainMcp for CaptainMcpSessionService {
         )
     }
 
-    async fn accept(&self, summary: Option<String>) -> CaptainToolCallResponse {
+    // r[captain.tool.accept]
+    async fn captain_accept(&self, summary: Option<String>) -> McpToolCallResponse {
         Self::response(
             self.ship
                 .captain_tool_accept(&self.session_id, summary)
@@ -1804,12 +2046,68 @@ impl CaptainMcp for CaptainMcpSessionService {
         )
     }
 
-    async fn reject(&self, reason: String, message: Option<String>) -> CaptainToolCallResponse {
+    // r[captain.tool.cancel]
+    async fn captain_cancel(&self, reason: Option<String>) -> McpToolCallResponse {
         Self::response(
             self.ship
-                .captain_tool_reject(&self.session_id, reason, message)
+                .captain_tool_cancel(&self.session_id, reason)
                 .await,
         )
+    }
+
+    // r[captain.tool.notify-human]
+    async fn captain_notify_human(&self, message: String) -> McpToolCallResponse {
+        Self::response(
+            self.ship
+                .captain_tool_notify_human(&self.session_id, message)
+                .await,
+        )
+    }
+}
+
+#[derive(Clone)]
+struct MateMcpSessionService {
+    ship: ShipImpl,
+    session_id: SessionId,
+}
+
+impl MateMcpSessionService {
+    fn response(result: Result<String, String>) -> McpToolCallResponse {
+        match result {
+            Ok(text) => McpToolCallResponse {
+                text,
+                is_error: false,
+            },
+            Err(text) => McpToolCallResponse {
+                text,
+                is_error: true,
+            },
+        }
+    }
+}
+
+impl MateMcp for MateMcpSessionService {
+    // r[mate.tool.send-update]
+    async fn mate_send_update(&self, message: String) -> McpToolCallResponse {
+        Self::response(
+            self.ship
+                .mate_tool_send_update(&self.session_id, message)
+                .await,
+        )
+    }
+
+    // r[mate.tool.ask-captain]
+    async fn mate_ask_captain(&self, question: String) -> McpToolCallResponse {
+        Self::response(
+            self.ship
+                .mate_tool_ask_captain(&self.session_id, question)
+                .await,
+        )
+    }
+
+    // r[mate.tool.submit]
+    async fn mate_submit(&self, summary: String) -> McpToolCallResponse {
+        Self::response(self.ship.mate_tool_submit(&self.session_id, summary).await)
     }
 }
 

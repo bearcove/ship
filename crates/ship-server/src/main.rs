@@ -49,7 +49,10 @@ enum Command {
     Serve(ServeArgs),
 
     /// Run the captain MCP stdio server.
-    McpServer(McpServerArgs),
+    CaptainMcpServer(McpServerArgs),
+
+    /// Run the mate MCP stdio server.
+    MateMcpServer(McpServerArgs),
 
     /// Manage projects.
     Project {
@@ -115,8 +118,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match args.command {
         Command::Serve(args) => run_serve(args).await,
-        Command::McpServer(args) => {
-            captain_mcp::run_stdio_server(captain_mcp::CaptainMcpServerArgs {
+        Command::CaptainMcpServer(args) => {
+            captain_mcp::run_captain_stdio_server(captain_mcp::CaptainMcpServerArgs {
+                session_id: SessionId(args.session),
+                server_ws_url: args.server_ws_url,
+            })
+            .await?;
+            Ok(())
+        }
+        Command::MateMcpServer(args) => {
+            captain_mcp::run_mate_stdio_server(captain_mcp::MateMcpServerArgs {
                 session_id: SessionId(args.session),
                 server_ws_url: args.server_ws_url,
             })
@@ -375,7 +386,7 @@ async fn ws_handler(State(state): State<AppState>, mut request: Request) -> impl
 
         let link = roam_websocket::WsLink::new(ws_stream);
         match roam::acceptor(link)
-            .on_connection(ship.captain_mcp_connection_acceptor())
+            .on_connection(ship.ship_mcp_connection_acceptor())
             .establish::<ShipClient>(ShipDispatcher::new(ship))
             .await
         {
