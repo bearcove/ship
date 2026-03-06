@@ -171,7 +171,17 @@ export type CloseSessionResponse =
 
 export type BlockId = string;
 
+export interface ToolCallLocation {
+  path: string;
+  line: number | null;
+}
+
 export type ToolCallStatus = { tag: "Running" } | { tag: "Success" } | { tag: "Failure" };
+
+export type ToolCallContent =
+  | { tag: "Text"; text: string }
+  | { tag: "Diff"; path: string; old_text: string | null; new_text: string }
+  | { tag: "Terminal"; terminal_id: string };
 
 export type PermissionResolution = { tag: "Approved" } | { tag: "Denied" };
 
@@ -181,8 +191,9 @@ export type ContentBlock =
       tag: "ToolCall";
       tool_name: string;
       arguments: string;
+      locations: ToolCallLocation[];
       status: ToolCallStatus;
-      result: string | null;
+      content: ToolCallContent[];
     }
   | { tag: "PlanUpdate"; steps: PlanStep[] }
   | { tag: "Error"; message: string }
@@ -196,7 +207,12 @@ export type ContentBlock =
 
 export type BlockPatch =
   | { tag: "TextAppend"; text: string }
-  | { tag: "ToolCallUpdate"; status: ToolCallStatus; result: string | null }
+  | {
+      tag: "ToolCallUpdate";
+      status: ToolCallStatus;
+      locations: ToolCallLocation[] | null;
+      content: ToolCallContent[] | null;
+    }
   | { tag: "PlanReplace"; steps: PlanStep[] }
   | { tag: "PermissionResolve"; resolution: PermissionResolution };
 
@@ -698,7 +714,7 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0x74800435cd78a559n) {
+    } else if (method.id === 0xbc7fd952746ca9ebn) {
       try {
         const result = await this.handler.subscribeEvents(
           args[0] as SessionId,
@@ -1006,6 +1022,13 @@ const ship_schema_registry: SchemaRegistry = new Map<string, Schema>([
   ],
   ["BlockId", { kind: "string" }],
   [
+    "ToolCallLocation",
+    {
+      kind: "struct",
+      fields: { path: { kind: "string" }, line: { kind: "option", inner: { kind: "u32" } } },
+    },
+  ],
+  [
     "ToolCallStatus",
     {
       kind: "enum",
@@ -1013,6 +1036,24 @@ const ship_schema_registry: SchemaRegistry = new Map<string, Schema>([
         { name: "Running", fields: null },
         { name: "Success", fields: null },
         { name: "Failure", fields: null },
+      ],
+    },
+  ],
+  [
+    "ToolCallContent",
+    {
+      kind: "enum",
+      variants: [
+        { name: "Text", fields: { text: { kind: "string" } } },
+        {
+          name: "Diff",
+          fields: {
+            path: { kind: "string" },
+            old_text: { kind: "option", inner: { kind: "string" } },
+            new_text: { kind: "string" },
+          },
+        },
+        { name: "Terminal", fields: { terminal_id: { kind: "string" } } },
       ],
     },
   ],
@@ -1037,8 +1078,9 @@ const ship_schema_registry: SchemaRegistry = new Map<string, Schema>([
           fields: {
             tool_name: { kind: "string" },
             arguments: { kind: "string" },
+            locations: { kind: "vec", element: { kind: "ref", name: "ToolCallLocation" } },
             status: { kind: "ref", name: "ToolCallStatus" },
-            result: { kind: "option", inner: { kind: "string" } },
+            content: { kind: "vec", element: { kind: "ref", name: "ToolCallContent" } },
           },
         },
         {
@@ -1068,7 +1110,14 @@ const ship_schema_registry: SchemaRegistry = new Map<string, Schema>([
           name: "ToolCallUpdate",
           fields: {
             status: { kind: "ref", name: "ToolCallStatus" },
-            result: { kind: "option", inner: { kind: "string" } },
+            locations: {
+              kind: "option",
+              inner: { kind: "vec", element: { kind: "ref", name: "ToolCallLocation" } },
+            },
+            content: {
+              kind: "option",
+              inner: { kind: "vec", element: { kind: "ref", name: "ToolCallContent" } },
+            },
           },
         },
         {
@@ -1496,7 +1545,7 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: "subscribeEvents",
-      id: 0x74800435cd78a559n,
+      id: 0xbc7fd952746ca9ebn,
       args: {
         kind: "tuple",
         elements: [

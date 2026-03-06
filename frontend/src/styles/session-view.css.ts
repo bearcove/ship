@@ -235,12 +235,61 @@ export const toolCallHeader = style({
 export const toolCallBody = style({
   borderTop: "1px solid var(--gray-a4)",
   padding: "var(--space-2)",
-  fontFamily: "monospace",
-  fontSize: "var(--font-size-1)",
-  whiteSpace: "pre-wrap",
   overflowX: "auto",
   maxHeight: "20rem",
   overflowY: "auto",
+});
+
+export const toolCallArgumentGrid = style({
+  display: "grid",
+  gridTemplateColumns: "minmax(7rem, auto) minmax(0, 1fr)",
+  gap: "var(--space-1) var(--space-2)",
+  alignItems: "start",
+});
+
+export const toolCallLabel = style({
+  color: "var(--gray-10)",
+  fontFamily: "monospace",
+});
+
+export const toolCallValue = style({
+  color: "var(--gray-12)",
+  fontFamily: "monospace",
+  whiteSpace: "pre-wrap",
+  overflowWrap: "anywhere",
+});
+
+export const toolCallContentSection = style({
+  color: "var(--gray-12)",
+  fontSize: "var(--font-size-1)",
+  lineHeight: "var(--line-height-3)",
+});
+
+globalStyle(`${toolCallContentSection} :where(p, ul, ol, blockquote)`, {
+  margin: "0 0 var(--space-2)",
+});
+
+globalStyle(
+  `${toolCallContentSection} :where(p:last-child, ul:last-child, ol:last-child, blockquote:last-child)`,
+  {
+    marginBottom: "0",
+  },
+);
+
+export const terminalRoot = style({
+  display: "flex",
+  flexDirection: "column",
+  gap: "var(--space-2)",
+  padding: "var(--space-2)",
+  borderRadius: "var(--radius-2)",
+  background: "var(--gray-a2)",
+  overflowX: "auto",
+});
+
+export const terminalLine = style({
+  fontFamily: "monospace",
+  fontSize: "var(--font-size-1)",
+  whiteSpace: "pre-wrap",
 });
 
 export const diffAdd = style({

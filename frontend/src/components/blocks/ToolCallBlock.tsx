@@ -1,14 +1,21 @@
-import { useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Badge, Box, Code, Flex, ScrollArea, Spinner, Text } from "@radix-ui/themes";
-import { CaretRight, CaretDown } from "@phosphor-icons/react";
-import type { ContentBlock } from "../../generated/ship";
+import { CaretDown, CaretRight } from "@phosphor-icons/react";
+import ReactMarkdown from "react-markdown";
+import type { ContentBlock, ToolCallContent, ToolCallLocation } from "../../generated/ship";
 import {
-  toolCallBlock,
-  toolCallHeader,
-  toolCallBody,
   diffAdd,
-  diffRemove,
   diffContext,
+  diffRemove,
+  terminalLine,
+  terminalRoot,
+  toolCallArgumentGrid,
+  toolCallContentSection,
+  toolCallLabel,
+  toolCallValue,
+  toolCallBlock,
+  toolCallBody,
+  toolCallHeader,
 } from "../../styles/session-view.css";
 
 type ToolCallBlockType = Extract<ContentBlock, { tag: "ToolCall" }>;
@@ -17,16 +24,15 @@ interface Props {
   block: ToolCallBlockType;
 }
 
-// ─── Tool kind classification ─────────────────────────────────────────────────
-
 type ToolKind = "read" | "write" | "terminal" | "search" | "other";
 
 function classifyTool(toolName: string): ToolKind {
   const name = toolName.toLowerCase();
-  if (name === "read") return "read";
-  if (name === "write" || name === "edit" || name === "notebookedit") return "write";
-  if (name === "bash" || name === "terminal" || name === "run") return "terminal";
-  if (name === "grep" || name === "glob" || name === "search") return "search";
+  if (["read", "read file", "read_file", "readtextfile"].includes(name)) return "read";
+  if (["write", "write file", "write_file", "edit", "notebookedit"].includes(name)) return "write";
+  if (["bash", "terminal", "run", "create terminal", "create_terminal"].includes(name))
+    return "terminal";
+  if (["grep", "glob", "search"].includes(name)) return "search";
   return "other";
 }
 
@@ -34,64 +40,100 @@ function parseArgs(raw: string): Record<string, string> {
   try {
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === "object") {
-      return Object.fromEntries(Object.entries(parsed).map(([k, v]) => [k, String(v)]));
+      return Object.fromEntries(
+        Object.entries(parsed).map(([k, value]) => [
+          k,
+          typeof value === "string" ? value : JSON.stringify(value, null, 2),
+        ]),
+      );
     }
   } catch {
-    // not JSON — return empty
+    // ignored
   }
   return {};
 }
 
-// ─── Diff utilities ───────────────────────────────────────────────────────────
-
-function isLikelyDiff(content: string): boolean {
-  return content.includes("--- a/") || content.includes("+++ b/") || content.includes("@@");
+function firstPath(locations: ToolCallLocation[], args: Record<string, string>): string {
+  return args.path ?? args.file_path ?? locations[0]?.path ?? "";
 }
 
-function diffSummary(content: string): string {
-  let added = 0;
-  let removed = 0;
-  for (const line of content.split("\n")) {
-    if (line.startsWith("+") && !line.startsWith("+++")) added++;
-    else if (line.startsWith("-") && !line.startsWith("---")) removed++;
+function buildUnifiedDiff(content: Extract<ToolCallContent, { tag: "Diff" }>): string {
+  const oldLines = (content.old_text ?? "").split("\n");
+  const newLines = content.new_text.split("\n");
+  return [
+    `--- a/${content.path}`,
+    `+++ b/${content.path}`,
+    ...oldLines.filter(Boolean).map((line) => `-${line}`),
+    ...newLines.filter(Boolean).map((line) => `+${line}`),
+  ].join("\n");
+}
+
+function changedLineCounts(oldText: string, newText: string): { added: number; removed: number } {
+  const oldLines = oldText.split("\n");
+  const newLines = newText.split("\n");
+
+  let prefix = 0;
+  while (
+    prefix < oldLines.length &&
+    prefix < newLines.length &&
+    oldLines[prefix] === newLines[prefix]
+  ) {
+    prefix += 1;
   }
-  if (added === 0 && removed === 0) return "";
+
+  let oldSuffix = oldLines.length - 1;
+  let newSuffix = newLines.length - 1;
+  while (
+    oldSuffix >= prefix &&
+    newSuffix >= prefix &&
+    oldLines[oldSuffix] === newLines[newSuffix]
+  ) {
+    oldSuffix -= 1;
+    newSuffix -= 1;
+  }
+
+  return {
+    added: Math.max(0, newSuffix - prefix + 1),
+    removed: Math.max(0, oldSuffix - prefix + 1),
+  };
+}
+
+function diffStats(contents: ToolCallContent[]): string {
+  const diff = contents.find((item) => item.tag === "Diff");
+  if (!diff) return "";
+  const { added, removed } = changedLineCounts(diff.old_text ?? "", diff.new_text);
   return `+${added} -${removed}`;
 }
-
-// ─── Collapsed summary ────────────────────────────────────────────────────────
 
 export function collapsedSummary(
   toolName: string,
   args: Record<string, string>,
-  result: string | null,
+  contents: ToolCallContent[],
+  locations: ToolCallLocation[],
 ): string {
   const kind = classifyTool(toolName);
   switch (kind) {
     case "read":
-      return args.path ?? args.file_path ?? "";
+      return firstPath(locations, args);
     case "write": {
-      const path = args.path ?? args.file_path ?? args.old_string?.slice(0, 30) ?? "";
-      if (result && isLikelyDiff(result)) {
-        const summary = diffSummary(result);
-        return summary ? `${path}  ${summary}` : path;
-      }
-      return path;
+      const path = firstPath(locations, args);
+      const stats = diffStats(contents);
+      return stats ? `${path}  ${stats}` : path;
     }
-    case "terminal":
-      return args.command ?? args.cmd ?? "";
+    case "terminal": {
+      const terminal = contents.find((item) => item.tag === "Terminal");
+      return args.command ?? args.cmd ?? terminal?.terminal_id ?? "";
+    }
     case "search":
       return args.pattern ?? args.query ?? args.glob ?? args.include ?? "";
     default:
-      return args.path ?? args.command ?? args.pattern ?? "";
+      return firstPath(locations, args) || args.command || args.pattern || "";
   }
 }
 
-// ─── Expanded: diff view ──────────────────────────────────────────────────────
-
 function DiffView({ content }: { content: string }) {
   return (
-    <ScrollArea style={{ maxHeight: "20rem" }}>
+    <ScrollArea style={{ maxHeight: "20rem", maxWidth: "100%" }}>
       <Box style={{ fontFamily: "monospace", fontSize: "var(--font-size-1)", whiteSpace: "pre" }}>
         {content.split("\n").map((line, i) => {
           if (line.startsWith("+") && !line.startsWith("+++")) {
@@ -119,92 +161,194 @@ function DiffView({ content }: { content: string }) {
   );
 }
 
-// ─── Expanded: terminal view ──────────────────────────────────────────────────
+function ToolArguments({ args, raw }: { args: Record<string, string>; raw: string }) {
+  const entries = Object.entries(args);
+  if (entries.length === 0) {
+    if (!raw || raw === "{}") return null;
+    return (
+      <Code size="1" style={{ whiteSpace: "pre-wrap", color: "var(--gray-11)" }}>
+        {raw}
+      </Code>
+    );
+  }
 
-function parseExitCode(result: string): number | null {
-  // Look for patterns like "Exit code: 1", "exit code 2", "exited with 1"
-  const m = result.match(/exit(?:ed)?(?: code)?[:\s]+(\d+)/i);
-  if (m) return parseInt(m[1], 10);
-  return null;
+  return (
+    <Box className={toolCallArgumentGrid}>
+      {entries.map(([key, value]) => (
+        <Fragment key={key}>
+          <Text size="1" className={toolCallLabel}>
+            {key}
+          </Text>
+          <Text size="1" className={toolCallValue}>
+            {value}
+          </Text>
+        </Fragment>
+      ))}
+    </Box>
+  );
 }
 
-function TerminalView({ result, args }: { result: string; args: Record<string, string> }) {
-  const exitCode = parseExitCode(result);
+function ToolLocations({ locations }: { locations: ToolCallLocation[] }) {
+  if (locations.length === 0) return null;
   return (
-    <Flex direction="column" gap="2">
-      {args.command && (
-        <Code size="1" style={{ color: "var(--gray-11)" }}>
-          $ {args.command}
+    <Flex direction="column" gap="1">
+      {locations.map((location) => (
+        <Code key={`${location.path}:${location.line ?? 0}`} size="1">
+          {location.path}
+          {location.line ? `:${location.line}` : ""}
         </Code>
-      )}
-      <ScrollArea style={{ maxHeight: "20rem" }}>
-        <Box
-          style={{
-            fontFamily: "monospace",
-            fontSize: "var(--font-size-1)",
-            whiteSpace: "pre-wrap",
-            color: "var(--gray-12)",
-          }}
-        >
-          {result}
-        </Box>
-      </ScrollArea>
-      {exitCode !== null && exitCode !== 0 && (
-        <Box>
-          <Badge color="red" size="1">
-            exit {exitCode}
-          </Badge>
-        </Box>
-      )}
+      ))}
     </Flex>
   );
 }
 
-// ─── Expanded: search results ─────────────────────────────────────────────────
+type AnsiStyle = {
+  color?: string;
+  fontWeight?: "bold";
+  textDecoration?: "underline";
+};
 
-function SearchResultsView({ result }: { result: string }) {
-  const lines = result.split("\n").filter(Boolean);
-  // Try to detect "file:line:content" format
-  const snippets = lines.map((line) => {
-    const m = line.match(/^([^:]+):(\d+):(.*)/);
-    if (m) return { file: m[1], line: m[2], content: m[3] };
-    return { file: null, line: null, content: line };
-  });
+const ANSI_COLORS: Record<number, string> = {
+  30: "#4b5563",
+  31: "#ef4444",
+  32: "#22c55e",
+  33: "#eab308",
+  34: "#60a5fa",
+  35: "#c084fc",
+  36: "#22d3ee",
+  37: "#e5e7eb",
+  90: "#6b7280",
+  91: "#f87171",
+  92: "#4ade80",
+  93: "#fde047",
+  94: "#93c5fd",
+  95: "#d8b4fe",
+  96: "#67e8f9",
+  97: "#f9fafb",
+};
 
+function applyAnsiCodes(style: AnsiStyle, codes: number[]): AnsiStyle {
+  let next = { ...style };
+  for (const code of codes) {
+    if (code === 0) {
+      next = {};
+    } else if (code === 1) {
+      next.fontWeight = "bold";
+    } else if (code === 4) {
+      next.textDecoration = "underline";
+    } else if (code === 22) {
+      delete next.fontWeight;
+    } else if (code === 24) {
+      delete next.textDecoration;
+    } else if (code === 39) {
+      delete next.color;
+    } else if (ANSI_COLORS[code]) {
+      next.color = ANSI_COLORS[code];
+    }
+  }
+  return next;
+}
+
+function renderAnsiLine(line: string): Array<{ text: string; style: AnsiStyle }> {
+  const pattern = new RegExp(`${String.fromCharCode(27)}\\[([0-9;]*)m`, "g");
+  const parts: Array<{ text: string; style: AnsiStyle }> = [];
+  let style: AnsiStyle = {};
+  let lastIndex = 0;
+
+  for (const match of line.matchAll(pattern)) {
+    const index = match.index ?? 0;
+    if (index > lastIndex) {
+      parts.push({ text: line.slice(lastIndex, index), style });
+    }
+    const rawCodes = match[1] ? match[1].split(";").map((code) => Number(code || "0")) : [0];
+    style = applyAnsiCodes(style, rawCodes);
+    lastIndex = index + match[0].length;
+  }
+
+  if (lastIndex < line.length) {
+    parts.push({ text: line.slice(lastIndex), style });
+  }
+
+  if (parts.length === 0) {
+    parts.push({ text: "", style: {} });
+  }
+
+  return parts;
+}
+
+function extractMarkdownFence(text: string): { language: string | null; body: string } | null {
+  const match = /^```([^\n`]*)\n([\s\S]*?)\n```$/u.exec(text.trim());
+  if (!match) return null;
+  const language = match[1]?.trim() || null;
+  return { language, body: match[2] };
+}
+
+function TerminalTranscript({ command, output }: { command?: string; output: string }) {
+  const lines = useMemo(() => output.split("\n"), [output]);
   return (
-    <ScrollArea style={{ maxHeight: "20rem" }}>
-      <Flex direction="column" gap="1">
-        {snippets.map((s, i) =>
-          s.file ? (
-            <Flex key={i} gap="2" align="baseline">
-              <Code size="1" style={{ color: "var(--blue-11)", flexShrink: 0 }}>
-                {s.file}:{s.line}
-              </Code>
-              <Text
-                size="1"
-                style={{
-                  fontFamily: "monospace",
-                  color: "var(--gray-11)",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {s.content.trim()}
-              </Text>
-            </Flex>
-          ) : (
-            <Code key={i} size="1" style={{ color: "var(--gray-11)" }}>
-              {s.content}
-            </Code>
-          ),
-        )}
-      </Flex>
-    </ScrollArea>
+    <Box className={terminalRoot}>
+      {command && <Code size="1">$ {command}</Code>}
+      <Box>
+        {lines.map((line, lineIndex) => (
+          <Box key={lineIndex} className={terminalLine}>
+            {renderAnsiLine(line).map((part, partIndex) => (
+              <span key={partIndex} style={part.style}>
+                {part.text || "\u00a0"}
+              </span>
+            ))}
+          </Box>
+        ))}
+      </Box>
+    </Box>
   );
 }
 
-// ─── Main component ───────────────────────────────────────────────────────────
+function RichTextContent({ text }: { text: string }) {
+  const fence = extractMarkdownFence(text);
+  if (
+    fence &&
+    (fence.language === "console" || fence.language === "terminal" || fence.language === "sh")
+  ) {
+    return <TerminalTranscript output={fence.body} />;
+  }
+
+  return (
+    <Box className={toolCallContentSection}>
+      <ReactMarkdown>{text}</ReactMarkdown>
+    </Box>
+  );
+}
+
+function ToolContents({
+  contents,
+  args,
+}: {
+  contents: ToolCallContent[];
+  args: Record<string, string>;
+}) {
+  if (contents.length === 0) return null;
+  return (
+    <Flex direction="column" gap="2">
+      {contents.map((content, index) => {
+        switch (content.tag) {
+          case "Text":
+            return <RichTextContent key={index} text={content.text} />;
+          case "Diff":
+            return <DiffView key={index} content={buildUnifiedDiff(content)} />;
+          case "Terminal":
+            return (
+              <Flex key={index} direction="column" gap="2">
+                {args.command && <Code size="1">$ {args.command}</Code>}
+                <Badge color="gray" size="1">
+                  terminal {content.terminal_id}
+                </Badge>
+              </Flex>
+            );
+        }
+      })}
+    </Flex>
+  );
+}
 
 // r[ui.block.tool-call.layout]
 // r[ui.block.tool-call.collapsed-default]
@@ -212,12 +356,10 @@ function SearchResultsView({ result }: { result: string }) {
 // r[ui.block.tool-call.terminal]
 // r[ui.block.tool-call.search]
 export function ToolCallBlock({ block }: Props) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
 
   const args = parseArgs(block.arguments);
-  const kind = classifyTool(block.tool_name);
-  const summary = collapsedSummary(block.tool_name, args, block.result);
-
+  const summary = collapsedSummary(block.tool_name, args, block.content, block.locations);
   const isRunning = block.status.tag === "Running";
   const statusColor =
     block.status.tag === "Success"
@@ -226,39 +368,13 @@ export function ToolCallBlock({ block }: Props) {
         ? "red"
         : ("gray" as const);
 
-  function renderExpandedResult() {
-    if (!block.result) return null;
-    if (kind === "terminal") {
-      return <TerminalView result={block.result} args={args} />;
-    }
-    if (kind === "search") {
-      return <SearchResultsView result={block.result} />;
-    }
-    if (isLikelyDiff(block.result)) {
-      return <DiffView content={block.result} />;
-    }
-    return (
-      <ScrollArea style={{ maxHeight: "20rem" }}>
-        <Box
-          style={{
-            fontFamily: "monospace",
-            fontSize: "var(--font-size-1)",
-            whiteSpace: "pre-wrap",
-          }}
-        >
-          {block.result}
-        </Box>
-      </ScrollArea>
-    );
-  }
-
   return (
     <Box className={toolCallBlock}>
       <Flex
         className={toolCallHeader}
         align="center"
         gap="2"
-        onClick={() => setExpanded((e) => !e)}
+        onClick={() => setExpanded((open) => !open)}
         role="button"
         aria-expanded={expanded}
       >
@@ -298,10 +414,9 @@ export function ToolCallBlock({ block }: Props) {
       {expanded && (
         <Box className={toolCallBody}>
           <Flex direction="column" gap="2">
-            <Code size="1" style={{ whiteSpace: "pre-wrap", color: "var(--gray-11)" }}>
-              {block.arguments}
-            </Code>
-            {renderExpandedResult()}
+            <ToolArguments args={args} raw={block.arguments} />
+            <ToolLocations locations={block.locations} />
+            <ToolContents contents={block.content} args={args} />
           </Flex>
         </Box>
       )}

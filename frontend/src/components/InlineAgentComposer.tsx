@@ -72,6 +72,12 @@ export function InlineAgentComposer({ sessionId, role, agentStateTag, taskStatus
         await client.steer(sessionId, value);
       }
       setText("");
+    } catch (error) {
+      console.error("[ship/session] failed to send inline guidance", {
+        sessionId,
+        role: role.tag,
+        error,
+      });
     } finally {
       setLoading(false);
     }

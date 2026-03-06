@@ -87,8 +87,17 @@ export function AgentPanel({ sessionId, agent, blocks, loading, loadingLabel, ta
 
         async function resolve(approved: boolean) {
           if (!permissionId) return;
-          const client = await getShipClient();
-          await client.resolvePermission(sessionId, permissionId, approved);
+          try {
+            const client = await getShipClient();
+            await client.resolvePermission(sessionId, permissionId, approved);
+          } catch (error) {
+            console.error("[ship/session] failed to resolve permission", {
+              sessionId,
+              permissionId,
+              approved,
+              error,
+            });
+          }
         }
 
         return (

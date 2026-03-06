@@ -189,6 +189,28 @@ pub mod events {
         Denied,
     }
 
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct ToolCallLocation {
+        pub path: String,
+        pub line: Option<u32>,
+    }
+
+    #[repr(u8)]
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub enum ToolCallContent {
+        Text {
+            text: String,
+        },
+        Diff {
+            path: String,
+            old_text: Option<String>,
+            new_text: String,
+        },
+        Terminal {
+            terminal_id: String,
+        },
+    }
+
     // r[event.content-block.types]
     #[repr(u8)]
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
@@ -199,8 +221,9 @@ pub mod events {
         ToolCall {
             tool_name: String,
             arguments: String,
+            locations: Vec<ToolCallLocation>,
             status: ToolCallStatus,
-            result: Option<String>,
+            content: Vec<ToolCallContent>,
         },
         PlanUpdate {
             steps: Vec<PlanStep>,
@@ -227,7 +250,8 @@ pub mod events {
         // r[event.patch.tool-call-update]
         ToolCallUpdate {
             status: ToolCallStatus,
-            result: Option<String>,
+            locations: Option<Vec<ToolCallLocation>>,
+            content: Option<Vec<ToolCallContent>>,
         },
         // r[event.patch.plan-replace]
         PlanReplace {
@@ -486,7 +510,7 @@ pub use agent::{
 };
 pub use events::{
     BlockPatch, ContentBlock, PermissionResolution, SessionEvent, SessionEventEnvelope,
-    SubscribeMessage, ToolCallStatus,
+    SubscribeMessage, ToolCallContent, ToolCallLocation, ToolCallStatus,
 };
 pub use ids::{BlockId, ProjectName, SessionId, TaskId};
 pub use persistence::{CurrentTask, PersistedSession, SessionConfig, TaskContentRecord};

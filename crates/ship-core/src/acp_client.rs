@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 use std::process::ExitStatus;
 use std::rc::Rc;
@@ -12,12 +12,13 @@ use agent_client_protocol::{
     ReleaseTerminalResponse, RequestPermissionOutcome, RequestPermissionRequest,
     RequestPermissionResponse, Result as AcpResult, SelectedPermissionOutcome, SessionNotification,
     SessionUpdate, TerminalExitStatus, TerminalId, TerminalOutputRequest, TerminalOutputResponse,
-    ToolCallStatus, WaitForTerminalExitRequest, WaitForTerminalExitResponse, WriteTextFileRequest,
-    WriteTextFileResponse,
+    ToolCallContent, ToolCallStatus, WaitForTerminalExitRequest, WaitForTerminalExitResponse,
+    WriteTextFileRequest, WriteTextFileResponse,
 };
 use ship_types::{
     AgentState, BlockId, BlockPatch, ContentBlock as ShipContentBlock, PermissionRequest, PlanStep,
-    PlanStepPriority, PlanStepStatus, Role, SessionEvent, ToolCallStatus as ShipToolCallStatus,
+    PlanStepPriority, PlanStepStatus, Role, SessionEvent, ToolCallContent as ShipToolCallContent,
+    ToolCallLocation as ShipToolCallLocation, ToolCallStatus as ShipToolCallStatus,
 };
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::{Child, Command};
@@ -28,6 +29,7 @@ pub struct ShipAcpClient {
     worktree_path: PathBuf,
     notifications_tx: mpsc::UnboundedSender<SessionEvent>,
     active_text_block: Rc<RefCell<Option<BlockId>>>,
+    seen_tool_calls: Rc<RefCell<HashSet<String>>>,
     pending_permissions: Rc<RefCell<HashMap<String, oneshot::Sender<bool>>>>,
     terminals: Rc<RefCell<HashMap<String, TerminalState>>>,
 }
@@ -50,6 +52,7 @@ impl ShipAcpClient {
             worktree_path,
             notifications_tx,
             active_text_block: Rc::new(RefCell::new(None)),
+            seen_tool_calls: Rc::new(RefCell::new(HashSet::new())),
             pending_permissions: Rc::new(RefCell::new(HashMap::new())),
             terminals: Rc::new(RefCell::new(HashMap::new())),
         }
@@ -106,24 +109,39 @@ impl ShipAcpClient {
             }
             SessionUpdate::ToolCall(tool_call) => {
                 self.reset_text_block();
-                let result_text = if tool_call.content.is_empty() {
-                    None
+                let tool_call_id = tool_call.tool_call_id.0.to_string();
+                let content = map_tool_call_contents(&tool_call.content);
+                let locations = map_tool_call_locations(&tool_call.locations);
+                if self
+                    .seen_tool_calls
+                    .borrow_mut()
+                    .insert(tool_call_id.clone())
+                {
+                    vec![SessionEvent::BlockAppend {
+                        block_id: BlockId(tool_call_id),
+                        role: self.role,
+                        block: ShipContentBlock::ToolCall {
+                            tool_name: tool_call.title,
+                            arguments: tool_call
+                                .raw_input
+                                .map(|value| value.to_string())
+                                .unwrap_or_default(),
+                            locations,
+                            status: map_tool_status(tool_call.status),
+                            content,
+                        },
+                    }]
                 } else {
-                    Some(format!("{:#?}", tool_call.content))
-                };
-                vec![SessionEvent::BlockAppend {
-                    block_id: BlockId(tool_call.tool_call_id.0.to_string()),
-                    role: self.role,
-                    block: ShipContentBlock::ToolCall {
-                        tool_name: tool_call.title,
-                        arguments: tool_call
-                            .raw_input
-                            .map(|value| value.to_string())
-                            .unwrap_or_default(),
-                        status: map_tool_status(tool_call.status),
-                        result: result_text,
-                    },
-                }]
+                    vec![SessionEvent::BlockPatch {
+                        block_id: BlockId(tool_call_id),
+                        role: self.role,
+                        patch: BlockPatch::ToolCallUpdate {
+                            status: map_tool_status(tool_call.status),
+                            locations: Some(locations),
+                            content: Some(content),
+                        },
+                    }]
+                }
             }
             SessionUpdate::ToolCallUpdate(update) => {
                 self.reset_text_block();
@@ -136,10 +154,16 @@ impl ShipAcpClient {
                             .status
                             .map(map_tool_status)
                             .unwrap_or(ShipToolCallStatus::Running),
-                        result: update
+                        locations: update
+                            .fields
+                            .locations
+                            .as_ref()
+                            .map(|locations| map_tool_call_locations(locations)),
+                        content: update
                             .fields
                             .content
-                            .map(|content| format!("{:#?}", content)),
+                            .as_ref()
+                            .map(|content| map_tool_call_contents(content)),
                     },
                 }]
             }
@@ -542,6 +566,41 @@ fn format_content_block(block: ContentBlock) -> String {
     }
 }
 
+fn map_tool_call_locations(
+    locations: &[agent_client_protocol::ToolCallLocation],
+) -> Vec<ShipToolCallLocation> {
+    locations
+        .iter()
+        .map(|location| ShipToolCallLocation {
+            path: location.path.display().to_string(),
+            line: location.line,
+        })
+        .collect()
+}
+
+fn map_tool_call_contents(blocks: &[ToolCallContent]) -> Vec<ShipToolCallContent> {
+    blocks.iter().map(map_tool_call_content).collect()
+}
+
+fn map_tool_call_content(content: &ToolCallContent) -> ShipToolCallContent {
+    match content {
+        ToolCallContent::Content(content) => ShipToolCallContent::Text {
+            text: format_content_block(content.content.clone()),
+        },
+        ToolCallContent::Diff(diff) => ShipToolCallContent::Diff {
+            path: diff.path.display().to_string(),
+            old_text: diff.old_text.clone(),
+            new_text: diff.new_text.clone(),
+        },
+        ToolCallContent::Terminal(terminal) => ShipToolCallContent::Terminal {
+            terminal_id: terminal.terminal_id.0.to_string(),
+        },
+        other => ShipToolCallContent::Text {
+            text: format!("{other:?}"),
+        },
+    }
+}
+
 fn map_tool_status(status: ToolCallStatus) -> ShipToolCallStatus {
     match status {
         ToolCallStatus::Pending | ToolCallStatus::InProgress => ShipToolCallStatus::Running,
@@ -671,6 +730,44 @@ mod tests {
                 role: Role::Mate,
                 patch: BlockPatch::TextAppend {
                     text: "Again".to_owned(),
+                },
+            }]
+        );
+    }
+
+    #[test]
+    fn repeated_tool_call_updates_reuse_the_same_block_id() {
+        let client = make_client();
+        let tool_call_id = "toolu_123".to_owned();
+
+        let first = client.map_session_update(SessionUpdate::ToolCall(
+            agent_client_protocol::ToolCall::new(
+                agent_client_protocol::ToolCallId::new(tool_call_id.clone()),
+                "Read File",
+            )
+            .status(ToolCallStatus::InProgress),
+        ));
+        let second = client.map_session_update(SessionUpdate::ToolCall(
+            agent_client_protocol::ToolCall::new(
+                agent_client_protocol::ToolCallId::new(tool_call_id.clone()),
+                "Read File",
+            )
+            .status(ToolCallStatus::Completed),
+        ));
+
+        assert!(matches!(
+            first.as_slice(),
+            [SessionEvent::BlockAppend { .. }]
+        ));
+        assert_eq!(
+            second,
+            vec![SessionEvent::BlockPatch {
+                block_id: BlockId(tool_call_id),
+                role: Role::Mate,
+                patch: BlockPatch::ToolCallUpdate {
+                    status: ShipToolCallStatus::Success,
+                    locations: Some(Vec::new()),
+                    content: Some(Vec::new()),
                 },
             }]
         );

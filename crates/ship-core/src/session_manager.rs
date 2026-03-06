@@ -1005,15 +1005,25 @@ pub fn apply_block_patch(block: &mut ContentBlock, patch: &BlockPatch) {
                 existing.push_str(text);
             }
         }
-        BlockPatch::ToolCallUpdate { status, result } => {
+        BlockPatch::ToolCallUpdate {
+            status,
+            locations,
+            content,
+        } => {
             if let ContentBlock::ToolCall {
+                locations: existing_locations,
                 status: existing_status,
-                result: existing_result,
+                content: existing_content,
                 ..
             } = block
             {
                 *existing_status = *status;
-                *existing_result = result.clone();
+                if let Some(locations) = locations {
+                    *existing_locations = locations.clone();
+                }
+                if let Some(content) = content {
+                    *existing_content = content.clone();
+                }
             }
         }
         BlockPatch::PlanReplace { steps } => {
