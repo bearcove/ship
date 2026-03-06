@@ -19,7 +19,7 @@ import {
   mobilePanel,
   idleBanner,
 } from "../styles/session-view.css";
-import type { TaskStatus } from "../generated/ship";
+import type { TaskRecord, TaskStatus } from "../generated/ship";
 
 function getIdleMessage(
   taskStatus: TaskStatus | null,
@@ -82,6 +82,14 @@ export function SessionViewPage() {
       ? `Replaying ${eventState.replayEventCount} event${eventState.replayEventCount === 1 ? "" : "s"}…`
       : "Connected — waiting for replay…"
     : "Waiting for reconnect…";
+  const liveTask: TaskRecord | null =
+    eventState.currentTaskId && eventState.currentTaskDescription && eventState.currentTaskStatus
+      ? {
+          id: eventState.currentTaskId,
+          description: eventState.currentTaskDescription,
+          status: eventState.currentTaskStatus,
+        }
+      : session.current_task;
 
   return (
     <Flex className={sessionViewRoot}>
@@ -197,7 +205,7 @@ export function SessionViewPage() {
         />
       )}
 
-      <TaskBar sessionId={session.id} task={session.current_task} />
+      <TaskBar sessionId={session.id} task={liveTask} />
     </Flex>
   );
 }

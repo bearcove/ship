@@ -19,6 +19,7 @@ export interface SessionViewState {
   captainBlocks: BlockStore;
   mateBlocks: BlockStore;
   currentTaskId: string | null;
+  currentTaskDescription: string | null;
   currentTaskStatus: TaskStatus | null;
   connected: boolean;
   phase: "loading" | "replaying" | "live";
@@ -37,6 +38,7 @@ export function initialSessionViewState(): SessionViewState {
     captainBlocks: createBlockStore(),
     mateBlocks: createBlockStore(),
     currentTaskId: null,
+    currentTaskDescription: null,
     currentTaskStatus: null,
     connected: true,
     phase: "loading",
@@ -66,6 +68,7 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         captain: action.session.captain,
         mate: action.session.mate,
         currentTaskId: action.session.current_task?.id ?? null,
+        currentTaskDescription: action.session.current_task?.description ?? null,
         currentTaskStatus: action.session.current_task?.status ?? null,
       };
 
@@ -168,6 +171,7 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
           return {
             ...nextState,
             currentTaskId: ev.task_id,
+            currentTaskDescription: ev.description,
             currentTaskStatus: { tag: "Assigned" },
             captainBlocks: clearBlocks(),
             mateBlocks: clearBlocks(),

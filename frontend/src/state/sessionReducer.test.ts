@@ -90,6 +90,7 @@ describe("sessionReducer event handling", () => {
     expect(state.captain?.kind.tag).toBe("Claude");
     expect(state.mate?.state.tag).toBe("Working");
     expect(state.currentTaskId).toBe("task-1");
+    expect(state.currentTaskDescription).toBe("Investigate replay");
     expect(state.currentTaskStatus?.tag).toBe("Working");
   });
 
@@ -139,6 +140,7 @@ describe("sessionReducer event handling", () => {
       },
     });
     expect(state.currentTaskId).toBe("task-42");
+    expect(state.currentTaskDescription).toBe("do work");
     expect(state.captainBlocks.blocks).toHaveLength(0);
     expect(state.mateBlocks.blocks).toHaveLength(0);
   });
