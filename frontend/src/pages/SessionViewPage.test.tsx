@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
     currentTaskStatus: null,
     captainBlocks: { blocks: [] },
     mateBlocks: { blocks: [] },
+    startupState: null,
     phase: "live" as const,
     connected: true,
     disconnectReason: null,
@@ -81,6 +82,7 @@ function makeSession(): SessionDetail {
     },
     task_history: [],
     autonomy_mode: { tag: "HumanInTheLoop" },
+    startup_state: { tag: "Ready" },
     pending_steer: null,
   };
 }
@@ -108,6 +110,7 @@ beforeEach(() => {
     currentTaskStatus: null,
     captainBlocks: { blocks: [] },
     mateBlocks: { blocks: [] },
+    startupState: null,
     phase: "live",
     connected: true,
     disconnectReason: null,

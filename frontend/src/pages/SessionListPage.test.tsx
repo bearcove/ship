@@ -62,6 +62,7 @@ function makeSession(overrides: Partial<SessionSummary> = {}): SessionSummary {
       state: { tag: "Idle" },
       context_remaining_percent: null,
     },
+    startup_state: { tag: "Ready" },
     current_task_description: "Polish the toolbar",
     task_status: { tag: "Working" },
     autonomy_mode: { tag: "HumanInTheLoop" },
@@ -96,7 +97,6 @@ beforeEach(() => {
   mocks.createSession.mockResolvedValue({
     tag: "Created",
     session_id: "session-created",
-    task_id: "task-created",
   });
 });
 
@@ -136,7 +136,7 @@ describe("SessionListPage UX slice", () => {
 
   // r[verify ui.session-list.create]
   // r[verify ui.session-list.create.branch-filter]
-  it("preselects the filtered project and submits via Cmd+Enter from the task field", async () => {
+  it("preselects the filtered project and submits once the branch is selected", async () => {
     renderPage("/?project=ship");
 
     fireEvent.click(screen.getAllByRole("button", { name: /new session/i })[0]);
@@ -150,9 +150,7 @@ describe("SessionListPage UX slice", () => {
     fireEvent.change(branchField, { target: { value: "release" } });
     fireEvent.mouseDown(await screen.findByRole("option", { name: "release/2026.03" }));
 
-    const taskField = screen.getByLabelText("Task description");
-    fireEvent.change(taskField, { target: { value: "Tighten the new-session flow" } });
-    fireEvent.keyDown(taskField, { key: "Enter", metaKey: true });
+    fireEvent.click(screen.getByRole("button", { name: /create session/i }));
 
     await waitFor(() => {
       expect(mocks.createSession).toHaveBeenCalledWith({
@@ -160,7 +158,6 @@ describe("SessionListPage UX slice", () => {
         captain_kind: { tag: "Claude" },
         mate_kind: { tag: "Claude" },
         base_branch: "release/2026.03",
-        task_description: "Tighten the new-session flow",
         mcp_servers: null,
       });
     });
@@ -183,8 +180,6 @@ describe("SessionListPage UX slice", () => {
     const createButton = screen.getByRole("button", { name: /create session/i });
     expect(createButton).toBeDisabled();
 
-    const taskField = screen.getByLabelText("Task description");
-    fireEvent.change(taskField, { target: { value: "Tighten the new-session flow" } });
     expect(createButton).toBeDisabled();
 
     fireEvent.click(createButton);

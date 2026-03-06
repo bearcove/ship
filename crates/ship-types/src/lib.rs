@@ -168,10 +168,38 @@ pub mod task {
     }
 }
 
+pub mod session {
+    #[repr(u8)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, facet::Facet)]
+    pub enum SessionStartupStage {
+        ResolvingMcp,
+        CreatingWorktree,
+        StartingCaptain,
+        StartingMate,
+        GreetingCaptain,
+    }
+
+    #[repr(u8)]
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub enum SessionStartupState {
+        Pending,
+        Running {
+            stage: SessionStartupStage,
+            message: String,
+        },
+        Ready,
+        Failed {
+            stage: SessionStartupStage,
+            message: String,
+        },
+    }
+}
+
 pub mod events {
     use crate::TaskId;
     use crate::agent::{AgentState, PlanStep, Role};
     use crate::ids::BlockId;
+    use crate::session::SessionStartupState;
     use crate::task::TaskStatus;
 
     #[repr(u8)]
@@ -284,6 +312,9 @@ pub mod events {
             role: Role,
             state: AgentState,
         },
+        SessionStartupChanged {
+            state: SessionStartupState,
+        },
         // r[event.task-status-changed]
         TaskStatusChanged {
             task_id: TaskId,
@@ -320,6 +351,7 @@ pub mod events {
 pub mod protocol {
     use crate::agent::{AgentKind, AgentSnapshot};
     use crate::ids::{ProjectName, SessionId};
+    use crate::session::SessionStartupState;
     use crate::task::{TaskRecord, TaskStatus};
 
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
@@ -380,7 +412,6 @@ pub mod protocol {
         pub captain_kind: AgentKind,
         pub mate_kind: AgentKind,
         pub base_branch: String,
-        pub task_description: String,
         pub mcp_servers: Option<Vec<McpServerConfig>>,
     }
 
@@ -388,13 +419,8 @@ pub mod protocol {
     #[repr(u8)]
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub enum CreateSessionResponse {
-        Created {
-            session_id: SessionId,
-            task_id: crate::ids::TaskId,
-        },
-        Failed {
-            message: String,
-        },
+        Created { session_id: SessionId },
+        Failed { message: String },
     }
 
     // r[proto.assign]
@@ -446,6 +472,7 @@ pub mod protocol {
         pub branch_name: String,
         pub captain: AgentSnapshot,
         pub mate: AgentSnapshot,
+        pub startup_state: SessionStartupState,
         pub current_task_description: Option<String>,
         pub task_status: Option<TaskStatus>,
         pub autonomy_mode: AutonomyMode,
@@ -459,6 +486,7 @@ pub mod protocol {
         pub branch_name: String,
         pub captain: AgentSnapshot,
         pub mate: AgentSnapshot,
+        pub startup_state: SessionStartupState,
         pub current_task: Option<TaskRecord>,
         pub task_history: Vec<TaskRecord>,
         pub autonomy_mode: AutonomyMode,
@@ -471,6 +499,7 @@ pub mod persistence {
     use crate::events::{ContentBlock, SessionEventEnvelope};
     use crate::ids::{BlockId, ProjectName, SessionId};
     use crate::protocol::{AutonomyMode, McpServerConfig};
+    use crate::session::SessionStartupState;
     use crate::task::TaskRecord;
 
     #[derive(Debug, Clone, facet::Facet)]
@@ -507,6 +536,8 @@ pub mod persistence {
         pub config: SessionConfig,
         pub captain: AgentSnapshot,
         pub mate: AgentSnapshot,
+        pub startup_state: SessionStartupState,
+        pub session_event_log: Vec<SessionEventEnvelope>,
         pub current_task: Option<CurrentTask>,
         pub task_history: Vec<TaskRecord>,
     }
@@ -528,4 +559,5 @@ pub use protocol::{
     McpServerConfig, McpSseServerConfig, McpStdioServerConfig, ProjectInfo, SessionDetail,
     SessionSummary,
 };
+pub use session::{SessionStartupStage, SessionStartupState};
 pub use task::{TaskRecord, TaskStatus};

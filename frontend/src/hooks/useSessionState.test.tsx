@@ -111,6 +111,7 @@ const session: SessionDetail = {
   current_task: null,
   task_history: [],
   autonomy_mode: { tag: "HumanInTheLoop" },
+  startup_state: { tag: "Ready" },
   pending_steer: null,
 };
 

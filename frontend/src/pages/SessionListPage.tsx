@@ -11,7 +11,6 @@ import {
   Select,
   SegmentedControl,
   Text,
-  TextArea,
   TextField,
   Tooltip,
 } from "@radix-ui/themes";
@@ -307,7 +306,6 @@ function NewSessionDialog({
   const [captainKind, setCaptainKind] = useState<AgentKind>({ tag: "Claude" });
   const [mateKind, setMateKind] = useState<AgentKind>({ tag: "Claude" });
   const [branch, setBranch] = useState("");
-  const [taskDescription, setTaskDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
@@ -318,7 +316,6 @@ function NewSessionDialog({
 
     setProjectName(defaultProject);
     setBranch("");
-    setTaskDescription("");
     setCreateError(null);
   }, [defaultProject, open]);
 
@@ -337,7 +334,7 @@ function NewSessionDialog({
   }, [captainKind, mateKind, discovery]);
 
   async function handleCreate() {
-    if (!projectName || !branch || !taskDescription.trim()) return;
+    if (!projectName || !branch) return;
     setCreateError(null);
     setSubmitting(true);
     try {
@@ -347,7 +344,6 @@ function NewSessionDialog({
         captain_kind: captainKind,
         mate_kind: mateKind,
         base_branch: branch,
-        task_description: taskDescription,
         mcp_servers: null,
       });
       if (result.tag === "Failed") {
@@ -364,7 +360,6 @@ function NewSessionDialog({
   const createDisabled =
     !projectName ||
     !branch ||
-    !taskDescription.trim() ||
     submitting ||
     !isAgentKindAvailable(captainKind, discovery) ||
     !isAgentKindAvailable(mateKind, discovery);
@@ -374,7 +369,7 @@ function NewSessionDialog({
       <Dialog.Content key={String(open)} maxWidth="480px">
         <Dialog.Title>New Session</Dialog.Title>
         <Dialog.Description size="2" color="gray">
-          Configure a new agent session with a project, agents, branch, and task.
+          Configure a new agent session with a project, agents, and branch.
         </Dialog.Description>
         {createError ? (
           <Callout.Root color="red" mt="3">
@@ -415,25 +410,6 @@ function NewSessionDialog({
           />
 
           <BranchCombobox projectName={projectName} value={branch} onChange={setBranch} />
-
-          <Flex direction="column" gap="1">
-            <Text size="2" weight="medium">
-              Task description
-            </Text>
-            <TextArea
-              aria-label="Task description"
-              placeholder="Describe the task for the captain and mate…"
-              value={taskDescription}
-              onChange={(e) => setTaskDescription(e.target.value)}
-              onKeyDown={(event) => {
-                if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && !createDisabled) {
-                  event.preventDefault();
-                  void handleCreate();
-                }
-              }}
-              rows={4}
-            />
-          </Flex>
 
           <Flex gap="2" justify="end" mt="1">
             <Dialog.Close>
@@ -672,6 +648,13 @@ export function SessionListPage() {
                       {session.current_task_description.length > 100
                         ? `${session.current_task_description.slice(0, 97)}…`
                         : session.current_task_description}
+                    </Text>
+                  )}
+                  {!session.current_task_description && session.startup_state.tag !== "Ready" && (
+                    <Text size="2" color="gray">
+                      {session.startup_state.tag === "Pending"
+                        ? "Session startup is queued."
+                        : session.startup_state.message}
                     </Text>
                   )}
 

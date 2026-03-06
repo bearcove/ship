@@ -59,13 +59,19 @@ fn codegen_typescript(workspace_root: &Path) -> Result<(), Box<dyn Error>> {
 }
 
 fn normalize_generated_typescript(code: String) -> String {
+    let mut code = code;
+
     if code.contains("import { Tx, Rx, bindChannels } from \"@bearcove/roam-core\";")
         && !code.contains("Rx<")
     {
-        return code.replace(
+        code = code.replace(
             "import { Tx, Rx, bindChannels } from \"@bearcove/roam-core\";",
             "import { Tx, bindChannels } from \"@bearcove/roam-core\";",
         );
+    }
+
+    if code.contains("initial_credit: 16, ") {
+        code = code.replace("initial_credit: 16, ", "");
     }
 
     code

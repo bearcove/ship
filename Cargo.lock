@@ -2012,6 +2012,8 @@ dependencies = [
  "reqwest",
  "roam",
  "roam-websocket",
+ "serde",
+ "serde_json",
  "ship-core",
  "ship-service",
  "ship-types",

@@ -1,4 +1,5 @@
 mod agent_discovery;
+mod captain_mcp;
 mod ship_impl;
 
 use std::io::Write;
@@ -46,6 +47,9 @@ enum Command {
     /// Start the Ship server.
     Serve(ServeArgs),
 
+    /// Run the captain MCP stdio proxy.
+    CaptainMcpProxy(CaptainMcpProxyArgs),
+
     /// Manage projects.
     Project {
         /// Project command.
@@ -59,6 +63,13 @@ struct ServeArgs {
     /// HTTP listen address (for example: `[::]:9140`).
     #[facet(args::named, default)]
     listen: Option<String>,
+}
+
+#[derive(Debug, facet::Facet)]
+struct CaptainMcpProxyArgs {
+    /// Path to the per-session MCP unix socket.
+    #[facet(args::named)]
+    socket: String,
 }
 
 #[derive(Debug, facet::Facet)]
@@ -99,6 +110,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match args.command {
         Command::Serve(args) => run_serve(args).await,
+        Command::CaptainMcpProxy(args) => {
+            captain_mcp::run_proxy(PathBuf::from(args.socket)).await?;
+            Ok(())
+        }
         Command::Project { command } => run_project(command).await,
     }
 }

@@ -4,8 +4,8 @@ use ship_core::{JsonSessionStore, SessionStore};
 use ship_types::{
     AgentKind, AgentSnapshot, AgentState, AutonomyMode, BlockId, ContentBlock, CurrentTask,
     McpServerConfig, McpStdioServerConfig, PersistedSession, ProjectName, Role, SessionConfig,
-    SessionEvent, SessionEventEnvelope, SessionId, TaskContentRecord, TaskId, TaskRecord,
-    TaskStatus,
+    SessionEvent, SessionEventEnvelope, SessionId, SessionStartupState, TaskContentRecord, TaskId,
+    TaskRecord, TaskStatus,
 };
 
 #[derive(Debug, Clone, facet::Facet)]
@@ -66,6 +66,8 @@ fn make_persisted_session(id: &str, description: &str) -> PersistedSession {
             },
             context_remaining_percent: Some(75),
         },
+        startup_state: SessionStartupState::Ready,
+        session_event_log: Vec::new(),
         current_task: Some(CurrentTask {
             record: TaskRecord {
                 id: TaskId::new(),

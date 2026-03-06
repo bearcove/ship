@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use fs_err::tokio as fs;
 use ship_types::{
     AgentKind, AgentSnapshot, AutonomyMode, CurrentTask, PersistedSession, ProjectName,
-    SessionConfig, SessionId, TaskRecord,
+    SessionConfig, SessionId, SessionStartupState, TaskRecord,
 };
 
 use crate::{SessionStore, StoreError};
@@ -60,6 +60,8 @@ impl From<LegacyPersistedSession> for PersistedSession {
             },
             captain: value.captain,
             mate: value.mate,
+            startup_state: SessionStartupState::Ready,
+            session_event_log: Vec::new(),
             current_task: value.current_task,
             task_history: value.task_history,
         }

@@ -1,11 +1,13 @@
 use std::collections::HashMap;
 use std::future::Future;
+use std::path::PathBuf;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures_util::StreamExt;
 use roam::Tx;
+use serde_json::{Value, json};
 use ship_core::{
     AcpAgentDriver, ActiveSession, AgentDriver, AgentSessionConfig, GitWorktreeOps,
     JsonSessionStore, ProjectRegistry, SessionStore, WorktreeOps, apply_event,
@@ -16,12 +18,21 @@ use ship_service::Ship;
 use ship_types::{
     AgentDiscovery, AgentKind, AgentSnapshot, AgentState, AssignTaskResponse, AutonomyMode,
     BlockId, CloseSessionRequest, CloseSessionResponse, ContentBlock, CreateSessionRequest,
-    CreateSessionResponse, CurrentTask, McpServerConfig, PersistedSession, ProjectInfo,
-    ProjectName, Role, SessionConfig, SessionDetail, SessionEvent, SessionId, SessionSummary,
-    SubscribeMessage, TaskId, TaskRecord, TaskStatus,
+    CreateSessionResponse, CurrentTask, McpServerConfig, McpStdioServerConfig, PersistedSession,
+    ProjectInfo, ProjectName, Role, SessionConfig, SessionDetail, SessionEvent, SessionId,
+    SessionStartupStage, SessionStartupState, SessionSummary, SubscribeMessage, TaskId, TaskRecord,
+    TaskStatus, ToolCallContent, ToolCallStatus,
 };
+use tokio::net::UnixListener;
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
+
+use crate::captain_mcp::{ToolDefinition, ToolHandler, ToolResult};
+
+struct CaptainMcpHandle {
+    socket_path: PathBuf,
+    task: JoinHandle<()>,
+}
 
 // r[server.multi-repo]
 #[derive(Clone)]
@@ -32,6 +43,7 @@ pub struct ShipImpl {
     worktree_ops: Arc<GitWorktreeOps>,
     store: Arc<JsonSessionStore>,
     sessions: Arc<Mutex<HashMap<SessionId, ActiveSession>>>,
+    captain_mcp: Arc<Mutex<HashMap<SessionId, CaptainMcpHandle>>>,
 }
 
 impl ShipImpl {
@@ -47,6 +59,7 @@ impl ShipImpl {
             worktree_ops: Arc::new(GitWorktreeOps),
             store: Arc::new(JsonSessionStore::new(sessions_dir)),
             sessions: Arc::new(Mutex::new(HashMap::new())),
+            captain_mcp: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -68,6 +81,7 @@ impl ShipImpl {
             branch_name: session.config.branch_name.clone(),
             captain: session.captain.clone(),
             mate: session.mate.clone(),
+            startup_state: session.startup_state.clone(),
             current_task_description: session
                 .current_task
                 .as_ref()
@@ -84,6 +98,7 @@ impl ShipImpl {
             branch_name: session.config.branch_name.clone(),
             captain: session.captain.clone(),
             mate: session.mate.clone(),
+            startup_state: session.startup_state.clone(),
             current_task: session
                 .current_task
                 .as_ref()
@@ -101,6 +116,10 @@ impl ShipImpl {
             branch_name: String::new(),
             captain: Self::fallback_agent(Role::Captain, AgentKind::Claude),
             mate: Self::fallback_agent(Role::Mate, AgentKind::Codex),
+            startup_state: SessionStartupState::Failed {
+                stage: SessionStartupStage::ResolvingMcp,
+                message: "session not found".to_owned(),
+            },
             current_task: None,
             task_history: Vec::new(),
             autonomy_mode: AutonomyMode::HumanInTheLoop,
@@ -117,6 +136,7 @@ impl ShipImpl {
             SessionEvent::BlockAppend { .. } => "BlockAppend",
             SessionEvent::BlockPatch { .. } => "BlockPatch",
             SessionEvent::AgentStateChanged { .. } => "AgentStateChanged",
+            SessionEvent::SessionStartupChanged { .. } => "SessionStartupChanged",
             SessionEvent::TaskStatusChanged { .. } => "TaskStatusChanged",
             SessionEvent::ContextUpdated { .. } => "ContextUpdated",
             SessionEvent::TaskStarted { .. } => "TaskStarted",
@@ -129,7 +149,9 @@ impl ShipImpl {
             | SessionEvent::BlockPatch { role, .. }
             | SessionEvent::AgentStateChanged { role, .. }
             | SessionEvent::ContextUpdated { role, .. } => Some(*role),
-            SessionEvent::TaskStatusChanged { .. } | SessionEvent::TaskStarted { .. } => None,
+            SessionEvent::SessionStartupChanged { .. }
+            | SessionEvent::TaskStatusChanged { .. }
+            | SessionEvent::TaskStarted { .. } => None,
         }
     }
 
@@ -138,6 +160,7 @@ impl ShipImpl {
             SessionEvent::BlockAppend { block_id, .. }
             | SessionEvent::BlockPatch { block_id, .. } => Some(&block_id.0),
             SessionEvent::AgentStateChanged { .. }
+            | SessionEvent::SessionStartupChanged { .. }
             | SessionEvent::TaskStatusChanged { .. }
             | SessionEvent::ContextUpdated { .. }
             | SessionEvent::TaskStarted { .. } => None,
@@ -151,6 +174,7 @@ impl ShipImpl {
             SessionEvent::BlockAppend { .. }
             | SessionEvent::BlockPatch { .. }
             | SessionEvent::AgentStateChanged { .. }
+            | SessionEvent::SessionStartupChanged { .. }
             | SessionEvent::ContextUpdated { .. } => None,
         }
     }
@@ -256,74 +280,6 @@ impl ShipImpl {
         }
     }
 
-    async fn cleanup_partial_creation(
-        &self,
-        repo_root: &std::path::Path,
-        worktree_path: &std::path::Path,
-        branch_name: &str,
-        captain_handle: Option<&ship_core::AgentHandle>,
-        mate_handle: Option<&ship_core::AgentHandle>,
-    ) {
-        if let Some(handle) = captain_handle
-            && let Err(error) = self.agent_driver.kill(handle).await
-        {
-            tracing::warn!(%branch_name, error = %error.message, "failed to kill captain during session creation rollback");
-        }
-        if let Some(handle) = mate_handle
-            && let Err(error) = self.agent_driver.kill(handle).await
-        {
-            tracing::warn!(%branch_name, error = %error.message, "failed to kill mate during session creation rollback");
-        }
-
-        if worktree_path.exists()
-            && let Err(error) = self.worktree_ops.remove_worktree(worktree_path, true).await
-        {
-            tracing::warn!(
-                worktree_path = %worktree_path.display(),
-                error = %error.message,
-                "failed to remove worktree during session creation rollback"
-            );
-        }
-
-        match self.worktree_ops.list_branches(repo_root).await {
-            Ok(branches) if branches.iter().any(|branch| branch == branch_name) => {
-                if let Err(error) = self
-                    .worktree_ops
-                    .delete_branch(branch_name, true, repo_root)
-                    .await
-                {
-                    tracing::warn!(%branch_name, error = %error.message, "failed to delete branch during session creation rollback");
-                }
-            }
-            Ok(_) => {}
-            Err(error) => {
-                tracing::warn!(%branch_name, error = %error.message, "failed to inspect branches during session creation rollback");
-            }
-        }
-    }
-
-    async fn rollback_created_session(&self, session_id: &SessionId) {
-        let session = {
-            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
-            sessions.get(session_id).cloned()
-        };
-
-        if let Some(session) = session
-            && let Err(error) = self.cleanup_session_resources(&session, true).await
-        {
-            tracing::warn!(session_id = %session_id.0, %error, "failed to clean up rolled back session resources");
-        }
-
-        self.sessions
-            .lock()
-            .expect("sessions mutex poisoned")
-            .remove(session_id);
-
-        if let Err(error) = self.store.delete_session(session_id).await {
-            tracing::warn!(session_id = %session_id.0, error = %error.message, "failed to delete rolled back persisted session");
-        }
-    }
-
     // r[acp.mcp.config]
     // r[acp.mcp.defaults]
     // r[project.mcp-defaults]
@@ -346,6 +302,666 @@ impl ShipImpl {
             .map_err(|error| error.message)?;
 
         Ok((project_root, mcp_servers))
+    }
+
+    fn startup_message(stage: SessionStartupStage) -> &'static str {
+        match stage {
+            SessionStartupStage::ResolvingMcp => "Resolving MCP configuration",
+            SessionStartupStage::CreatingWorktree => "Creating worktree",
+            SessionStartupStage::StartingCaptain => "Starting captain",
+            SessionStartupStage::StartingMate => "Starting mate",
+            SessionStartupStage::GreetingCaptain => "Greeting user",
+        }
+    }
+
+    async fn set_startup_state(
+        &self,
+        session_id: &SessionId,
+        state: SessionStartupState,
+    ) -> Result<(), String> {
+        {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions
+                .get_mut(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            apply_event(
+                session,
+                SessionEvent::SessionStartupChanged {
+                    state: state.clone(),
+                },
+            );
+        }
+
+        self.persist_session(session_id).await
+    }
+
+    async fn fail_startup(
+        &self,
+        session_id: &SessionId,
+        stage: SessionStartupStage,
+        message: String,
+    ) {
+        Self::log_error("session_startup", &message);
+        let _ = self
+            .set_startup_state(
+                session_id,
+                SessionStartupState::Failed {
+                    stage,
+                    message: message.clone(),
+                },
+            )
+            .await;
+    }
+
+    fn captain_bootstrap_prompt() -> String {
+        [
+            "You are the Ship captain for this session.",
+            "Act as a senior engineer who scopes work, reviews changes, and delegates to the mate.",
+            "Do not write code directly and do not assume there is already a task.",
+            "A new session has just been created and there is no active task yet.",
+            "Greet the user briefly, explain that you are ready to help plan or review work, then wait.",
+            "Do not delegate to the mate yet.",
+        ]
+        .join("\n")
+    }
+
+    fn captain_assignment_prompt(description: &str) -> String {
+        format!(
+            "The human assigned a new task:\n{description}\n\nReview it as the captain. You may ask a clarifying question in plain text, or call Ship MCP tools when you want to delegate, accept, or reject the task. Do not write code directly."
+        )
+    }
+
+    fn captain_mcp_tools() -> Vec<ToolDefinition> {
+        vec![
+            ToolDefinition {
+                name: "ship_steer",
+                description: "Delegate work on the active task to the mate.",
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "message": { "type": "string" }
+                    },
+                    "required": ["message"],
+                    "additionalProperties": false,
+                }),
+            },
+            ToolDefinition {
+                name: "ship_accept",
+                description: "Accept the active task when it is complete.",
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "summary": { "type": "string" }
+                    },
+                    "additionalProperties": false,
+                }),
+            },
+            ToolDefinition {
+                name: "ship_reject",
+                description: "Reject the active task and cancel the current approach.",
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "reason": { "type": "string" },
+                        "message": { "type": "string" }
+                    },
+                    "required": ["reason"],
+                    "additionalProperties": false,
+                }),
+            },
+        ]
+    }
+
+    async fn install_captain_mcp_server(
+        &self,
+        session_id: &SessionId,
+        worktree_path: &std::path::Path,
+    ) -> Result<McpServerConfig, String> {
+        let socket_path = worktree_path.join(".ship-captain-mcp.sock");
+        match std::fs::remove_file(&socket_path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("failed to clear captain MCP socket: {error}")),
+        }
+
+        let listener = UnixListener::bind(&socket_path)
+            .map_err(|error| format!("failed to bind captain MCP socket: {error}"))?;
+
+        let session_id_clone = session_id.clone();
+        let this = self.clone();
+        let handler: ToolHandler = Arc::new(move |name, arguments| {
+            let this = this.clone();
+            let session_id = session_id_clone.clone();
+            Box::pin(async move {
+                this.handle_captain_mcp_call(&session_id, &name, arguments)
+                    .await
+            })
+        });
+
+        let task = tokio::spawn(async move {
+            crate::captain_mcp::serve(listener, Self::captain_mcp_tools(), handler).await;
+        });
+
+        self.captain_mcp
+            .lock()
+            .expect("captain mcp mutex poisoned")
+            .insert(
+                session_id.clone(),
+                CaptainMcpHandle {
+                    socket_path: socket_path.clone(),
+                    task,
+                },
+            );
+
+        let command = std::env::current_exe()
+            .map_err(|error| format!("failed to resolve ship executable: {error}"))?;
+
+        Ok(McpServerConfig::Stdio(McpStdioServerConfig {
+            name: "ship".to_owned(),
+            command: command.display().to_string(),
+            args: vec![
+                "captain-mcp-proxy".to_owned(),
+                "--socket".to_owned(),
+                socket_path.display().to_string(),
+            ],
+            env: Vec::new(),
+        }))
+    }
+
+    fn clear_captain_mcp_server(&self, session_id: &SessionId) {
+        if let Some(handle) = self
+            .captain_mcp
+            .lock()
+            .expect("captain mcp mutex poisoned")
+            .remove(session_id)
+        {
+            handle.task.abort();
+            let _ = std::fs::remove_file(handle.socket_path);
+        }
+    }
+
+    async fn handle_captain_mcp_call(
+        &self,
+        session_id: &SessionId,
+        name: &str,
+        arguments: Value,
+    ) -> ToolResult {
+        let outcome = match name {
+            "ship_steer" => {
+                let Some(message) = arguments.get("message").and_then(Value::as_str) else {
+                    return ToolResult {
+                        text: "missing required argument: message".to_owned(),
+                        is_error: true,
+                    };
+                };
+                self.captain_tool_steer(session_id, message.to_owned())
+                    .await
+            }
+            "ship_accept" => {
+                let summary = arguments
+                    .get("summary")
+                    .and_then(Value::as_str)
+                    .map(ToOwned::to_owned);
+                self.captain_tool_accept(session_id, summary).await
+            }
+            "ship_reject" => {
+                let Some(reason) = arguments.get("reason").and_then(Value::as_str) else {
+                    return ToolResult {
+                        text: "missing required argument: reason".to_owned(),
+                        is_error: true,
+                    };
+                };
+                let message = arguments
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .map(ToOwned::to_owned);
+                self.captain_tool_reject(session_id, reason.to_owned(), message)
+                    .await
+            }
+            other => Err(format!("unknown tool: {other}")),
+        };
+
+        match outcome {
+            Ok(text) => ToolResult {
+                text,
+                is_error: false,
+            },
+            Err(text) => ToolResult {
+                text,
+                is_error: true,
+            },
+        }
+    }
+
+    async fn append_captain_tool_call(
+        &self,
+        session_id: &SessionId,
+        tool_name: &str,
+        arguments: String,
+        content: Vec<ToolCallContent>,
+    ) -> Result<(), String> {
+        {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions
+                .get_mut(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            apply_event(
+                session,
+                SessionEvent::BlockAppend {
+                    block_id: BlockId::new(),
+                    role: Role::Captain,
+                    block: ContentBlock::ToolCall {
+                        tool_name: tool_name.to_owned(),
+                        arguments,
+                        locations: Vec::new(),
+                        status: ToolCallStatus::Success,
+                        content,
+                    },
+                },
+            );
+        }
+        self.persist_session(session_id).await
+    }
+
+    async fn steer_task(
+        &self,
+        session_id: &SessionId,
+        content: String,
+    ) -> Result<AutonomyMode, String> {
+        let mode = {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let active = sessions
+                .get_mut(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+
+            let status = current_task_status(active).map_err(|error| error.to_string())?;
+            if status != TaskStatus::Assigned
+                && status != TaskStatus::ReviewPending
+                && status != TaskStatus::SteerPending
+            {
+                return Err("invalid task transition".to_owned());
+            }
+
+            apply_event(
+                active,
+                SessionEvent::BlockAppend {
+                    block_id: BlockId::new(),
+                    role: Role::Captain,
+                    block: ContentBlock::Text {
+                        text: content.clone(),
+                    },
+                },
+            );
+
+            if active.config.autonomy_mode == AutonomyMode::Autonomous {
+                transition_task(active, TaskStatus::Working).map_err(|error| error.to_string())?;
+            } else {
+                transition_task(active, TaskStatus::SteerPending)
+                    .map_err(|error| error.to_string())?;
+                active.pending_steer = Some(content.clone());
+            }
+
+            active.config.autonomy_mode
+        };
+
+        self.persist_session(session_id).await?;
+
+        if mode == AutonomyMode::Autonomous {
+            let this = self.clone();
+            let session_id = session_id.clone();
+            tokio::spawn(async move {
+                this.prompt_mate_from_steer(session_id, content).await;
+            });
+        }
+
+        Ok(mode)
+    }
+
+    async fn accept_task(
+        &self,
+        session_id: &SessionId,
+        summary: Option<String>,
+    ) -> Result<(), String> {
+        {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let active = sessions
+                .get_mut(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            let status = current_task_status(active).map_err(|error| error.to_string())?;
+            if status != TaskStatus::Assigned
+                && status != TaskStatus::ReviewPending
+                && status != TaskStatus::SteerPending
+            {
+                return Err("invalid task transition".to_owned());
+            }
+
+            if let Some(summary) = summary {
+                apply_event(
+                    active,
+                    SessionEvent::BlockAppend {
+                        block_id: BlockId::new(),
+                        role: Role::Captain,
+                        block: ContentBlock::Text { text: summary },
+                    },
+                );
+            }
+
+            transition_task(active, TaskStatus::Accepted).map_err(|error| error.to_string())?;
+            archive_terminal_task(active);
+        }
+
+        self.persist_session(session_id).await
+    }
+
+    async fn cancel_task(
+        &self,
+        session_id: &SessionId,
+        reason: Option<String>,
+    ) -> Result<(), String> {
+        let mate_handle = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let active = sessions
+                .get(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            let status = current_task_status(active).map_err(|error| error.to_string())?;
+            if status.is_terminal() {
+                return Err("session has no active task".to_owned());
+            }
+            if status == TaskStatus::Working {
+                active.mate_handle.clone()
+            } else {
+                None
+            }
+        };
+
+        if let Some(mate_handle) = mate_handle
+            && let Err(error) = self.agent_driver.cancel(&mate_handle).await
+        {
+            return Err(error.message);
+        }
+
+        {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let active = sessions
+                .get_mut(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            if let Some(reason) = reason {
+                apply_event(
+                    active,
+                    SessionEvent::BlockAppend {
+                        block_id: BlockId::new(),
+                        role: Role::Captain,
+                        block: ContentBlock::Error { message: reason },
+                    },
+                );
+            }
+            transition_task(active, TaskStatus::Cancelled).map_err(|error| error.to_string())?;
+            archive_terminal_task(active);
+        }
+
+        self.persist_session(session_id).await
+    }
+
+    async fn captain_tool_steer(
+        &self,
+        session_id: &SessionId,
+        message: String,
+    ) -> Result<String, String> {
+        let mode = self.steer_task(session_id, message.clone()).await?;
+        self.append_captain_tool_call(
+            session_id,
+            "ship_steer",
+            json!({ "message": message }).to_string(),
+            vec![ToolCallContent::Text {
+                text: if mode == AutonomyMode::Autonomous {
+                    "Forwarded steer to the mate.".to_owned()
+                } else {
+                    "Queued steer for human review.".to_owned()
+                },
+            }],
+        )
+        .await?;
+
+        Ok(if mode == AutonomyMode::Autonomous {
+            "Steer sent to the mate.".to_owned()
+        } else {
+            "Steer queued for human review.".to_owned()
+        })
+    }
+
+    async fn captain_tool_accept(
+        &self,
+        session_id: &SessionId,
+        summary: Option<String>,
+    ) -> Result<String, String> {
+        self.accept_task(session_id, summary.clone()).await?;
+        self.append_captain_tool_call(
+            session_id,
+            "ship_accept",
+            json!({ "summary": summary }).to_string(),
+            vec![ToolCallContent::Text {
+                text: "Accepted the active task.".to_owned(),
+            }],
+        )
+        .await?;
+        Ok("Accepted the active task.".to_owned())
+    }
+
+    async fn captain_tool_reject(
+        &self,
+        session_id: &SessionId,
+        reason: String,
+        message: Option<String>,
+    ) -> Result<String, String> {
+        let detail = message
+            .clone()
+            .map(|message| format!("{reason}: {message}"))
+            .unwrap_or_else(|| reason.clone());
+        self.cancel_task(session_id, Some(detail.clone())).await?;
+        self.append_captain_tool_call(
+            session_id,
+            "ship_reject",
+            json!({ "reason": reason, "message": message }).to_string(),
+            vec![ToolCallContent::Text {
+                text: detail.clone(),
+            }],
+        )
+        .await?;
+        Ok("Rejected the active task.".to_owned())
+    }
+
+    async fn start_session_runtime(&self, session_id: SessionId) {
+        let stage = SessionStartupStage::ResolvingMcp;
+        let _ = self
+            .set_startup_state(
+                &session_id,
+                SessionStartupState::Running {
+                    stage,
+                    message: Self::startup_message(stage).to_owned(),
+                },
+            )
+            .await;
+
+        let (project, base_branch, session_override) = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let Some(session) = sessions.get(&session_id) else {
+                return;
+            };
+            (
+                session.config.project.clone(),
+                session.config.base_branch.clone(),
+                if session.config.mcp_servers.is_empty() {
+                    None
+                } else {
+                    Some(session.config.mcp_servers.clone())
+                },
+            )
+        };
+
+        let (repo_root, resolved_mcp_servers) = match self
+            .resolve_session_mcp_servers(&project, session_override)
+            .await
+        {
+            Ok(value) => value,
+            Err(error) => {
+                self.fail_startup(&session_id, stage, error).await;
+                return;
+            }
+        };
+
+        let stage = SessionStartupStage::CreatingWorktree;
+        let _ = self
+            .set_startup_state(
+                &session_id,
+                SessionStartupState::Running {
+                    stage,
+                    message: Self::startup_message(stage).to_owned(),
+                },
+            )
+            .await;
+        let worktree_path = match self
+            .worktree_ops
+            .create_worktree(&session_id, &base_branch, "session", &repo_root)
+            .await
+        {
+            Ok(path) => path,
+            Err(error) => {
+                self.fail_startup(&session_id, stage, error.message).await;
+                return;
+            }
+        };
+        {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            if let Some(session) = sessions.get_mut(&session_id) {
+                session.worktree_path = Some(worktree_path.clone());
+            }
+        }
+        let _ = self.persist_session(&session_id).await;
+
+        let captain_ship_mcp = match self
+            .install_captain_mcp_server(&session_id, &worktree_path)
+            .await
+        {
+            Ok(config) => config,
+            Err(error) => {
+                self.fail_startup(&session_id, SessionStartupStage::StartingCaptain, error)
+                    .await;
+                return;
+            }
+        };
+
+        let stage = SessionStartupStage::StartingCaptain;
+        let _ = self
+            .set_startup_state(
+                &session_id,
+                SessionStartupState::Running {
+                    stage,
+                    message: Self::startup_message(stage).to_owned(),
+                },
+            )
+            .await;
+        let captain_handle = match self
+            .agent_driver
+            .spawn(
+                {
+                    let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                    sessions
+                        .get(&session_id)
+                        .expect("session exists")
+                        .config
+                        .captain_kind
+                },
+                Role::Captain,
+                &AgentSessionConfig {
+                    worktree_path: worktree_path.clone(),
+                    mcp_servers: {
+                        let mut servers = resolved_mcp_servers.clone();
+                        servers.push(captain_ship_mcp);
+                        servers
+                    },
+                },
+            )
+            .await
+        {
+            Ok(handle) => handle,
+            Err(error) => {
+                self.clear_captain_mcp_server(&session_id);
+                self.fail_startup(&session_id, stage, error.message).await;
+                return;
+            }
+        };
+        {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            if let Some(session) = sessions.get_mut(&session_id) {
+                session.captain_handle = Some(captain_handle);
+            }
+        }
+        let _ = self.persist_session(&session_id).await;
+
+        let stage = SessionStartupStage::StartingMate;
+        let _ = self
+            .set_startup_state(
+                &session_id,
+                SessionStartupState::Running {
+                    stage,
+                    message: Self::startup_message(stage).to_owned(),
+                },
+            )
+            .await;
+        let mate_handle = match self
+            .agent_driver
+            .spawn(
+                {
+                    let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                    sessions
+                        .get(&session_id)
+                        .expect("session exists")
+                        .config
+                        .mate_kind
+                },
+                Role::Mate,
+                &AgentSessionConfig {
+                    worktree_path: worktree_path.clone(),
+                    mcp_servers: resolved_mcp_servers.clone(),
+                },
+            )
+            .await
+        {
+            Ok(handle) => handle,
+            Err(error) => {
+                self.fail_startup(&session_id, stage, error.message).await;
+                return;
+            }
+        };
+        {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            if let Some(session) = sessions.get_mut(&session_id) {
+                session.mate_handle = Some(mate_handle);
+            }
+        }
+        let _ = self.persist_session(&session_id).await;
+
+        let stage = SessionStartupStage::GreetingCaptain;
+        let _ = self
+            .set_startup_state(
+                &session_id,
+                SessionStartupState::Running {
+                    stage,
+                    message: Self::startup_message(stage).to_owned(),
+                },
+            )
+            .await;
+        if let Err(error) = self
+            .prompt_agent(&session_id, Role::Captain, Self::captain_bootstrap_prompt())
+            .await
+        {
+            self.fail_startup(&session_id, stage, error).await;
+            return;
+        }
+
+        let _ = self
+            .set_startup_state(&session_id, SessionStartupState::Ready)
+            .await;
     }
 
     fn repo_root_for_worktree(worktree_path: &std::path::Path) -> Result<&std::path::Path, String> {
@@ -376,18 +992,26 @@ impl ShipImpl {
         session: &ActiveSession,
         force: bool,
     ) -> Result<(), String> {
-        let repo_root = Self::repo_root_for_worktree(&session.worktree_path)?;
+        let worktree_path = session
+            .worktree_path
+            .as_ref()
+            .ok_or_else(|| "session worktree not ready".to_owned())?;
+        let repo_root = Self::repo_root_for_worktree(worktree_path)?;
 
-        if let Err(error) = self.agent_driver.kill(&session.captain_handle).await {
+        if let Some(handle) = &session.captain_handle
+            && let Err(error) = self.agent_driver.kill(handle).await
+        {
             Self::log_error("close_session_kill_captain", &error.message);
         }
-        if let Err(error) = self.agent_driver.kill(&session.mate_handle).await {
+        if let Some(handle) = &session.mate_handle
+            && let Err(error) = self.agent_driver.kill(handle).await
+        {
             Self::log_error("close_session_kill_mate", &error.message);
         }
 
-        if session.worktree_path.exists() {
+        if worktree_path.exists() {
             self.worktree_ops
-                .remove_worktree(&session.worktree_path, force)
+                .remove_worktree(worktree_path, force)
                 .await
                 .map_err(|error| error.message)?;
         }
@@ -424,6 +1048,8 @@ impl ShipImpl {
                 config: session.config.clone(),
                 captain: session.captain.clone(),
                 mate: session.mate.clone(),
+                startup_state: session.startup_state.clone(),
+                session_event_log: session.session_event_log.clone(),
                 current_task: session.current_task.clone(),
                 task_history: session.task_history.clone(),
             }
@@ -445,6 +1071,7 @@ impl ShipImpl {
                 Role::Captain => session.captain_handle.clone(),
                 Role::Mate => session.mate_handle.clone(),
             }
+            .ok_or_else(|| format!("{role:?} agent not ready"))?
         };
 
         let mut stream = self.agent_driver.notifications(&handle);
@@ -529,16 +1156,34 @@ impl ShipImpl {
                 Role::Captain => session.captain_handle.clone(),
                 Role::Mate => session.mate_handle.clone(),
             }
+            .ok_or_else(|| format!("{role:?} agent not ready"))?
         };
 
         self.persist_session(session_id).await?;
 
         let (stop_tx, pump_handle) = self.spawn_notification_pump(session_id.clone(), role);
-        let response = self
-            .agent_driver
-            .prompt(&handle, &prompt)
-            .await
-            .map_err(|error| error.message)?;
+        let response = match self.agent_driver.prompt(&handle, &prompt).await {
+            Ok(response) => response,
+            Err(error) => {
+                let message = error.message;
+                let _ = stop_tx.send(());
+                let _ = pump_handle.await;
+                {
+                    let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                    if let Some(session) = sessions.get_mut(session_id) {
+                        set_agent_state(
+                            session,
+                            role,
+                            AgentState::Error {
+                                message: message.clone(),
+                            },
+                        );
+                    }
+                }
+                let _ = self.persist_session(session_id).await;
+                return Err(message);
+            }
+        };
         let _ = stop_tx.send(());
         let _ = pump_handle.await;
 
@@ -561,27 +1206,6 @@ impl ShipImpl {
         Ok(response.stop_reason)
     }
 
-    async fn prompt_captain_review(&self, session_id: &SessionId) -> Result<(), String> {
-        let prompt = {
-            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
-            let session = sessions
-                .get(session_id)
-                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-            let task = session
-                .current_task
-                .as_ref()
-                .ok_or_else(|| "session has no active task".to_owned())?;
-            format!(
-                "Review mate output for task:\n{}\n\nProvide steer or acceptance.",
-                task.record.description
-            )
-        };
-
-        self.prompt_agent(session_id, Role::Captain, prompt)
-            .await
-            .map(|_| ())
-    }
-
     async fn handle_mate_stop_reason(
         &self,
         session_id: &SessionId,
@@ -589,100 +1213,32 @@ impl ShipImpl {
     ) -> Result<(), String> {
         match stop_reason {
             ship_core::StopReason::EndTurn => {
-                {
-                    let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
-                    let session = sessions
-                        .get_mut(session_id)
-                        .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-                    transition_task(session, TaskStatus::ReviewPending)
-                        .map_err(|error| error.to_string())?;
-                }
-                self.persist_session(session_id).await?;
-                self.prompt_captain_review(session_id).await?;
+                let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                let session = sessions
+                    .get_mut(session_id)
+                    .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+                transition_task(session, TaskStatus::ReviewPending)
+                    .map_err(|error| error.to_string())?;
             }
             ship_core::StopReason::Cancelled => {
-                {
-                    let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
-                    let session = sessions
-                        .get_mut(session_id)
-                        .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-                    transition_task(session, TaskStatus::Cancelled)
-                        .map_err(|error| error.to_string())?;
-                    archive_terminal_task(session);
-                }
-                self.persist_session(session_id).await?;
+                let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                let session = sessions
+                    .get_mut(session_id)
+                    .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+                transition_task(session, TaskStatus::Cancelled)
+                    .map_err(|error| error.to_string())?;
+                archive_terminal_task(session);
             }
             ship_core::StopReason::ContextExhausted => {
-                {
-                    let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
-                    let session = sessions
-                        .get_mut(session_id)
-                        .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-                    set_agent_state(session, Role::Mate, AgentState::ContextExhausted);
-                }
-                self.persist_session(session_id).await?;
+                let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                let session = sessions
+                    .get_mut(session_id)
+                    .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+                set_agent_state(session, Role::Mate, AgentState::ContextExhausted);
             }
         }
 
-        Ok(())
-    }
-
-    async fn run_task_prompt_flow(&self, session_id: SessionId, task_description: String) {
-        tracing::info!(session_id = %session_id.0, task_description, "starting task prompt flow");
-        let captain_prompt =
-            format!("Provide implementation direction for this task:\n{task_description}");
-
-        if let Err(error) = self
-            .prompt_agent(&session_id, Role::Captain, captain_prompt)
-            .await
-        {
-            Self::log_error("prompt_captain_initial", &error);
-            return;
-        }
-
-        {
-            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
-            let Some(session) = sessions.get_mut(&session_id) else {
-                return;
-            };
-            if let Err(error) = transition_task(session, TaskStatus::Working) {
-                Self::log_error("transition_after_captain", &error.to_string());
-                return;
-            }
-        }
-
-        if let Err(error) = self.persist_session(&session_id).await {
-            Self::log_error("persist_after_captain", &error);
-            return;
-        }
-
-        let mate_prompt = format!(
-            "Task:\n{task_description}\n\nCaptain direction:\nProvide an implementation plan and execute."
-        );
-
-        let stop_reason = match self
-            .prompt_agent(&session_id, Role::Mate, mate_prompt)
-            .await
-        {
-            Ok(stop_reason) => stop_reason,
-            Err(error) => {
-                Self::log_error("prompt_mate", &error);
-                return;
-            }
-        };
-
-        if let Err(error) = self.handle_mate_stop_reason(&session_id, stop_reason).await {
-            Self::log_error("handle_mate_stop_reason", &error);
-        }
-        tracing::info!(session_id = %session_id.0, "task prompt flow finished");
-    }
-
-    fn spawn_task_flow(&self, session_id: SessionId, task_description: String) {
-        let this = self.clone();
-        tokio::spawn(async move {
-            this.run_task_prompt_flow(session_id, task_description)
-                .await;
-        });
+        self.persist_session(session_id).await
     }
 
     async fn start_task(
@@ -698,6 +1254,9 @@ impl ShipImpl {
             let session = sessions
                 .get_mut(session_id)
                 .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            if session.startup_state != SessionStartupState::Ready {
+                return Err("session startup is not complete".to_owned());
+            }
             if session.current_task.is_some() {
                 return Err("session already has an active non-terminal task".to_owned());
             }
@@ -729,7 +1288,6 @@ impl ShipImpl {
         }
 
         self.persist_session(session_id).await?;
-        self.spawn_task_flow(session_id.clone(), description);
 
         Ok(task_id)
     }
@@ -826,101 +1384,19 @@ impl Ship for ShipImpl {
     }
 
     async fn create_session(&self, req: CreateSessionRequest) -> CreateSessionResponse {
+        let project_exists = {
+            let registry = self.registry.lock().await;
+            registry.get(&req.project.0).is_some()
+        };
+        if !project_exists {
+            return CreateSessionResponse::Failed {
+                message: format!("project not found: {}", req.project.0),
+            };
+        }
+
         let session_id = SessionId::new();
-        let slug = slugify(&req.task_description);
-        let branch_name = format!("ship/{}/{slug}", short_id(&session_id));
-        tracing::info!(
-            session_id = %session_id.0,
-            project = %req.project.0,
-            base_branch = %req.base_branch,
-            captain_kind = ?req.captain_kind,
-            mate_kind = ?req.mate_kind,
-            "create_session requested"
-        );
-        let (repo_root, mcp_servers) = match self
-            .resolve_session_mcp_servers(&req.project, req.mcp_servers.clone())
-            .await
-        {
-            Ok(resolved) => resolved,
-            Err(error) => {
-                Self::log_error("resolve_session_mcp_servers", &error);
-                return CreateSessionResponse::Failed { message: error };
-            }
-        };
-        tracing::info!(session_id = %session_id.0, repo_root = %repo_root.display(), "resolved project and MCP configuration");
-        let worktree_path = match self
-            .worktree_ops
-            .create_worktree(&session_id, &req.base_branch, &slug, &repo_root)
-            .await
-        {
-            Ok(path) => path,
-            Err(error) => {
-                tracing::warn!(
-                    session_id = %session_id.0,
-                    base_branch = %req.base_branch,
-                    error = %error.message,
-                    "failed to create worktree"
-                );
-                return CreateSessionResponse::Failed {
-                    message: error.message,
-                };
-            }
-        };
-        tracing::info!(
-            session_id = %session_id.0,
-            branch_name = %branch_name,
-            worktree_path = %worktree_path.display(),
-            "created session worktree"
-        );
-        let agent_session_config = AgentSessionConfig {
-            worktree_path: worktree_path.clone(),
-            mcp_servers: mcp_servers.clone(),
-        };
-
-        tracing::info!(session_id = %session_id.0, role = ?Role::Captain, agent_kind = ?req.captain_kind, "spawning agent");
-        let captain_handle = match self
-            .agent_driver
-            .spawn(req.captain_kind, Role::Captain, &agent_session_config)
-            .await
-        {
-            Ok(handle) => handle,
-            Err(error) => {
-                tracing::warn!(session_id = %session_id.0, role = ?Role::Captain, error = %error.message, "failed to spawn agent");
-                self.cleanup_partial_creation(&repo_root, &worktree_path, &branch_name, None, None)
-                    .await;
-                return CreateSessionResponse::Failed {
-                    message: format!("failed to spawn captain agent: {}", error.message),
-                };
-            }
-        };
-        tracing::info!(session_id = %session_id.0, role = ?Role::Captain, "agent spawned");
-
-        tracing::info!(session_id = %session_id.0, role = ?Role::Mate, agent_kind = ?req.mate_kind, "spawning agent");
-        let mate_handle = match self
-            .agent_driver
-            .spawn(req.mate_kind, Role::Mate, &agent_session_config)
-            .await
-        {
-            Ok(handle) => handle,
-            Err(error) => {
-                tracing::warn!(session_id = %session_id.0, role = ?Role::Mate, error = %error.message, "failed to spawn agent");
-                self.cleanup_partial_creation(
-                    &repo_root,
-                    &worktree_path,
-                    &branch_name,
-                    Some(&captain_handle),
-                    None,
-                )
-                .await;
-                return CreateSessionResponse::Failed {
-                    message: format!("failed to spawn mate agent: {}", error.message),
-                };
-            }
-        };
-        tracing::info!(session_id = %session_id.0, role = ?Role::Mate, "agent spawned");
-
+        let branch_name = format!("ship/{}/session", short_id(&session_id));
         let (events_tx, _) = broadcast::channel(256);
-
         let session = ActiveSession {
             id: session_id.clone(),
             config: SessionConfig {
@@ -930,11 +1406,11 @@ impl Ship for ShipImpl {
                 captain_kind: req.captain_kind,
                 mate_kind: req.mate_kind,
                 autonomy_mode: AutonomyMode::HumanInTheLoop,
-                mcp_servers,
+                mcp_servers: req.mcp_servers.unwrap_or_default(),
             },
-            worktree_path,
-            captain_handle,
-            mate_handle,
+            worktree_path: None,
+            captain_handle: None,
+            mate_handle: None,
             captain: AgentSnapshot {
                 role: Role::Captain,
                 kind: req.captain_kind,
@@ -947,6 +1423,8 @@ impl Ship for ShipImpl {
                 state: AgentState::Idle,
                 context_remaining_percent: None,
             },
+            startup_state: SessionStartupState::Pending,
+            session_event_log: Vec::new(),
             current_task: None,
             task_history: Vec::new(),
             captain_block_count: 0,
@@ -961,29 +1439,50 @@ impl Ship for ShipImpl {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             sessions.insert(session_id.clone(), session);
         }
-        tracing::info!(session_id = %session_id.0, "session inserted into active map");
-
-        let task_id = match self.start_task(&session_id, req.task_description).await {
-            Ok(task_id) => task_id,
-            Err(error) => {
-                tracing::warn!(session_id = %session_id.0, %error, "session creation failed while starting first task");
-                self.rollback_created_session(&session_id).await;
-                return CreateSessionResponse::Failed {
-                    message: format!("failed to start initial task: {error}"),
-                };
-            }
-        };
-        tracing::info!(session_id = %session_id.0, task_id = %task_id.0, "create_session completed");
-
-        CreateSessionResponse::Created {
-            session_id,
-            task_id,
+        if let Err(error) = self.persist_session(&session_id).await {
+            self.sessions
+                .lock()
+                .expect("sessions mutex poisoned")
+                .remove(&session_id);
+            return CreateSessionResponse::Failed { message: error };
         }
+
+        let this = self.clone();
+        let startup_session_id = session_id.clone();
+        tokio::spawn(async move {
+            this.start_session_runtime(startup_session_id).await;
+        });
+
+        CreateSessionResponse::Created { session_id }
     }
 
     async fn assign(&self, session: SessionId, description: String) -> AssignTaskResponse {
         match self.start_task(&session, description).await {
-            Ok(task_id) => AssignTaskResponse::Assigned { task_id },
+            Ok(task_id) => {
+                let this = self.clone();
+                let session_for_prompt = session.clone();
+                let description_for_prompt = {
+                    let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                    sessions
+                        .get(&session)
+                        .and_then(|active| active.current_task.as_ref())
+                        .map(|task| task.record.description.clone())
+                        .unwrap_or_default()
+                };
+                tokio::spawn(async move {
+                    if let Err(error) = this
+                        .prompt_agent(
+                            &session_for_prompt,
+                            Role::Captain,
+                            Self::captain_assignment_prompt(&description_for_prompt),
+                        )
+                        .await
+                    {
+                        Self::log_error("prompt_captain_assign", &error);
+                    }
+                });
+                AssignTaskResponse::Assigned { task_id }
+            }
             Err(error) => {
                 Self::log_error("assign", &error);
                 AssignTaskResponse::Failed { message: error }
@@ -992,62 +1491,8 @@ impl Ship for ShipImpl {
     }
 
     async fn steer(&self, session: SessionId, content: String) {
-        let mode = {
-            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
-            let Some(active) = sessions.get_mut(&session) else {
-                Self::log_error("steer", "session not found");
-                return;
-            };
-
-            let status = match current_task_status(active) {
-                Ok(status) => status,
-                Err(error) => {
-                    Self::log_error("steer", &error.to_string());
-                    return;
-                }
-            };
-            if status != TaskStatus::ReviewPending && status != TaskStatus::SteerPending {
-                Self::log_error("steer", "invalid task transition");
-                return;
-            }
-
-            apply_event(
-                active,
-                SessionEvent::BlockAppend {
-                    block_id: BlockId::new(),
-                    role: Role::Captain,
-                    block: ContentBlock::Text {
-                        text: content.clone(),
-                    },
-                },
-            );
-
-            if active.config.autonomy_mode == AutonomyMode::Autonomous {
-                if let Err(error) = transition_task(active, TaskStatus::Working) {
-                    Self::log_error("steer", &error.to_string());
-                    return;
-                }
-            } else {
-                if let Err(error) = transition_task(active, TaskStatus::SteerPending) {
-                    Self::log_error("steer", &error.to_string());
-                    return;
-                }
-                active.pending_steer = Some(content.clone());
-            }
-
-            active.config.autonomy_mode
-        };
-
-        if let Err(error) = self.persist_session(&session).await {
-            Self::log_error("steer_persist", &error);
-            return;
-        }
-
-        if mode == AutonomyMode::Autonomous {
-            let this = self.clone();
-            tokio::spawn(async move {
-                this.prompt_mate_from_steer(session, content).await;
-            });
+        if let Err(error) = self.steer_task(&session, content).await {
+            Self::log_error("steer", &error);
         }
     }
 
@@ -1062,75 +1507,14 @@ impl Ship for ShipImpl {
     }
 
     async fn accept(&self, session: SessionId) {
-        {
-            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
-            let Some(active) = sessions.get_mut(&session) else {
-                Self::log_error("accept", "session not found");
-                return;
-            };
-            let status = match current_task_status(active) {
-                Ok(status) => status,
-                Err(error) => {
-                    Self::log_error("accept", &error.to_string());
-                    return;
-                }
-            };
-            if status != TaskStatus::ReviewPending {
-                Self::log_error("accept", "invalid task transition");
-                return;
-            }
-
-            if let Err(error) = transition_task(active, TaskStatus::Accepted) {
-                Self::log_error("accept", &error.to_string());
-                return;
-            }
-            archive_terminal_task(active);
-        }
-
-        if let Err(error) = self.persist_session(&session).await {
-            Self::log_error("accept_persist", &error);
+        if let Err(error) = self.accept_task(&session, None).await {
+            Self::log_error("accept", &error);
         }
     }
 
     async fn cancel(&self, session: SessionId) {
-        let mate_handle = {
-            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
-            let Some(active) = sessions.get(&session) else {
-                Self::log_error("cancel", "session not found");
-                return;
-            };
-            if active
-                .current_task
-                .as_ref()
-                .map(|task| task.record.status.is_terminal())
-                .unwrap_or(true)
-            {
-                Self::log_error("cancel", "session has no active task");
-                return;
-            }
-            active.mate_handle.clone()
-        };
-
-        if let Err(error) = self.agent_driver.cancel(&mate_handle).await {
-            Self::log_error("cancel", &error.message);
-            return;
-        }
-
-        {
-            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
-            let Some(active) = sessions.get_mut(&session) else {
-                Self::log_error("cancel", "session not found after cancel");
-                return;
-            };
-            if let Err(error) = transition_task(active, TaskStatus::Cancelled) {
-                Self::log_error("cancel", &error.to_string());
-                return;
-            }
-            archive_terminal_task(active);
-        }
-
-        if let Err(error) = self.persist_session(&session).await {
-            Self::log_error("cancel_persist", &error);
+        if let Err(error) = self.cancel_task(&session, None).await {
+            Self::log_error("cancel", &error);
         }
     }
 
@@ -1150,6 +1534,10 @@ impl Ship for ShipImpl {
             let handle = match pending.role {
                 Role::Captain => active.captain_handle.clone(),
                 Role::Mate => active.mate_handle.clone(),
+            };
+            let Some(handle) = handle else {
+                Self::log_error("resolve_permission", "agent not ready");
+                return;
             };
             (pending.role, handle)
         };
@@ -1217,9 +1605,11 @@ impl Ship for ShipImpl {
         let worktree_path = session.worktree_path.clone();
 
         match async {
-            if worktree_path.exists() {
+            if let Some(worktree_path) = worktree_path.as_ref()
+                && worktree_path.exists()
+            {
                 self.worktree_ops
-                    .has_uncommitted_changes(&worktree_path)
+                    .has_uncommitted_changes(worktree_path)
                     .await
             } else {
                 Ok(false)
@@ -1247,6 +1637,7 @@ impl Ship for ShipImpl {
                 message: error.message,
             };
         }
+        self.clear_captain_mcp_server(&req.id);
         self.sessions
             .lock()
             .expect("sessions mutex poisoned")
@@ -1261,10 +1652,17 @@ impl Ship for ShipImpl {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             sessions.get(&session).map(|active| {
                 let replay = active
-                    .current_task
-                    .as_ref()
-                    .map(|task| task.event_log.clone())
-                    .unwrap_or_default();
+                    .session_event_log
+                    .iter()
+                    .cloned()
+                    .chain(
+                        active
+                            .current_task
+                            .as_ref()
+                            .into_iter()
+                            .flat_map(|task| task.event_log.clone()),
+                    )
+                    .collect::<Vec<_>>();
                 (active.events_tx.subscribe(), replay)
             })
         };
@@ -1279,23 +1677,6 @@ impl Ship for ShipImpl {
 
 fn short_id(id: &SessionId) -> String {
     id.0.to_string().chars().take(8).collect()
-}
-
-fn slugify(input: &str) -> String {
-    let mut slug = String::new();
-    let mut last_was_dash = false;
-
-    for c in input.chars() {
-        if c.is_ascii_alphanumeric() {
-            slug.push(c.to_ascii_lowercase());
-            last_was_dash = false;
-        } else if !last_was_dash {
-            slug.push('-');
-            last_was_dash = true;
-        }
-    }
-
-    slug.trim_matches('-').to_owned()
 }
 
 #[cfg(test)]
@@ -1434,14 +1815,12 @@ mod tests {
                 captain_kind: AgentKind::Claude,
                 mate_kind: AgentKind::Codex,
                 base_branch: "main".to_owned(),
-                task_description: "broken".to_owned(),
                 mcp_servers: None,
             },
         )
         .await;
 
-        assert!(matches!(response, CreateSessionResponse::Failed { .. }));
-        assert!(Ship::list_sessions(&ship).await.is_empty());
+        assert!(matches!(response, CreateSessionResponse::Created { .. }));
 
         let _ = std::fs::remove_dir_all(dir);
     }

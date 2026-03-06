@@ -76,6 +76,7 @@ describe("AgentPanel plan rendering", () => {
         agent={agent}
         blocks={blocks}
         loading={false}
+        startupState={{ tag: "Ready" }}
         taskStatus={{ tag: "ReviewPending" }}
       />,
     );

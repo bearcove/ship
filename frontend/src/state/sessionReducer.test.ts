@@ -77,6 +77,7 @@ describe("sessionReducer event handling", () => {
           state: { tag: "Working", plan: null, activity: "Running" },
           context_remaining_percent: 55,
         },
+        startup_state: { tag: "Ready" },
         current_task: {
           id: "task-1",
           description: "Investigate replay",

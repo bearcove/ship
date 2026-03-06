@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Button, Flex, Text, TextArea } from "@radix-ui/themes";
 import { getShipClient } from "../api/client";
-import type { Role, TaskStatus } from "../generated/ship";
+import type { Role, SessionStartupState, TaskStatus } from "../generated/ship";
 import {
   composerActions,
   composerHint,
@@ -14,14 +14,27 @@ interface Props {
   sessionId: string;
   role: Role;
   agentStateTag: "Working" | "Idle" | "AwaitingPermission" | "ContextExhausted" | "Error";
+  startupState: SessionStartupState | null;
   taskStatus: TaskStatus | null;
 }
 
 function getStatusCopy(
   role: Role,
   agentStateTag: Props["agentStateTag"],
+  startupState: SessionStartupState | null,
   taskStatus: TaskStatus | null,
 ): { label: string; hint: string | null; disabled: boolean } {
+  if (startupState !== null && startupState.tag !== "Ready") {
+    return {
+      label: startupState.tag === "Failed" ? "Failed" : "Starting",
+      hint:
+        startupState.tag === "Failed"
+          ? startupState.message
+          : "Session startup is still in progress.",
+      disabled: true,
+    };
+  }
+
   if (role.tag === "Mate") {
     if (taskStatus?.tag === "ReviewPending" || taskStatus?.tag === "SteerPending") {
       return {
@@ -41,8 +54,8 @@ function getStatusCopy(
   if (taskStatus === null) {
     return {
       label: agentStateTag === "Working" ? "Working" : "Idle",
-      hint: "Captain steering is available once a task is active.",
-      disabled: true,
+      hint: "Talk to the captain directly. Assign a task when you want work to start.",
+      disabled: false,
     };
   }
 
@@ -54,11 +67,17 @@ function getStatusCopy(
 }
 
 // r[ui.keys.steer-send]
-export function InlineAgentComposer({ sessionId, role, agentStateTag, taskStatus }: Props) {
+export function InlineAgentComposer({
+  sessionId,
+  role,
+  agentStateTag,
+  startupState,
+  taskStatus,
+}: Props) {
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const status = getStatusCopy(role, agentStateTag, taskStatus);
+  const status = getStatusCopy(role, agentStateTag, startupState, taskStatus);
 
   async function handleSubmit() {
     const value = text.trim();

@@ -14,7 +14,7 @@ import {
   Tooltip,
 } from "@radix-ui/themes";
 import { ClockCounterClockwise } from "@phosphor-icons/react";
-import type { TaskRecord, TaskStatus } from "../generated/ship";
+import type { SessionStartupState, TaskRecord, TaskStatus } from "../generated/ship";
 import { useTaskHistory } from "../hooks/useTaskHistory";
 import { getShipClient } from "../api/client";
 import { taskBar, taskDescription } from "../styles/session-view.css";
@@ -72,14 +72,20 @@ function TaskHistoryPopover({ sessionId }: { sessionId: string }) {
 }
 
 // r[ui.task-bar.new-task]
-function NewTaskDialog({ sessionId }: { sessionId: string }) {
+function NewTaskDialog({
+  sessionId,
+  startupState,
+}: {
+  sessionId: string;
+  startupState: SessionStartupState | null;
+}) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function handleAssign() {
-    if (!text.trim() || loading) return;
+    if (!text.trim() || loading || startupState?.tag !== "Ready") return;
     setLoading(true);
     setError(null);
     try {
@@ -101,7 +107,7 @@ function NewTaskDialog({ sessionId }: { sessionId: string }) {
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
       <Dialog.Trigger>
-        <Button size="2" color="blue">
+        <Button size="2" color="blue" disabled={startupState?.tag !== "Ready"}>
           New Task
         </Button>
       </Dialog.Trigger>
@@ -140,11 +146,12 @@ function NewTaskDialog({ sessionId }: { sessionId: string }) {
 
 interface Props {
   sessionId: string;
+  startupState: SessionStartupState | null;
   task: TaskRecord | null;
 }
 
 // r[ui.task-bar.layout]
-export function TaskBar({ sessionId, task }: Props) {
+export function TaskBar({ sessionId, startupState, task }: Props) {
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -230,7 +237,7 @@ export function TaskBar({ sessionId, task }: Props) {
               </Button>
             </>
           )}
-          {!task && <NewTaskDialog sessionId={sessionId} />}
+          {!task && <NewTaskDialog sessionId={sessionId} startupState={startupState} />}
           <TaskHistoryPopover sessionId={sessionId} />
         </Flex>
       </Flex>

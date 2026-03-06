@@ -8,19 +8,34 @@ use ship_core::{
 use ship_types::{
     AgentKind, AgentState, AutonomyMode, BlockId, BlockPatch, CloseSessionResponse, ContentBlock,
     CreateSessionRequest, McpServerConfig, McpStdioServerConfig, PlanStep, PlanStepPriority,
-    PlanStepStatus, ProjectName, Role, SessionEvent, SessionEventEnvelope, TaskStatus,
+    PlanStepStatus, ProjectName, Role, SessionEvent, SessionEventEnvelope, SessionId, TaskId,
+    TaskStatus,
 };
 use tokio::time::timeout;
 
-fn make_request(task_description: &str) -> CreateSessionRequest {
+fn make_request() -> CreateSessionRequest {
     CreateSessionRequest {
         project: ProjectName("ship-backend".to_owned()),
         captain_kind: AgentKind::Claude,
         mate_kind: AgentKind::Codex,
         base_branch: "main".to_owned(),
-        task_description: task_description.to_owned(),
         mcp_servers: None,
     }
+}
+
+async fn create_session_with_task(
+    manager: &mut SessionManager<FakeAgentDriver, FakeWorktreeOps, FakeSessionStore>,
+    description: &str,
+) -> (SessionId, TaskId) {
+    let session_id = manager
+        .create_session(make_request(), Path::new("/repo"))
+        .await
+        .expect("create session should succeed");
+    let task_id = manager
+        .assign(&session_id, description.to_owned())
+        .await
+        .expect("assign should succeed");
+    (session_id, task_id)
 }
 
 fn make_manager() -> (
@@ -79,11 +94,8 @@ async fn test_create_session() {
     agent.push_response(StopReason::EndTurn);
     agent.push_response(StopReason::EndTurn);
 
-    let (session_id, task_id) = manager
-        .create_session(
-            make_request("Implement session manager"),
-            Path::new("/repo"),
-        )
+    let session_id = manager
+        .create_session(make_request(), Path::new("/repo"))
         .await
         .expect("create session should succeed");
 
@@ -105,9 +117,11 @@ async fn test_create_session() {
         .expect("store load should work")
         .expect("session should be persisted");
 
-    let current = persisted.current_task.expect("current task should exist");
-    assert_eq!(current.record.id, task_id);
-    assert_eq!(current.record.status, TaskStatus::ReviewPending);
+    assert!(persisted.current_task.is_none());
+    assert_eq!(
+        persisted.startup_state,
+        ship_types::SessionStartupState::Ready
+    );
     assert!(persisted.config.mcp_servers.is_empty());
 }
 
@@ -115,7 +129,7 @@ async fn test_create_session() {
 #[tokio::test]
 async fn test_create_session_persists_session_mcp_override() {
     let (mut manager, agent, _worktree, store) = make_manager();
-    let mut request = make_request("Implement MCP override");
+    let mut request = make_request();
     request.mcp_servers = Some(vec![McpServerConfig::Stdio(McpStdioServerConfig {
         name: "tracey".to_owned(),
         command: "/usr/bin/tracey-mcp".to_owned(),
@@ -127,7 +141,7 @@ async fn test_create_session_persists_session_mcp_override() {
     agent.push_response(StopReason::EndTurn);
     agent.push_response(StopReason::EndTurn);
 
-    let (session_id, _) = manager
+    let session_id = manager
         .create_session(request, Path::new("/repo"))
         .await
         .expect("create session should succeed");
@@ -156,10 +170,7 @@ async fn test_task_lifecycle() {
     agent.push_response(StopReason::EndTurn);
     agent.push_response(StopReason::EndTurn);
 
-    let (session_id, _) = manager
-        .create_session(make_request("Build lifecycle"), Path::new("/repo"))
-        .await
-        .expect("session should be created");
+    let (session_id, _) = create_session_with_task(&mut manager, "Build lifecycle").await;
 
     manager
         .set_autonomy_mode(&session_id, AutonomyMode::Autonomous)
@@ -250,13 +261,6 @@ async fn plan_updates_reuse_block_id_and_replace_the_full_step_list() {
         response: Ok(ship_core::PromptResponse {
             stop_reason: StopReason::EndTurn,
         }),
-        events: Vec::new(),
-    });
-    agent.push_script(FakePromptScript {
-        expected_handle: None,
-        response: Ok(ship_core::PromptResponse {
-            stop_reason: StopReason::EndTurn,
-        }),
         events: vec![
             SessionEvent::AgentStateChanged {
                 role: Role::Mate,
@@ -282,13 +286,15 @@ async fn plan_updates_reuse_block_id_and_replace_the_full_step_list() {
         events: Vec::new(),
     });
 
-    let (session_id, _) = manager
-        .create_session(
-            make_request("Exercise plan block semantics"),
-            Path::new("/repo"),
-        )
+    let (session_id, _) =
+        create_session_with_task(&mut manager, "Exercise plan block semantics").await;
+    manager
+        .set_autonomy_mode(&session_id, AutonomyMode::Autonomous)
+        .expect("mode should be set");
+    manager
+        .steer(&session_id, "Start the mate".to_owned())
         .await
-        .expect("session should be created");
+        .expect("steer should work");
 
     let state = manager
         .get_session(&session_id)
@@ -344,17 +350,14 @@ async fn test_cancel_task() {
     agent.push_response(StopReason::EndTurn);
     agent.push_response(StopReason::ContextExhausted);
 
-    let (session_id, _) = manager
-        .create_session(make_request("Cancel me"), Path::new("/repo"))
-        .await
-        .expect("create session should work");
+    let (session_id, _) = create_session_with_task(&mut manager, "Cancel me").await;
 
     manager
         .cancel(&session_id)
         .await
         .expect("cancel should succeed");
 
-    assert_eq!(agent.cancelled_handles().len(), 1);
+    assert!(agent.cancelled_handles().is_empty());
 
     let state = manager.get_session(&session_id).expect("session exists");
     assert!(state.current_task.is_none());
@@ -371,10 +374,7 @@ async fn test_permission_flow() {
     agent.push_response(StopReason::EndTurn);
     agent.push_response(StopReason::ContextExhausted);
 
-    let (session_id, _) = manager
-        .create_session(make_request("Needs approvals"), Path::new("/repo"))
-        .await
-        .expect("create session should work");
+    let (session_id, _) = create_session_with_task(&mut manager, "Needs approvals").await;
 
     let mate_handle = agent
         .spawn_records()
@@ -468,10 +468,7 @@ async fn test_autonomy_modes() {
     agent.push_response(StopReason::EndTurn);
     agent.push_response(StopReason::EndTurn);
 
-    let (session_id, _) = manager
-        .create_session(make_request("Human mode"), Path::new("/repo"))
-        .await
-        .expect("create session should work");
+    let (session_id, _) = create_session_with_task(&mut manager, "Human mode").await;
 
     let prompts_before = agent.prompt_log().len();
     manager
@@ -525,10 +522,7 @@ async fn test_event_broadcast() {
     agent.push_response(StopReason::EndTurn);
     agent.push_response(StopReason::ContextExhausted);
 
-    let (session_id, task_id) = manager
-        .create_session(make_request("Broadcast"), Path::new("/repo"))
-        .await
-        .expect("create session should work");
+    let (session_id, task_id) = create_session_with_task(&mut manager, "Broadcast").await;
 
     let mut rx1 = manager
         .subscribe(&session_id)
@@ -578,10 +572,7 @@ async fn replay_is_sent_only_to_the_new_subscriber() {
     agent.push_response(StopReason::EndTurn);
     agent.push_response(StopReason::ContextExhausted);
 
-    let (session_id, task_id) = manager
-        .create_session(make_request("Replay isolation"), Path::new("/repo"))
-        .await
-        .expect("create session should work");
+    let (session_id, task_id) = create_session_with_task(&mut manager, "Replay isolation").await;
 
     let mut first = manager
         .subscribe(&session_id)
@@ -622,8 +613,8 @@ async fn test_close_session_cleans_up_clean_worktree() {
     agent.push_response(StopReason::EndTurn);
     agent.push_response(StopReason::EndTurn);
 
-    let (session_id, _) = manager
-        .create_session(make_request("Clean close"), Path::new("/repo"))
+    let session_id = manager
+        .create_session(make_request(), Path::new("/repo"))
         .await
         .expect("create session should work");
 
@@ -644,7 +635,7 @@ async fn test_close_session_cleans_up_clean_worktree() {
     assert_eq!(
         worktree.deleted_branches(),
         vec![(
-            "ship/".to_owned() + &session_id.0[..8] + "/clean-close",
+            "ship/".to_owned() + &session_id.0[..8] + "/session",
             false,
             Path::new("/repo").to_path_buf()
         )]
@@ -672,8 +663,8 @@ async fn test_close_session_requires_confirmation_for_dirty_worktree() {
     agent.push_response(StopReason::EndTurn);
     agent.push_response(StopReason::EndTurn);
 
-    let (session_id, _) = manager
-        .create_session(make_request("Dirty close"), Path::new("/repo"))
+    let session_id = manager
+        .create_session(make_request(), Path::new("/repo"))
         .await
         .expect("create session should work");
     let worktree_path = worktree
@@ -708,8 +699,8 @@ async fn test_close_session_force_deletes_dirty_worktree() {
     agent.push_response(StopReason::EndTurn);
     agent.push_response(StopReason::EndTurn);
 
-    let (session_id, _) = manager
-        .create_session(make_request("Force dirty close"), Path::new("/repo"))
+    let session_id = manager
+        .create_session(make_request(), Path::new("/repo"))
         .await
         .expect("create session should work");
     let worktree_path = worktree
@@ -730,7 +721,7 @@ async fn test_close_session_force_deletes_dirty_worktree() {
     assert_eq!(
         worktree.deleted_branches(),
         vec![(
-            "ship/".to_owned() + &session_id.0[..8] + "/force-dirty-close",
+            "ship/".to_owned() + &session_id.0[..8] + "/session",
             true,
             Path::new("/repo").to_path_buf()
         )]
@@ -755,8 +746,8 @@ async fn test_close_session_keeps_session_when_cleanup_fails() {
     agent.push_response(StopReason::EndTurn);
     agent.push_response(StopReason::EndTurn);
 
-    let (session_id, _) = manager
-        .create_session(make_request("Cleanup failure"), Path::new("/repo"))
+    let session_id = manager
+        .create_session(make_request(), Path::new("/repo"))
         .await
         .expect("create session should work");
     let worktree_path = worktree

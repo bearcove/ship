@@ -1,6 +1,11 @@
 import { Fragment, useRef, useEffect } from "react";
 import { Box, Flex, Spinner, Text } from "@radix-ui/themes";
-import type { AgentSnapshot, ContentBlock, TaskStatus } from "../generated/ship";
+import type {
+  AgentSnapshot,
+  ContentBlock,
+  SessionStartupState,
+  TaskStatus,
+} from "../generated/ship";
 import type { BlockEntry } from "../state/blockStore";
 import { TextBlock } from "./blocks/TextBlock";
 import { ToolCallBlock } from "./blocks/ToolCallBlock";
@@ -23,6 +28,7 @@ interface Props {
   debugMode?: boolean;
   loading?: boolean;
   loadingLabel?: string;
+  startupState: SessionStartupState | null;
   taskStatus: TaskStatus | null;
 }
 
@@ -47,6 +53,7 @@ export function AgentPanel({
   debugMode = false,
   loading,
   loadingLabel,
+  startupState,
   taskStatus,
 }: Props) {
   const plan = latestPlan(blocks);
@@ -173,6 +180,7 @@ export function AgentPanel({
         sessionId={sessionId}
         role={agent.role}
         agentStateTag={agent.state.tag}
+        startupState={startupState}
         taskStatus={taskStatus}
       />
     </Box>

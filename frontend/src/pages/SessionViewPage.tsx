@@ -28,9 +28,16 @@ import {
 import type { TaskRecord, TaskStatus } from "../generated/ship";
 
 function getIdleMessage(
+  startupStateTag: string | null,
   taskStatus: TaskStatus | null,
   mateAwaitingPermission: boolean,
 ): string | null {
+  if (startupStateTag === "Pending" || startupStateTag === "Running") {
+    return "Session startup is in progress.";
+  }
+  if (startupStateTag === "Failed") {
+    return "Session startup failed.";
+  }
   if (taskStatus?.tag === "ReviewPending")
     return "Mate has finished — review and accept, reject, or steer.";
   if (taskStatus?.tag === "SteerPending")
@@ -105,8 +112,10 @@ export function SessionViewPage() {
 
   const captain = eventState.captain ?? session.captain;
   const mate = eventState.mate ?? session.mate;
+  const startupState = eventState.startupState ?? session.startup_state;
   const mateAwaitingPermission = mate.state.tag === "AwaitingPermission";
   const idle = getIdleMessage(
+    startupState?.tag ?? null,
     eventState.currentTaskStatus ?? session.current_task?.status ?? null,
     mateAwaitingPermission,
   );
@@ -204,6 +213,11 @@ export function SessionViewPage() {
           <Callout.Text>{idle}</Callout.Text>
         </Callout.Root>
       )}
+      {startupState && startupState.tag === "Failed" && (
+        <Callout.Root color="red" size="1" className={idleBanner}>
+          <Callout.Text>{startupState.message}</Callout.Text>
+        </Callout.Root>
+      )}
 
       <Box style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
         <Box className={desktopGrid} style={{ flex: 1 }}>
@@ -216,6 +230,7 @@ export function SessionViewPage() {
               debugMode={debugMode}
               loading={isReplaying}
               loadingLabel={replayLabel}
+              startupState={startupState}
               taskStatus={liveTask?.status ?? null}
             />
           </Box>
@@ -228,6 +243,7 @@ export function SessionViewPage() {
               debugMode={debugMode}
               loading={isReplaying}
               loadingLabel={replayLabel}
+              startupState={startupState}
               taskStatus={liveTask?.status ?? null}
             />
           </Box>
@@ -244,6 +260,7 @@ export function SessionViewPage() {
                 debugMode={debugMode}
                 loading={isReplaying}
                 loadingLabel={replayLabel}
+                startupState={startupState}
                 taskStatus={liveTask?.status ?? null}
               />
             </>
@@ -257,6 +274,7 @@ export function SessionViewPage() {
                 debugMode={debugMode}
                 loading={isReplaying}
                 loadingLabel={replayLabel}
+                startupState={startupState}
                 taskStatus={liveTask?.status ?? null}
               />
             </>
@@ -272,7 +290,7 @@ export function SessionViewPage() {
         />
       )}
 
-      <TaskBar sessionId={session.id} task={liveTask} />
+      <TaskBar sessionId={session.id} startupState={startupState} task={liveTask} />
     </Flex>
   );
 }

@@ -17,9 +17,11 @@ a branch.
 
 r[session.create]
 The system MUST allow creating a session with a specified project, captain
-agent kind, mate agent kind, base branch, and initial task description.
-Session creation and first task assignment are a single atomic operation —
-there is no session without a task.
+agent kind, mate agent kind, and base branch. `create_session` MUST persist
+the session record and return promptly. Worktree creation, agent startup,
+captain bootstrap, and related initialization continue in the background and
+are surfaced through the session state and event stream. A newly created
+session starts with no active task.
 
 r[session.list]
 The system MUST allow listing all active sessions with their current state.
@@ -145,9 +147,9 @@ directory name at registration time).
 
 r[proto.create-session]
 The protocol MUST support a `create_session` operation that takes a project
-name, agent configuration, base branch, and an initial task description. It
-creates the session, worktree in the project's repo, spawns agents, and
-assigns the first task in one call. Returns a `SessionId` and `TaskId`.
+name, agent configuration, and base branch. It creates durable session state
+and returns a `SessionId` promptly. Worktree creation, agent startup, and
+captain bootstrap continue asynchronously in the background.
 
 r[proto.list-projects]
 The protocol MUST support a `list_projects` operation that returns all
@@ -173,9 +175,10 @@ of all active sessions.
 
 r[proto.assign]
 The protocol MUST support an `assign` operation where the human assigns a new
-task to the session, returning a `TaskId`. On assignment, the backend first
-prompts the captain for direction (per `captain.initial-prompt`), then prompts
-the mate with the task description plus the captain's direction.
+task to the session, returning a `TaskId`. Assignment creates the active task
+record and prompts the captain with the task description (per
+`captain.initial-prompt`). The mate is not prompted implicitly by the backend;
+delegation happens only if the captain explicitly calls Ship MCP tools.
 
 r[proto.steer]
 The protocol MUST support a `steer` operation where the captain provides
@@ -296,7 +299,7 @@ context remaining percentage (0-100).
 r[task.status.enum]
 A task's status MUST be one of the following values:
 
-- `Assigned` — task has been created, captain is being prompted for direction
+- `Assigned` — task has been created and is waiting for captain direction
 - `Working` — the mate is actively processing a prompt
 - `ReviewPending` — the mate has finished and the captain is reviewing
 - `SteerPending` — the captain has produced a steer awaiting human approval
@@ -315,14 +318,16 @@ Task creation begins when the human (or captain) sends an `assign` with a task
 description.
 
 r[task.prompt]
-On assignment, the backend MUST send a `SessionPrompt` to the mate via ACP.
+On assignment, the backend MUST send a `SessionPrompt` to the captain via ACP.
 
 r[task.progress]
 While the mate works, the backend MUST receive ACP notifications and stream
 progress to the frontend in real time.
 
 r[task.completion]
-When the mate finishes (`StopReason::EndTurn`), the captain reviews the output.
+When the mate finishes (`StopReason::EndTurn`), the task moves to
+`ReviewPending`. Mate output remains visible in the session event stream for
+the human and captain to review.
 
 r[task.steer]
 The captain MUST be able to send `steer` to request more work from the mate.
@@ -759,33 +764,19 @@ It does not write code directly — it steers the mate.
 ### Captain Prompting
 
 r[captain.system-prompt]
-The captain's system prompt MUST instruct it to act as a senior engineer
-reviewing the mate's work: set direction, decompose tasks, review output,
-and formulate steer instructions. It MUST NOT instruct the captain to write
-code directly.
+The captain's bootstrap prompt MUST instruct it to act as a senior engineer
+who scopes work, reviews output, and delegates to the mate when appropriate.
+It MUST NOT instruct the captain to write code directly.
 
 r[captain.initial-prompt]
 When a task is assigned, the backend MUST prompt the captain with the task
-description. The captain's response is the initial direction sent to the mate
-as part of the assignment prompt.
+description. The captain decides whether to ask clarifying questions in text,
+call `ship_steer`, call `ship_accept`, or call `ship_reject`.
 
 r[captain.context]
-When the mate finishes a prompt turn (`StopReason::EndTurn`), the backend MUST
-collect the mate's output (text, tool call summaries, file diffs) and inject
-it into the captain's next prompt as structured context. The captain sees what
-the mate did, not raw ACP payloads.
-
-r[captain.review-trigger]
-The backend MUST automatically prompt the captain for review whenever the mate
-finishes a prompt turn. This happens regardless of autonomy mode — the
-difference is whether the captain's steer requires human approval before
-reaching the mate.
-
-r[captain.prompt-template]
-The captain's review prompt MUST follow a template that includes: the original
-task description, the steer history so far, and the mate's latest output. The
-prompt MUST ask the captain to either provide a steer (more work needed) or
-signal acceptance (task complete).
+The captain MUST be able to inspect the current task state and the mate's
+streamed output through Ship's session view and event history. Ship MUST keep
+the captain's conversation long-lived across prompts within the session.
 
 r[captain.no-filesystem]
 The captain agent MUST NOT be configured with filesystem or terminal ACP
@@ -801,7 +792,7 @@ as MCP tools on the captain's session. This avoids fragile text parsing.
 r[captain.tool.steer]
 The captain MUST have access to a `ship_steer` tool that takes a `message`
 argument (string). When the captain calls this tool, the backend interprets
-the message as a steer instruction for the mate.
+the message as a steer instruction for the mate on the current task.
 
 r[captain.tool.accept]
 The captain MUST have access to a `ship_accept` tool that takes an optional
@@ -825,13 +816,11 @@ captain's `NewSessionRequest` MUST include Ship's MCP server in its
 
 r[captain.tool.transport]
 Ship MUST expose its captain MCP tools via a per-captain stdio proxy. For each
-captain agent, Ship spawns a pair of connected pipes: one end is passed to the
-captain's `NewSessionRequest` as a stdio MCP server entry (command + args that
-the agent will "spawn" — but it's actually the other end of the pipe pair held
-by Ship). Ship reads MCP requests from the pipe, handles `ship_steer`,
-`ship_accept`, and `ship_reject` calls, and writes MCP responses back. This
-avoids needing a network listener — the captain connects to Ship's MCP server
-the same way it connects to any other stdio MCP server.
+captain session, Ship creates a private local transport owned by the server and
+passes a stdio MCP server entry in the captain's `NewSessionRequest`. The
+captain spawns Ship's stdio proxy command, Ship handles `ship_steer`,
+`ship_accept`, and `ship_reject` requests for that specific session, and no
+public network listener is required.
 
 ### Captain Review Cycle
 

@@ -7,7 +7,7 @@ use ship_types::{
     AgentSnapshot, AgentState, AutonomyMode, BlockId, BlockPatch, CloseSessionResponse,
     ContentBlock, CreateSessionRequest, CurrentTask, PermissionRequest, PermissionResolution,
     PersistedSession, Role, SessionConfig, SessionEvent, SessionEventEnvelope, SessionId,
-    SessionSummary, TaskContentRecord, TaskId, TaskRecord, TaskStatus,
+    SessionStartupState, SessionSummary, TaskContentRecord, TaskId, TaskRecord, TaskStatus,
 };
 use tokio::sync::broadcast;
 
@@ -62,11 +62,13 @@ pub struct PendingPermission {
 pub struct ActiveSession {
     pub id: SessionId,
     pub config: SessionConfig,
-    pub worktree_path: PathBuf,
-    pub captain_handle: crate::AgentHandle,
-    pub mate_handle: crate::AgentHandle,
+    pub worktree_path: Option<PathBuf>,
+    pub captain_handle: Option<crate::AgentHandle>,
+    pub mate_handle: Option<crate::AgentHandle>,
     pub captain: AgentSnapshot,
     pub mate: AgentSnapshot,
+    pub startup_state: SessionStartupState,
+    pub session_event_log: Vec<SessionEventEnvelope>,
     pub current_task: Option<CurrentTask>,
     pub task_history: Vec<TaskRecord>,
     pub captain_block_count: usize,
@@ -83,6 +85,7 @@ pub struct SessionStateView {
     pub config: SessionConfig,
     pub captain: AgentSnapshot,
     pub mate: AgentSnapshot,
+    pub startup_state: SessionStartupState,
     pub current_task: Option<CurrentTask>,
     pub task_history: Vec<TaskRecord>,
     pub autonomy_mode: AutonomyMode,
@@ -111,9 +114,9 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         &mut self,
         req: CreateSessionRequest,
         repo_root: &Path,
-    ) -> Result<(SessionId, TaskId), SessionManagerError> {
+    ) -> Result<SessionId, SessionManagerError> {
         let session_id = SessionId::new();
-        let slug = slugify(&req.task_description);
+        let slug = "session".to_owned();
         let worktree_path = self
             .worktree_ops
             .create_worktree(&session_id, &req.base_branch, &slug, repo_root)
@@ -152,9 +155,9 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                 autonomy_mode: AutonomyMode::HumanInTheLoop,
                 mcp_servers,
             },
-            worktree_path,
-            captain_handle,
-            mate_handle,
+            worktree_path: Some(worktree_path),
+            captain_handle: Some(captain_handle),
+            mate_handle: Some(mate_handle),
             captain: AgentSnapshot {
                 role: Role::Captain,
                 kind: req.captain_kind,
@@ -167,6 +170,8 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                 state: AgentState::Idle,
                 context_remaining_percent: None,
             },
+            startup_state: SessionStartupState::Ready,
+            session_event_log: Vec::new(),
             current_task: None,
             task_history: Vec::new(),
             captain_block_count: 0,
@@ -178,9 +183,8 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         };
 
         self.sessions.insert(session_id.clone(), session);
-
-        let task_id = self.assign(&session_id, req.task_description).await?;
-        Ok((session_id, task_id))
+        self.persist_session(&session_id).await?;
+        Ok(session_id)
     }
 
     // r[proto.list-sessions]
@@ -193,6 +197,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                 branch_name: session.config.branch_name.clone(),
                 captain: session.captain.clone(),
                 mate: session.mate.clone(),
+                startup_state: session.startup_state.clone(),
                 current_task_description: session
                     .current_task
                     .as_ref()
@@ -218,6 +223,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             config: session.config.clone(),
             captain: session.captain.clone(),
             mate: session.mate.clone(),
+            startup_state: session.startup_state.clone(),
             current_task: session.current_task.clone(),
             task_history: session.task_history.clone(),
             autonomy_mode: session.config.autonomy_mode,
@@ -238,10 +244,17 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
 
         let mut live_rx = session.events_tx.subscribe();
         let replay = session
-            .current_task
-            .as_ref()
-            .map(|task| task.event_log.clone())
-            .unwrap_or_default();
+            .session_event_log
+            .iter()
+            .cloned()
+            .chain(
+                session
+                    .current_task
+                    .as_ref()
+                    .into_iter()
+                    .flat_map(|task| task.event_log.clone()),
+            )
+            .collect::<Vec<_>>();
         let (subscriber_tx, subscriber_rx) = broadcast::channel(256);
 
         for envelope in replay {
@@ -330,28 +343,6 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         }
 
         self.persist_session(session_id).await?;
-
-        self.prompt_captain_initial(session_id, &description)
-            .await?;
-
-        {
-            let session = self
-                .sessions
-                .get_mut(session_id)
-                .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
-            transition_task(session, TaskStatus::Working)?;
-        }
-
-        self.persist_session(session_id).await?;
-
-        self.prompt_mate(
-            session_id,
-            format!(
-                "Task:\n{description}\n\nCaptain direction:\nProvide an implementation plan and execute."
-            ),
-        )
-        .await?;
-
         Ok(task_id)
     }
 
@@ -368,7 +359,10 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                 .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
 
             let status = current_task_status(session)?;
-            if status != TaskStatus::ReviewPending && status != TaskStatus::SteerPending {
+            if status != TaskStatus::Assigned
+                && status != TaskStatus::ReviewPending
+                && status != TaskStatus::SteerPending
+            {
                 return Err(SessionManagerError::InvalidTaskTransition {
                     from: status,
                     to: TaskStatus::SteerPending,
@@ -421,7 +415,10 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                 .get_mut(session_id)
                 .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
             let status = current_task_status(session)?;
-            if status != TaskStatus::ReviewPending {
+            if status != TaskStatus::Assigned
+                && status != TaskStatus::ReviewPending
+                && status != TaskStatus::SteerPending
+            {
                 return Err(SessionManagerError::InvalidTaskTransition {
                     from: status,
                     to: TaskStatus::Accepted,
@@ -438,26 +435,26 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
 
     // r[proto.cancel]
     pub async fn cancel(&mut self, session_id: &SessionId) -> Result<(), SessionManagerError> {
-        let handle = {
+        let (status, handle) = {
             let session = self
                 .sessions
                 .get(session_id)
                 .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
-            if session
-                .current_task
-                .as_ref()
-                .map(|task| task.record.status.is_terminal())
-                .unwrap_or(true)
-            {
+            let status = current_task_status(session)?;
+            if status.is_terminal() {
                 return Err(SessionManagerError::NoActiveTask);
             }
-            session.mate_handle.clone()
+            (status, session.mate_handle.clone())
         };
 
-        self.agent_driver
-            .cancel(&handle)
-            .await
-            .map_err(|error| SessionManagerError::Agent(error.message))?;
+        if status == TaskStatus::Working
+            && let Some(handle) = handle
+        {
+            self.agent_driver
+                .cancel(&handle)
+                .await
+                .map_err(|error| SessionManagerError::Agent(error.message))?;
+        }
 
         {
             let session = self
@@ -494,7 +491,8 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             let handle = match pending.role {
                 Role::Captain => session.captain_handle.clone(),
                 Role::Mate => session.mate_handle.clone(),
-            };
+            }
+            .ok_or_else(|| SessionManagerError::Agent("agent not ready".to_owned()))?;
 
             (pending, handle)
         };
@@ -572,19 +570,26 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         session: &ActiveSession,
         force: bool,
     ) -> Result<(), SessionManagerError> {
-        let repo_root = Self::repo_root_for_worktree(&session.worktree_path)?;
+        let worktree_path = session.worktree_path.as_ref().ok_or_else(|| {
+            SessionManagerError::Worktree("session worktree not ready".to_owned())
+        })?;
+        let repo_root = Self::repo_root_for_worktree(worktree_path)?;
 
-        self.agent_driver
-            .kill(&session.captain_handle)
-            .await
-            .map_err(|error| SessionManagerError::Agent(error.message.clone()))?;
-        self.agent_driver
-            .kill(&session.mate_handle)
-            .await
-            .map_err(|error| SessionManagerError::Agent(error.message.clone()))?;
+        if let Some(handle) = &session.captain_handle {
+            self.agent_driver
+                .kill(handle)
+                .await
+                .map_err(|error| SessionManagerError::Agent(error.message.clone()))?;
+        }
+        if let Some(handle) = &session.mate_handle {
+            self.agent_driver
+                .kill(handle)
+                .await
+                .map_err(|error| SessionManagerError::Agent(error.message.clone()))?;
+        }
 
         self.worktree_ops
-            .remove_worktree(&session.worktree_path, force)
+            .remove_worktree(worktree_path, force)
             .await
             .map_err(|error| SessionManagerError::Worktree(error.message))?;
 
@@ -623,14 +628,16 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             .clone();
         let worktree_path = session.worktree_path.clone();
 
-        if self
-            .worktree_ops
-            .has_uncommitted_changes(&worktree_path)
-            .await
-            .map_err(|error| SessionManagerError::Worktree(error.message))?
-            && !force
-        {
-            return Ok(CloseSessionResponse::RequiresConfirmation);
+        if let Some(worktree_path) = worktree_path {
+            if self
+                .worktree_ops
+                .has_uncommitted_changes(&worktree_path)
+                .await
+                .map_err(|error| SessionManagerError::Worktree(error.message))?
+                && !force
+            {
+                return Ok(CloseSessionResponse::RequiresConfirmation);
+            }
         }
 
         self.cleanup_session_resources(&session, force).await?;
@@ -657,6 +664,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                 Role::Captain => session.captain_handle.clone(),
                 Role::Mate => session.mate_handle.clone(),
             }
+            .ok_or_else(|| SessionManagerError::Agent("agent not ready".to_owned()))?
         };
 
         let mut stream = self.agent_driver.notifications(&handle);
@@ -673,22 +681,6 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         Ok(())
     }
 
-    // r[captain.initial-prompt]
-    async fn prompt_captain_initial(
-        &mut self,
-        session_id: &SessionId,
-        task_description: &str,
-    ) -> Result<(), SessionManagerError> {
-        self.prompt_agent(
-            session_id,
-            Role::Captain,
-            format!("Provide implementation direction for this task:\n{task_description}"),
-        )
-        .await
-        .map(|_| ())
-    }
-
-    // r[captain.review-trigger]
     async fn prompt_captain_review(
         &mut self,
         session_id: &SessionId,
@@ -774,6 +766,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                 Role::Captain => session.captain_handle.clone(),
                 Role::Mate => session.mate_handle.clone(),
             }
+            .ok_or_else(|| SessionManagerError::Agent("agent not ready".to_owned()))?
         };
 
         let response = self
@@ -815,6 +808,8 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             config: session.config.clone(),
             captain: session.captain.clone(),
             mate: session.mate.clone(),
+            startup_state: session.startup_state.clone(),
+            session_event_log: session.session_event_log.clone(),
             current_task: session.current_task.clone(),
             task_history: session.task_history.clone(),
         };
@@ -847,12 +842,18 @@ pub fn apply_event(session: &mut ActiveSession, event: SessionEvent) {
     };
     session.next_event_seq = session.next_event_seq.saturating_add(1);
 
-    if let Some(task) = session.current_task.as_mut() {
+    if event_is_session_scoped(session, &envelope.event) {
+        session.session_event_log.push(envelope.clone());
+    } else if let Some(task) = session.current_task.as_mut() {
         task.event_log.push(envelope.clone());
     }
 
     apply_event_to_materialized_state(session, &envelope.event);
     let _ = session.events_tx.send(envelope);
+}
+
+fn event_is_session_scoped(session: &ActiveSession, event: &SessionEvent) -> bool {
+    session.current_task.is_none() || matches!(event, SessionEvent::SessionStartupChanged { .. })
 }
 
 fn sync_plan_block(session: &mut ActiveSession, role: Role, steps: Vec<ship_types::PlanStep>) {
@@ -972,6 +973,9 @@ pub fn apply_event_to_materialized_state(session: &mut ActiveSession, event: &Se
             Role::Captain => session.captain.state = state.clone(),
             Role::Mate => session.mate.state = state.clone(),
         },
+        SessionEvent::SessionStartupChanged { state } => {
+            session.startup_state = state.clone();
+        }
         SessionEvent::TaskStatusChanged { task_id, status } => {
             if let Some(task) = session.current_task.as_mut()
                 && task.record.id == *task_id
@@ -1045,14 +1049,9 @@ pub fn apply_block_patch(block: &mut ContentBlock, patch: &BlockPatch) {
 
 // r[backend.persistence-contents]
 pub fn rebuild_materialized_from_event_log(session: &mut ActiveSession) {
-    let Some(current_task) = session.current_task.as_mut() else {
-        session.pending_permissions.clear();
-        session.captain_block_count = 0;
-        session.mate_block_count = 0;
-        return;
-    };
-
-    current_task.content_history.clear();
+    if let Some(current_task) = session.current_task.as_mut() {
+        current_task.content_history.clear();
+    }
     session.pending_permissions.clear();
     session.captain_block_count = 0;
     session.mate_block_count = 0;
@@ -1061,7 +1060,18 @@ pub fn rebuild_materialized_from_event_log(session: &mut ActiveSession) {
     session.captain.context_remaining_percent = None;
     session.mate.context_remaining_percent = None;
 
-    let replay = current_task.event_log.clone();
+    let replay = session
+        .session_event_log
+        .iter()
+        .cloned()
+        .chain(
+            session
+                .current_task
+                .as_ref()
+                .into_iter()
+                .flat_map(|task| task.event_log.clone()),
+        )
+        .collect::<Vec<_>>();
     for envelope in replay {
         apply_event_to_materialized_state(session, &envelope.event);
     }
@@ -1107,11 +1117,14 @@ pub fn is_valid_transition(from: TaskStatus, to: TaskStatus) -> bool {
     matches!(
         (from, to),
         (TaskStatus::Assigned, TaskStatus::Working)
+            | (TaskStatus::Assigned, TaskStatus::SteerPending)
+            | (TaskStatus::Assigned, TaskStatus::Accepted)
             | (TaskStatus::Working, TaskStatus::ReviewPending)
             | (TaskStatus::ReviewPending, TaskStatus::SteerPending)
             | (TaskStatus::ReviewPending, TaskStatus::Working)
             | (TaskStatus::ReviewPending, TaskStatus::Accepted)
             | (TaskStatus::SteerPending, TaskStatus::Working)
+            | (TaskStatus::SteerPending, TaskStatus::Accepted)
     )
 }
 
@@ -1148,26 +1161,4 @@ pub fn set_agent_state(session: &mut ActiveSession, role: Role, state: AgentStat
 
 fn short_id(id: &SessionId) -> String {
     id.0.to_string().chars().take(8).collect()
-}
-
-fn slugify(input: &str) -> String {
-    let mut slug = String::new();
-    let mut last_was_dash = false;
-
-    for c in input.chars() {
-        if c.is_ascii_alphanumeric() {
-            slug.push(c.to_ascii_lowercase());
-            last_was_dash = false;
-        } else if !last_was_dash {
-            slug.push('-');
-            last_was_dash = true;
-        }
-    }
-
-    let slug = slug.trim_matches('-').to_owned();
-    if slug.is_empty() {
-        "task".to_owned()
-    } else {
-        slug
-    }
 }

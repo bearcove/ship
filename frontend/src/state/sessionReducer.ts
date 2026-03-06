@@ -2,6 +2,7 @@ import type {
   AgentSnapshot,
   SessionDetail,
   SessionEventEnvelope,
+  SessionStartupState,
   TaskStatus,
 } from "../generated/ship";
 import {
@@ -18,6 +19,7 @@ export interface SessionViewState {
   mate: AgentSnapshot | null;
   captainBlocks: BlockStore;
   mateBlocks: BlockStore;
+  startupState: SessionStartupState | null;
   currentTaskId: string | null;
   currentTaskDescription: string | null;
   currentTaskStatus: TaskStatus | null;
@@ -37,6 +39,7 @@ export function initialSessionViewState(): SessionViewState {
     mate: null,
     captainBlocks: createBlockStore(),
     mateBlocks: createBlockStore(),
+    startupState: null,
     currentTaskId: null,
     currentTaskDescription: null,
     currentTaskStatus: null,
@@ -67,6 +70,7 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         ...state,
         captain: action.session.captain,
         mate: action.session.mate,
+        startupState: action.session.startup_state,
         currentTaskId: action.session.current_task?.id ?? null,
         currentTaskDescription: action.session.current_task?.description ?? null,
         currentTaskStatus: action.session.current_task?.status ?? null,
@@ -146,6 +150,9 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
           }
           return nextState;
         }
+
+        case "SessionStartupChanged":
+          return { ...nextState, startupState: ev.state };
 
         case "TaskStatusChanged":
           return { ...nextState, currentTaskStatus: ev.status };
