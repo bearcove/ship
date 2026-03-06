@@ -124,9 +124,6 @@ export function AgentPanel({
         return (
           <Box className={feedMessageRow}>
             <Box className={`${feedMessageCard} ${cardClassName}`}>
-              {block.source.tag === "AgentThought" && (
-                <Text className={feedMessageMeta}>Thinking</Text>
-              )}
               <TextBlock block={block as TextBlockType} />
             </Box>
           </Box>

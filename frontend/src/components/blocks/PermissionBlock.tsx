@@ -1,13 +1,11 @@
 import { type ReactElement, useEffect, useState } from "react";
 import { Badge, Box, Button, Code, Flex, Text, Tooltip } from "@radix-ui/themes";
-import { CaretDown, CaretRight } from "@phosphor-icons/react";
 import type { ContentBlock } from "../../generated/ship";
 import { formatDisplayText } from "../../utils/displayPath";
 import { permissionCard } from "../../styles/session-view.css";
 import {
   firstAllowOption,
   firstRejectOption,
-  jsonValueToString,
   optionTone,
   permissionOptionLabel,
   permissionOptionTooltip,
@@ -19,23 +17,6 @@ type PermissionBlockType = Extract<ContentBlock, { tag: "Permission" }>;
 interface Props {
   block: PermissionBlockType;
   onResolve?: (optionId: string) => Promise<void> | void;
-}
-
-function RawJson({ value }: { value: string }) {
-  return (
-    <Box
-      style={{
-        fontFamily: "monospace",
-        fontSize: "var(--font-size-1)",
-        background: "var(--gray-a3)",
-        borderRadius: "var(--radius-2)",
-        padding: "var(--space-2)",
-        whiteSpace: "pre-wrap",
-      }}
-    >
-      {value}
-    </Box>
-  );
 }
 
 function ButtonWithOptionalTooltip({
@@ -52,13 +33,13 @@ function ButtonWithOptionalTooltip({
 // r[acp.permissions]
 // r[ui.permission.layout]
 export function PermissionBlock({ block, onResolve }: Props) {
-  const [argsExpanded, setArgsExpanded] = useState(false);
   const [pendingOptionId, setPendingOptionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const summary =
+  const toolDisplayName = formatDisplayText(block.tool_name);
+  const rawSummary =
     summarizeTarget(block.target, block.kind, []) || formatDisplayText(block.description);
-  const rawInputText = jsonValueToString(block.raw_input) || formatDisplayText(block.arguments);
+  const summary = rawSummary && rawSummary !== toolDisplayName ? rawSummary : null;
   const allowOption = firstAllowOption(block.options);
   const rejectOption = firstRejectOption(block.options);
 
@@ -100,7 +81,7 @@ export function PermissionBlock({ block, onResolve }: Props) {
           {block.resolution.tag === "Approved" ? "✓ Approved" : "✗ Denied"}
         </Badge>
         <Text size="1" color="gray">
-          <Code size="1">{formatDisplayText(block.tool_name)}</Code>
+          <Code size="1">{toolDisplayName}</Code>
           {summary ? ` — ${summary}` : ""}
         </Text>
       </Flex>
@@ -109,53 +90,36 @@ export function PermissionBlock({ block, onResolve }: Props) {
 
   return (
     <Box className={permissionCard}>
-      <Flex direction="column" gap="1">
-        <Text size="2" weight="medium">
-          Permission request
-        </Text>
-        <Text size="2" style={{ overflowWrap: "anywhere" }}>
-          <Code size="1">{formatDisplayText(block.tool_name)}</Code>
-          {summary ? ` — ${summary}` : ""}
-        </Text>
-      </Flex>
-
-      <Flex
-        align="center"
-        gap="1"
-        style={{ cursor: "pointer" }}
-        onClick={() => setArgsExpanded((open) => !open)}
-      >
-        {argsExpanded ? <CaretDown size={12} /> : <CaretRight size={12} />}
-        <Text size="1" color="gray">
-          Details
-        </Text>
-      </Flex>
-      {argsExpanded && <RawJson value={rawInputText} />}
-
       {/* r[ui.permission.actions] */}
       {/* r[ui.permission.viewer-mode] */}
-      <Flex gap="2" align="center" wrap="wrap">
-        {(block.options ?? []).map((option) => {
-          const tone = optionTone(option.kind);
-          const label = permissionOptionLabel(option, block.tool_name);
-          return (
-            <ButtonWithOptionalTooltip
-              key={option.option_id}
-              content={permissionOptionTooltip(option)}
-            >
-              <Button
-                size="1"
-                color={tone.color}
-                variant={tone.variant}
-                disabled={!onResolve || pendingOptionId !== null}
-                loading={pendingOptionId === option.option_id}
-                onClick={() => void runAction(option.option_id)}
+      <Flex align="center" gap="2" wrap="wrap">
+        <Text size="2" style={{ overflowWrap: "anywhere", flex: 1 }}>
+          <Code size="1">{toolDisplayName}</Code>
+          {summary ? ` — ${summary}` : ""}
+        </Text>
+        <Flex gap="2" align="center" style={{ flexShrink: 0 }}>
+          {(block.options ?? []).map((option) => {
+            const tone = optionTone(option.kind);
+            const label = permissionOptionLabel(option, block.tool_name);
+            return (
+              <ButtonWithOptionalTooltip
+                key={option.option_id}
+                content={permissionOptionTooltip(option)}
               >
-                {label}
-              </Button>
-            </ButtonWithOptionalTooltip>
-          );
-        })}
+                <Button
+                  size="1"
+                  color={tone.color}
+                  variant={tone.variant}
+                  disabled={!onResolve || pendingOptionId !== null}
+                  loading={pendingOptionId === option.option_id}
+                  onClick={() => void runAction(option.option_id)}
+                >
+                  {label}
+                </Button>
+              </ButtonWithOptionalTooltip>
+            );
+          })}
+        </Flex>
       </Flex>
       {!block.options?.length && (
         <Text size="1" color="gray">

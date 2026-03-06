@@ -193,6 +193,7 @@ export const feedMessageCardThought = style({
   background: "var(--gray-a1)",
   borderStyle: "dashed",
   color: "var(--gray-11)",
+  fontStyle: "italic",
 });
 
 export const feedMessageCardUser = style({
@@ -250,10 +251,8 @@ export const taskDescription = style({
 });
 
 export const composerRoot = style({
-  borderTop: "1px solid var(--gray-a4)",
   padding: "var(--space-2) var(--space-3) var(--space-3)",
   flexShrink: 0,
-  background: "var(--gray-1)",
 });
 
 export const composerStatus = style({
@@ -420,8 +419,8 @@ export const steerReviewCard = style({
 });
 
 export const permissionCard = style({
-  background: "var(--amber-a3)",
-  border: "1px solid var(--amber-a6)",
+  background: "var(--accent-a3)",
+  border: "1px solid var(--accent-a6)",
   borderRadius: "var(--radius-3)",
   padding: "var(--space-3)",
   display: "flex",

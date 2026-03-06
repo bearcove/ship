@@ -24,7 +24,7 @@ export function AgentHeader({ agent }: Props) {
         {/* r[ui.agent-header.context-bar] */}
         {contextPct !== null && agent.state.tag !== "ContextExhausted" && (
           <Box style={{ width: 56, flexShrink: 0, marginLeft: "auto" }}>
-            <Progress value={contextPct} color={contextLow ? "red" : "blue"} size="1" />
+            <Progress value={contextPct} color={contextLow ? "red" : undefined} size="1" />
           </Box>
         )}
       </Flex>

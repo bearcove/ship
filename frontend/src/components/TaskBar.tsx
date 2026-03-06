@@ -107,7 +107,7 @@ function NewTaskDialog({
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
       <Dialog.Trigger>
-        <Button size="2" color="blue" disabled={startupState?.tag !== "Ready"}>
+        <Button size="2" disabled={startupState?.tag !== "Ready"}>
           New Task
         </Button>
       </Dialog.Trigger>

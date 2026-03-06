@@ -2,13 +2,7 @@ import { useEffect, useState } from "react";
 import { Box, Button, Flex, Text, TextArea } from "@radix-ui/themes";
 import { getShipClient } from "../api/client";
 import type { Role, SessionStartupState, TaskStatus } from "../generated/ship";
-import {
-  composerActions,
-  composerHint,
-  composerInput,
-  composerRoot,
-  composerStatus,
-} from "../styles/session-view.css";
+import { composerActions, composerInput, composerRoot } from "../styles/session-view.css";
 
 interface Props {
   sessionId: string;
@@ -289,16 +283,6 @@ export function InlineAgentComposer({
 
   return (
     <Flex className={composerRoot} direction="column" gap="2">
-      <Flex direction="column" gap="1">
-        <Text className={composerStatus} size="1" color="gray">
-          {status.label}
-        </Text>
-        {status.hint && (
-          <Text className={composerHint} size="1" color="gray">
-            {status.hint}
-          </Text>
-        )}
-      </Flex>
       <TextArea
         className={composerInput}
         size="2"

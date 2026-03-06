@@ -97,29 +97,28 @@ export function summarizeTarget(
 }
 
 export function optionTone(kind: PermissionOptionKind): {
-  color: "green" | "red" | "gray";
+  color?: "gray";
   variant: "solid" | "soft" | "outline";
 } {
   switch (kind.tag) {
     case "AllowOnce":
-      return { color: "green", variant: "solid" };
+      return { variant: "solid" };
     case "AllowAlways":
-      return { color: "green", variant: "outline" };
+      return { variant: "outline" };
     case "RejectOnce":
-      return { color: "red", variant: "soft" };
     case "RejectAlways":
-      return { color: "red", variant: "outline" };
+      return { color: "gray", variant: "soft" };
     case "Other":
       return { color: "gray", variant: "outline" };
   }
 }
 
-export function permissionOptionLabel(option: PermissionOption, toolName: string): string {
+export function permissionOptionLabel(option: PermissionOption, _toolName: string): string {
   switch (option.kind.tag) {
     case "AllowOnce":
       return "Approve";
     case "AllowAlways":
-      return `Approve all ${formatDisplayText(toolName)}`;
+      return "Always";
     case "RejectOnce":
     case "RejectAlways":
       return "Deny";
