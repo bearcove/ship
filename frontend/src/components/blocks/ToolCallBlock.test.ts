@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ContentBlock } from "../../generated/ship";
-import { collapsedSummary } from "./ToolCallBlock";
+import { collapsedSummary } from "./toolPayload";
 
 function toolCallBlock(
   overrides: Partial<Extract<ContentBlock, { tag: "ToolCall" }>>,

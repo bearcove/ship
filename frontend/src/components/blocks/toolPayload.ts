@@ -1,9 +1,11 @@
 import type {
+  ContentBlock,
   JsonValue,
   PermissionOption,
   PermissionOptionKind,
   ToolCallContent,
   ToolCallKind,
+  ToolCallLocation,
   ToolTarget,
 } from "../../generated/ship";
 import { formatDisplayPath, formatDisplayText } from "../../utils/displayPath";
@@ -147,5 +149,67 @@ export function firstRejectOption(options: PermissionOption[] | null): Permissio
     options?.find(
       (option) => option.kind.tag === "RejectOnce" || option.kind.tag === "RejectAlways",
     ) ?? null
+  );
+}
+
+type ToolCallBlockType = Extract<ContentBlock, { tag: "ToolCall" }>;
+
+function parseLegacyArgs(raw: string): Record<string, string> {
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object") {
+      return Object.fromEntries(
+        Object.entries(parsed).map(([key, value]) => [
+          key,
+          typeof value === "string"
+            ? formatDisplayText(value)
+            : formatDisplayText(JSON.stringify(value, null, 2)),
+        ]),
+      );
+    }
+  } catch {
+    // ignored
+  }
+  return {};
+}
+
+function firstLegacyPath(locations: ToolCallLocation[], args: Record<string, string>): string {
+  const path =
+    args.path ?? args.file_path ?? locations[0]?.display_path ?? locations[0]?.path ?? "";
+  return path ? formatDisplayPath(path) : "";
+}
+
+function legacyCollapsedSummary(
+  toolName: string,
+  args: Record<string, string>,
+  contents: ToolCallContent[],
+  locations: ToolCallLocation[],
+): string {
+  const name = toolName.toLowerCase();
+  if (["read", "read file", "read_file", "readtextfile"].includes(name)) {
+    return firstLegacyPath(locations, args);
+  }
+  if (["write", "write file", "write_file", "edit", "notebookedit"].includes(name)) {
+    const path = firstLegacyPath(locations, args);
+    const stats = diffStats(contents);
+    return stats ? `${path}  ${stats}` : path;
+  }
+  if (["bash", "terminal", "run", "create terminal", "create_terminal"].includes(name)) {
+    return args.command ?? args.cmd ?? "";
+  }
+  if (["grep", "glob", "search"].includes(name)) {
+    return args.pattern ?? args.query ?? args.glob ?? args.include ?? "";
+  }
+  return firstLegacyPath(locations, args) || args.command || args.pattern || "";
+}
+
+export function collapsedSummary(block: ToolCallBlockType): string {
+  const summary = summarizeTarget(block.target, block.kind, block.content);
+  if (summary) return summary;
+  return legacyCollapsedSummary(
+    block.tool_name,
+    parseLegacyArgs(block.arguments),
+    block.content,
+    block.locations,
   );
 }

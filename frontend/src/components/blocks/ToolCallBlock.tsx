@@ -92,7 +92,7 @@ function buildUnifiedDiff(content: Extract<ToolCallContent, { tag: "Diff" }>): s
   ].join("\n");
 }
 
-export function collapsedSummary(block: ToolCallBlockType): string {
+function collapsedSummary(block: ToolCallBlockType): string {
   const summary = summarizeTarget(block.target, block.kind, block.content);
   if (summary) return summary;
   return legacyCollapsedSummary(
