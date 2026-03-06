@@ -7,6 +7,7 @@ import {
   initialSessionViewState,
   sessionReducer,
 } from "../state/sessionReducer";
+import type { BlockStore } from "../state/blockStore";
 
 const RECONNECT_DELAY_MS = 3000;
 
@@ -99,6 +100,48 @@ function describeError(error: unknown): string {
 function log(level: "debug" | "info" | "warn", message: string, details: Record<string, unknown>) {
   const method = level === "warn" ? console.warn : level === "info" ? console.info : console.debug;
   method(`[ship/session] ${message}`, details);
+}
+
+function expectedBlockTagForPatch(
+  tag: "TextAppend" | "ToolCallUpdate" | "PlanReplace" | "PermissionResolve",
+) {
+  switch (tag) {
+    case "TextAppend":
+      return "Text";
+    case "ToolCallUpdate":
+      return "ToolCall";
+    case "PlanReplace":
+      return "PlanUpdate";
+    case "PermissionResolve":
+      return "Permission";
+  }
+}
+
+function inspectPatchApplicability(store: BlockStore, blockId: string, patchTag: string) {
+  const pos = store.index.get(blockId);
+  if (pos === undefined) {
+    return {
+      ok: false,
+      reason: "unknown-block-id" as const,
+      knownBlockIds: store.blocks.map((entry) => entry.blockId),
+    };
+  }
+
+  const entry = store.blocks[pos];
+  const expectedTag = expectedBlockTagForPatch(
+    patchTag as "TextAppend" | "ToolCallUpdate" | "PlanReplace" | "PermissionResolve",
+  );
+  if (entry.block.tag !== expectedTag) {
+    return {
+      ok: false,
+      reason: "block-tag-mismatch" as const,
+      actualTag: entry.block.tag,
+      expectedTag,
+      knownBlockIds: store.blocks.map((candidate) => candidate.blockId),
+    };
+  }
+
+  return { ok: true as const };
 }
 
 // r[proto.hydration-flow]
@@ -228,6 +271,30 @@ export function useSessionState(
               envelope: next.msg.value,
             },
           ];
+          if (next.msg.value.event.tag === "BlockPatch") {
+            const store =
+              next.msg.value.event.role.tag === "Captain"
+                ? stateRef.current.captainBlocks
+                : stateRef.current.mateBlocks;
+            const patchCheck = inspectPatchApplicability(
+              store,
+              next.msg.value.event.block_id,
+              next.msg.value.event.patch.tag,
+            );
+            if (!patchCheck.ok) {
+              log("warn", "received unappliable block patch", {
+                sessionId,
+                seq: nextSeq,
+                role: next.msg.value.event.role.tag,
+                blockId: next.msg.value.event.block_id,
+                patchTag: next.msg.value.event.patch.tag,
+                reason: patchCheck.reason,
+                actualTag: "actualTag" in patchCheck ? patchCheck.actualTag : null,
+                expectedTag: "expectedTag" in patchCheck ? patchCheck.expectedTag : null,
+                knownBlockIds: patchCheck.knownBlockIds.slice(-8),
+              });
+            }
+          }
           log("debug", "received session event", {
             sessionId,
             seq: nextSeq,
