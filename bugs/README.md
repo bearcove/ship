@@ -24,3 +24,6 @@ Open bugs:
 - [010-session-view-chrome-and-status.md](bugs/010-session-view-chrome-and-status.md)
 - [011-steering-input-ux.md](bugs/011-steering-input-ux.md)
 - [012-session-header-breadcrumbs.md](bugs/012-session-header-breadcrumbs.md)
+- [013-replay-stuck-after-events.md](bugs/013-replay-stuck-after-events.md)
+- [014-awaiting-permission-without-approval-ui.md](bugs/014-awaiting-permission-without-approval-ui.md)
+- [015-terminal-block-shows-raw-acp-debug-dump.md](bugs/015-terminal-block-shows-raw-acp-debug-dump.md)
