@@ -61,7 +61,6 @@ export const autonomyControls = style({
 });
 
 export const autonomyBadge = style({
-  minWidth: 118,
   justifyContent: "center",
 });
 

@@ -145,10 +145,13 @@ export function SessionViewPage() {
         </Flex>
         {/* r[ui.autonomy.toggle] */}
         <Flex className={autonomyControls}>
+          <Text size="1" color="gray">
+            Ask for permission
+          </Text>
           <Switch
             size="2"
-            checked={autonomous}
-            onCheckedChange={setAutonomous}
+            checked={!autonomous}
+            onCheckedChange={(v) => setAutonomous(!v)}
             aria-label={autonomous ? "Autonomous mode enabled" : "Human-in-the-loop mode enabled"}
           />
           <Box
