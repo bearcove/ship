@@ -206,10 +206,10 @@ impl ShipImpl {
             sessions.get(session_id).cloned()
         };
 
-        if let Some(session) = session {
-            if let Err(error) = self.cleanup_session_resources(&session, true).await {
-                tracing::warn!(session_id = %session_id.0, %error, "failed to clean up rolled back session resources");
-            }
+        if let Some(session) = session
+            && let Err(error) = self.cleanup_session_resources(&session, true).await
+        {
+            tracing::warn!(session_id = %session_id.0, %error, "failed to clean up rolled back session resources");
         }
 
         self.sessions
