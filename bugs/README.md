@@ -23,3 +23,4 @@ Open bugs:
 - [009-new-session-form-ergonomics.md](bugs/009-new-session-form-ergonomics.md)
 - [010-session-view-chrome-and-status.md](bugs/010-session-view-chrome-and-status.md)
 - [011-steering-input-ux.md](bugs/011-steering-input-ux.md)
+- [012-session-header-breadcrumbs.md](bugs/012-session-header-breadcrumbs.md)
