@@ -114,19 +114,9 @@ export function useSessionState(
         signalStop = resolve;
       });
 
-      const subscribeCall = client.subscribeEvents(sessionId, tx);
-      void subscribeCall.then(
-        () => {
-          log("info", "subscription RPC ended", { sessionId, attempt });
-          signalStop?.("subscription RPC ended");
-        },
-        (error) => {
-          const reason = `subscription RPC failed: ${describeError(error)}`;
-          log("warn", "subscription RPC failed", { sessionId, attempt, reason });
-          invalidateShipClient(reason);
-          signalStop?.(reason);
-        },
-      );
+      await client.subscribeEvents(sessionId, tx);
+      if (cancelled) return;
+      log("info", "subscription setup complete", { sessionId, attempt });
 
       let stopReason: string | null = null;
       let lastSeenSeq = stateRef.current.lastSeq;

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::future::Future;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -151,6 +152,107 @@ impl ShipImpl {
             | SessionEvent::BlockPatch { .. }
             | SessionEvent::AgentStateChanged { .. }
             | SessionEvent::ContextUpdated { .. } => None,
+        }
+    }
+
+    fn spawn_event_subscription(
+        session: SessionId,
+        receiver: broadcast::Receiver<ship_types::SessionEventEnvelope>,
+        replay: Vec<ship_types::SessionEventEnvelope>,
+        output: Tx<SubscribeMessage>,
+    ) {
+        tokio::spawn(async move {
+            Self::forward_event_subscription(
+                &session,
+                receiver,
+                replay,
+                |message| {
+                    let output = &output;
+                    async move { output.send(message).await.map_err(|_| ()) }
+                },
+                || {
+                    let output = &output;
+                    async move {
+                        let _ = output.close(Default::default()).await;
+                    }
+                },
+            )
+            .await;
+        });
+    }
+
+    async fn forward_event_subscription<Send, SendFuture, Close, CloseFuture>(
+        session: &SessionId,
+        mut receiver: broadcast::Receiver<ship_types::SessionEventEnvelope>,
+        replay: Vec<ship_types::SessionEventEnvelope>,
+        mut send: Send,
+        mut close: Close,
+    ) where
+        Send: FnMut(SubscribeMessage) -> SendFuture,
+        SendFuture: Future<Output = Result<(), ()>>,
+        Close: FnMut() -> CloseFuture,
+        CloseFuture: Future<Output = ()>,
+    {
+        tracing::info!(
+            session_id = %session.0,
+            replay_events = replay.len(),
+            "starting event replay"
+        );
+
+        for event in replay {
+            tracing::debug!(
+                session_id = %session.0,
+                seq = event.seq,
+                event_kind = Self::event_kind(&event.event),
+                role = ?Self::event_role(&event.event),
+                block_id = Self::event_block_id(&event.event),
+                task_id = Self::event_task_id(&event.event),
+                "sending replay event to subscriber"
+            );
+            if send(SubscribeMessage::Event(event)).await.is_err() {
+                tracing::warn!(session_id = %session.0, "subscriber disconnected during replay");
+                return;
+            }
+        }
+
+        if send(SubscribeMessage::ReplayComplete).await.is_err() {
+            tracing::warn!(
+                session_id = %session.0,
+                "subscriber disconnected before replay completion marker"
+            );
+            return;
+        }
+        tracing::info!(session_id = %session.0, "replay complete");
+
+        loop {
+            match receiver.recv().await {
+                Ok(event) => {
+                    tracing::debug!(
+                        session_id = %session.0,
+                        seq = event.seq,
+                        event_kind = Self::event_kind(&event.event),
+                        role = ?Self::event_role(&event.event),
+                        block_id = Self::event_block_id(&event.event),
+                        task_id = Self::event_task_id(&event.event),
+                        "sending live event to subscriber"
+                    );
+                    if send(SubscribeMessage::Event(event)).await.is_err() {
+                        tracing::warn!(
+                            session_id = %session.0,
+                            "subscriber disconnected during live stream"
+                        );
+                        return;
+                    }
+                }
+                Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                    tracing::warn!(session_id = %session.0, %skipped, "subscribe live stream lagged");
+                }
+                Err(broadcast::error::RecvError::Closed) => {
+                    tracing::info!(session_id = %session.0, "session event stream closed");
+                    close().await;
+                    return;
+                }
+            }
         }
     }
 
@@ -1148,62 +1250,12 @@ impl Ship for ShipImpl {
                 (active.events_tx.subscribe(), replay)
             })
         };
-        let Some((mut receiver, replay)) = session_data else {
+        let Some((receiver, replay)) = session_data else {
             tracing::warn!(session_id = %session.0, "subscribe requested for unknown session");
             let _ = output.close(Default::default()).await;
             return;
         };
-        tracing::info!(session_id = %session.0, replay_events = replay.len(), "starting event replay");
-
-        for event in replay {
-            tracing::debug!(
-                session_id = %session.0,
-                seq = event.seq,
-                event_kind = Self::event_kind(&event.event),
-                role = ?Self::event_role(&event.event),
-                block_id = Self::event_block_id(&event.event),
-                task_id = Self::event_task_id(&event.event),
-                "sending replay event to subscriber"
-            );
-            if output.send(SubscribeMessage::Event(event)).await.is_err() {
-                tracing::warn!(session_id = %session.0, "subscriber disconnected during replay");
-                return;
-            }
-        }
-
-        if output.send(SubscribeMessage::ReplayComplete).await.is_err() {
-            tracing::warn!(session_id = %session.0, "subscriber disconnected before replay completion marker");
-            return;
-        }
-        tracing::info!(session_id = %session.0, "replay complete");
-
-        loop {
-            match receiver.recv().await {
-                Ok(event) => {
-                    tracing::debug!(
-                        session_id = %session.0,
-                        seq = event.seq,
-                        event_kind = Self::event_kind(&event.event),
-                        role = ?Self::event_role(&event.event),
-                        block_id = Self::event_block_id(&event.event),
-                        task_id = Self::event_task_id(&event.event),
-                        "sending live event to subscriber"
-                    );
-                    if output.send(SubscribeMessage::Event(event)).await.is_err() {
-                        tracing::warn!(session_id = %session.0, "subscriber disconnected during live stream");
-                        return;
-                    }
-                }
-                Err(broadcast::error::RecvError::Lagged(skipped)) => {
-                    tracing::warn!(session_id = %session.0, %skipped, "subscribe live stream lagged");
-                }
-                Err(broadcast::error::RecvError::Closed) => {
-                    tracing::info!(session_id = %session.0, "session event stream closed");
-                    let _ = output.close(Default::default()).await;
-                    return;
-                }
-            }
-        }
+        Self::spawn_event_subscription(session, receiver, replay, output);
     }
 }
 
@@ -1231,14 +1283,18 @@ fn slugify(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
+    use std::time::Duration;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use ship_core::ProjectRegistry;
     use ship_service::Ship;
     use ship_types::{
         AgentDiscovery, AgentKind, CreateSessionRequest, CreateSessionResponse, McpServerConfig,
-        McpStdioServerConfig, ProjectName,
+        McpStdioServerConfig, ProjectName, SessionEvent, SessionEventEnvelope, SessionId,
+        SubscribeMessage, TaskId,
     };
+    use tokio::sync::{broadcast, mpsc};
+    use tokio::time::timeout;
 
     use super::ShipImpl;
 
@@ -1370,5 +1426,84 @@ mod tests {
         assert!(Ship::list_sessions(&ship).await.is_empty());
 
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    // r[verify event.subscribe.roam-channel]
+    // r[verify event.subscribe.replay]
+    // r[verify event.replay.followed-by-marker]
+    #[tokio::test]
+    async fn spawned_subscription_keeps_streaming_after_setup_returns() {
+        let session_id = SessionId::new();
+        let task_id = TaskId::new();
+        let live_task_id = TaskId::new();
+        let (live_tx, live_rx) = broadcast::channel(16);
+        let (messages_tx, mut messages_rx) = mpsc::unbounded_channel();
+        let replay = vec![SessionEventEnvelope {
+            seq: 7,
+            event: SessionEvent::TaskStarted {
+                task_id: task_id.clone(),
+                description: "Replay task".to_owned(),
+            },
+        }];
+
+        tokio::spawn(async move {
+            ShipImpl::forward_event_subscription(
+                &session_id,
+                live_rx,
+                replay,
+                |message| {
+                    let messages_tx = messages_tx.clone();
+                    async move { messages_tx.send(message).map_err(|_| ()) }
+                },
+                || async {},
+            )
+            .await;
+        });
+
+        let replayed = timeout(Duration::from_secs(1), messages_rx.recv())
+            .await
+            .expect("replay should arrive")
+            .expect("replay event should be present");
+        assert_eq!(
+            replayed,
+            SubscribeMessage::Event(SessionEventEnvelope {
+                seq: 7,
+                event: SessionEvent::TaskStarted {
+                    task_id: task_id.clone(),
+                    description: "Replay task".to_owned(),
+                },
+            })
+        );
+
+        let replay_complete = timeout(Duration::from_secs(1), messages_rx.recv())
+            .await
+            .expect("replay marker should arrive")
+            .expect("replay marker should be present");
+        assert_eq!(replay_complete, SubscribeMessage::ReplayComplete);
+
+        live_tx
+            .send(SessionEventEnvelope {
+                seq: 8,
+                event: SessionEvent::TaskStarted {
+                    task_id: live_task_id.clone(),
+                    description: "Live task".to_owned(),
+                },
+            })
+            .expect("live send should succeed");
+
+        let live = timeout(Duration::from_secs(1), messages_rx.recv())
+            .await
+            .expect("live event should arrive")
+            .expect("live event should be present");
+        assert_eq!(
+            live,
+            SubscribeMessage::Event(SessionEventEnvelope {
+                seq: 8,
+                event: SessionEvent::TaskStarted {
+                    task_id: live_task_id,
+                    description: "Live task".to_owned(),
+                },
+            })
+        );
     }
 }
