@@ -148,7 +148,7 @@ describe("SessionListPage UX slice", () => {
     const branchField = screen.getByLabelText("Base branch");
     fireEvent.focus(branchField);
     fireEvent.change(branchField, { target: { value: "release" } });
-    fireEvent.keyDown(branchField, { key: "Enter" });
+    fireEvent.mouseDown(await screen.findByRole("option", { name: "release/2026.03" }));
 
     const taskField = screen.getByLabelText("Task description");
     fireEvent.change(taskField, { target: { value: "Tighten the new-session flow" } });
@@ -166,5 +166,30 @@ describe("SessionListPage UX slice", () => {
     });
 
     await screen.findByText("Session view");
+  });
+
+  // r[verify ui.session-list.create.branch-filter]
+  it("does not submit a stale branch when the combobox query is only a partial match", async () => {
+    renderPage("/?project=ship");
+
+    fireEvent.click(screen.getAllByRole("button", { name: /new session/i })[0]);
+
+    await screen.findByRole("dialog");
+
+    const branchField = screen.getByLabelText("Base branch");
+    fireEvent.focus(branchField);
+    fireEvent.change(branchField, { target: { value: "release" } });
+
+    const createButton = screen.getByRole("button", { name: /create session/i });
+    expect(createButton).toBeDisabled();
+
+    const taskField = screen.getByLabelText("Task description");
+    fireEvent.change(taskField, { target: { value: "Tighten the new-session flow" } });
+    expect(createButton).toBeDisabled();
+
+    fireEvent.click(createButton);
+    await waitFor(() => {
+      expect(mocks.createSession).not.toHaveBeenCalled();
+    });
   });
 });

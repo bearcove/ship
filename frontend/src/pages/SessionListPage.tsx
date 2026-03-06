@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   Badge,
@@ -138,6 +138,8 @@ function BranchCombobox({
   const branches = useBranches(projectName);
   const [query, setQuery] = useState(value);
   const [open, setOpen] = useState(false);
+  const latestQuery = useRef(query);
+  const latestValue = useRef(value);
 
   const branchOptions = useMemo(() => {
     const uniqueBranches = Array.from(new Set(branches));
@@ -154,12 +156,20 @@ function BranchCombobox({
   }, [value]);
 
   useEffect(() => {
+    latestQuery.current = query;
+  }, [query]);
+
+  useEffect(() => {
+    latestValue.current = value;
+  }, [value]);
+
+  useEffect(() => {
     if (!projectName) {
       setQuery("");
       return;
     }
 
-    if (!value && branchOptions.preferredBranch) {
+    if (!value && !query && branchOptions.preferredBranch) {
       onChange(branchOptions.preferredBranch);
       return;
     }
@@ -169,13 +179,13 @@ function BranchCombobox({
     }
   }, [branchOptions, onChange, projectName, value]);
 
-  const filtered = useMemo(
-    () =>
-      branchOptions.uniqueBranches
-        .filter((branch) => branch.toLowerCase().includes(query.toLowerCase()))
-        .slice(0, 8),
-    [branchOptions, query],
-  );
+  function matchingBranches(input: string) {
+    return branchOptions.uniqueBranches
+      .filter((branch) => branch.toLowerCase().includes(input.toLowerCase()))
+      .slice(0, 8);
+  }
+
+  const filtered = useMemo(() => matchingBranches(query), [branchOptions, query]);
 
   return (
     <Flex direction="column" gap="1" style={{ position: "relative" }}>
@@ -191,23 +201,41 @@ function BranchCombobox({
         placeholder={projectName ? "Search branches…" : "Select a project first"}
         value={query}
         onChange={(e) => {
-          setQuery(e.target.value);
+          const nextQuery = e.target.value;
+          setQuery(nextQuery);
+          onChange(branchOptions.uniqueBranches.includes(nextQuery) ? nextQuery : "");
           setOpen(true);
         }}
         onFocus={() => setOpen(true)}
         onKeyDown={(event) => {
-          if (event.key === "Enter" && filtered.length > 0) {
+          const currentQuery =
+            event.target instanceof HTMLInputElement && event.target.value
+              ? event.target.value
+              : latestQuery.current;
+          const currentMatches = matchingBranches(currentQuery);
+          if (event.key === "Enter" && currentMatches.length > 0) {
             event.preventDefault();
-            onChange(filtered[0]);
-            setQuery(filtered[0]);
+            onChange(currentMatches[0]);
+            setQuery(currentMatches[0]);
             setOpen(false);
           }
           if (event.key === "Escape") {
             setOpen(false);
-            setQuery(value);
+            setQuery(latestValue.current);
           }
         }}
-        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onBlur={() =>
+          setTimeout(() => {
+            setOpen(false);
+            if (!latestValue.current && latestQuery.current) {
+              const nextBranch = matchingBranches(latestQuery.current)[0];
+              if (nextBranch) {
+                onChange(nextBranch);
+                setQuery(nextBranch);
+              }
+            }
+          }, 150)
+        }
         disabled={!projectName}
       />
       <Button
