@@ -580,12 +580,55 @@ impl ShipImpl {
         self.persist_session(session_id).await
     }
 
-    async fn steer_task(
+    async fn queue_captain_steer_for_review(
         &self,
         session_id: &SessionId,
         content: String,
-    ) -> Result<AutonomyMode, String> {
-        let mode = {
+    ) -> Result<(), String> {
+        let mut replaced_pending_steer = false;
+        {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let active = sessions
+                .get_mut(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+
+            let status = current_task_status(active).map_err(|error| error.to_string())?;
+            if status != TaskStatus::Assigned && status != TaskStatus::ReviewPending {
+                if status == TaskStatus::SteerPending {
+                    active.pending_steer = Some(content.clone());
+                    replaced_pending_steer = true;
+                } else {
+                    return Err("invalid task transition".to_owned());
+                }
+            }
+
+            if !replaced_pending_steer {
+                apply_event(
+                    active,
+                    SessionEvent::BlockAppend {
+                        block_id: BlockId::new(),
+                        role: Role::Captain,
+                        block: ContentBlock::Text {
+                            text: content.clone(),
+                        },
+                    },
+                );
+
+                transition_task(active, TaskStatus::SteerPending)
+                    .map_err(|error| error.to_string())?;
+                active.pending_steer = Some(content);
+            }
+        }
+
+        self.persist_session(session_id).await
+    }
+
+    async fn dispatch_steer_to_mate(
+        &self,
+        session_id: &SessionId,
+        content: String,
+    ) -> Result<(), String> {
+        {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let active = sessions
                 .get_mut(session_id)
@@ -599,36 +642,40 @@ impl ShipImpl {
                 return Err("invalid task transition".to_owned());
             }
 
-            apply_event(
-                active,
-                SessionEvent::BlockAppend {
-                    block_id: BlockId::new(),
-                    role: Role::Captain,
-                    block: ContentBlock::Text {
-                        text: content.clone(),
-                    },
-                },
-            );
-
-            if active.config.autonomy_mode == AutonomyMode::Autonomous {
-                transition_task(active, TaskStatus::Working).map_err(|error| error.to_string())?;
-            } else {
-                transition_task(active, TaskStatus::SteerPending)
-                    .map_err(|error| error.to_string())?;
-                active.pending_steer = Some(content.clone());
-            }
-
-            active.config.autonomy_mode
-        };
+            transition_task(active, TaskStatus::Working).map_err(|error| error.to_string())?;
+            active.pending_steer = None;
+        }
 
         self.persist_session(session_id).await?;
 
+        let this = self.clone();
+        let session_id = session_id.clone();
+        tokio::spawn(async move {
+            this.prompt_mate_from_steer(session_id, content).await;
+        });
+
+        Ok(())
+    }
+
+    async fn captain_delegate_to_mate(
+        &self,
+        session_id: &SessionId,
+        content: String,
+    ) -> Result<AutonomyMode, String> {
+        let mode = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            sessions
+                .get(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?
+                .config
+                .autonomy_mode
+        };
+
         if mode == AutonomyMode::Autonomous {
-            let this = self.clone();
-            let session_id = session_id.clone();
-            tokio::spawn(async move {
-                this.prompt_mate_from_steer(session_id, content).await;
-            });
+            self.dispatch_steer_to_mate(session_id, content).await?;
+        } else {
+            self.queue_captain_steer_for_review(session_id, content)
+                .await?;
         }
 
         Ok(mode)
@@ -724,7 +771,9 @@ impl ShipImpl {
         session_id: &SessionId,
         message: String,
     ) -> Result<String, String> {
-        let mode = self.steer_task(session_id, message.clone()).await?;
+        let mode = self
+            .captain_delegate_to_mate(session_id, message.clone())
+            .await?;
         self.append_captain_tool_call(
             session_id,
             "ship_steer",
@@ -1512,7 +1561,7 @@ impl Ship for ShipImpl {
     }
 
     async fn steer(&self, session: SessionId, content: String) {
-        if let Err(error) = self.steer_task(&session, content).await {
+        if let Err(error) = self.dispatch_steer_to_mate(&session, content).await {
             Self::log_error("steer", &error);
         }
     }
@@ -1729,9 +1778,9 @@ mod tests {
     use ship_core::{ProjectRegistry, SessionStore};
     use ship_service::Ship;
     use ship_types::{
-        AgentDiscovery, AgentKind, CreateSessionRequest, CreateSessionResponse, McpServerConfig,
-        McpStdioServerConfig, ProjectName, SessionEvent, SessionEventEnvelope, SessionId,
-        SubscribeMessage, TaskId,
+        AgentDiscovery, AgentKind, CreateSessionRequest, CreateSessionResponse, CurrentTask,
+        McpServerConfig, McpStdioServerConfig, ProjectName, SessionEvent, SessionEventEnvelope,
+        SessionId, SessionStartupState, SubscribeMessage, TaskId, TaskRecord, TaskStatus,
     };
     use tokio::sync::{broadcast, mpsc};
     use tokio::time::timeout;
@@ -1746,6 +1795,66 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("ship-impl-{test_name}-{nanos}"));
         std::fs::create_dir_all(&dir).expect("temp dir should be created");
         dir
+    }
+
+    async fn create_session_for_workflow_test(test_name: &str) -> (PathBuf, ShipImpl, SessionId) {
+        let dir = make_temp_dir(test_name);
+        let config_dir = dir.join("config");
+        let project_root = dir.join("project");
+        std::fs::create_dir_all(project_root.join(".ship")).expect("project ship dir should exist");
+
+        let mut registry = ProjectRegistry::load_in(config_dir)
+            .await
+            .expect("project registry should load");
+        registry
+            .add(&project_root)
+            .await
+            .expect("project should be added");
+
+        let ship = ShipImpl::new(
+            registry,
+            dir.join("sessions"),
+            AgentDiscovery {
+                claude: true,
+                codex: true,
+            },
+        );
+
+        let response = Ship::create_session(
+            &ship,
+            CreateSessionRequest {
+                project: ProjectName("project".to_owned()),
+                captain_kind: AgentKind::Claude,
+                mate_kind: AgentKind::Codex,
+                base_branch: "main".to_owned(),
+                mcp_servers: None,
+            },
+        )
+        .await;
+
+        let session_id = match response {
+            CreateSessionResponse::Created { session_id } => session_id,
+            CreateSessionResponse::Failed { message } => {
+                panic!("create session should succeed: {message}")
+            }
+        };
+
+        {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(&session_id).expect("session should exist");
+            session.startup_state = SessionStartupState::Ready;
+            session.current_task = Some(CurrentTask {
+                record: TaskRecord {
+                    id: TaskId::new(),
+                    description: "Investigate workflow".to_owned(),
+                    status: TaskStatus::Assigned,
+                },
+                content_history: Vec::new(),
+                event_log: Vec::new(),
+            });
+        }
+
+        (dir, ship, session_id)
     }
 
     // r[verify server.agent-discovery]
@@ -2019,5 +2128,71 @@ mod tests {
                 },
             })
         );
+    }
+
+    // r[verify captain.tool.steer]
+    #[tokio::test]
+    async fn captain_tool_steer_queues_review_in_human_mode() {
+        let (dir, ship, session_id) =
+            create_session_for_workflow_test("captain-tool-steer-review").await;
+
+        let result = ship
+            .captain_tool_steer(&session_id, "Ask the mate to add coverage".to_owned())
+            .await
+            .expect("captain tool should succeed");
+
+        assert_eq!(result, "Steer queued for human review.");
+
+        let detail = Ship::get_session(&ship, session_id.clone()).await;
+        assert_eq!(
+            detail
+                .current_task
+                .as_ref()
+                .expect("task should exist")
+                .status,
+            TaskStatus::SteerPending
+        );
+        assert_eq!(
+            detail.pending_steer.as_deref(),
+            Some("Ask the mate to add coverage")
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    // r[verify proto.steer]
+    #[tokio::test]
+    async fn explicit_steer_dispatches_pending_review_to_the_mate_path() {
+        let (dir, ship, session_id) =
+            create_session_for_workflow_test("explicit-steer-dispatch").await;
+
+        {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(&session_id).expect("session should exist");
+            session
+                .current_task
+                .as_mut()
+                .expect("task should exist")
+                .record
+                .status = TaskStatus::SteerPending;
+            session.pending_steer = Some("Old captain steer".to_owned());
+        }
+
+        ship.dispatch_steer_to_mate(&session_id, "Send the approved steer".to_owned())
+            .await
+            .expect("explicit steer should dispatch");
+
+        let detail = Ship::get_session(&ship, session_id.clone()).await;
+        assert_eq!(
+            detail
+                .current_task
+                .as_ref()
+                .expect("task should exist")
+                .status,
+            TaskStatus::Working
+        );
+        assert!(detail.pending_steer.is_none());
+
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

@@ -181,8 +181,10 @@ record and prompts the captain with the task description (per
 delegation happens only if the captain explicitly calls Ship MCP tools.
 
 r[proto.steer]
-The protocol MUST support a `steer` operation where the captain provides
-feedback or new direction to the mate.
+The protocol MUST support a `steer` operation where the human explicitly sends
+or approves new direction for the mate. This is the backend entrypoint that
+starts a mate turn. Captain-originated delegation via `ship_steer` uses the
+same underlying mate-delegation path once the steer is approved.
 
 r[proto.accept]
 The protocol MUST support an `accept` operation where the captain accepts the
@@ -327,7 +329,8 @@ progress to the frontend in real time.
 r[task.completion]
 When the mate finishes (`StopReason::EndTurn`), the task moves to
 `ReviewPending`. Mate output remains visible in the session event stream for
-the human and captain to review.
+the human and captain to review. Ship MUST NOT automatically prompt the
+captain as a built-in follow-up step just because the mate finished.
 
 r[task.steer]
 The captain MUST be able to send `steer` to request more work from the mate.
@@ -800,14 +803,15 @@ The captain MUST have access to a `ship_accept` tool that takes an optional
 transitions the task to accepted.
 
 r[captain.tool.reject]
-The captain MUST have access to a `ship_reject` tool that takes a `reason`
-argument (string) and a `message` argument (string). Rejection means the
-captain believes the current approach is fundamentally wrong. The backend
-cancels the mate's in-progress prompt (if any) via ACP `cancel`, transitions
-the task to `Cancelled` with the reason, and surfaces the captain's message
-to the human. The human can then assign a new task with a different approach.
-This is the same codepath as `proto.cancel` — the only difference is the
-initiator (captain vs human) and that the captain provides a reason.
+The captain MUST have access to a `ship_reject` tool that takes a required
+`reason` argument (string) and an optional `message` argument (string).
+Rejection means the captain believes the current approach is fundamentally
+wrong. The backend cancels the mate's in-progress prompt (if any) via ACP
+`cancel`, transitions the task to `Cancelled` with the reason, and surfaces
+the captain's message to the human. The human can then assign a new task with
+a different approach. This is the same codepath as `proto.cancel` — the only
+difference is the initiator (captain vs human) and that the captain provides
+a reason.
 
 r[captain.tool.implementation]
 Captain tools MUST be implemented as MCP tools served by Ship itself. The
@@ -842,8 +846,9 @@ When the human sends a steer directly (bypassing the captain), the backend
 MUST inject the human's steer text into the captain's context for the next
 review cycle. The captain MUST be informed that the human overrode its
 direction — the injection MUST include a note like "The human sent this steer
-directly to the mate, overriding your recommendation." The captain then
-reviews the mate's output as normal after the mate finishes.
+directly to the mate, overriding your recommendation." Ship MUST NOT
+automatically prompt the captain solely because the mate finished; the note is
+delivered on the captain's next explicit prompt.
 
 r[captain.human-override.cancel-pending]
 If the captain had a pending steer (in `SteerPending` state) when the human

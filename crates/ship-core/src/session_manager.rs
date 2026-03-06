@@ -786,30 +786,6 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         Ok(())
     }
 
-    async fn prompt_captain_review(
-        &mut self,
-        session_id: &SessionId,
-    ) -> Result<(), SessionManagerError> {
-        let prompt = {
-            let session = self
-                .sessions
-                .get(session_id)
-                .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
-            let task = session
-                .current_task
-                .as_ref()
-                .ok_or(SessionManagerError::NoActiveTask)?;
-            format!(
-                "Review mate output for task:\n{}\n\nProvide steer or acceptance.",
-                task.record.description
-            )
-        };
-
-        self.prompt_agent(session_id, Role::Captain, prompt)
-            .await
-            .map(|_| ())
-    }
-
     async fn prompt_mate(
         &mut self,
         session_id: &SessionId,
@@ -819,14 +795,11 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
 
         match stop_reason {
             StopReason::EndTurn => {
-                {
-                    let session = self
-                        .sessions
-                        .get_mut(session_id)
-                        .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
-                    transition_task(session, TaskStatus::ReviewPending)?;
-                }
-                self.prompt_captain_review(session_id).await?;
+                let session = self
+                    .sessions
+                    .get_mut(session_id)
+                    .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
+                transition_task(session, TaskStatus::ReviewPending)?;
             }
             StopReason::Cancelled => {
                 let session = self

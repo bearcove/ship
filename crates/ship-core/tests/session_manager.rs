@@ -594,6 +594,7 @@ async fn test_autonomy_modes() {
         .set_autonomy_mode(&session_id, AutonomyMode::Autonomous)
         .expect("set autonomy mode should work");
 
+    let prompts_before_autonomous = agent.prompt_log().len();
     agent.push_response(StopReason::EndTurn);
     agent.push_response(StopReason::EndTurn);
 
@@ -601,6 +602,7 @@ async fn test_autonomy_modes() {
         .steer(&session_id, "Autonomous steer".to_owned())
         .await
         .expect("autonomous steer should work");
+    let prompts_after_autonomous = agent.prompt_log().len();
 
     let autonomous_state = manager.get_session(&session_id).expect("session exists");
     assert_eq!(
@@ -611,6 +613,11 @@ async fn test_autonomy_modes() {
             .record
             .status,
         TaskStatus::ReviewPending
+    );
+    assert_eq!(
+        prompts_after_autonomous,
+        prompts_before_autonomous + 1,
+        "mate completion must not trigger an automatic captain review prompt"
     );
 }
 
