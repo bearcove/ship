@@ -442,10 +442,6 @@ impl ShipImpl {
         .join("\n")
     }
 
-    fn human_feed_text(content: &str) -> String {
-        format!("**You**\n\n{content}")
-    }
-
     fn captain_assignment_prompt(description: &str) -> String {
         format!(
             "The human assigned a new task:\n{description}\n\nReview it as the captain. You may ask a clarifying question in plain text, or call Ship MCP tools when you want to delegate, accept, or reject the task. Do not write code directly."
@@ -535,7 +531,8 @@ impl ShipImpl {
                     block_id: BlockId::new(),
                     role,
                     block: ContentBlock::Text {
-                        text: Self::human_feed_text(&content),
+                        text: content,
+                        source: ship_types::TextSource::Human,
                     },
                 },
             );
@@ -574,6 +571,7 @@ impl ShipImpl {
                         role: Role::Captain,
                         block: ContentBlock::Text {
                             text: content.clone(),
+                            source: ship_types::TextSource::Agent,
                         },
                     },
                 );
@@ -612,7 +610,8 @@ impl ShipImpl {
                     block_id: BlockId::new(),
                     role: Role::Mate,
                     block: ContentBlock::Text {
-                        text: Self::human_feed_text(&content),
+                        text: content.clone(),
+                        source: ship_types::TextSource::Human,
                     },
                 },
             );
@@ -679,7 +678,10 @@ impl ShipImpl {
                     SessionEvent::BlockAppend {
                         block_id: BlockId::new(),
                         role: Role::Captain,
-                        block: ContentBlock::Text { text: summary },
+                        block: ContentBlock::Text {
+                            text: summary,
+                            source: ship_types::TextSource::Agent,
+                        },
                     },
                 );
             }

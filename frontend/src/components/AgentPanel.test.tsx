@@ -4,7 +4,13 @@ import type { AgentSnapshot } from "../generated/ship";
 import type { BlockEntry } from "../state/blockStore";
 import { renderWithTheme } from "../test/render";
 import { AgentPanel } from "./AgentPanel";
-import { agentPanelScrollArea, eventStream, stickyPlan } from "../styles/session-view.css";
+import {
+  agentPanelScrollArea,
+  eventStream,
+  feedMessageCardAgent,
+  feedMessageCardUser,
+  stickyPlan,
+} from "../styles/session-view.css";
 
 const apiMocks = vi.hoisted(() => ({
   resolvePermission: vi.fn(async () => undefined),
@@ -24,7 +30,11 @@ const agent: AgentSnapshot = {
 };
 
 const blocks: BlockEntry[] = [
-  { blockId: "text-1", role: { tag: "Captain" }, block: { tag: "Text", text: "Feed update one." } },
+  {
+    blockId: "text-1",
+    role: { tag: "Captain" },
+    block: { tag: "Text", text: "Feed update one.", source: { tag: "Agent" } },
+  },
   {
     blockId: "plan-1",
     role: { tag: "Captain" },
@@ -39,7 +49,11 @@ const blocks: BlockEntry[] = [
       ],
     },
   },
-  { blockId: "text-2", role: { tag: "Captain" }, block: { tag: "Text", text: "Feed update two." } },
+  {
+    blockId: "text-2",
+    role: { tag: "Captain" },
+    block: { tag: "Text", text: "Feed update two.", source: { tag: "Agent" } },
+  },
   {
     blockId: "plan-2",
     role: { tag: "Captain" },
@@ -143,6 +157,70 @@ describe("AgentPanel plan rendering", () => {
     expect(feed).toHaveTextContent("Feed update two.");
     expect(feed).not.toHaveTextContent("Queue the UI patch");
     expect(feed).not.toHaveTextContent("Render the sticky plan");
+  });
+
+  it("right-aligns human messages and removes repeated role labels", () => {
+    const { container } = renderWithTheme(
+      <AgentPanel
+        sessionId="session-1"
+        agent={agent}
+        blocks={[
+          {
+            blockId: "agent",
+            role: { tag: "Captain" },
+            block: { tag: "Text", text: "Ready to help.", source: { tag: "Agent" } },
+          },
+          {
+            blockId: "human",
+            role: { tag: "Captain" },
+            block: {
+              tag: "Text",
+              text: "Can you ask your mate to patch this?",
+              source: { tag: "Human" },
+            },
+          },
+        ]}
+        loading={false}
+        startupState={{ tag: "Ready" }}
+        taskStatus={{ tag: "Assigned" }}
+      />,
+    );
+
+    expect(screen.queryByText("Captain")).not.toBeInTheDocument();
+    expect(screen.queryByText("You")).not.toBeInTheDocument();
+    expect(screen.getByText("Can you ask your mate to patch this?")).toBeInTheDocument();
+
+    const cards = container.querySelectorAll<HTMLElement>(
+      `.${feedMessageCardAgent}, .${feedMessageCardUser}`,
+    );
+    expect(cards).toHaveLength(2);
+    expect(cards[0]).toHaveClass(feedMessageCardAgent);
+    expect(cards[1]).toHaveClass(feedMessageCardUser);
+  });
+
+  it("does not misclassify captain text with leading whitespace as a user bubble", () => {
+    const { container } = renderWithTheme(
+      <AgentPanel
+        sessionId="session-1"
+        agent={agent}
+        blocks={[
+          {
+            blockId: "captain-whitespace",
+            role: { tag: "Captain" },
+            block: { tag: "Text", text: "\nReady to help.", source: { tag: "Agent" } },
+          },
+        ]}
+        loading={false}
+        startupState={{ tag: "Ready" }}
+        taskStatus={{ tag: "Assigned" }}
+      />,
+    );
+
+    const userCards = container.querySelectorAll<HTMLElement>(`.${feedMessageCardUser}`);
+    const agentCards = container.querySelectorAll<HTMLElement>(`.${feedMessageCardAgent}`);
+
+    expect(userCards).toHaveLength(0);
+    expect(agentCards).toHaveLength(1);
   });
 
   // r[verify view.permission-dialog]

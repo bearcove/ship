@@ -474,6 +474,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                     role: Role::Captain,
                     block: ContentBlock::Text {
                         text: message.clone(),
+                        source: ship_types::TextSource::Agent,
                     },
                 },
             );
@@ -1093,7 +1094,7 @@ pub fn apply_event_to_materialized_state(session: &mut ActiveSession, event: &Se
 pub fn apply_block_patch(block: &mut ContentBlock, patch: &BlockPatch) {
     match patch {
         BlockPatch::TextAppend { text } => {
-            if let ContentBlock::Text { text: existing } = block {
+            if let ContentBlock::Text { text: existing, .. } = block {
                 existing.push_str(text);
             }
         }

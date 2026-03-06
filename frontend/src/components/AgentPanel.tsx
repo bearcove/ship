@@ -19,7 +19,10 @@ import {
   agentPanelScrollArea,
   eventStream,
   feedMessageCard,
+  feedMessageCardAgent,
+  feedMessageCardUser,
   feedMessageMeta,
+  feedMessageRow,
   stickyPlan,
   startupFeedBody,
   startupFeedItem,
@@ -37,6 +40,7 @@ interface Props {
 }
 
 type PlanUpdateBlock = Extract<ContentBlock, { tag: "PlanUpdate" }>;
+type TextBlockType = Extract<ContentBlock, { tag: "Text" }>;
 
 function latestPlan(entries: BlockEntry[]): PlanUpdateBlock | undefined {
   let last: PlanUpdateBlock | undefined;
@@ -109,13 +113,17 @@ export function AgentPanel({
   function renderBlock(entry: BlockEntry) {
     const { block, blockId } = entry;
     switch (block.tag) {
-      case "Text":
+      case "Text": {
+        const cardClassName =
+          block.source.tag === "Human" ? feedMessageCardUser : feedMessageCardAgent;
         return (
-          <Box className={feedMessageCard}>
-            <Text className={feedMessageMeta}>{agent.role.tag}</Text>
-            <TextBlock block={block} />
+          <Box className={feedMessageRow}>
+            <Box className={`${feedMessageCard} ${cardClassName}`}>
+              <TextBlock block={block as TextBlockType} />
+            </Box>
           </Box>
         );
+      }
       case "ToolCall":
         return <ToolCallBlock block={block} />;
       case "PlanUpdate":
@@ -124,6 +132,8 @@ export function AgentPanel({
         return <ErrorBlock block={block} agentState={agent.state} />;
       // r[ui.permission.actions]
       case "Permission": {
+        if (block.resolution?.tag === "Approved") return null;
+
         const isActive = blockId === lastUnresolvedPermBlockId;
         const permissionId = isActive ? (block.permission_id ?? null) : null;
 

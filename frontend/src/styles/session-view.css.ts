@@ -173,6 +173,11 @@ export const eventStream = style({
   minHeight: 0,
 });
 
+export const feedMessageRow = style({
+  display: "flex",
+  width: "100%",
+});
+
 export const feedMessageCard = style({
   display: "flex",
   flexDirection: "column",
@@ -181,6 +186,17 @@ export const feedMessageCard = style({
   borderRadius: "var(--radius-3)",
   border: "1px solid var(--gray-a4)",
   background: "var(--gray-a2)",
+  width: "80%",
+});
+
+export const feedMessageCardAgent = style({
+  marginRight: "auto",
+});
+
+export const feedMessageCardUser = style({
+  marginLeft: "auto",
+  background: "color-mix(in srgb, var(--accent-9) 12%, var(--gray-a2))",
+  borderColor: "color-mix(in srgb, var(--accent-9) 28%, var(--gray-a4))",
 });
 
 export const feedMessageMeta = style({

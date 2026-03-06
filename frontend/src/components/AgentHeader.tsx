@@ -49,15 +49,19 @@ export function AgentHeader({ agent }: Props) {
           {agent.role.tag}
         </Text>
         <AgentKindIcon kind={agent.kind} />
+        {/* r[ui.agent-header.context-bar] */}
+        {contextPct !== null && agent.state.tag !== "ContextExhausted" && (
+          <Progress
+            value={contextPct}
+            color={contextLow ? "red" : "blue"}
+            size="1"
+            style={{ width: 56, flexShrink: 0, marginLeft: "auto" }}
+          />
+        )}
         <Box className={agentHeaderMeta}>
           <AgentStateBadge agent={agent} />
         </Box>
       </Flex>
-
-      {/* r[ui.agent-header.context-bar] */}
-      {contextPct !== null && agent.state.tag !== "ContextExhausted" && (
-        <Progress value={contextPct} color={contextLow ? "red" : "blue"} size="1" />
-      )}
 
       {/* r[context.warning] */}
       {contextLow && agent.state.tag !== "ContextExhausted" && (

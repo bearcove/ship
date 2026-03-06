@@ -211,7 +211,10 @@ impl ShipAcpClient {
                             // r[event.block-id.text]
                             block_id,
                             role: self.role,
-                            block: ShipContentBlock::Text { text },
+                            block: ShipContentBlock::Text {
+                                text,
+                                source: ship_types::TextSource::Agent,
+                            },
                         }]
                     }
                 }

@@ -311,6 +311,13 @@ pub mod events {
 
     #[repr(u8)]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, facet::Facet)]
+    pub enum TextSource {
+        Agent,
+        Human,
+    }
+
+    #[repr(u8)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, facet::Facet)]
     pub enum ToolCallStatus {
         Running,
         Success,
@@ -358,6 +365,7 @@ pub mod events {
     pub enum ContentBlock {
         Text {
             text: String,
+            source: TextSource,
         },
         ToolCall {
             tool_call_id: Option<String>,
@@ -688,7 +696,7 @@ pub use agent::{
 };
 pub use events::{
     BlockPatch, ContentBlock, PermissionResolution, SessionEvent, SessionEventEnvelope,
-    SubscribeMessage, ToolCallContent, ToolCallLocation, ToolCallStatus,
+    SubscribeMessage, TextSource, ToolCallContent, ToolCallLocation, ToolCallStatus,
 };
 pub use ids::{BlockId, ProjectName, SessionId, TaskId};
 pub use persistence::{CurrentTask, PersistedSession, SessionConfig, TaskContentRecord};
