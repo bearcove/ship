@@ -119,6 +119,7 @@ pub mod agent {
 
     // r[agent-state.derived]
     #[repr(u8)]
+    #[allow(clippy::large_enum_variant)]
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub enum AgentState {
         Working {
@@ -393,6 +394,7 @@ pub mod events {
 
     // r[event.patch]
     #[repr(u8)]
+    #[allow(clippy::large_enum_variant)]
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub enum BlockPatch {
         // r[event.patch.text-append]
@@ -471,6 +473,7 @@ pub mod events {
 
     // r[event.subscribe.roam-channel]
     #[repr(u8)]
+    #[allow(clippy::large_enum_variant)]
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub enum SubscribeMessage {
         Event(SessionEventEnvelope),
