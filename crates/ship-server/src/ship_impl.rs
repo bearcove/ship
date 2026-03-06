@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::future::Future;
-use std::path::PathBuf;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -18,20 +17,20 @@ use ship_service::Ship;
 use ship_types::{
     AgentDiscovery, AgentKind, AgentSnapshot, AgentState, AssignTaskResponse, AutonomyMode,
     BlockId, CloseSessionRequest, CloseSessionResponse, ContentBlock, CreateSessionRequest,
-    CreateSessionResponse, CurrentTask, McpServerConfig, McpStdioServerConfig, PersistedSession,
+    CreateSessionResponse, CurrentTask, McpHttpServerConfig, McpServerConfig, PersistedSession,
     ProjectInfo, ProjectName, Role, SessionConfig, SessionDetail, SessionEvent, SessionId,
     SessionStartupStage, SessionStartupState, SessionSummary, SubscribeMessage, TaskId, TaskRecord,
     TaskStatus, ToolCallContent, ToolCallStatus,
 };
-use tokio::net::UnixListener;
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 
-use crate::captain_mcp::{ToolDefinition, ToolHandler, ToolResult};
+use crate::captain_mcp::{
+    CaptainMcpServerHandle, ToolDefinition, ToolHandler, ToolResult, start_server,
+};
 
 struct CaptainMcpHandle {
-    socket_path: PathBuf,
-    task: JoinHandle<()>,
+    server: CaptainMcpServerHandle,
 }
 
 // r[server.multi-repo]
@@ -494,18 +493,8 @@ impl ShipImpl {
     async fn install_captain_mcp_server(
         &self,
         session_id: &SessionId,
-        worktree_path: &std::path::Path,
+        _worktree_path: &std::path::Path,
     ) -> Result<McpServerConfig, String> {
-        let socket_path = worktree_path.join(".ship-captain-mcp.sock");
-        match std::fs::remove_file(&socket_path) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(format!("failed to clear captain MCP socket: {error}")),
-        }
-
-        let listener = UnixListener::bind(&socket_path)
-            .map_err(|error| format!("failed to bind captain MCP socket: {error}"))?;
-
         let session_id_clone = session_id.clone();
         let this = self.clone();
         let handler: ToolHandler = Arc::new(move |name, arguments| {
@@ -517,33 +506,18 @@ impl ShipImpl {
             })
         });
 
-        let task = tokio::spawn(async move {
-            crate::captain_mcp::serve(listener, Self::captain_mcp_tools(), handler).await;
-        });
+        let server = start_server(Self::captain_mcp_tools(), handler).await?;
+        let url = server.url().to_owned();
 
         self.captain_mcp
             .lock()
             .expect("captain mcp mutex poisoned")
-            .insert(
-                session_id.clone(),
-                CaptainMcpHandle {
-                    socket_path: socket_path.clone(),
-                    task,
-                },
-            );
+            .insert(session_id.clone(), CaptainMcpHandle { server });
 
-        let command = std::env::current_exe()
-            .map_err(|error| format!("failed to resolve ship executable: {error}"))?;
-
-        Ok(McpServerConfig::Stdio(McpStdioServerConfig {
+        Ok(McpServerConfig::Http(McpHttpServerConfig {
             name: "ship".to_owned(),
-            command: command.display().to_string(),
-            args: vec![
-                "captain-mcp-proxy".to_owned(),
-                "--socket".to_owned(),
-                socket_path.display().to_string(),
-            ],
-            env: Vec::new(),
+            url,
+            headers: Vec::new(),
         }))
     }
 
@@ -554,8 +528,7 @@ impl ShipImpl {
             .expect("captain mcp mutex poisoned")
             .remove(session_id)
         {
-            handle.task.abort();
-            let _ = std::fs::remove_file(handle.socket_path);
+            handle.server.shutdown();
         }
     }
 
