@@ -8,19 +8,20 @@ Owner: frontend
 The new-session form is missing several expected workflow affordances:
 - if the session list is filtered by project, opening `New Session` does not preselect that project
 - the base branch control should be a searchable dropdown
+- the current branch chooser is rendered as two separate controls: a text input and a dropdown/trigger, which is confusing
 - `Cmd+Return` does not submit the form
 - the create button does not show the keyboard shortcut inline
 
 ## Expected Behavior
 
 - project-filter context carries into the dialog as the default selected project
-- base branch is selected from a searchable dropdown / combo box
+- base branch is selected from one coherent searchable dropdown / combo box, not a duplicated input plus dropdown
 - `Cmd+Return` creates the session
 - the create button shows the shortcut inline with icons
 
 ## Evidence
 
-User report from live use of the session-list and new-session dialog flow.
+User report from live use of the session-list and new-session dialog flow, including a screenshot showing both a freeform branch text field and a separate branch dropdown in the same form.
 
 ## Suspected Root Cause
 
@@ -33,5 +34,5 @@ Session creation UX and keyboard ergonomics.
 ## Next Action
 
 - thread project-filter state into the dialog default selection
-- replace the branch field with a searchable dropdown UX
+- collapse the branch chooser into one coherent searchable dropdown UX
 - add `Cmd+Return` submission support and visible shortcut affordance on the submit button
