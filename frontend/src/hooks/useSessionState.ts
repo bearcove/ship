@@ -10,6 +10,13 @@ import {
 
 const RECONNECT_DELAY_MS = 3000;
 
+export function detectSequenceGap(lastSeenSeq: number | null, nextSeq: number): string | null {
+  if (lastSeenSeq === null || nextSeq === lastSeenSeq + 1) {
+    return null;
+  }
+  return `sequence gap detected: expected ${lastSeenSeq + 1}, received ${nextSeq}`;
+}
+
 function describeError(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === "string") return error;
@@ -122,6 +129,7 @@ export function useSessionState(
       );
 
       let stopReason: string | null = null;
+      let lastSeenSeq = stateRef.current.lastSeq;
 
       while (true) {
         const next = await Promise.race([
@@ -142,24 +150,25 @@ export function useSessionState(
 
         if (next.msg.tag === "Event") {
           const nextSeq = Number(next.msg.value.seq);
-          const lastSeq = stateRef.current.lastSeq;
           log("debug", "received session event", {
             sessionId,
             seq: nextSeq,
             eventKind: next.msg.value.event.tag,
             phase: stateRef.current.phase,
           });
-          if (lastSeq !== null && nextSeq !== lastSeq + 1) {
-            stopReason = `sequence gap detected: expected ${lastSeq + 1}, received ${nextSeq}`;
+          const gap = detectSequenceGap(lastSeenSeq, nextSeq);
+          if (gap) {
+            stopReason = gap;
             log("warn", "sequence gap detected", {
               sessionId,
-              expectedSeq: lastSeq + 1,
+              expectedSeq: (lastSeenSeq ?? -1) + 1,
               receivedSeq: nextSeq,
             });
             invalidateShipClient(stopReason);
             signalStop?.(stopReason);
             continue;
           }
+          lastSeenSeq = nextSeq;
           dispatch({ type: "event", envelope: next.msg.value });
         } else if (next.msg.tag === "ReplayComplete") {
           log("info", "received replay complete marker", {
