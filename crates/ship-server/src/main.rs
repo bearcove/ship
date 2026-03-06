@@ -19,6 +19,7 @@ use figue::{self as args, FigueBuiltins};
 use ship_core::ProjectRegistry;
 use ship_impl::ShipImpl;
 use ship_service::{ShipClient, ShipDispatcher};
+use ship_types::SessionId;
 use tracing::Level;
 use tracing_subscriber::EnvFilter;
 
@@ -47,8 +48,8 @@ enum Command {
     /// Start the Ship server.
     Serve(ServeArgs),
 
-    /// Run the captain MCP stdio proxy.
-    CaptainMcpProxy(CaptainMcpProxyArgs),
+    /// Run the captain MCP stdio server.
+    McpServer(McpServerArgs),
 
     /// Manage projects.
     Project {
@@ -66,10 +67,14 @@ struct ServeArgs {
 }
 
 #[derive(Debug, facet::Facet)]
-struct CaptainMcpProxyArgs {
-    /// Path to the per-session MCP unix socket.
+struct McpServerArgs {
+    /// Session id.
     #[facet(args::named)]
-    socket: String,
+    session: String,
+
+    /// Ship server websocket URL.
+    #[facet(args::named)]
+    server_ws_url: String,
 }
 
 #[derive(Debug, facet::Facet)]
@@ -110,8 +115,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match args.command {
         Command::Serve(args) => run_serve(args).await,
-        Command::CaptainMcpProxy(args) => {
-            captain_mcp::run_proxy(PathBuf::from(args.socket)).await?;
+        Command::McpServer(args) => {
+            captain_mcp::run_stdio_server(captain_mcp::CaptainMcpServerArgs {
+                session_id: SessionId(args.session),
+                server_ws_url: args.server_ws_url,
+            })
+            .await?;
             Ok(())
         }
         Command::Project { command } => run_project(command).await,
@@ -143,8 +152,9 @@ async fn run_serve(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
     ensure_project_ship_gitignored(&project_registry)?;
 
     let sessions_dir = project_registry.config_dir().join("sessions");
+    let ship = ShipImpl::new(project_registry, sessions_dir, agent_discovery);
     let state = AppState {
-        ship: ShipImpl::new(project_registry, sessions_dir, agent_discovery),
+        ship: ship.clone(),
         http_client: reqwest::Client::new(),
         frontend_mode,
     };
@@ -157,6 +167,7 @@ async fn run_serve(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
 
     let listener = tokio::net::TcpListener::bind(listen_addr).await?;
     let url = format!("http://{}", listener.local_addr()?);
+    ship.set_server_ws_url(format!("ws://{}/ws", listener.local_addr()?));
     // r[cli.open-browser]
     println!("Ship server listening at {url}");
     tracing::info!(%url, "ship server started");
@@ -364,6 +375,7 @@ async fn ws_handler(State(state): State<AppState>, mut request: Request) -> impl
 
         let link = roam_websocket::WsLink::new(ws_stream);
         match roam::acceptor(link)
+            .on_connection(ship.captain_mcp_connection_acceptor())
             .establish::<ShipClient>(ShipDispatcher::new(ship))
             .await
         {

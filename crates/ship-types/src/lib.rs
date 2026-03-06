@@ -556,6 +556,12 @@ pub mod protocol {
         Failed { message: String },
     }
 
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct CaptainToolCallResponse {
+        pub text: String,
+        pub is_error: bool,
+    }
+
     // r[proto.assign]
     #[repr(u8)]
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
@@ -687,10 +693,10 @@ pub use events::{
 pub use ids::{BlockId, ProjectName, SessionId, TaskId};
 pub use persistence::{CurrentTask, PersistedSession, SessionConfig, TaskContentRecord};
 pub use protocol::{
-    AgentDiscovery, AssignTaskResponse, AutonomyMode, CloseSessionRequest, CloseSessionResponse,
-    CreateSessionRequest, CreateSessionResponse, McpEnvVar, McpHeader, McpHttpServerConfig,
-    McpServerConfig, McpSseServerConfig, McpStdioServerConfig, ProjectInfo, SessionDetail,
-    SessionSummary,
+    AgentDiscovery, AssignTaskResponse, AutonomyMode, CaptainToolCallResponse, CloseSessionRequest,
+    CloseSessionResponse, CreateSessionRequest, CreateSessionResponse, McpEnvVar, McpHeader,
+    McpHttpServerConfig, McpServerConfig, McpSseServerConfig, McpStdioServerConfig, ProjectInfo,
+    SessionDetail, SessionSummary,
 };
 pub use session::{SessionStartupStage, SessionStartupState};
 pub use structured::{

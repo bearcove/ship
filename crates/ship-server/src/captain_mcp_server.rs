@@ -1,55 +1,34 @@
-use std::future::Future;
-use std::net::{Ipv4Addr, SocketAddrV4, TcpListener};
-use std::pin::Pin;
 use std::sync::Arc;
-use std::time::Duration;
 
 use async_trait::async_trait;
-use rust_mcp_sdk::McpServer;
-use rust_mcp_sdk::mcp_server::hyper_runtime::HyperRuntime;
-use rust_mcp_sdk::mcp_server::{
-    HyperServerOptions, ServerHandler, ToMcpServerHandler, hyper_server,
-};
+use roam::{ConnectionSettings, MetadataEntry, MetadataFlags, MetadataValue, NoopCaller, Parity};
+use rust_mcp_sdk::mcp_server::{McpServerOptions, ServerHandler, server_runtime};
 use rust_mcp_sdk::schema::{
     CallToolRequestParams, CallToolResult, Implementation, InitializeResult, ListToolsResult,
     PaginatedRequestParams, ProtocolVersion, RpcError, ServerCapabilities, ServerCapabilitiesTools,
     TextContent, Tool, ToolInputSchema, schema_utils::CallToolError,
 };
-use serde_json::Value;
+use rust_mcp_sdk::{McpServer, StdioTransport, ToMcpServerHandler, TransportOptions};
+use serde_json::{Value, json};
+use ship_service::CaptainMcpClient;
+use ship_types::SessionId;
 
-pub type ToolHandler =
-    Arc<dyn Fn(String, Value) -> Pin<Box<dyn Future<Output = ToolResult> + Send>> + Send + Sync>;
+pub struct CaptainMcpServerArgs {
+    pub session_id: SessionId,
+    pub server_ws_url: String,
+}
 
 #[derive(Clone)]
-pub struct ToolDefinition {
-    pub name: &'static str,
-    pub description: &'static str,
-    pub input_schema: Value,
+struct ToolDefinition {
+    name: &'static str,
+    description: &'static str,
+    input_schema: Value,
 }
 
-pub struct ToolResult {
-    pub text: String,
-    pub is_error: bool,
-}
-
-pub struct CaptainMcpServerHandle {
-    url: String,
-    runtime: HyperRuntime,
-}
-
-impl CaptainMcpServerHandle {
-    pub fn url(&self) -> &str {
-        &self.url
-    }
-
-    pub fn shutdown(&self) {
-        self.runtime.graceful_shutdown(Some(Duration::from_secs(1)));
-    }
-}
-
+#[derive(Clone)]
 struct CaptainMcpHandler {
+    client: CaptainMcpClient,
     tools: Arc<Vec<ToolDefinition>>,
-    tool_handler: ToolHandler,
 }
 
 #[async_trait]
@@ -72,38 +51,96 @@ impl ServerHandler for CaptainMcpHandler {
         _runtime: Arc<dyn McpServer>,
     ) -> Result<CallToolResult, CallToolError> {
         let arguments = params.arguments.map(Value::Object).unwrap_or(Value::Null);
-        let result = (self.tool_handler)(params.name, arguments).await;
-        Ok(tool_result_to_sdk(result))
+        let result = match params.name.as_str() {
+            "ship_steer" => {
+                let Some(message) = arguments.get("message").and_then(Value::as_str) else {
+                    return Ok(tool_result("missing required argument: message", true));
+                };
+                self.client
+                    .steer(message.to_owned())
+                    .await
+                    .map_err(|error| call_tool_rpc_error(error))?
+            }
+            "ship_accept" => {
+                let summary = arguments
+                    .get("summary")
+                    .and_then(Value::as_str)
+                    .map(ToOwned::to_owned);
+                self.client
+                    .accept(summary)
+                    .await
+                    .map_err(|error| call_tool_rpc_error(error))?
+            }
+            "ship_reject" => {
+                let Some(reason) = arguments.get("reason").and_then(Value::as_str) else {
+                    return Ok(tool_result("missing required argument: reason", true));
+                };
+                let message = arguments
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .map(ToOwned::to_owned);
+                self.client
+                    .reject(reason.to_owned(), message)
+                    .await
+                    .map_err(|error| call_tool_rpc_error(error))?
+            }
+            other => return Err(CallToolError::unknown_tool(other.to_owned())),
+        };
+
+        Ok(tool_result(&result.text, result.is_error))
     }
 }
 
-pub async fn start_server(
-    tools: Vec<ToolDefinition>,
-    tool_handler: ToolHandler,
-) -> Result<CaptainMcpServerHandle, String> {
-    let port = reserve_loopback_port()?;
-    let url = format!("http://127.0.0.1:{port}/mcp");
-    let server = hyper_server::create_server(
-        server_details(),
-        CaptainMcpHandler {
-            tools: Arc::new(tools),
-            tool_handler,
+pub async fn run_stdio_server(args: CaptainMcpServerArgs) -> Result<(), String> {
+    let ws_stream = tokio_tungstenite::connect_async(&args.server_ws_url)
+        .await
+        .map_err(|error| format!("failed to connect to ship server websocket: {error}"))?
+        .0;
+    let link = roam_websocket::WsLink::new(ws_stream);
+    let (_root_guard, session_handle) = roam::initiator(link)
+        .establish::<NoopCaller>(())
+        .await
+        .map_err(|error| format!("failed to establish roam session: {error:?}"))?;
+
+    let connection = session_handle
+        .open_connection(
+            ConnectionSettings {
+                parity: Parity::Odd,
+                max_concurrent_requests: 64,
+            },
+            vec![
+                metadata_string("ship-service", "captain-mcp"),
+                metadata_string_owned("ship-session-id", args.session_id.0.clone()),
+            ],
+        )
+        .await
+        .map_err(|error| format!("failed to open captain MCP connection: {error:?}"))?;
+
+    let mut driver = roam::Driver::new(connection, ());
+    let client = CaptainMcpClient::from(driver.caller());
+    let _driver_task = tokio::spawn(async move {
+        driver.run().await;
+    });
+
+    let transport = StdioTransport::new(TransportOptions::default())
+        .map_err(|error| format!("failed to create stdio transport: {error}"))?;
+    let server = server_runtime::create_server(McpServerOptions {
+        server_details: server_details(),
+        transport,
+        handler: CaptainMcpHandler {
+            client,
+            tools: Arc::new(tool_definitions()),
         }
         .to_mcp_server_handler(),
-        HyperServerOptions {
-            host: "127.0.0.1".to_owned(),
-            port,
-            custom_streamable_http_endpoint: Some("/mcp".to_owned()),
-            enable_json_response: Some(true),
-            sse_support: false,
-            ..Default::default()
-        },
-    );
-    let runtime = server
-        .start_runtime()
+        task_store: None,
+        client_task_store: None,
+    });
+
+    server
+        .start()
         .await
-        .map_err(|error| format!("failed to start captain MCP server: {error}"))?;
-    Ok(CaptainMcpServerHandle { url, runtime })
+        .map_err(|error| format!("captain MCP server failed: {error}"))?;
+    Ok(())
 }
 
 fn server_details() -> InitializeResult {
@@ -128,6 +165,47 @@ fn server_details() -> InitializeResult {
     }
 }
 
+fn tool_definitions() -> Vec<ToolDefinition> {
+    vec![
+        ToolDefinition {
+            name: "ship_steer",
+            description: "Delegate work on the active task to the mate.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "message": { "type": "string" }
+                },
+                "required": ["message"],
+                "additionalProperties": false,
+            }),
+        },
+        ToolDefinition {
+            name: "ship_accept",
+            description: "Accept the active task when it is complete.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "summary": { "type": "string" }
+                },
+                "additionalProperties": false,
+            }),
+        },
+        ToolDefinition {
+            name: "ship_reject",
+            description: "Reject the active task and cancel the current approach.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "reason": { "type": "string" },
+                    "message": { "type": "string" }
+                },
+                "required": ["reason"],
+                "additionalProperties": false,
+            }),
+        },
+    ]
+}
+
 fn to_sdk_tool(tool: &ToolDefinition) -> Tool {
     Tool {
         annotations: None,
@@ -143,22 +221,31 @@ fn to_sdk_tool(tool: &ToolDefinition) -> Tool {
     }
 }
 
-fn tool_result_to_sdk(result: ToolResult) -> CallToolResult {
+fn tool_result(text: &str, is_error: bool) -> CallToolResult {
     CallToolResult {
-        content: vec![TextContent::from(result.text).into()],
-        is_error: result.is_error.then_some(true),
+        content: vec![TextContent::from(text.to_owned()).into()],
+        is_error: is_error.then_some(true),
         meta: None,
         structured_content: None,
     }
 }
 
-fn reserve_loopback_port() -> Result<u16, String> {
-    let listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))
-        .map_err(|error| format!("failed to reserve captain MCP port: {error}"))?;
-    let port = listener
-        .local_addr()
-        .map_err(|error| format!("failed to read reserved captain MCP port: {error}"))?
-        .port();
-    drop(listener);
-    Ok(port)
+fn call_tool_rpc_error(error: impl std::fmt::Debug) -> CallToolError {
+    CallToolError::from_message(format!("captain MCP RPC failed: {error:?}"))
+}
+
+fn metadata_string<'a>(key: &'a str, value: &'a str) -> MetadataEntry<'a> {
+    MetadataEntry {
+        key,
+        value: MetadataValue::String(value),
+        flags: MetadataFlags::NONE,
+    }
+}
+
+fn metadata_string_owned(key: &'static str, value: String) -> MetadataEntry<'static> {
+    MetadataEntry {
+        key,
+        value: MetadataValue::String(Box::leak(value.into_boxed_str())),
+        flags: MetadataFlags::NONE,
+    }
 }

@@ -1,37 +1,33 @@
 use std::collections::HashMap;
-use std::future::Future;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
 use roam::Tx;
-use serde_json::{Value, json};
+use roam::{
+    AcceptedConnection, ConnectionAcceptor, ConnectionSettings, Driver, Metadata, MetadataEntry,
+    MetadataFlags, MetadataValue,
+};
+use serde_json::json;
 use ship_core::{
     AcpAgentDriver, ActiveSession, AgentDriver, AgentSessionConfig, GitWorktreeOps,
     JsonSessionStore, ProjectRegistry, SessionStore, WorktreeOps, apply_event,
     archive_terminal_task, current_task_status, rebuild_materialized_from_event_log,
     resolve_mcp_servers, set_agent_state, transition_task,
 };
-use ship_service::Ship;
+use ship_service::{CaptainMcp, CaptainMcpDispatcher, Ship};
 use ship_types::{
     AgentDiscovery, AgentKind, AgentSnapshot, AgentState, AssignTaskResponse, AutonomyMode,
-    BlockId, CloseSessionRequest, CloseSessionResponse, ContentBlock, CreateSessionRequest,
-    CreateSessionResponse, CurrentTask, McpHttpServerConfig, McpServerConfig, PersistedSession,
-    ProjectInfo, ProjectName, Role, SessionConfig, SessionDetail, SessionEvent, SessionId,
-    SessionStartupStage, SessionStartupState, SessionSummary, SubscribeMessage, TaskId, TaskRecord,
-    TaskStatus, ToolCallContent, ToolCallStatus,
+    BlockId, CaptainToolCallResponse, CloseSessionRequest, CloseSessionResponse, ContentBlock,
+    CreateSessionRequest, CreateSessionResponse, CurrentTask, McpServerConfig,
+    McpStdioServerConfig, PersistedSession, ProjectInfo, ProjectName, Role, SessionConfig,
+    SessionDetail, SessionEvent, SessionId, SessionStartupStage, SessionStartupState,
+    SessionSummary, SubscribeMessage, TaskId, TaskRecord, TaskStatus, ToolCallContent,
+    ToolCallStatus,
 };
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
-
-use crate::captain_mcp::{
-    CaptainMcpServerHandle, ToolDefinition, ToolHandler, ToolResult, start_server,
-};
-
-struct CaptainMcpHandle {
-    server: CaptainMcpServerHandle,
-}
 
 // r[server.multi-repo]
 #[derive(Clone)]
@@ -42,7 +38,7 @@ pub struct ShipImpl {
     worktree_ops: Arc<GitWorktreeOps>,
     store: Arc<JsonSessionStore>,
     sessions: Arc<Mutex<HashMap<SessionId, ActiveSession>>>,
-    captain_mcp: Arc<Mutex<HashMap<SessionId, CaptainMcpHandle>>>,
+    server_ws_url: Arc<Mutex<String>>,
     startup_started_at: Arc<Mutex<HashMap<SessionId, Instant>>>,
 }
 
@@ -59,9 +55,16 @@ impl ShipImpl {
             worktree_ops: Arc::new(GitWorktreeOps),
             store: Arc::new(JsonSessionStore::new(sessions_dir)),
             sessions: Arc::new(Mutex::new(HashMap::new())),
-            captain_mcp: Arc::new(Mutex::new(HashMap::new())),
+            server_ws_url: Arc::new(Mutex::new("ws://127.0.0.1:9/ws".to_owned())),
             startup_started_at: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+
+    pub fn set_server_ws_url(&self, url: impl Into<String>) {
+        *self
+            .server_ws_url
+            .lock()
+            .expect("server websocket url mutex poisoned") = url.into();
     }
 
     fn fallback_agent(role: Role, kind: AgentKind) -> AgentSnapshot {
@@ -449,140 +452,34 @@ impl ShipImpl {
         )
     }
 
-    fn captain_mcp_tools() -> Vec<ToolDefinition> {
-        vec![
-            ToolDefinition {
-                name: "ship_steer",
-                description: "Delegate work on the active task to the mate.",
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "message": { "type": "string" }
-                    },
-                    "required": ["message"],
-                    "additionalProperties": false,
-                }),
-            },
-            ToolDefinition {
-                name: "ship_accept",
-                description: "Accept the active task when it is complete.",
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "summary": { "type": "string" }
-                    },
-                    "additionalProperties": false,
-                }),
-            },
-            ToolDefinition {
-                name: "ship_reject",
-                description: "Reject the active task and cancel the current approach.",
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "reason": { "type": "string" },
-                        "message": { "type": "string" }
-                    },
-                    "required": ["reason"],
-                    "additionalProperties": false,
-                }),
-            },
-        ]
-    }
-
     async fn install_captain_mcp_server(
         &self,
         session_id: &SessionId,
-        _worktree_path: &std::path::Path,
     ) -> Result<McpServerConfig, String> {
-        let session_id_clone = session_id.clone();
-        let this = self.clone();
-        let handler: ToolHandler = Arc::new(move |name, arguments| {
-            let this = this.clone();
-            let session_id = session_id_clone.clone();
-            Box::pin(async move {
-                this.handle_captain_mcp_call(&session_id, &name, arguments)
-                    .await
-            })
-        });
-
-        let server = start_server(Self::captain_mcp_tools(), handler).await?;
-        let url = server.url().to_owned();
-
-        self.captain_mcp
+        let command = std::env::current_exe()
+            .map_err(|error| format!("failed to locate current executable: {error}"))?;
+        let server_ws_url = self
+            .server_ws_url
             .lock()
-            .expect("captain mcp mutex poisoned")
-            .insert(session_id.clone(), CaptainMcpHandle { server });
+            .expect("server websocket url mutex poisoned")
+            .clone();
 
-        Ok(McpServerConfig::Http(McpHttpServerConfig {
+        Ok(McpServerConfig::Stdio(McpStdioServerConfig {
             name: "ship".to_owned(),
-            url,
-            headers: Vec::new(),
+            command: command.display().to_string(),
+            args: vec![
+                "mcp-server".to_owned(),
+                "--session".to_owned(),
+                session_id.0.clone(),
+                "--server-ws-url".to_owned(),
+                server_ws_url,
+            ],
+            env: Vec::new(),
         }))
     }
 
-    fn clear_captain_mcp_server(&self, session_id: &SessionId) {
-        if let Some(handle) = self
-            .captain_mcp
-            .lock()
-            .expect("captain mcp mutex poisoned")
-            .remove(session_id)
-        {
-            handle.server.shutdown();
-        }
-    }
-
-    async fn handle_captain_mcp_call(
-        &self,
-        session_id: &SessionId,
-        name: &str,
-        arguments: Value,
-    ) -> ToolResult {
-        let outcome = match name {
-            "ship_steer" => {
-                let Some(message) = arguments.get("message").and_then(Value::as_str) else {
-                    return ToolResult {
-                        text: "missing required argument: message".to_owned(),
-                        is_error: true,
-                    };
-                };
-                self.captain_tool_steer(session_id, message.to_owned())
-                    .await
-            }
-            "ship_accept" => {
-                let summary = arguments
-                    .get("summary")
-                    .and_then(Value::as_str)
-                    .map(ToOwned::to_owned);
-                self.captain_tool_accept(session_id, summary).await
-            }
-            "ship_reject" => {
-                let Some(reason) = arguments.get("reason").and_then(Value::as_str) else {
-                    return ToolResult {
-                        text: "missing required argument: reason".to_owned(),
-                        is_error: true,
-                    };
-                };
-                let message = arguments
-                    .get("message")
-                    .and_then(Value::as_str)
-                    .map(ToOwned::to_owned);
-                self.captain_tool_reject(session_id, reason.to_owned(), message)
-                    .await
-            }
-            other => Err(format!("unknown tool: {other}")),
-        };
-
-        match outcome {
-            Ok(text) => ToolResult {
-                text,
-                is_error: false,
-            },
-            Err(text) => ToolResult {
-                text,
-                is_error: true,
-            },
-        }
+    pub fn captain_mcp_connection_acceptor(&self) -> CaptainMcpConnectionAcceptor {
+        CaptainMcpConnectionAcceptor { ship: self.clone() }
     }
 
     async fn append_captain_tool_call(
@@ -965,10 +862,7 @@ impl ShipImpl {
         let _ = self.persist_session(&session_id).await;
 
         let step_started_at = Instant::now();
-        let captain_ship_mcp = match self
-            .install_captain_mcp_server(&session_id, &worktree_path)
-            .await
-        {
+        let captain_ship_mcp = match self.install_captain_mcp_server(&session_id).await {
             Ok(config) => config,
             Err(error) => {
                 self.fail_startup(&session_id, SessionStartupStage::StartingCaptain, error)
@@ -980,42 +874,64 @@ impl ShipImpl {
 
         let stage = SessionStartupStage::StartingCaptain;
         let _ = self.set_startup_stage(&session_id, stage).await;
-        let step_started_at = Instant::now();
-        let captain_handle = match self
-            .agent_driver
-            .spawn(
-                {
-                    let sessions = self.sessions.lock().expect("sessions mutex poisoned");
-                    sessions
-                        .get(&session_id)
-                        .expect("session exists")
-                        .config
-                        .captain_kind
-                },
-                Role::Captain,
-                &AgentSessionConfig {
-                    worktree_path: worktree_path.clone(),
-                    mcp_servers: {
-                        let mut servers = resolved_mcp_servers.clone();
-                        servers.push(captain_ship_mcp);
-                        servers
-                    },
-                },
-            )
-            .await
-        {
-            Ok(handle) => handle,
+        let (captain_kind, mate_kind) = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get(&session_id).expect("session exists");
+            (session.config.captain_kind, session.config.mate_kind)
+        };
+        let captain_config = AgentSessionConfig {
+            worktree_path: worktree_path.clone(),
+            mcp_servers: {
+                let mut servers = resolved_mcp_servers.clone();
+                servers.push(captain_ship_mcp);
+                servers
+            },
+        };
+        let mate_config = AgentSessionConfig {
+            worktree_path: worktree_path.clone(),
+            mcp_servers: resolved_mcp_servers.clone(),
+        };
+        let captain_started_at = Instant::now();
+        let mate_started_at = Instant::now();
+        let (captain_result, mate_result) = tokio::join!(
+            self.agent_driver
+                .spawn(captain_kind, Role::Captain, &captain_config),
+            self.agent_driver.spawn(mate_kind, Role::Mate, &mate_config),
+        );
+        let captain_handle = match captain_result {
+            Ok(handle) => {
+                self.log_startup_step_elapsed(&session_id, "spawn-captain", captain_started_at);
+                handle
+            }
             Err(error) => {
-                self.clear_captain_mcp_server(&session_id);
+                if let Ok(handle) = mate_result {
+                    let _ = self.agent_driver.kill(&handle).await;
+                }
                 self.fail_startup(&session_id, stage, error.message).await;
                 return;
             }
         };
-        self.log_startup_step_elapsed(&session_id, "spawn-captain", step_started_at);
+        let mate_handle = match mate_result {
+            Ok(handle) => {
+                self.log_startup_step_elapsed(&session_id, "spawn-mate", mate_started_at);
+                handle
+            }
+            Err(error) => {
+                let _ = self.agent_driver.kill(&captain_handle).await;
+                self.fail_startup(
+                    &session_id,
+                    SessionStartupStage::StartingMate,
+                    error.message,
+                )
+                .await;
+                return;
+            }
+        };
         {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             if let Some(session) = sessions.get_mut(&session_id) {
                 session.captain_handle = Some(captain_handle);
+                session.mate_handle = Some(mate_handle);
             }
         }
         let _ = self.persist_session(&session_id).await;
@@ -1032,46 +948,6 @@ impl ShipImpl {
             return;
         }
         self.log_startup_step_elapsed(&session_id, "greet-captain", step_started_at);
-
-        let stage = SessionStartupStage::StartingMate;
-        let _ = self.set_startup_stage(&session_id, stage).await;
-        let step_started_at = Instant::now();
-        let mate_handle = match self
-            .agent_driver
-            .spawn(
-                {
-                    let sessions = self.sessions.lock().expect("sessions mutex poisoned");
-                    sessions
-                        .get(&session_id)
-                        .expect("session exists")
-                        .config
-                        .mate_kind
-                },
-                Role::Mate,
-                &AgentSessionConfig {
-                    worktree_path: worktree_path.clone(),
-                    mcp_servers: resolved_mcp_servers.clone(),
-                },
-            )
-            .await
-        {
-            Ok(handle) => handle,
-            Err(error) => {
-                self.fail_startup(&session_id, stage, error.message).await;
-                return;
-            }
-        };
-        self.log_startup_step_elapsed(&session_id, "spawn-mate", step_started_at);
-        {
-            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
-            if let Some(session) = sessions.get_mut(&session_id) {
-                session.mate_handle = Some(mate_handle);
-            }
-        }
-        let _ = self.persist_session(&session_id).await;
-
-        let stage = SessionStartupStage::GreetingCaptain;
-        let _ = self.set_startup_stage(&session_id, stage).await;
         let _ = self
             .set_startup_state(&session_id, SessionStartupState::Ready)
             .await;
@@ -1799,7 +1675,6 @@ impl Ship for ShipImpl {
                 message: error.message,
             };
         }
-        self.clear_captain_mcp_server(&req.id);
         self.sessions
             .lock()
             .expect("sessions mutex poisoned")
@@ -1835,6 +1710,125 @@ impl Ship for ShipImpl {
         };
         Self::spawn_event_subscription(session, receiver, replay, output);
     }
+}
+
+pub struct CaptainMcpConnectionAcceptor {
+    ship: ShipImpl,
+}
+
+impl ConnectionAcceptor for CaptainMcpConnectionAcceptor {
+    fn accept(
+        &self,
+        _conn_id: roam::ConnectionId,
+        peer_settings: &ConnectionSettings,
+        metadata: &[MetadataEntry],
+    ) -> Result<AcceptedConnection, Metadata<'static>> {
+        let Some(service_name) = metadata_string(metadata, "ship-service") else {
+            return Err(rejection_metadata("missing ship-service metadata"));
+        };
+        if service_name != "captain-mcp" {
+            return Err(rejection_metadata("unknown virtual connection service"));
+        }
+
+        let Some(session_id) = metadata_string(metadata, "ship-session-id") else {
+            return Err(rejection_metadata("missing ship-session-id metadata"));
+        };
+        let session_id = SessionId(session_id.to_owned());
+        if !self
+            .ship
+            .sessions
+            .lock()
+            .expect("sessions mutex poisoned")
+            .contains_key(&session_id)
+        {
+            return Err(rejection_metadata("unknown session"));
+        }
+
+        let ship = self.ship.clone();
+        Ok(AcceptedConnection {
+            settings: ConnectionSettings {
+                parity: peer_settings.parity.other(),
+                max_concurrent_requests: 64,
+            },
+            metadata: Vec::new(),
+            setup: Box::new(move |connection| {
+                tokio::spawn(async move {
+                    let mut driver = Driver::new(
+                        connection,
+                        CaptainMcpDispatcher::new(CaptainMcpSessionService { ship, session_id }),
+                    );
+                    driver.run().await;
+                });
+            }),
+        })
+    }
+}
+
+#[derive(Clone)]
+struct CaptainMcpSessionService {
+    ship: ShipImpl,
+    session_id: SessionId,
+}
+
+impl CaptainMcpSessionService {
+    fn response(result: Result<String, String>) -> CaptainToolCallResponse {
+        match result {
+            Ok(text) => CaptainToolCallResponse {
+                text,
+                is_error: false,
+            },
+            Err(text) => CaptainToolCallResponse {
+                text,
+                is_error: true,
+            },
+        }
+    }
+}
+
+impl CaptainMcp for CaptainMcpSessionService {
+    async fn steer(&self, message: String) -> CaptainToolCallResponse {
+        Self::response(
+            self.ship
+                .captain_tool_steer(&self.session_id, message)
+                .await,
+        )
+    }
+
+    async fn accept(&self, summary: Option<String>) -> CaptainToolCallResponse {
+        Self::response(
+            self.ship
+                .captain_tool_accept(&self.session_id, summary)
+                .await,
+        )
+    }
+
+    async fn reject(&self, reason: String, message: Option<String>) -> CaptainToolCallResponse {
+        Self::response(
+            self.ship
+                .captain_tool_reject(&self.session_id, reason, message)
+                .await,
+        )
+    }
+}
+
+fn metadata_string<'a>(metadata: &'a [MetadataEntry], key: &str) -> Option<&'a str> {
+    metadata.iter().find_map(|entry| {
+        if entry.key != key {
+            return None;
+        }
+        match entry.value {
+            MetadataValue::String(value) => Some(value),
+            _ => None,
+        }
+    })
+}
+
+fn rejection_metadata(reason: &'static str) -> Metadata<'static> {
+    vec![MetadataEntry {
+        key: "reason",
+        value: MetadataValue::String(reason),
+        flags: MetadataFlags::NONE,
+    }]
 }
 
 fn short_id(id: &SessionId) -> String {

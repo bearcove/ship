@@ -1,8 +1,8 @@
 use roam::Tx;
 use ship_types::{
-    AgentDiscovery, AssignTaskResponse, CloseSessionRequest, CloseSessionResponse,
-    CreateSessionRequest, CreateSessionResponse, ProjectInfo, ProjectName, Role, SessionDetail,
-    SessionId, SessionSummary, SubscribeMessage,
+    AgentDiscovery, AssignTaskResponse, CaptainToolCallResponse, CloseSessionRequest,
+    CloseSessionResponse, CreateSessionRequest, CreateSessionResponse, ProjectInfo, ProjectName,
+    Role, SessionDetail, SessionId, SessionSummary, SubscribeMessage,
 };
 
 // r[backend.rpc]
@@ -60,4 +60,13 @@ pub trait Ship {
 
     // r[event.subscribe.roam-channel]
     async fn subscribe_events(&self, session: SessionId, output: Tx<SubscribeMessage>);
+}
+
+#[roam::service]
+pub trait CaptainMcp {
+    async fn steer(&self, message: String) -> CaptainToolCallResponse;
+
+    async fn accept(&self, summary: Option<String>) -> CaptainToolCallResponse;
+
+    async fn reject(&self, reason: String, message: Option<String>) -> CaptainToolCallResponse;
 }

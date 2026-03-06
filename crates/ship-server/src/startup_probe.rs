@@ -7,22 +7,36 @@ mod ship_impl;
 
 use std::env;
 use std::error::Error;
-use std::future::pending;
-use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use agent_discovery::{SystemBinaryPathProbe, discover_agents};
-use roam::{BareConduit, acceptor, channel, initiator, memory_link_pair};
+use axum::Router;
+use axum::body::Body;
+use axum::extract::{Request, State};
+use axum::http::StatusCode;
+use axum::response::IntoResponse;
+use axum::routing::any;
+use roam::channel;
 use ship_core::ProjectRegistry;
 use ship_impl::ShipImpl;
 use ship_service::{ShipClient, ShipDispatcher};
 use ship_types::{
-    AgentKind, CreateSessionRequest, CreateSessionResponse, SessionEvent, SessionStartupState,
-    SubscribeMessage,
+    AgentKind, CreateSessionRequest, CreateSessionResponse, SessionEvent, SessionId,
+    SessionStartupState, SubscribeMessage,
 };
 use tokio::time::{sleep, timeout};
 use tracing::Level;
 use tracing_subscriber::EnvFilter;
+
+#[derive(Clone)]
+struct ProbeState {
+    ship: ShipImpl,
+}
+
+struct CaptainMcpServerArgs {
+    session_id: SessionId,
+    server_ws_url: String,
+}
 
 struct ProbeArgs {
     project: String,
@@ -128,8 +142,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }))
         .init();
 
-    if let Some(socket_path) = parse_captain_mcp_proxy_args() {
-        captain_mcp::run_proxy(socket_path).await?;
+    if let Some(args) = parse_captain_mcp_server_args() {
+        captain_mcp::run_stdio_server(captain_mcp::CaptainMcpServerArgs {
+            session_id: args.session_id,
+            server_ws_url: args.server_ws_url,
+        })
+        .await?;
         return Ok(());
     }
 
@@ -161,29 +179,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
         discover_agents(&SystemBinaryPathProbe),
     );
 
-    type MessageConduit = BareConduit<roam::MessageFamily, roam::MemoryLink>;
-    let (client_link, server_link) = memory_link_pair(64);
-    let client_conduit = MessageConduit::new(client_link);
-    let server_conduit = MessageConduit::new(server_link);
-
-    let (server_ready_tx, server_ready_rx) = tokio::sync::oneshot::channel::<()>();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let ws_url = format!("ws://{}/ws", listener.local_addr()?);
+    ship.set_server_ws_url(ws_url.clone());
+    let app = Router::new()
+        .route("/ws", any(ws_handler))
+        .with_state(ProbeState { ship: ship.clone() });
     let server_task = tokio::spawn(async move {
-        let (server_guard, _session_handle) = acceptor(server_conduit)
-            .establish::<ShipClient>(ShipDispatcher::new(ship))
+        axum::serve(listener, app)
             .await
-            .expect("server handshake should succeed");
-        let _server_guard = server_guard;
-        let _ = server_ready_tx.send(());
-        pending::<()>().await;
+            .expect("probe websocket server");
     });
 
-    let (client, _client_session_handle) = initiator(client_conduit)
+    let ws_stream = tokio_tungstenite::connect_async(&ws_url)
+        .await
+        .map_err(|error| format!("failed to connect probe websocket: {error}"))?
+        .0;
+    let link = roam_websocket::WsLink::new(ws_stream);
+    let (client, _client_session_handle) = roam::initiator(link)
         .establish::<ShipClient>(())
         .await
         .expect("client handshake should succeed");
-    server_ready_rx
-        .await
-        .expect("server should report readiness");
 
     let created_at = Instant::now();
     let response = client
@@ -269,19 +285,70 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn parse_captain_mcp_proxy_args() -> Option<PathBuf> {
+fn parse_captain_mcp_server_args() -> Option<CaptainMcpServerArgs> {
     let mut args = env::args().skip(1);
     let command = args.next()?;
-    if command != "captain-mcp-proxy" {
+    if command != "mcp-server" {
         return None;
     }
 
-    let flag = args.next()?;
-    if flag != "--socket" {
+    let session_flag = args.next()?;
+    if session_flag != "--session" {
+        return None;
+    }
+    let session_id = SessionId(args.next()?);
+
+    let server_ws_url_flag = args.next()?;
+    if server_ws_url_flag != "--server-ws-url" {
         return None;
     }
 
-    args.next().map(PathBuf::from)
+    Some(CaptainMcpServerArgs {
+        session_id,
+        server_ws_url: args.next()?,
+    })
+}
+
+async fn ws_handler(State(state): State<ProbeState>, mut request: Request) -> impl IntoResponse {
+    if !hyper_tungstenite::is_upgrade_request(&request) {
+        return (StatusCode::BAD_REQUEST, "expected websocket upgrade").into_response();
+    }
+
+    let (response, websocket) = match hyper_tungstenite::upgrade(&mut request, None) {
+        Ok(ok) => ok,
+        Err(error) => {
+            tracing::warn!(%error, "failed to upgrade probe websocket request");
+            return (StatusCode::BAD_REQUEST, "invalid websocket upgrade").into_response();
+        }
+    };
+
+    let ship = state.ship.clone();
+    tokio::spawn(async move {
+        let ws_stream = match websocket.await {
+            Ok(stream) => stream,
+            Err(error) => {
+                tracing::warn!(%error, "probe websocket upgrade future failed");
+                return;
+            }
+        };
+
+        let link = roam_websocket::WsLink::new(ws_stream);
+        match roam::acceptor(link)
+            .on_connection(ship.captain_mcp_connection_acceptor())
+            .establish::<ShipClient>(ShipDispatcher::new(ship))
+            .await
+        {
+            Ok((caller_guard, _session_handle)) => {
+                let _caller_guard = caller_guard;
+                std::future::pending::<()>().await;
+            }
+            Err(error) => {
+                tracing::warn!(?error, "probe roam websocket session closed or failed");
+            }
+        }
+    });
+
+    response.map(Body::new).into_response()
 }
 
 fn log_message(started_at: Instant, message: &SubscribeMessage) {
