@@ -18,7 +18,11 @@ import {
   agentPanelRoot,
   agentPanelScrollArea,
   eventStream,
+  feedMessageCard,
+  feedMessageMeta,
   stickyPlan,
+  startupFeedBody,
+  startupFeedItem,
 } from "../styles/session-view.css";
 
 interface Props {
@@ -42,6 +46,25 @@ function latestPlan(entries: BlockEntry[]): PlanUpdateBlock | undefined {
   return last;
 }
 
+function StartupFeedState({ startupState }: { startupState: SessionStartupState }) {
+  const tone = startupState.tag === "Failed" ? "error" : "neutral";
+  const title = startupState.tag === "Failed" ? "Session startup failed" : "Session startup";
+  let detail = "Waiting to begin startup.";
+  if (startupState.tag === "Running" || startupState.tag === "Failed") {
+    detail = startupState.message;
+  }
+
+  return (
+    <Box className={startupFeedItem} data-tone={tone}>
+      {startupState.tag === "Failed" ? null : <Spinner size="1" />}
+      <Box className={startupFeedBody}>
+        <Text className={feedMessageMeta}>{title}</Text>
+        <Text size="2">{detail}</Text>
+      </Box>
+    </Box>
+  );
+}
+
 // r[ui.event-stream.grouping]
 // r[view.agent-panel.state]
 // r[ui.block.plan.position]
@@ -57,6 +80,7 @@ export function AgentPanel({
   taskStatus,
 }: Props) {
   const plan = latestPlan(blocks);
+  const showStartupFeed = agent.role.tag === "Captain" && startupState?.tag !== "Ready";
 
   let lastUnresolvedPermBlockId: string | undefined;
   for (const entry of blocks) {
@@ -86,7 +110,12 @@ export function AgentPanel({
     const { block, blockId } = entry;
     switch (block.tag) {
       case "Text":
-        return <TextBlock block={block} />;
+        return (
+          <Box className={feedMessageCard}>
+            <Text className={feedMessageMeta}>{agent.role.tag}</Text>
+            <TextBlock block={block} />
+          </Box>
+        );
       case "ToolCall":
         return <ToolCallBlock block={block} />;
       case "PlanUpdate":
@@ -128,6 +157,7 @@ export function AgentPanel({
         )}
 
         <Box className={eventStream}>
+          {showStartupFeed && startupState && <StartupFeedState startupState={startupState} />}
           {blocks
             .filter((entry) => entry.block.tag !== "PlanUpdate")
             .map((entry) => (

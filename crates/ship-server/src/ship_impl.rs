@@ -3,7 +3,7 @@ use std::future::Future;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
 use roam::Tx;
@@ -44,6 +44,7 @@ pub struct ShipImpl {
     store: Arc<JsonSessionStore>,
     sessions: Arc<Mutex<HashMap<SessionId, ActiveSession>>>,
     captain_mcp: Arc<Mutex<HashMap<SessionId, CaptainMcpHandle>>>,
+    startup_started_at: Arc<Mutex<HashMap<SessionId, Instant>>>,
 }
 
 impl ShipImpl {
@@ -60,6 +61,7 @@ impl ShipImpl {
             store: Arc::new(JsonSessionStore::new(sessions_dir)),
             sessions: Arc::new(Mutex::new(HashMap::new())),
             captain_mcp: Arc::new(Mutex::new(HashMap::new())),
+            startup_started_at: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -325,6 +327,41 @@ impl ShipImpl {
         }
     }
 
+    fn startup_elapsed(&self, session_id: &SessionId) -> Duration {
+        self.startup_started_at
+            .lock()
+            .expect("startup timer mutex poisoned")
+            .get(session_id)
+            .map(Instant::elapsed)
+            .unwrap_or_default()
+    }
+
+    fn startup_status_text(&self, session_id: &SessionId, stage: SessionStartupStage) -> String {
+        let elapsed = self.startup_elapsed(session_id).as_secs_f32();
+        format!("{} ({elapsed:.1}s elapsed)", Self::startup_message(stage))
+    }
+
+    async fn set_startup_stage(
+        &self,
+        session_id: &SessionId,
+        stage: SessionStartupStage,
+    ) -> Result<(), String> {
+        tracing::info!(
+            session_id = %session_id.0,
+            ?stage,
+            elapsed_ms = self.startup_elapsed(session_id).as_millis(),
+            "startup stage updated"
+        );
+        self.set_startup_state(
+            session_id,
+            SessionStartupState::Running {
+                stage,
+                message: self.startup_status_text(session_id, stage),
+            },
+        )
+        .await
+    }
+
     async fn set_startup_state(
         &self,
         session_id: &SessionId,
@@ -352,16 +389,28 @@ impl ShipImpl {
         stage: SessionStartupStage,
         message: String,
     ) {
+        let elapsed_ms = self.startup_elapsed(session_id).as_millis();
         Self::log_error("session_startup", &message);
+        tracing::warn!(
+            session_id = %session_id.0,
+            ?stage,
+            elapsed_ms,
+            %message,
+            "session startup failed"
+        );
         let _ = self
             .set_startup_state(
                 session_id,
                 SessionStartupState::Failed {
                     stage,
-                    message: message.clone(),
+                    message: format!("{message} ({elapsed_ms}ms elapsed)"),
                 },
             )
             .await;
+        self.startup_started_at
+            .lock()
+            .expect("startup timer mutex poisoned")
+            .remove(session_id);
     }
 
     fn captain_bootstrap_prompt() -> String {
@@ -374,6 +423,10 @@ impl ShipImpl {
             "Do not delegate to the mate yet.",
         ]
         .join("\n")
+    }
+
+    fn human_feed_text(content: &str) -> String {
+        format!("**You**\n\n{content}")
     }
 
     fn captain_assignment_prompt(description: &str) -> String {
@@ -580,6 +633,32 @@ impl ShipImpl {
         self.persist_session(session_id).await
     }
 
+    async fn append_human_message(
+        &self,
+        session_id: &SessionId,
+        role: Role,
+        content: String,
+    ) -> Result<(), String> {
+        {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions
+                .get_mut(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            apply_event(
+                session,
+                SessionEvent::BlockAppend {
+                    block_id: BlockId::new(),
+                    role,
+                    block: ContentBlock::Text {
+                        text: Self::human_feed_text(&content),
+                    },
+                },
+            );
+        }
+
+        self.persist_session(session_id).await
+    }
+
     async fn queue_captain_steer_for_review(
         &self,
         session_id: &SessionId,
@@ -642,6 +721,16 @@ impl ShipImpl {
                 return Err("invalid task transition".to_owned());
             }
 
+            apply_event(
+                active,
+                SessionEvent::BlockAppend {
+                    block_id: BlockId::new(),
+                    role: Role::Mate,
+                    block: ContentBlock::Text {
+                        text: Self::human_feed_text(&content),
+                    },
+                },
+            );
             transition_task(active, TaskStatus::Working).map_err(|error| error.to_string())?;
             active.pending_steer = None;
         }
@@ -838,15 +927,7 @@ impl ShipImpl {
 
     async fn start_session_runtime(&self, session_id: SessionId) {
         let stage = SessionStartupStage::ResolvingMcp;
-        let _ = self
-            .set_startup_state(
-                &session_id,
-                SessionStartupState::Running {
-                    stage,
-                    message: Self::startup_message(stage).to_owned(),
-                },
-            )
-            .await;
+        let _ = self.set_startup_stage(&session_id, stage).await;
 
         let (project, base_branch, resolved_mcp_servers) = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
@@ -869,15 +950,7 @@ impl ShipImpl {
         };
 
         let stage = SessionStartupStage::CreatingWorktree;
-        let _ = self
-            .set_startup_state(
-                &session_id,
-                SessionStartupState::Running {
-                    stage,
-                    message: Self::startup_message(stage).to_owned(),
-                },
-            )
-            .await;
+        let _ = self.set_startup_stage(&session_id, stage).await;
         let worktree_path = match self
             .worktree_ops
             .create_worktree(&session_id, &base_branch, "session", &repo_root)
@@ -910,15 +983,7 @@ impl ShipImpl {
         };
 
         let stage = SessionStartupStage::StartingCaptain;
-        let _ = self
-            .set_startup_state(
-                &session_id,
-                SessionStartupState::Running {
-                    stage,
-                    message: Self::startup_message(stage).to_owned(),
-                },
-            )
-            .await;
+        let _ = self.set_startup_stage(&session_id, stage).await;
         let captain_handle = match self
             .agent_driver
             .spawn(
@@ -958,15 +1023,7 @@ impl ShipImpl {
         let _ = self.persist_session(&session_id).await;
 
         let stage = SessionStartupStage::StartingMate;
-        let _ = self
-            .set_startup_state(
-                &session_id,
-                SessionStartupState::Running {
-                    stage,
-                    message: Self::startup_message(stage).to_owned(),
-                },
-            )
-            .await;
+        let _ = self.set_startup_stage(&session_id, stage).await;
         let mate_handle = match self
             .agent_driver
             .spawn(
@@ -1001,26 +1058,25 @@ impl ShipImpl {
         let _ = self.persist_session(&session_id).await;
 
         let stage = SessionStartupStage::GreetingCaptain;
-        let _ = self
-            .set_startup_state(
-                &session_id,
-                SessionStartupState::Running {
-                    stage,
-                    message: Self::startup_message(stage).to_owned(),
-                },
-            )
-            .await;
-        if let Err(error) = self
-            .prompt_agent(&session_id, Role::Captain, Self::captain_bootstrap_prompt())
-            .await
-        {
-            self.fail_startup(&session_id, stage, error).await;
-            return;
-        }
-
+        let _ = self.set_startup_stage(&session_id, stage).await;
         let _ = self
             .set_startup_state(&session_id, SessionStartupState::Ready)
             .await;
+
+        self.startup_started_at
+            .lock()
+            .expect("startup timer mutex poisoned")
+            .remove(&session_id);
+
+        let this = self.clone();
+        tokio::spawn(async move {
+            if let Err(error) = this
+                .prompt_agent(&session_id, Role::Captain, Self::captain_bootstrap_prompt())
+                .await
+            {
+                Self::log_error("startup_prompt_captain", &error);
+            }
+        });
     }
 
     fn repo_root_for_worktree(worktree_path: &std::path::Path) -> Result<&std::path::Path, String> {
@@ -1517,6 +1573,11 @@ impl Ship for ShipImpl {
             return CreateSessionResponse::Failed { message: error };
         }
 
+        self.startup_started_at
+            .lock()
+            .expect("startup timer mutex poisoned")
+            .insert(session_id.clone(), Instant::now());
+
         let this = self.clone();
         let startup_session_id = session_id.clone();
         tokio::spawn(async move {
@@ -1568,6 +1629,14 @@ impl Ship for ShipImpl {
 
     // r[acp.prompt]
     async fn prompt_captain(&self, session: SessionId, content: String) {
+        if let Err(error) = self
+            .append_human_message(&session, Role::Captain, content.clone())
+            .await
+        {
+            Self::log_error("prompt_captain_append_human_message", &error);
+            return;
+        }
+
         let this = self.clone();
         tokio::spawn(async move {
             if let Err(error) = this.prompt_agent(&session, Role::Captain, content).await {

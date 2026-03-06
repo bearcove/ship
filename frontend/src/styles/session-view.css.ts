@@ -173,6 +173,47 @@ export const eventStream = style({
   minHeight: 0,
 });
 
+export const feedMessageCard = style({
+  display: "flex",
+  flexDirection: "column",
+  gap: "var(--space-1)",
+  padding: "var(--space-3)",
+  borderRadius: "var(--radius-3)",
+  border: "1px solid var(--gray-a4)",
+  background: "var(--gray-a2)",
+});
+
+export const feedMessageMeta = style({
+  fontSize: "var(--font-size-1)",
+  fontWeight: "var(--font-weight-medium)",
+  color: "var(--gray-10)",
+  letterSpacing: "0.02em",
+  textTransform: "uppercase",
+});
+
+export const startupFeedItem = style({
+  display: "flex",
+  alignItems: "flex-start",
+  gap: "var(--space-2)",
+  padding: "var(--space-3)",
+  borderRadius: "var(--radius-3)",
+  border: "1px solid var(--gray-a4)",
+  background: "var(--gray-a2)",
+  selectors: {
+    '&[data-tone="error"]': {
+      borderColor: "var(--red-a6)",
+      background: "var(--red-a2)",
+    },
+  },
+});
+
+export const startupFeedBody = style({
+  display: "flex",
+  flexDirection: "column",
+  gap: "var(--space-1)",
+  minWidth: 0,
+});
+
 export const taskBar = style({
   display: "flex",
   alignItems: "center",
@@ -368,9 +409,4 @@ export const permissionCard = style({
   display: "flex",
   flexDirection: "column",
   gap: "var(--space-2)",
-});
-
-export const idleBanner = style({
-  flexShrink: 0,
-  borderBottom: "1px solid var(--amber-a6)",
 });
