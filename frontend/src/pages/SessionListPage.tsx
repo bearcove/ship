@@ -220,6 +220,7 @@ function NewSessionDialog({
   const [branch, setBranch] = useState("main");
   const [taskDescription, setTaskDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   // r[ui.session-list.create.branch-filter]
   useEffect(() => {
@@ -242,6 +243,7 @@ function NewSessionDialog({
 
   async function handleCreate() {
     if (!projectName || !taskDescription.trim()) return;
+    setCreateError(null);
     setSubmitting(true);
     try {
       const client = await shipClient;
@@ -253,6 +255,10 @@ function NewSessionDialog({
         task_description: taskDescription,
         mcp_servers: null,
       });
+      if (result.tag === "Failed") {
+        setCreateError(result.message);
+        return;
+      }
       onOpenChange(false);
       navigate(`/sessions/${result.session_id}`);
     } finally {
@@ -274,6 +280,11 @@ function NewSessionDialog({
         <Dialog.Description size="2" color="gray">
           Configure a new agent session with a project, agents, branch, and task.
         </Dialog.Description>
+        {createError ? (
+          <Callout.Root color="red" mt="3">
+            <Callout.Text>{createError}</Callout.Text>
+          </Callout.Root>
+        ) : null}
         <Flex direction="column" gap="4" mt="2">
           <Flex direction="column" gap="1">
             <Text size="2" weight="medium">

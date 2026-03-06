@@ -352,10 +352,16 @@ pub mod protocol {
     }
 
     // r[proto.create-session]
+    #[repr(u8)]
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
-    pub struct CreateSessionResponse {
-        pub session_id: SessionId,
-        pub task_id: crate::ids::TaskId,
+    pub enum CreateSessionResponse {
+        Created {
+            session_id: SessionId,
+            task_id: crate::ids::TaskId,
+        },
+        Failed {
+            message: String,
+        },
     }
 
     // r[proto.close-session]

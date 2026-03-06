@@ -8,6 +8,26 @@ use ship_types::{
     TaskStatus,
 };
 
+#[derive(Debug, Clone, facet::Facet)]
+struct LegacySessionConfig {
+    project: ProjectName,
+    base_branch: String,
+    branch_name: String,
+    captain_kind: AgentKind,
+    mate_kind: AgentKind,
+    autonomy_mode: AutonomyMode,
+}
+
+#[derive(Debug, Clone, facet::Facet)]
+struct LegacyPersistedSession {
+    id: SessionId,
+    config: LegacySessionConfig,
+    captain: AgentSnapshot,
+    mate: AgentSnapshot,
+    current_task: Option<CurrentTask>,
+    task_history: Vec<TaskRecord>,
+}
+
 fn make_temp_dir(test_name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("ship-core-{test_name}-{}", ulid::Ulid::new()));
     std::fs::create_dir_all(&dir).expect("temp dir should be created");
@@ -142,6 +162,57 @@ async fn json_store_round_trip() {
         .expect("list after delete should work");
     assert_eq!(sessions_after.len(), 1);
     assert_eq!(sessions_after[0].id.0, "01J00000000000000000000002");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// r[verify session.persistent]
+#[tokio::test]
+async fn json_store_loads_legacy_sessions_without_mcp_servers() {
+    let dir = make_temp_dir("json-store-legacy");
+    let store = JsonSessionStore::new(dir.clone());
+    let id = SessionId("01J00000000000000000000003".to_owned());
+
+    let legacy = LegacyPersistedSession {
+        id: id.clone(),
+        config: LegacySessionConfig {
+            project: ProjectName("ship-backend".to_owned()),
+            base_branch: "main".to_owned(),
+            branch_name: "ship/01J00000/task".to_owned(),
+            captain_kind: AgentKind::Claude,
+            mate_kind: AgentKind::Codex,
+            autonomy_mode: AutonomyMode::HumanInTheLoop,
+        },
+        captain: AgentSnapshot {
+            role: Role::Captain,
+            kind: AgentKind::Claude,
+            state: AgentState::Idle,
+            context_remaining_percent: None,
+        },
+        mate: AgentSnapshot {
+            role: Role::Mate,
+            kind: AgentKind::Codex,
+            state: AgentState::Idle,
+            context_remaining_percent: None,
+        },
+        current_task: None,
+        task_history: Vec::new(),
+    };
+
+    let bytes = facet_json::to_vec_pretty(&legacy).expect("legacy session should serialize");
+    std::fs::write(dir.join(format!("{}.json", id.0)), bytes).expect("legacy session should write");
+
+    let loaded = store
+        .load_session(&id)
+        .await
+        .expect("legacy session should load")
+        .expect("legacy session should exist");
+
+    assert!(loaded.config.mcp_servers.is_empty());
+    assert_eq!(
+        store.list_sessions().await.expect("list should work").len(),
+        1
+    );
 
     let _ = std::fs::remove_dir_all(&dir);
 }

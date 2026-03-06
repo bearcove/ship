@@ -1986,6 +1986,7 @@ version = "0.1.0"
 dependencies = [
  "agent-client-protocol",
  "async-trait",
+ "facet",
  "facet-json",
  "fs-err",
  "futures",

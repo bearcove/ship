@@ -2,7 +2,10 @@ use std::io;
 use std::path::PathBuf;
 
 use fs_err::tokio as fs;
-use ship_types::{PersistedSession, SessionId};
+use ship_types::{
+    AgentKind, AgentSnapshot, AutonomyMode, CurrentTask, PersistedSession, ProjectName,
+    SessionConfig, SessionId, TaskRecord,
+};
 
 use crate::{SessionStore, StoreError};
 
@@ -20,6 +23,68 @@ impl JsonSessionStore {
     fn session_path(&self, id: &SessionId) -> PathBuf {
         self.dir.join(format!("{}.json", id.0))
     }
+}
+
+#[derive(Debug, Clone, facet::Facet)]
+struct LegacySessionConfig {
+    project: ProjectName,
+    base_branch: String,
+    branch_name: String,
+    captain_kind: AgentKind,
+    mate_kind: AgentKind,
+    autonomy_mode: AutonomyMode,
+}
+
+#[derive(Debug, Clone, facet::Facet)]
+struct LegacyPersistedSession {
+    id: SessionId,
+    config: LegacySessionConfig,
+    captain: AgentSnapshot,
+    mate: AgentSnapshot,
+    current_task: Option<CurrentTask>,
+    task_history: Vec<TaskRecord>,
+}
+
+impl From<LegacyPersistedSession> for PersistedSession {
+    fn from(value: LegacyPersistedSession) -> Self {
+        Self {
+            id: value.id,
+            config: SessionConfig {
+                project: value.config.project,
+                base_branch: value.config.base_branch,
+                branch_name: value.config.branch_name,
+                captain_kind: value.config.captain_kind,
+                mate_kind: value.config.mate_kind,
+                autonomy_mode: value.config.autonomy_mode,
+                mcp_servers: Vec::new(),
+            },
+            captain: value.captain,
+            mate: value.mate,
+            current_task: value.current_task,
+            task_history: value.task_history,
+        }
+    }
+}
+
+fn decode_persisted_session(
+    bytes: &[u8],
+    display_name: &str,
+) -> Result<PersistedSession, StoreError> {
+    if let Ok(session) = facet_json::from_slice::<PersistedSession>(bytes) {
+        return Ok(session);
+    }
+
+    if let Ok(session) = facet_json::from_slice::<LegacyPersistedSession>(bytes) {
+        return Ok(session.into());
+    }
+
+    let current_error = facet_json::from_slice::<PersistedSession>(bytes)
+        .err()
+        .map(|error| error.to_string())
+        .unwrap_or_else(|| "unknown error".to_owned());
+    Err(StoreError {
+        message: format!("failed to deserialize {display_name}: {current_error}"),
+    })
 }
 
 impl SessionStore for JsonSessionStore {
@@ -51,10 +116,7 @@ impl SessionStore for JsonSessionStore {
             }
         };
 
-        let session =
-            facet_json::from_slice::<PersistedSession>(&bytes).map_err(|error| StoreError {
-                message: format!("failed to deserialize session {}: {error}", id.0),
-            })?;
+        let session = decode_persisted_session(&bytes, &format!("session {}", id.0))?;
         Ok(Some(session))
     }
 
@@ -81,10 +143,7 @@ impl SessionStore for JsonSessionStore {
             let bytes = fs::read(&path).await.map_err(|error| StoreError {
                 message: error.to_string(),
             })?;
-            let session =
-                facet_json::from_slice::<PersistedSession>(&bytes).map_err(|error| StoreError {
-                    message: format!("failed to deserialize {}: {error}", path.display()),
-                })?;
+            let session = decode_persisted_session(&bytes, &path.display().to_string())?;
             out.push(session);
         }
 

@@ -566,10 +566,7 @@ impl Ship for ShipImpl {
             Ok(resolved) => resolved,
             Err(error) => {
                 Self::log_error("resolve_session_mcp_servers", &error);
-                return CreateSessionResponse {
-                    session_id: SessionId::new(),
-                    task_id: TaskId::new(),
-                };
+                return CreateSessionResponse::Failed { message: error };
             }
         };
 
@@ -583,9 +580,8 @@ impl Ship for ShipImpl {
             Ok(path) => path,
             Err(error) => {
                 Self::log_error("create_worktree", &error.message);
-                return CreateSessionResponse {
-                    session_id: SessionId::new(),
-                    task_id: TaskId::new(),
+                return CreateSessionResponse::Failed {
+                    message: error.message,
                 };
             }
         };
@@ -604,9 +600,8 @@ impl Ship for ShipImpl {
             Ok(handle) => handle,
             Err(error) => {
                 Self::log_error("spawn_captain", &error.message);
-                return CreateSessionResponse {
-                    session_id: SessionId::new(),
-                    task_id: TaskId::new(),
+                return CreateSessionResponse::Failed {
+                    message: error.message,
                 };
             }
         };
@@ -619,9 +614,8 @@ impl Ship for ShipImpl {
             Ok(handle) => handle,
             Err(error) => {
                 Self::log_error("spawn_mate", &error.message);
-                return CreateSessionResponse {
-                    session_id: SessionId::new(),
-                    task_id: TaskId::new(),
+                return CreateSessionResponse::Failed {
+                    message: error.message,
                 };
             }
         };
@@ -677,7 +671,7 @@ impl Ship for ShipImpl {
             }
         };
 
-        CreateSessionResponse {
+        CreateSessionResponse::Created {
             session_id,
             task_id,
         }
@@ -1021,7 +1015,10 @@ mod tests {
 
     use ship_core::ProjectRegistry;
     use ship_service::Ship;
-    use ship_types::{AgentDiscovery, McpServerConfig, McpStdioServerConfig, ProjectName};
+    use ship_types::{
+        AgentDiscovery, AgentKind, CreateSessionRequest, CreateSessionResponse, McpServerConfig,
+        McpStdioServerConfig, ProjectName,
+    };
 
     use super::ShipImpl;
 
@@ -1105,6 +1102,52 @@ mod tests {
                 env: Vec::new(),
             })]
         );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    // r[verify acp.mcp.config]
+    #[tokio::test]
+    async fn create_session_returns_failure_when_mcp_config_is_invalid() {
+        let dir = make_temp_dir("create-session-invalid-mcp");
+        let config_dir = dir.join("config");
+        let project_root = dir.join("project");
+        std::fs::create_dir_all(project_root.join(".ship")).expect("project ship dir should exist");
+        std::fs::write(project_root.join(".ship/mcp-servers.json"), "{invalid")
+            .expect("invalid project mcp defaults should be written");
+
+        let mut registry = ProjectRegistry::load_in(config_dir)
+            .await
+            .expect("project registry should load");
+        registry
+            .add(&project_root)
+            .await
+            .expect("project should be added");
+
+        let ship = ShipImpl::new(
+            registry,
+            dir.join("sessions"),
+            AgentDiscovery {
+                claude: true,
+                codex: true,
+            },
+        );
+
+        let response = Ship::create_session(
+            &ship,
+            CreateSessionRequest {
+                project: ProjectName("project".to_owned()),
+                captain_kind: AgentKind::Claude,
+                mate_kind: AgentKind::Codex,
+                base_branch: "main".to_owned(),
+                task_description: "broken".to_owned(),
+                mcp_servers: None,
+            },
+        )
+        .await;
+
+        assert!(matches!(response, CreateSessionResponse::Failed { .. }));
+        assert!(Ship::list_sessions(&ship).await.is_empty());
 
         let _ = std::fs::remove_dir_all(dir);
     }

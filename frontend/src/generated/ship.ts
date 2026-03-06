@@ -143,10 +143,9 @@ export interface CreateSessionRequest {
   mcp_servers: McpServerConfig[] | null;
 }
 
-export interface CreateSessionResponse {
-  session_id: string;
-  task_id: string;
-}
+export type CreateSessionResponse =
+  | { tag: "Created"; session_id: string; task_id: string }
+  | { tag: "Failed"; message: string };
 
 export interface CloseSessionRequest {
   id: string;
@@ -573,7 +572,7 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0x3ba75452759f1e83n) {
+    } else if (method.id === 0xd49528ce83f03ecfn) {
       try {
         const result = await this.handler.createSession(args[0] as CreateSessionRequest);
         call.reply(result);
@@ -1194,7 +1193,7 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: "createSession",
-      id: 0x3ba75452759f1e83n,
+      id: 0xd49528ce83f03ecfn,
       args: {
         kind: "tuple",
         elements: [
@@ -1291,8 +1290,14 @@ export const ship_descriptor: ServiceDescriptor = {
           {
             name: "Ok",
             fields: {
-              kind: "struct",
-              fields: { session_id: { kind: "string" }, task_id: { kind: "string" } },
+              kind: "enum",
+              variants: [
+                {
+                  name: "Created",
+                  fields: { session_id: { kind: "string" }, task_id: { kind: "string" } },
+                },
+                { name: "Failed", fields: { message: { kind: "string" } } },
+              ],
             },
           },
           {
