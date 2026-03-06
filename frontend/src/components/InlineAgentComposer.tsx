@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Button, Flex, Text, TextArea } from "@radix-ui/themes";
+import { Box, Button, Flex, Text, TextArea } from "@radix-ui/themes";
 import { getShipClient } from "../api/client";
 import type { Role, SessionStartupState, TaskStatus } from "../generated/ship";
 import {
@@ -135,16 +135,17 @@ export function InlineAgentComposer({
         disabled={status.disabled || loading}
         aria-label={role.tag === "Captain" ? "Captain steer input" : "Mate steer input"}
       />
-      <Flex className={composerActions} align="center" justify="between" gap="2">
-        <Text size="1" color="gray">
-          Cmd+Enter to send
-        </Text>
+      <Flex className={composerActions} align="center" justify="end" gap="2">
         <Button
           size="1"
           onClick={() => void handleSubmit()}
           disabled={!text.trim() || status.disabled}
+          loading={loading}
         >
-          Send
+          Send{" "}
+          <Box asChild style={{ opacity: 0.65, fontSize: "11px", fontFamily: "monospace" }}>
+            <kbd>⌘↵</kbd>
+          </Box>
         </Button>
       </Flex>
       {error && (

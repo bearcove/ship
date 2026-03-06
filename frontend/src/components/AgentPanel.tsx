@@ -145,20 +145,31 @@ export function AgentPanel({
                 {debugMode && (
                   <Box
                     px="2"
-                    py="1"
+                    pt="1"
+                    pb="2"
                     style={{
                       border: "1px dashed var(--gray-a5)",
                       borderRadius: "var(--radius-2)",
-                      fontFamily: "monospace",
-                      fontSize: "var(--font-size-1)",
-                      whiteSpace: "pre-wrap",
-                      overflowX: "auto",
                     }}
                   >
                     <Text size="1" color="gray">
-                      raw block
+                      raw block payload
                     </Text>
-                    <pre style={{ margin: 0 }}>
+                    <Box
+                      style={{
+                        minHeight: "6rem",
+                        maxHeight: "20rem",
+                        overflowY: "auto",
+                        overflowX: "auto",
+                        fontFamily: "monospace",
+                        fontSize: "var(--font-size-1)",
+                        whiteSpace: "pre",
+                        marginTop: "var(--space-1)",
+                        background: "var(--gray-a2)",
+                        borderRadius: "var(--radius-1)",
+                        padding: "var(--space-1)",
+                      }}
+                    >
                       {JSON.stringify(
                         {
                           blockId: entry.blockId,
@@ -168,7 +179,7 @@ export function AgentPanel({
                         null,
                         2,
                       )}
-                    </pre>
+                    </Box>
                   </Box>
                 )}
               </Fragment>

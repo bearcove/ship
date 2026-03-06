@@ -1,6 +1,9 @@
 pre-commit:
   parallel: false
   jobs:
+    - name: pnpm-install
+      run: pnpm i
+
     - name: codegen
       run: cargo xtask codegen && git add frontend/src/generated/ship.ts frontend/src/generated/index.ts
 

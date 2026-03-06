@@ -22,7 +22,6 @@ import { useBranches } from "../hooks/useBranches";
 import {
   branchComboboxItem,
   branchComboboxList,
-  branchComboboxTrigger,
   keyboardShortcutKey,
   sessionCard,
 } from "../styles/session-list.css";
@@ -236,23 +235,15 @@ function BranchCombobox({
           }, 150)
         }
         disabled={!projectName}
-      />
-      <Button
-        className={branchComboboxTrigger}
-        type="button"
-        variant="surface"
-        color="gray"
-        onClick={() => setOpen((current) => !current)}
-        disabled={!projectName}
       >
-        <Text
-          size="2"
-          style={{ fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis" }}
+        <TextField.Slot
+          side="right"
+          style={{ cursor: "pointer", pointerEvents: "auto" }}
+          onClick={() => setOpen((current) => !current)}
         >
-          {value || "Select a branch"}
-        </Text>
-        <CaretDown size={16} />
-      </Button>
+          <CaretDown size={14} />
+        </TextField.Slot>
+      </TextField.Root>
       {open && (
         <Box className={branchComboboxList} id="new-session-branch-listbox" role="listbox">
           {filtered.length > 0 ? (

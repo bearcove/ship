@@ -72,7 +72,7 @@ export function PermissionBlock({ block, onApprove, onDeny }: Props) {
         <Text size="2" weight="medium">
           Permission request
         </Text>
-        <Text size="2">
+        <Text size="2" style={{ overflowWrap: "anywhere" }}>
           <Code size="1">{displayTool}</Code> — {displayDescription}
         </Text>
       </Flex>
