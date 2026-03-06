@@ -3,6 +3,7 @@ import { Badge, Box, Code, Flex, ScrollArea, Spinner, Text } from "@radix-ui/the
 import { CaretDown, CaretRight } from "@phosphor-icons/react";
 import ReactMarkdown from "react-markdown";
 import type { ContentBlock, ToolCallContent, ToolCallLocation } from "../../generated/ship";
+import { formatDisplayPath, formatDisplayText } from "../../utils/displayPath";
 import {
   diffAdd,
   diffContext,
@@ -43,7 +44,9 @@ function parseArgs(raw: string): Record<string, string> {
       return Object.fromEntries(
         Object.entries(parsed).map(([k, value]) => [
           k,
-          typeof value === "string" ? value : JSON.stringify(value, null, 2),
+          typeof value === "string"
+            ? formatDisplayText(value)
+            : formatDisplayText(JSON.stringify(value, null, 2)),
         ]),
       );
     }
@@ -54,7 +57,8 @@ function parseArgs(raw: string): Record<string, string> {
 }
 
 function firstPath(locations: ToolCallLocation[], args: Record<string, string>): string {
-  return args.path ?? args.file_path ?? locations[0]?.path ?? "";
+  const path = args.path ?? args.file_path ?? locations[0]?.path ?? "";
+  return path ? formatDisplayPath(path) : "";
 }
 
 function buildUnifiedDiff(content: Extract<ToolCallContent, { tag: "Diff" }>): string {
@@ -167,7 +171,7 @@ function ToolArguments({ args, raw }: { args: Record<string, string>; raw: strin
     if (!raw || raw === "{}") return null;
     return (
       <Code size="1" style={{ whiteSpace: "pre-wrap", color: "var(--gray-11)" }}>
-        {raw}
+        {formatDisplayText(raw)}
       </Code>
     );
   }
@@ -194,7 +198,7 @@ function ToolLocations({ locations }: { locations: ToolCallLocation[] }) {
     <Flex direction="column" gap="1">
       {locations.map((location) => (
         <Code key={`${location.path}:${location.line ?? 0}`} size="1">
-          {location.path}
+          {formatDisplayPath(location.path)}
           {location.line ? `:${location.line}` : ""}
         </Code>
       ))}
@@ -304,7 +308,8 @@ function TerminalTranscript({ command, output }: { command?: string; output: str
 }
 
 function RichTextContent({ text }: { text: string }) {
-  const fence = extractMarkdownFence(text);
+  const displayText = formatDisplayText(text);
+  const fence = extractMarkdownFence(displayText);
   if (
     fence &&
     (fence.language === "console" || fence.language === "terminal" || fence.language === "sh")
@@ -314,7 +319,7 @@ function RichTextContent({ text }: { text: string }) {
 
   return (
     <Box className={toolCallContentSection}>
-      <ReactMarkdown>{text}</ReactMarkdown>
+      <ReactMarkdown>{displayText}</ReactMarkdown>
     </Box>
   );
 }
@@ -334,7 +339,12 @@ function ToolContents({
           case "Text":
             return <RichTextContent key={index} text={content.text} />;
           case "Diff":
-            return <DiffView key={index} content={buildUnifiedDiff(content)} />;
+            return (
+              <DiffView
+                key={index}
+                content={buildUnifiedDiff({ ...content, path: formatDisplayPath(content.path) })}
+              />
+            );
           case "Terminal":
             return (
               <Flex key={index} direction="column" gap="2">

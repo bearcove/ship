@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Box, Callout, Flex, IconButton, Spinner, Switch, Tabs, Text } from "@radix-ui/themes";
-import { Clock, SpeakerHigh, SpeakerSlash } from "@phosphor-icons/react";
+import { Bug, Clock, SpeakerHigh, SpeakerSlash } from "@phosphor-icons/react";
 import { useSoundEnabled } from "../context/SoundContext";
 import { useSession } from "../hooks/useSession";
 import { useSessionState } from "../hooks/useSessionState";
@@ -39,6 +39,28 @@ function getIdleMessage(
   return null;
 }
 
+function readDebugPreference(): boolean {
+  if (
+    typeof window === "undefined" ||
+    !("localStorage" in window) ||
+    typeof window.localStorage?.getItem !== "function"
+  ) {
+    return false;
+  }
+  return window.localStorage.getItem("ship.debug") === "1";
+}
+
+function writeDebugPreference(enabled: boolean) {
+  if (
+    typeof window === "undefined" ||
+    !("localStorage" in window) ||
+    typeof window.localStorage?.setItem !== "function"
+  ) {
+    return;
+  }
+  window.localStorage.setItem("ship.debug", enabled ? "1" : "0");
+}
+
 // r[view.session]
 // r[ui.layout.session-view]
 // r[proto.hydration-flow]
@@ -52,10 +74,15 @@ export function SessionViewPage() {
   const eventState = useSessionState(sessionId ?? "", session);
   const [autonomous, setAutonomous] = useState(false);
   const [mobileTab, setMobileTab] = useState<"captain" | "mate">("captain");
+  const [debugMode, setDebugMode] = useState(readDebugPreference);
 
   useEffect(() => {
     if (session) setAutonomous(session.autonomy_mode.tag === "Autonomous");
   }, [session]);
+
+  useEffect(() => {
+    writeDebugPreference(debugMode);
+  }, [debugMode]);
 
   // r[ui.keys.nav]
   useEffect(() => {
@@ -131,6 +158,15 @@ export function SessionViewPage() {
           />
         </Flex>
         <IconButton
+          variant={debugMode ? "solid" : "ghost"}
+          color={debugMode ? "amber" : "gray"}
+          size="2"
+          onClick={() => setDebugMode((enabled) => !enabled)}
+          aria-label={debugMode ? "Disable debug mode" : "Enable debug mode"}
+        >
+          <Bug size={18} />
+        </IconButton>
+        <IconButton
           variant="ghost"
           size="2"
           onClick={() => setSoundEnabled(!soundEnabled)}
@@ -177,6 +213,7 @@ export function SessionViewPage() {
               sessionId={session.id}
               agent={captain}
               blocks={eventState.captainBlocks.blocks}
+              debugMode={debugMode}
               loading={isReplaying}
               loadingLabel={replayLabel}
               taskStatus={liveTask?.status ?? null}
@@ -188,6 +225,7 @@ export function SessionViewPage() {
               sessionId={session.id}
               agent={mate}
               blocks={eventState.mateBlocks.blocks}
+              debugMode={debugMode}
               loading={isReplaying}
               loadingLabel={replayLabel}
               taskStatus={liveTask?.status ?? null}
@@ -203,6 +241,7 @@ export function SessionViewPage() {
                 sessionId={session.id}
                 agent={captain}
                 blocks={eventState.captainBlocks.blocks}
+                debugMode={debugMode}
                 loading={isReplaying}
                 loadingLabel={replayLabel}
                 taskStatus={liveTask?.status ?? null}
@@ -215,6 +254,7 @@ export function SessionViewPage() {
                 sessionId={session.id}
                 agent={mate}
                 blocks={eventState.mateBlocks.blocks}
+                debugMode={debugMode}
                 loading={isReplaying}
                 loadingLabel={replayLabel}
                 taskStatus={liveTask?.status ?? null}

@@ -2,21 +2,41 @@ import { useEffect, useState } from "react";
 import { Badge, Box, Button, Code, Flex, Text, Tooltip } from "@radix-ui/themes";
 import { CaretDown, CaretRight } from "@phosphor-icons/react";
 import type { ContentBlock, PermissionResolution } from "../../generated/ship";
+import { formatDisplayText } from "../../utils/displayPath";
 import { permissionCard } from "../../styles/session-view.css";
 
 type PermissionBlockType = Extract<ContentBlock, { tag: "Permission" }>;
 
 interface Props {
   block: PermissionBlockType;
-  onApprove?: () => void;
-  onDeny?: () => void;
+  onApprove?: () => Promise<void> | void;
+  onDeny?: () => Promise<void> | void;
 }
 
 // r[ui.permission.layout]
 export function PermissionBlock({ block, onApprove, onDeny }: Props) {
   const [argsExpanded, setArgsExpanded] = useState(false);
+  const [pendingAction, setPendingAction] = useState<"approve" | "deny" | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const resolution: PermissionResolution | null = block.resolution;
+  const displayTool = formatDisplayText(block.tool_name);
+  const displayDescription = formatDisplayText(block.description);
+  const displayArguments = formatDisplayText(block.arguments);
+
+  async function runAction(kind: "approve" | "deny") {
+    const action = kind === "approve" ? onApprove : onDeny;
+    if (!action || pendingAction) return;
+    setPendingAction(kind);
+    setError(null);
+    try {
+      await action();
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : String(actionError));
+    } finally {
+      setPendingAction(null);
+    }
+  }
 
   // r[ui.keys.permission]
   useEffect(() => {
@@ -25,12 +45,12 @@ export function PermissionBlock({ block, onApprove, onDeny }: Props) {
 
     function handler(e: KeyboardEvent) {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (e.key === "y") onApprove?.();
-      if (e.key === "n") onDeny?.();
+      if (e.key === "y") void runAction("approve");
+      if (e.key === "n") void runAction("deny");
     }
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [resolution, onApprove, onDeny]);
+  }, [resolution, onApprove, onDeny, pendingAction]);
 
   // r[ui.permission.resolved]
   if (resolution) {
@@ -40,7 +60,7 @@ export function PermissionBlock({ block, onApprove, onDeny }: Props) {
           {resolution.tag === "Approved" ? "✓ Approved" : "✗ Denied"}
         </Badge>
         <Text size="1" color="gray">
-          <Code size="1">{block.tool_name}</Code> — {block.description}
+          <Code size="1">{displayTool}</Code> — {displayDescription}
         </Text>
       </Flex>
     );
@@ -53,7 +73,7 @@ export function PermissionBlock({ block, onApprove, onDeny }: Props) {
           Permission request
         </Text>
         <Text size="2">
-          <Code size="1">{block.tool_name}</Code> — {block.description}
+          <Code size="1">{displayTool}</Code> — {displayDescription}
         </Text>
       </Flex>
 
@@ -79,17 +99,31 @@ export function PermissionBlock({ block, onApprove, onDeny }: Props) {
             whiteSpace: "pre-wrap",
           }}
         >
-          {block.arguments}
+          {displayArguments}
         </Box>
       )}
 
       {/* r[ui.permission.actions] */}
       {/* r[ui.permission.viewer-mode] */}
       <Flex gap="2" align="center">
-        <Button size="1" color="green" variant="solid" disabled={!onApprove} onClick={onApprove}>
+        <Button
+          size="1"
+          color="green"
+          variant="solid"
+          disabled={!onApprove || pendingAction !== null}
+          loading={pendingAction === "approve"}
+          onClick={() => void runAction("approve")}
+        >
           Approve
         </Button>
-        <Button size="1" color="red" variant="soft" disabled={!onDeny} onClick={onDeny}>
+        <Button
+          size="1"
+          color="red"
+          variant="soft"
+          disabled={!onDeny || pendingAction !== null}
+          loading={pendingAction === "deny"}
+          onClick={() => void runAction("deny")}
+        >
           Deny
         </Button>
         <Tooltip content="Approve all future uses of this tool for the current task">
@@ -97,18 +131,19 @@ export function PermissionBlock({ block, onApprove, onDeny }: Props) {
             size="1"
             color="green"
             variant="outline"
-            disabled={!onApprove}
-            onClick={onApprove}
+            disabled={!onApprove || pendingAction !== null}
+            loading={pendingAction === "approve"}
+            onClick={() => void runAction("approve")}
           >
-            Approve all {block.tool_name}
+            Approve all {displayTool}
           </Button>
         </Tooltip>
-        {(onApprove || onDeny) && (
-          <Text size="1" color="gray" style={{ marginLeft: "auto" }}>
-            y / n
-          </Text>
-        )}
       </Flex>
+      {error && (
+        <Text size="1" color="red">
+          {error}
+        </Text>
+      )}
     </Box>
   );
 }

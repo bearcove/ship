@@ -57,6 +57,7 @@ function getStatusCopy(
 export function InlineAgentComposer({ sessionId, role, agentStateTag, taskStatus }: Props) {
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const status = getStatusCopy(role, agentStateTag, taskStatus);
 
   async function handleSubmit() {
@@ -64,6 +65,7 @@ export function InlineAgentComposer({ sessionId, role, agentStateTag, taskStatus
     if (!value || loading || status.disabled) return;
 
     setLoading(true);
+    setError(null);
     try {
       const client = await getShipClient();
       if (role.tag === "Captain") {
@@ -73,6 +75,7 @@ export function InlineAgentComposer({ sessionId, role, agentStateTag, taskStatus
       }
       setText("");
     } catch (error) {
+      setError(error instanceof Error ? error.message : String(error));
       console.error("[ship/session] failed to send inline guidance", {
         sessionId,
         role: role.tag,
@@ -125,6 +128,11 @@ export function InlineAgentComposer({ sessionId, role, agentStateTag, taskStatus
           Send
         </Button>
       </Flex>
+      {error && (
+        <Text size="1" color="red">
+          {error}
+        </Text>
+      )}
     </Flex>
   );
 }

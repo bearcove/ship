@@ -1,4 +1,4 @@
-import { useRef, useEffect } from "react";
+import { Fragment, useRef, useEffect } from "react";
 import { Box, Flex, Spinner, Text } from "@radix-ui/themes";
 import type { AgentSnapshot, ContentBlock, TaskStatus } from "../generated/ship";
 import type { BlockEntry } from "../state/blockStore";
@@ -20,6 +20,7 @@ interface Props {
   sessionId: string;
   agent: AgentSnapshot;
   blocks: BlockEntry[];
+  debugMode?: boolean;
   loading?: boolean;
   loadingLabel?: string;
   taskStatus: TaskStatus | null;
@@ -39,7 +40,15 @@ function latestPlan(entries: BlockEntry[]): PlanUpdateBlock | undefined {
 // r[view.agent-panel.state]
 // r[ui.block.plan.position]
 // r[ui.block.plan.filtering]
-export function AgentPanel({ sessionId, agent, blocks, loading, loadingLabel, taskStatus }: Props) {
+export function AgentPanel({
+  sessionId,
+  agent,
+  blocks,
+  debugMode = false,
+  loading,
+  loadingLabel,
+  taskStatus,
+}: Props) {
   const plan = latestPlan(blocks);
 
   let lastUnresolvedPermBlockId: string | undefined;
@@ -87,17 +96,8 @@ export function AgentPanel({ sessionId, agent, blocks, loading, loadingLabel, ta
 
         async function resolve(approved: boolean) {
           if (!permissionId) return;
-          try {
-            const client = await getShipClient();
-            await client.resolvePermission(sessionId, permissionId, approved);
-          } catch (error) {
-            console.error("[ship/session] failed to resolve permission", {
-              sessionId,
-              permissionId,
-              approved,
-              error,
-            });
-          }
+          const client = await getShipClient();
+          await client.resolvePermission(sessionId, permissionId, approved);
         }
 
         return (
@@ -133,7 +133,38 @@ export function AgentPanel({ sessionId, agent, blocks, loading, loadingLabel, ta
           {blocks
             .filter((entry) => entry.block.tag !== "PlanUpdate")
             .map((entry) => (
-              <Box key={entry.blockId}>{renderBlock(entry)}</Box>
+              <Fragment key={entry.blockId}>
+                <Box>{renderBlock(entry)}</Box>
+                {debugMode && (
+                  <Box
+                    px="2"
+                    py="1"
+                    style={{
+                      border: "1px dashed var(--gray-a5)",
+                      borderRadius: "var(--radius-2)",
+                      fontFamily: "monospace",
+                      fontSize: "var(--font-size-1)",
+                      whiteSpace: "pre-wrap",
+                      overflowX: "auto",
+                    }}
+                  >
+                    <Text size="1" color="gray">
+                      raw block
+                    </Text>
+                    <pre style={{ margin: 0 }}>
+                      {JSON.stringify(
+                        {
+                          blockId: entry.blockId,
+                          role: entry.role,
+                          block: entry.block,
+                        },
+                        null,
+                        2,
+                      )}
+                    </pre>
+                  </Box>
+                )}
+              </Fragment>
             ))}
         </Box>
       </Box>
