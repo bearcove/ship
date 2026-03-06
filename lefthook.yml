@@ -1,6 +1,9 @@
 pre-commit:
-  parallel: true
+  parallel: false
   jobs:
+    - name: codegen
+      run: cargo xtask codegen && git add frontend/src/generated/ship.ts frontend/src/generated/index.ts
+
     - name: capn
       run: capn
 

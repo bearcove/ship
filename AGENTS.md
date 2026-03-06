@@ -20,10 +20,12 @@
 
 ## Pre-commit hooks
 
-Managed by lefthook (`lefthook.yml`). Runs in parallel:
-1. `oxfmt` — formats staged .ts/.tsx files
-2. `oxlint` — lints staged .ts/.tsx files
-3. `tsgo --noEmit` — typechecks the frontend
+Managed by lefthook (`lefthook.yml`). Runs sequentially:
+1. `cargo xtask codegen` — regenerates TypeScript bindings and stages them
+2. `capn` — rust-side checks
+3. `oxfmt` — formats staged .ts/.tsx files
+4. `oxlint` — lints staged .ts/.tsx files
+5. `tsgo --noEmit` — typechecks the frontend
 
 ## Radix Themes docs
 
