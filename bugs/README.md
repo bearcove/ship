@@ -28,3 +28,5 @@ Open bugs:
 - [015-terminal-block-shows-raw-acp-debug-dump.md](bugs/015-terminal-block-shows-raw-acp-debug-dump.md)
 - [016-new-session-duplicate-branch-controls.md](bugs/016-new-session-duplicate-branch-controls.md)
 - [017-create-session-blocks-on-startup.md](bugs/017-create-session-blocks-on-startup.md)
+- [018-session-creation-starts-an-implicit-task.md](bugs/018-session-creation-starts-an-implicit-task.md)
+- [019-server-hardcodes-the-captain-mate-workflow.md](bugs/019-server-hardcodes-the-captain-mate-workflow.md)
