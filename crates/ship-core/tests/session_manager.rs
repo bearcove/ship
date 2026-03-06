@@ -231,7 +231,7 @@ async fn plan_updates_reuse_block_id_and_replace_the_full_step_list() {
         plan_step(
             "Map the ACP shape",
             PlanStepPriority::High,
-            PlanStepStatus::Planned,
+            PlanStepStatus::Pending,
         ),
         plan_step(
             "Remove stale fields",

@@ -88,7 +88,7 @@ pub mod agent {
     #[repr(u8)]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, facet::Facet)]
     pub enum PlanStepStatus {
-        Planned,
+        Pending,
         InProgress,
         Completed,
         Failed,

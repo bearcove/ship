@@ -10,7 +10,7 @@ interface Props {
 
 function StepIcon({ status }: { status: PlanStepStatus }) {
   switch (status.tag) {
-    case "Planned":
+    case "Pending":
       return (
         <Box role="img" aria-label="Pending" style={{ display: "flex", alignItems: "center" }}>
           <Circle size={14} style={{ color: "var(--gray-9)", flexShrink: 0 }} />

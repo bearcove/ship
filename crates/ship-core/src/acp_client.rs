@@ -562,7 +562,7 @@ fn map_plan_priority(priority: PlanEntryPriority) -> PlanStepPriority {
 
 fn map_plan_status(status: agent_client_protocol::PlanEntryStatus) -> PlanStepStatus {
     match status {
-        agent_client_protocol::PlanEntryStatus::Pending => PlanStepStatus::Planned,
+        agent_client_protocol::PlanEntryStatus::Pending => PlanStepStatus::Pending,
         agent_client_protocol::PlanEntryStatus::InProgress => PlanStepStatus::InProgress,
         agent_client_protocol::PlanEntryStatus::Completed => PlanStepStatus::Completed,
         _ => PlanStepStatus::Failed,
@@ -708,7 +708,7 @@ mod tests {
                         PlanStep {
                             description: "Fix blocking bug".to_owned(),
                             priority: PlanStepPriority::High,
-                            status: PlanStepStatus::Planned,
+                            status: PlanStepStatus::Pending,
                         },
                         PlanStep {
                             description: "Refresh snapshots".to_owned(),

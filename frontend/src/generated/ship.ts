@@ -27,7 +27,7 @@ export type AgentKind = { tag: "Claude" } | { tag: "Codex" };
 export type PlanStepPriority = { tag: "High" } | { tag: "Medium" } | { tag: "Low" };
 
 export type PlanStepStatus =
-  | { tag: "Planned" }
+  | { tag: "Pending" }
   | { tag: "InProgress" }
   | { tag: "Completed" }
   | { tag: "Failed" };
@@ -554,7 +554,7 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0xa734914703583f16n) {
+    } else if (method.id === 0x30612e6ccd828674n) {
       try {
         const result = await this.handler.listSessions();
         call.reply(result);
@@ -568,7 +568,7 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0xb1fbd88f7e4fd5b2n) {
+    } else if (method.id === 0xc01929046da901e0n) {
       try {
         const result = await this.handler.getSession(args[0] as string);
         call.reply(result);
@@ -635,7 +635,7 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0x4b6e8bd51901e470n) {
+    } else if (method.id === 0x74800435cd78a559n) {
       try {
         const result = await this.handler.subscribeEvents(
           args[0] as string,
@@ -750,7 +750,7 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: "listSessions",
-      id: 0xa734914703583f16n,
+      id: 0x30612e6ccd828674n,
       args: { kind: "tuple", elements: [] },
       result: {
         kind: "enum",
@@ -807,7 +807,7 @@ export const ship_descriptor: ServiceDescriptor = {
                                       status: {
                                         kind: "enum",
                                         variants: [
-                                          { name: "Planned", fields: null },
+                                          { name: "Pending", fields: null },
                                           { name: "InProgress", fields: null },
                                           { name: "Completed", fields: null },
                                           { name: "Failed", fields: null },
@@ -884,7 +884,7 @@ export const ship_descriptor: ServiceDescriptor = {
                                       status: {
                                         kind: "enum",
                                         variants: [
-                                          { name: "Planned", fields: null },
+                                          { name: "Pending", fields: null },
                                           { name: "InProgress", fields: null },
                                           { name: "Completed", fields: null },
                                           { name: "Failed", fields: null },
@@ -991,7 +991,7 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: "getSession",
-      id: 0xb1fbd88f7e4fd5b2n,
+      id: 0xc01929046da901e0n,
       args: { kind: "tuple", elements: [{ kind: "string" }] },
       result: {
         kind: "enum",
@@ -1046,7 +1046,7 @@ export const ship_descriptor: ServiceDescriptor = {
                                     status: {
                                       kind: "enum",
                                       variants: [
-                                        { name: "Planned", fields: null },
+                                        { name: "Pending", fields: null },
                                         { name: "InProgress", fields: null },
                                         { name: "Completed", fields: null },
                                         { name: "Failed", fields: null },
@@ -1123,7 +1123,7 @@ export const ship_descriptor: ServiceDescriptor = {
                                     status: {
                                       kind: "enum",
                                       variants: [
-                                        { name: "Planned", fields: null },
+                                        { name: "Pending", fields: null },
                                         { name: "InProgress", fields: null },
                                         { name: "Completed", fields: null },
                                         { name: "Failed", fields: null },
@@ -1539,7 +1539,7 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: "subscribeEvents",
-      id: 0x4b6e8bd51901e470n,
+      id: 0x74800435cd78a559n,
       args: {
         kind: "tuple",
         elements: [
@@ -1609,7 +1609,7 @@ export const ship_descriptor: ServiceDescriptor = {
                                             status: {
                                               kind: "enum",
                                               variants: [
-                                                { name: "Planned", fields: null },
+                                                { name: "Pending", fields: null },
                                                 { name: "InProgress", fields: null },
                                                 { name: "Completed", fields: null },
                                                 { name: "Failed", fields: null },
@@ -1692,7 +1692,7 @@ export const ship_descriptor: ServiceDescriptor = {
                                             status: {
                                               kind: "enum",
                                               variants: [
-                                                { name: "Planned", fields: null },
+                                                { name: "Pending", fields: null },
                                                 { name: "InProgress", fields: null },
                                                 { name: "Completed", fields: null },
                                                 { name: "Failed", fields: null },
@@ -1754,7 +1754,7 @@ export const ship_descriptor: ServiceDescriptor = {
                                               status: {
                                                 kind: "enum",
                                                 variants: [
-                                                  { name: "Planned", fields: null },
+                                                  { name: "Pending", fields: null },
                                                   { name: "InProgress", fields: null },
                                                   { name: "Completed", fields: null },
                                                   { name: "Failed", fields: null },

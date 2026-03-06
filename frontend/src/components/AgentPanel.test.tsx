@@ -30,7 +30,7 @@ const blocks: BlockEntry[] = [
         {
           description: "Outdated plan step",
           priority: { tag: "Low" },
-          status: { tag: "Planned" },
+          status: { tag: "Pending" },
         },
       ],
     },
@@ -45,7 +45,7 @@ const blocks: BlockEntry[] = [
         {
           description: "Queue the UI patch",
           priority: { tag: "High" },
-          status: { tag: "Planned" },
+          status: { tag: "Pending" },
         },
         {
           description: "Render the sticky plan",
