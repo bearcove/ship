@@ -1,4 +1,5 @@
 import { keyframes, style } from "@vanilla-extract/css";
+import { monoFontStack } from "./global.css";
 
 const pulse = keyframes({
   "0%, 100%": { opacity: 1 },
@@ -64,5 +65,5 @@ export const keyboardShortcutKey = style({
   color: "inherit",
   fontSize: "12px",
   lineHeight: 1.6,
-  fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+  fontFamily: monoFontStack,
 });

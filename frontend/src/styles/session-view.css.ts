@@ -1,4 +1,5 @@
 import { globalStyle, style } from "@vanilla-extract/css";
+import { monoFontStack } from "./global.css";
 
 export const sessionViewRoot = style({
   display: "flex",
@@ -44,7 +45,7 @@ export const sessionBreadcrumbSeparator = style({
 });
 
 export const sessionBranch = style({
-  fontFamily: "monospace",
+  fontFamily: monoFontStack,
   fontSize: "var(--font-size-2)",
   color: "var(--gray-11)",
   minWidth: 0,
@@ -307,12 +308,12 @@ export const toolCallArgumentGrid = style({
 
 export const toolCallLabel = style({
   color: "var(--gray-10)",
-  fontFamily: "monospace",
+  fontFamily: monoFontStack,
 });
 
 export const toolCallValue = style({
   color: "var(--gray-12)",
-  fontFamily: "monospace",
+  fontFamily: monoFontStack,
   whiteSpace: "pre-wrap",
   overflowWrap: "anywhere",
 });
@@ -345,7 +346,7 @@ export const terminalRoot = style({
 });
 
 export const terminalLine = style({
-  fontFamily: "monospace",
+  fontFamily: monoFontStack,
   fontSize: "var(--font-size-1)",
   whiteSpace: "pre-wrap",
 });
@@ -407,7 +408,7 @@ export const textBlockCodeFallback = style({
   padding: "var(--space-2)",
   borderRadius: "var(--radius-2)",
   background: "var(--gray-a2)",
-  fontFamily: "monospace",
+  fontFamily: monoFontStack,
   fontSize: "var(--font-size-1)",
   whiteSpace: "pre-wrap",
   overflowX: "auto",

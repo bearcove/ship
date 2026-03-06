@@ -1,7 +1,31 @@
-import { globalStyle } from "@vanilla-extract/css";
+import { globalStyle, globalFontFace } from "@vanilla-extract/css";
+
+globalFontFace("Maple Mono NF", {
+  src: "url('/fonts/MapleMono-NF-Regular.woff2') format('woff2')",
+  fontWeight: "400",
+  fontStyle: "normal",
+});
+
+globalFontFace("Maple Mono NF", {
+  src: "url('/fonts/MapleMono-NF-Italic.woff2') format('woff2')",
+  fontWeight: "400",
+  fontStyle: "italic",
+});
+
+globalFontFace("Maple Mono NF", {
+  src: "url('/fonts/MapleMono-NF-Bold.woff2') format('woff2')",
+  fontWeight: "700",
+  fontStyle: "normal",
+});
+
+globalFontFace("Maple Mono NF", {
+  src: "url('/fonts/MapleMono-NF-BoldItalic.woff2') format('woff2')",
+  fontWeight: "700",
+  fontStyle: "italic",
+});
 
 export const monoFontStack =
-  "'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Menlo', 'Consolas', monospace";
+  "'Maple Mono NF', 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Menlo', 'Consolas', monospace";
 
 export const sansFontStack =
   "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
@@ -10,6 +34,15 @@ globalStyle("html, body, #root", {
   height: "100%",
   margin: 0,
   padding: 0,
+});
+
+globalStyle(".radix-themes", {
+  vars: {
+    "--default-font-family": monoFontStack,
+    "--heading-font-family": monoFontStack,
+    "--code-font-family": monoFontStack,
+    "--strong-font-family": monoFontStack,
+  },
 });
 
 globalStyle("pre, code, .mono", {
