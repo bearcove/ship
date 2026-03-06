@@ -27,6 +27,12 @@ type DebugMessage =
       kind: "channel-closed";
       reason: string;
       attempt: number;
+    }
+  | {
+      kind: "disconnect";
+      reason: string;
+      diagnosis: DisconnectDiagnosis;
+      attempt: number;
     };
 
 type SessionDebugSnapshot = {
@@ -81,6 +87,24 @@ export function detectSequenceGap(lastSeenSeq: number | null, nextSeq: number): 
     return null;
   }
   return `sequence gap detected: expected ${lastSeenSeq + 1}, received ${nextSeq}`;
+}
+
+export type DisconnectDiagnosis = "real-disconnect" | "expected-reconnect" | "cleanup" | "other";
+
+export function diagnoseDisconnectReason(reason: string): DisconnectDiagnosis {
+  if (reason === "subscription channel closed") {
+    return "real-disconnect";
+  }
+  if (reason === "subscription cleanup") {
+    return "cleanup";
+  }
+  if (
+    reason.startsWith("subscription setup failed:") ||
+    reason.startsWith("sequence gap detected:")
+  ) {
+    return "expected-reconnect";
+  }
+  return "other";
 }
 
 function describeError(error: unknown): string {
@@ -336,6 +360,17 @@ export function useSessionState(
 
       if (!cancelled) {
         const reason = stopReason ?? "subscription stopped without a close reason";
+        const diagnosis = diagnoseDisconnectReason(reason);
+        debugMessagesRef.current = [
+          ...debugMessagesRef.current.slice(-199),
+          { kind: "disconnect", reason, diagnosis, attempt },
+        ];
+        log("warn", "session subscription stopped", {
+          sessionId,
+          attempt,
+          reason,
+          diagnosis,
+        });
         dispatch({ type: "disconnected", reason });
         reconnectTimer = window.setTimeout(() => {
           if (!cancelled) setRetryCount((c) => c + 1);
@@ -346,8 +381,13 @@ export function useSessionState(
     subscribe().catch((error) => {
       if (!cancelled) {
         const reason = `subscription setup failed: ${describeError(error)}`;
+        const diagnosis = diagnoseDisconnectReason(reason);
         log("warn", "session subscription setup failed", { sessionId, reason });
         invalidateShipClient(reason);
+        debugMessagesRef.current = [
+          ...debugMessagesRef.current.slice(-199),
+          { kind: "disconnect", reason, diagnosis, attempt: retryCount + 1 },
+        ];
         dispatch({ type: "disconnected", reason });
         reconnectTimer = window.setTimeout(() => {
           if (!cancelled) setRetryCount((c) => c + 1);

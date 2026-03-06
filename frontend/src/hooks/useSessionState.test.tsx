@@ -216,4 +216,74 @@ describe("useSessionState subscription lifecycle", () => {
     });
     expect(apiMocks.invalidateShipClientMock).toHaveBeenCalledWith("subscription channel closed");
   });
+
+  // r[verify event.client.connection-lifecycle]
+  it("does not reconnect while a healthy subscription remains open", async () => {
+    let output: TestTx<SubscribeMessage> | null = null;
+
+    apiMocks.subscribeEventsMock.mockImplementation(
+      async (_sessionId: string, tx: TestTx<SubscribeMessage>) => {
+        output = tx;
+      },
+    );
+
+    render(<SessionStateProbe sessionId="session-1" session={session} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("session-state")).toHaveAttribute("data-phase", "replaying");
+    });
+
+    await output!.send({ tag: "ReplayComplete" });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("session-state")).toHaveAttribute("data-phase", "live");
+    });
+
+    vi.useFakeTimers();
+    await vi.advanceTimersByTimeAsync(3_100);
+
+    expect(apiMocks.subscribeEventsMock).toHaveBeenCalledTimes(1);
+    expect(apiMocks.invalidateShipClientMock).not.toHaveBeenCalled();
+    expect(screen.getByTestId("session-state")).toHaveAttribute("data-connected", "true");
+    vi.useRealTimers();
+  });
+
+  // r[verify event.client.connection-lifecycle]
+  it("reconnects after a real disconnect with a fresh subscription attempt", async () => {
+    const outputs: TestTx<SubscribeMessage>[] = [];
+
+    apiMocks.subscribeEventsMock.mockImplementation(
+      async (_sessionId: string, tx: TestTx<SubscribeMessage>) => {
+        outputs.push(tx);
+      },
+    );
+
+    render(<SessionStateProbe sessionId="session-1" session={session} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("session-state")).toHaveAttribute("data-phase", "replaying");
+    });
+
+    expect(outputs).toHaveLength(1);
+    outputs[0]!.close();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("session-state")).toHaveAttribute("data-connected", "false");
+    });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 3_100));
+
+    await waitFor(() => {
+      expect(apiMocks.subscribeEventsMock).toHaveBeenCalledTimes(2);
+    });
+
+    expect(outputs).toHaveLength(2);
+    await outputs[1]!.send({ tag: "ReplayComplete" });
+
+    await waitFor(() => {
+      const probe = screen.getByTestId("session-state");
+      expect(probe).toHaveAttribute("data-connected", "true");
+      expect(probe).toHaveAttribute("data-phase", "live");
+    });
+  }, 8_000);
 });

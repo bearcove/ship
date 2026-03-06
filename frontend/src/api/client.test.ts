@@ -61,4 +61,33 @@ describe("client lifecycle", () => {
     expect(close1).toHaveBeenCalledTimes(1);
     expect(close2).not.toHaveBeenCalled();
   });
+
+  it("closes every superseded websocket across reconnect cycles", async () => {
+    const closes = [vi.fn(), vi.fn(), vi.fn()];
+
+    connectWs.mockResolvedValue({});
+    helloExchangeInitiator
+      .mockResolvedValueOnce({
+        getIo: () => ({ close: closes[0] }),
+        asCaller: () => ({ caller: "one" }),
+      })
+      .mockResolvedValueOnce({
+        getIo: () => ({ close: closes[1] }),
+        asCaller: () => ({ caller: "two" }),
+      })
+      .mockResolvedValueOnce({
+        getIo: () => ({ close: closes[2] }),
+        asCaller: () => ({ caller: "three" }),
+      });
+
+    const mod = await import("./client");
+    await mod.getShipClient();
+    await mod.getShipClient({ forceNew: true });
+    await mod.getShipClient({ forceNew: true });
+    mod.invalidateShipClient("done");
+
+    expect(closes[0]).toHaveBeenCalledTimes(1);
+    expect(closes[1]).toHaveBeenCalledTimes(1);
+    expect(closes[2]).toHaveBeenCalledTimes(1);
+  });
 });
