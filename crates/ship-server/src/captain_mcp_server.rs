@@ -59,7 +59,7 @@ impl ServerHandler for CaptainMcpHandler {
                 self.client
                     .steer(message.to_owned())
                     .await
-                    .map_err(|error| call_tool_rpc_error(error))?
+                    .map_err(call_tool_rpc_error)?
             }
             "ship_accept" => {
                 let summary = arguments
@@ -69,7 +69,7 @@ impl ServerHandler for CaptainMcpHandler {
                 self.client
                     .accept(summary)
                     .await
-                    .map_err(|error| call_tool_rpc_error(error))?
+                    .map_err(call_tool_rpc_error)?
             }
             "ship_reject" => {
                 let Some(reason) = arguments.get("reason").and_then(Value::as_str) else {
@@ -82,7 +82,7 @@ impl ServerHandler for CaptainMcpHandler {
                 self.client
                     .reject(reason.to_owned(), message)
                     .await
-                    .map_err(|error| call_tool_rpc_error(error))?
+                    .map_err(call_tool_rpc_error)?
             }
             other => return Err(CallToolError::unknown_tool(other.to_owned())),
         };
