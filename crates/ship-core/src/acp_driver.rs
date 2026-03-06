@@ -322,6 +322,7 @@ async fn run_acp_worker(
             tokio::task::spawn_local(future);
         },
     );
+    let connection = Rc::new(connection);
 
     tokio::task::spawn_local(async move {
         if let Err(error) = io_task.await {
@@ -358,15 +359,19 @@ async fn run_acp_worker(
         match command {
             DriverCommand::Prompt { content, response } => {
                 client.begin_prompt_turn();
-                let result = connection
-                    .prompt(PromptRequest::new(
-                        session_id.clone(),
-                        vec![ContentBlock::Text(TextContent::new(content))],
-                    ))
-                    .await
-                    .map(map_prompt_response)
-                    .map_err(acp_error);
-                let _ = response.send(result);
+                let connection = connection.clone();
+                let session_id = session_id.clone();
+                tokio::task::spawn_local(async move {
+                    let result = connection
+                        .prompt(PromptRequest::new(
+                            session_id,
+                            vec![ContentBlock::Text(TextContent::new(content))],
+                        ))
+                        .await
+                        .map(map_prompt_response)
+                        .map_err(acp_error);
+                    let _ = response.send(result);
+                });
             }
             DriverCommand::Cancel { response } => {
                 let result = connection
