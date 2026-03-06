@@ -19,9 +19,9 @@ facet = { version = "0.44.1", features = ["ulid"] }
 figue = "2.0.0"
 facet-json = "0.44.1"
 fs-err = { version = "3", features = ["tokio"] }
-roam = "7.2.0"
-roam-codegen = "7.2.0"
-roam-websocket = "7.2.0"
+roam = "7.3.0"
+roam-codegen = "7.3.0"
+roam-websocket = "7.3.0"
 agent-client-protocol = { version = "0.9.5", features = ["unstable_session_usage"] }
 tokio-util = { version = "0.7", features = ["compat"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

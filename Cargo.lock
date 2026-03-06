@@ -1659,9 +1659,9 @@ dependencies = [
 
 [[package]]
 name = "roam"
-version = "7.2.0"
+version = "7.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4928bc79cdd6848cbfb538fc0f9c6a911f5c0b5469e76849422231c86a9ce190"
+checksum = "eb8134b18b8735b239996b748307cfb208d84c245ed5595a6c2eece0e3c819a5"
 dependencies = [
  "facet",
  "facet-postcard",
@@ -1673,9 +1673,9 @@ dependencies = [
 
 [[package]]
 name = "roam-codegen"
-version = "7.2.0"
+version = "7.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88135fca0ebc7673de12077268412c16f0fb68eda33186959684cff64e2d71ef"
+checksum = "c427795fc5183c53ff010c6cc3ac7756ba39674a7d9438b22180d87b467fda0b"
 dependencies = [
  "facet-core",
  "heck",
@@ -1685,9 +1685,9 @@ dependencies = [
 
 [[package]]
 name = "roam-core"
-version = "7.2.0"
+version = "7.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "64c45cd147de2e081432a9e28c585e47cfaf9db51a7c42767f6d36c989af7292"
+checksum = "736e8d8279a37ddce65b165ebd4c665b254885a159c75ff20b9379bff3d92626"
 dependencies = [
  "facet",
  "facet-core",
@@ -1707,9 +1707,9 @@ dependencies = [
 
 [[package]]
 name = "roam-hash"
-version = "7.2.0"
+version = "7.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a50bb6ceaccc9de9f783584d4eef2c57aa38bf0103d24dff9c55a4aaa495e3a9"
+checksum = "926fac2289cbccf6100dd9fa733001a2999651cdeb6bea064320bac185dfa817"
 dependencies = [
  "blake3",
  "facet-core",
@@ -1719,9 +1719,9 @@ dependencies = [
 
 [[package]]
 name = "roam-macros-core"
-version = "7.2.0"
+version = "7.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "351a3e9ca18657dd0cfcf7ca6c04021819f580e5723fac42070c9d38fdef6d05"
+checksum = "9f5ac50c8954493d007a2a5541753fba33c605955abeb9221568ba0d160219e9"
 dependencies = [
  "facet-cargo-toml",
  "heck",
@@ -1732,9 +1732,9 @@ dependencies = [
 
 [[package]]
 name = "roam-macros-parse"
-version = "7.2.0"
+version = "7.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7faebb7a28d46e62207c92c231757f380e0b85ad27a7bf0e95d048631920cd5d"
+checksum = "a453d67c29e4f4f34abdf0dbf56f2fce8f7e3fdbb2640df077237ac375cd866d"
 dependencies = [
  "proc-macro2",
  "unsynn",
@@ -1742,9 +1742,9 @@ dependencies = [
 
 [[package]]
 name = "roam-service-macros"
-version = "7.2.0"
+version = "7.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "81de7172e32f3d0ccba97d77d4921d2b6c93f626fad95cdf49261b3d79c55515"
+checksum = "769c26280491ff451c3c7ac14ed7034237ae0e586d5d08297c4d43e9bea00797"
 dependencies = [
  "proc-macro2",
  "roam-macros-core",
@@ -1752,9 +1752,9 @@ dependencies = [
 
 [[package]]
 name = "roam-types"
-version = "7.2.0"
+version = "7.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f12d31db976907ab3eb4b1d155e45d10f906ecb56af783d5b2f24cc08bb57df2"
+checksum = "ec2c23550c346311389eea924816f06e7ed3a049d8bb437609ece1a312cabc67"
 dependencies = [
  "bitflags",
  "facet",
@@ -1769,9 +1769,9 @@ dependencies = [
 
 [[package]]
 name = "roam-websocket"
-version = "7.2.0"
+version = "7.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf88237275432d6101bd46df16d94932ea28c85ad5da4829d18f7b50d4fcb780"
+checksum = "abe9841a5b11de8471eb7777e383f5fc7227b4dd8864c24c377eadc93128116b"
 dependencies = [
  "futures-channel",
  "futures-util",
