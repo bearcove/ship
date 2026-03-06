@@ -1,4 +1,4 @@
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Link } from "react-router-dom";
 import { Flex, Box, Text, IconButton } from "@radix-ui/themes";
 import { SpeakerHigh, SpeakerSlash } from "@phosphor-icons/react";
 import { SessionListPage } from "./pages/SessionListPage";
@@ -21,9 +21,11 @@ export function App() {
         }}
       >
         <Flex align="center" justify="between">
-          <Text size="3" weight="bold">
-            Ship
-          </Text>
+          <Link to="/" style={{ textDecoration: "none", color: "inherit" }}>
+            <Text size="3" weight="bold">
+              Ship
+            </Text>
+          </Link>
           <IconButton
             variant="ghost"
             size="2"

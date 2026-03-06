@@ -20,3 +20,49 @@ export const idleDot = style({
   background: "var(--amber-9)",
   animation: `${pulse} 1.5s ease-in-out infinite`,
 });
+
+export const branchComboboxTrigger = style({
+  justifyContent: "space-between",
+});
+
+export const branchComboboxList = style({
+  position: "absolute",
+  top: "100%",
+  left: 0,
+  right: 0,
+  zIndex: 50,
+  marginTop: 2,
+  overflow: "hidden",
+  border: "1px solid var(--gray-a6)",
+  borderRadius: "var(--radius-3)",
+  background: "var(--color-panel-solid)",
+  boxShadow: "var(--shadow-4)",
+});
+
+export const branchComboboxItem = style({
+  padding: "var(--space-2) var(--space-3)",
+  cursor: "pointer",
+  selectors: {
+    '&[data-selected="true"]': {
+      background: "var(--accent-a3)",
+    },
+    "&:hover": {
+      background: "var(--gray-a3)",
+    },
+  },
+});
+
+export const keyboardShortcutKey = style({
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  minWidth: 20,
+  padding: "0 6px",
+  border: "1px solid var(--white-a5)",
+  borderRadius: "var(--radius-2)",
+  background: "var(--black-a2)",
+  color: "inherit",
+  fontSize: "12px",
+  lineHeight: 1.6,
+  fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+});

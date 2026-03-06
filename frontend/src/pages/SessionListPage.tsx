@@ -15,12 +15,18 @@ import {
   TextField,
   Tooltip,
 } from "@radix-ui/themes";
-import { WarningCircle, Plus } from "@phosphor-icons/react";
+import { CaretDown, Plus, WarningCircle } from "@phosphor-icons/react";
 import { useProjects } from "../hooks/useProjects";
 import { useSessionList } from "../hooks/useSessionList";
 import { useAgentDiscovery } from "../hooks/useAgentDiscovery";
 import { useBranches } from "../hooks/useBranches";
-import { sessionCard } from "../styles/session-list.css";
+import {
+  branchComboboxItem,
+  branchComboboxList,
+  branchComboboxTrigger,
+  keyboardShortcutKey,
+  sessionCard,
+} from "../styles/session-list.css";
 import type { AgentKind, TaskStatus } from "../generated/ship";
 import { getShipClient } from "../api/client";
 import { agentKindTooltip } from "./session-list-utils";
@@ -133,13 +139,42 @@ function BranchCombobox({
   const [query, setQuery] = useState(value);
   const [open, setOpen] = useState(false);
 
+  const branchOptions = useMemo(() => {
+    const uniqueBranches = Array.from(new Set(branches));
+    const preferredBranch =
+      uniqueBranches.find((branch) => branch === "main") ??
+      uniqueBranches.find((branch) => branch === "master") ??
+      uniqueBranches[0];
+
+    return { uniqueBranches, preferredBranch };
+  }, [branches]);
+
   useEffect(() => {
     setQuery(value);
   }, [value]);
 
+  useEffect(() => {
+    if (!projectName) {
+      setQuery("");
+      return;
+    }
+
+    if (!value && branchOptions.preferredBranch) {
+      onChange(branchOptions.preferredBranch);
+      return;
+    }
+
+    if (value && !branchOptions.uniqueBranches.includes(value) && branchOptions.preferredBranch) {
+      onChange(branchOptions.preferredBranch);
+    }
+  }, [branchOptions, onChange, projectName, value]);
+
   const filtered = useMemo(
-    () => branches.filter((b) => b.toLowerCase().includes(query.toLowerCase())).slice(0, 8),
-    [branches, query],
+    () =>
+      branchOptions.uniqueBranches
+        .filter((branch) => branch.toLowerCase().includes(query.toLowerCase()))
+        .slice(0, 8),
+    [branchOptions, query],
   );
 
   return (
@@ -148,51 +183,77 @@ function BranchCombobox({
         Base branch
       </Text>
       <TextField.Root
-        placeholder="Filter branches…"
+        aria-label="Base branch"
+        role="combobox"
+        aria-expanded={open}
+        aria-controls="new-session-branch-listbox"
+        aria-autocomplete="list"
+        placeholder={projectName ? "Search branches…" : "Select a project first"}
         value={query}
         onChange={(e) => {
           setQuery(e.target.value);
           setOpen(true);
         }}
         onFocus={() => setOpen(true)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && filtered.length > 0) {
+            event.preventDefault();
+            onChange(filtered[0]);
+            setQuery(filtered[0]);
+            setOpen(false);
+          }
+          if (event.key === "Escape") {
+            setOpen(false);
+            setQuery(value);
+          }
+        }}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
+        disabled={!projectName}
       />
-      {open && filtered.length > 0 && (
-        <Box
-          style={{
-            position: "absolute",
-            top: "100%",
-            left: 0,
-            right: 0,
-            zIndex: 50,
-            background: "var(--color-panel-solid)",
-            border: "1px solid var(--gray-a6)",
-            borderRadius: "var(--radius-3)",
-            boxShadow: "var(--shadow-4)",
-            marginTop: 2,
-            overflow: "hidden",
-          }}
+      <Button
+        className={branchComboboxTrigger}
+        type="button"
+        variant="surface"
+        color="gray"
+        onClick={() => setOpen((current) => !current)}
+        disabled={!projectName}
+      >
+        <Text
+          size="2"
+          style={{ fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis" }}
         >
-          {filtered.map((branch) => (
-            <Box
-              key={branch}
-              px="3"
-              py="2"
-              style={{
-                cursor: "pointer",
-                background: branch === value ? "var(--accent-a3)" : undefined,
-              }}
-              onMouseDown={() => {
-                onChange(branch);
-                setQuery(branch);
-                setOpen(false);
-              }}
-            >
-              <Text size="2" style={{ fontFamily: "monospace" }}>
-                {branch}
+          {value || "Select a branch"}
+        </Text>
+        <CaretDown size={16} />
+      </Button>
+      {open && (
+        <Box className={branchComboboxList} id="new-session-branch-listbox" role="listbox">
+          {filtered.length > 0 ? (
+            filtered.map((branch) => (
+              <Box
+                key={branch}
+                className={branchComboboxItem}
+                role="option"
+                aria-selected={branch === value}
+                data-selected={branch === value ? "true" : "false"}
+                onMouseDown={() => {
+                  onChange(branch);
+                  setQuery(branch);
+                  setOpen(false);
+                }}
+              >
+                <Text size="2" style={{ fontFamily: "monospace" }}>
+                  {branch}
+                </Text>
+              </Box>
+            ))
+          ) : (
+            <Box px="3" py="2">
+              <Text size="2" color="gray">
+                No matching branches
               </Text>
             </Box>
-          ))}
+          )}
         </Box>
       )}
     </Flex>
@@ -217,15 +278,21 @@ function NewSessionDialog({
   const [projectName, setProjectName] = useState(defaultProject);
   const [captainKind, setCaptainKind] = useState<AgentKind>({ tag: "Claude" });
   const [mateKind, setMateKind] = useState<AgentKind>({ tag: "Claude" });
-  const [branch, setBranch] = useState("main");
+  const [branch, setBranch] = useState("");
   const [taskDescription, setTaskDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
-  // r[ui.session-list.create.branch-filter]
   useEffect(() => {
-    setBranch("main");
-  }, [projectName]);
+    if (!open) {
+      return;
+    }
+
+    setProjectName(defaultProject);
+    setBranch("");
+    setTaskDescription("");
+    setCreateError(null);
+  }, [defaultProject, open]);
 
   useEffect(() => {
     const fallbackKind = firstAvailableAgentKind(discovery);
@@ -242,7 +309,7 @@ function NewSessionDialog({
   }, [captainKind, mateKind, discovery]);
 
   async function handleCreate() {
-    if (!projectName || !taskDescription.trim()) return;
+    if (!projectName || !branch || !taskDescription.trim()) return;
     setCreateError(null);
     setSubmitting(true);
     try {
@@ -268,6 +335,7 @@ function NewSessionDialog({
 
   const createDisabled =
     !projectName ||
+    !branch ||
     !taskDescription.trim() ||
     submitting ||
     !isAgentKindAvailable(captainKind, discovery) ||
@@ -325,9 +393,16 @@ function NewSessionDialog({
               Task description
             </Text>
             <TextArea
+              aria-label="Task description"
               placeholder="Describe the task for the captain and mate…"
               value={taskDescription}
               onChange={(e) => setTaskDescription(e.target.value)}
+              onKeyDown={(event) => {
+                if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && !createDisabled) {
+                  event.preventDefault();
+                  void handleCreate();
+                }
+              }}
               rows={4}
             />
           </Flex>
@@ -339,7 +414,17 @@ function NewSessionDialog({
               </Button>
             </Dialog.Close>
             <Button disabled={createDisabled} loading={submitting} onClick={handleCreate}>
-              Create Session
+              <Flex align="center" gap="2">
+                <Text>Create session</Text>
+                <Flex align="center" gap="1" aria-hidden="true">
+                  <Box asChild className={keyboardShortcutKey}>
+                    <kbd>&#8984;</kbd>
+                  </Box>
+                  <Box asChild className={keyboardShortcutKey}>
+                    <kbd>&#8617;</kbd>
+                  </Box>
+                </Flex>
+              </Flex>
             </Button>
           </Flex>
         </Flex>
@@ -443,30 +528,16 @@ export function SessionListPage() {
 
   return (
     <Box p="4" style={{ maxWidth: 720, margin: "0 auto" }}>
-      <Flex align="center" justify="between" mb="4">
-        <Text size="5" weight="bold">
-          Sessions
-        </Text>
-        <Flex gap="2">
-          <Button variant="soft" size="2" onClick={() => setAddProjectOpen(true)}>
-            <Plus size={16} />
-            Add Project
-          </Button>
-          {!noProjects && (
-            <Button size="2" onClick={() => setNewSessionOpen(true)}>
-              <Plus size={16} />
-              New Session
-            </Button>
-          )}
-        </Flex>
-      </Flex>
-
       {/* r[ui.session-list.project-filter] */}
       {!noProjects && (
-        <Flex mb="4" align="center" gap="2">
+        <Flex mb="4" align="center" gap="2" justify="between" wrap="wrap">
           <Select.Root
             value={projectFilter ?? "__all__"}
             onValueChange={(v) => {
+              if (v === "__add_project__") {
+                setAddProjectOpen(true);
+                return;
+              }
               if (v === "__all__") {
                 setSearchParams({});
               } else {
@@ -474,7 +545,7 @@ export function SessionListPage() {
               }
             }}
           >
-            <Select.Trigger placeholder="All projects" />
+            <Select.Trigger aria-label="Filter projects" placeholder="All projects" />
             <Select.Content>
               <Select.Item value="__all__">All projects</Select.Item>
               {validProjects.map((p) => (
@@ -482,23 +553,29 @@ export function SessionListPage() {
                   {p.name}
                 </Select.Item>
               ))}
+              <Select.Separator />
+              <Select.Item value="__add_project__">Add Project</Select.Item>
             </Select.Content>
           </Select.Root>
-          {allProjects.some((p) => !p.valid) && (
-            <Callout.Root color="amber" size="1" style={{ flex: 1 }}>
-              <Callout.Icon>
-                <WarningCircle size={16} />
-              </Callout.Icon>
-              <Callout.Text>
-                {allProjects
-                  .filter((p) => !p.valid)
-                  .map((p) => p.name)
-                  .join(", ")}{" "}
-                {allProjects.filter((p) => !p.valid).length === 1 ? "has" : "have"} an invalid path.
-              </Callout.Text>
-            </Callout.Root>
-          )}
+          <Button size="2" onClick={() => setNewSessionOpen(true)}>
+            <Plus size={16} />
+            New Session
+          </Button>
         </Flex>
+      )}
+      {allProjects.some((p) => !p.valid) && (
+        <Callout.Root color="amber" size="1" mb="4">
+          <Callout.Icon>
+            <WarningCircle size={16} />
+          </Callout.Icon>
+          <Callout.Text>
+            {allProjects
+              .filter((p) => !p.valid)
+              .map((p) => p.name)
+              .join(", ")}{" "}
+            {allProjects.filter((p) => !p.valid).length === 1 ? "has" : "have"} an invalid path.
+          </Callout.Text>
+        </Callout.Root>
       )}
 
       {/* r[ui.session-list.empty] */}
@@ -523,8 +600,9 @@ export function SessionListPage() {
         <Flex justify="center" mt="8">
           <Callout.Root size="2" style={{ maxWidth: 400 }}>
             <Callout.Text>
-              No sessions yet.{" "}
-              {projectFilter ? `No sessions in ${projectFilter}.` : "Create one to get started."}
+              {projectFilter
+                ? `No sessions in ${projectFilter} yet. Start one for this project.`
+                : "No sessions yet. Create one to get started."}
             </Callout.Text>
             <Box mt="3">
               <Button onClick={() => setNewSessionOpen(true)}>
