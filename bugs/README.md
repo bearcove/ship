@@ -30,3 +30,4 @@ Open bugs:
 - [017-create-session-blocks-on-startup.md](bugs/017-create-session-blocks-on-startup.md)
 - [018-session-creation-starts-an-implicit-task.md](bugs/018-session-creation-starts-an-implicit-task.md)
 - [019-server-hardcodes-the-captain-mate-workflow.md](bugs/019-server-hardcodes-the-captain-mate-workflow.md)
+- [020-captain-mcp-tools-not-implemented.md](bugs/020-captain-mcp-tools-not-implemented.md)
