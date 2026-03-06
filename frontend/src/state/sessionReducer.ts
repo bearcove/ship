@@ -180,7 +180,6 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
             currentTaskId: ev.task_id,
             currentTaskDescription: ev.description,
             currentTaskStatus: { tag: "Assigned" },
-            captainBlocks: clearBlocks(),
             mateBlocks: clearBlocks(),
           };
       }
