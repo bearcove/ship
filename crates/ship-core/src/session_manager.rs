@@ -724,16 +724,15 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             .clone();
         let worktree_path = session.worktree_path.clone();
 
-        if let Some(worktree_path) = worktree_path {
-            if self
+        if let Some(worktree_path) = worktree_path
+            && self
                 .worktree_ops
                 .has_uncommitted_changes(&worktree_path)
                 .await
                 .map_err(|error| SessionManagerError::Worktree(error.message))?
-                && !force
-            {
-                return Ok(CloseSessionResponse::RequiresConfirmation);
-            }
+            && !force
+        {
+            return Ok(CloseSessionResponse::RequiresConfirmation);
         }
 
         self.cleanup_session_resources(&session, force).await?;
