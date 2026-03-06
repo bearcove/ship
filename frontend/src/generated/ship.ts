@@ -356,17 +356,6 @@ export type SubscribeMessage =
   | { tag: "Event"; value: SessionEventEnvelope }
   | { tag: "ReplayComplete" };
 
-function namedVariantFields<T extends Record<string, Schema>>(fields: T): T {
-  return new Proxy(fields, {
-    has(target, property) {
-      if (property === "kind") {
-        return false;
-      }
-      return Reflect.has(target, property);
-    },
-  });
-}
-
 // Request/Response type aliases
 export type ListProjectsRequest = [];
 export type ListProjectsResponse = ProjectInfo[];
@@ -1413,7 +1402,7 @@ const ship_schema_registry: SchemaRegistry = new Map<string, Schema>([
         { name: "Text", fields: { text: { kind: "string" } } },
         {
           name: "ToolCall",
-          fields: namedVariantFields({
+          fields: {
             tool_call_id: { kind: "option", inner: { kind: "string" } },
             tool_name: { kind: "string" },
             arguments: { kind: "string" },
@@ -1425,7 +1414,7 @@ const ship_schema_registry: SchemaRegistry = new Map<string, Schema>([
             status: { kind: "ref", name: "ToolCallStatus" },
             content: { kind: "vec", element: { kind: "ref", name: "ToolCallContent" } },
             error: { kind: "option", inner: { kind: "ref", name: "ToolCallError" } },
-          }),
+          },
         },
         {
           name: "PlanUpdate",
@@ -1434,7 +1423,7 @@ const ship_schema_registry: SchemaRegistry = new Map<string, Schema>([
         { name: "Error", fields: { message: { kind: "string" } } },
         {
           name: "Permission",
-          fields: namedVariantFields({
+          fields: {
             permission_id: { kind: "option", inner: { kind: "string" } },
             tool_call_id: { kind: "option", inner: { kind: "string" } },
             tool_name: { kind: "string" },
@@ -1448,7 +1437,7 @@ const ship_schema_registry: SchemaRegistry = new Map<string, Schema>([
               inner: { kind: "vec", element: { kind: "ref", name: "PermissionOption" } },
             },
             resolution: { kind: "option", inner: { kind: "ref", name: "PermissionResolution" } },
-          }),
+          },
         },
       ],
     },
@@ -1461,7 +1450,7 @@ const ship_schema_registry: SchemaRegistry = new Map<string, Schema>([
         { name: "TextAppend", fields: { text: { kind: "string" } } },
         {
           name: "ToolCallUpdate",
-          fields: namedVariantFields({
+          fields: {
             tool_name: { kind: "option", inner: { kind: "string" } },
             kind: { kind: "option", inner: { kind: "ref", name: "ToolCallKind" } },
             target: { kind: "option", inner: { kind: "ref", name: "ToolTarget" } },
@@ -1477,7 +1466,7 @@ const ship_schema_registry: SchemaRegistry = new Map<string, Schema>([
               inner: { kind: "vec", element: { kind: "ref", name: "ToolCallContent" } },
             },
             error: { kind: "option", inner: { kind: "ref", name: "ToolCallError" } },
-          }),
+          },
         },
         {
           name: "PlanReplace",

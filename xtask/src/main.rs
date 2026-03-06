@@ -74,58 +74,6 @@ fn normalize_generated_typescript(code: String) -> String {
         code = code.replace("initial_credit: 16, ", "");
     }
 
-    if !code.contains("function namedVariantFields") {
-        code = code.replacen(
-            "\n// Request/Response type aliases\n",
-            r#"
-function namedVariantFields<T extends Record<string, Schema>>(fields: T): T {
-    return new Proxy(fields, {
-        has(target, property) {
-            if (property === "kind") {
-                return false;
-            }
-            return Reflect.has(target, property);
-        },
-    });
-}
-
-// Request/Response type aliases
-"#,
-            1,
-        );
-    }
-
-    let schema_fixes = [
-        (
-            "name: 'ToolCall', fields: {",
-            "name: 'ToolCall', fields: namedVariantFields({",
-        ),
-        (
-            "} }, { name: 'PlanUpdate', fields:",
-            "}) }, { name: 'PlanUpdate', fields:",
-        ),
-        (
-            "name: 'Permission', fields: {",
-            "name: 'Permission', fields: namedVariantFields({",
-        ),
-        (
-            "} }] }],\n  [\"BlockPatch\"",
-            "}) }] }],\n  [\"BlockPatch\"",
-        ),
-        (
-            "name: 'ToolCallUpdate', fields: {",
-            "name: 'ToolCallUpdate', fields: namedVariantFields({",
-        ),
-        (
-            "} }, { name: 'PlanReplace', fields:",
-            "}) }, { name: 'PlanReplace', fields:",
-        ),
-    ];
-
-    for (needle, replacement) in schema_fixes {
-        code = code.replace(needle, replacement);
-    }
-
     code
 }
 
