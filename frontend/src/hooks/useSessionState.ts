@@ -1,6 +1,6 @@
 import { useEffect, useReducer, useRef, useState } from "react";
 import { channel } from "@bearcove/roam-core";
-import type { SessionDetail, SubscribeMessage } from "../generated/ship";
+import type { SessionDetail, SessionEventEnvelope, SubscribeMessage } from "../generated/ship";
 import { getShipClient, invalidateShipClient } from "../api/client";
 import {
   type SessionViewState,
@@ -9,6 +9,71 @@ import {
 } from "../state/sessionReducer";
 
 const RECONNECT_DELAY_MS = 3000;
+
+type DebugMessage =
+  | {
+      kind: "event";
+      phase: SessionViewState["phase"];
+      envelope: SessionEventEnvelope;
+    }
+  | {
+      kind: "replay-complete";
+      phase: SessionViewState["phase"];
+      replayEventCount: number;
+      lastSeq: number | null;
+    }
+  | {
+      kind: "channel-closed";
+      reason: string;
+      attempt: number;
+    };
+
+type SessionDebugSnapshot = {
+  session: SessionDetail | null;
+  state: SessionViewState;
+  messages: DebugMessage[];
+};
+
+type ShipDebugWindow = Window & {
+  __shipDebug?: {
+    sessions: Record<string, SessionDebugSnapshot>;
+    clearSession(sessionId: string): void;
+    clearAll(): void;
+  };
+};
+
+function debugWindow(): ShipDebugWindow {
+  return window as ShipDebugWindow;
+}
+
+function ensureShipDebug() {
+  const debug = debugWindow();
+  if (!debug.__shipDebug) {
+    debug.__shipDebug = {
+      sessions: {},
+      clearSession(sessionId: string) {
+        delete this.sessions[sessionId];
+      },
+      clearAll() {
+        this.sessions = {};
+      },
+    };
+  }
+  return debug.__shipDebug;
+}
+
+function publishSessionDebug(
+  sessionId: string,
+  session: SessionDetail | null,
+  state: SessionViewState,
+  messages: DebugMessage[],
+) {
+  ensureShipDebug().sessions[sessionId] = {
+    session,
+    state,
+    messages,
+  };
+}
 
 export function detectSequenceGap(lastSeenSeq: number | null, nextSeq: number): string | null {
   if (lastSeenSeq === null || nextSeq === lastSeenSeq + 1) {
@@ -48,6 +113,7 @@ export function useSessionState(
   const [retryCount, setRetryCount] = useState(0);
   const stateRef = useRef(state);
   const sessionRef = useRef(session);
+  const debugMessagesRef = useRef<DebugMessage[]>([]);
 
   useEffect(() => {
     stateRef.current = state;
@@ -59,6 +125,10 @@ export function useSessionState(
       dispatch({ type: "hydrate", session });
     }
   }, [session]);
+
+  useEffect(() => {
+    publishSessionDebug(sessionId, sessionRef.current, state, debugMessagesRef.current);
+  }, [sessionId, state]);
 
   useEffect(() => {
     if (state.lastSeq !== null && state.lastEventKind) {
@@ -133,6 +203,10 @@ export function useSessionState(
         if (cancelled) break;
         if (next.msg === null) {
           stopReason = "subscription channel closed";
+          debugMessagesRef.current = [
+            ...debugMessagesRef.current.slice(-199),
+            { kind: "channel-closed", reason: stopReason, attempt },
+          ];
           log("warn", "subscription channel closed", { sessionId, attempt });
           invalidateShipClient(stopReason);
           break;
@@ -140,6 +214,14 @@ export function useSessionState(
 
         if (next.msg.tag === "Event") {
           const nextSeq = Number(next.msg.value.seq);
+          debugMessagesRef.current = [
+            ...debugMessagesRef.current.slice(-199),
+            {
+              kind: "event",
+              phase: stateRef.current.phase,
+              envelope: next.msg.value,
+            },
+          ];
           log("debug", "received session event", {
             sessionId,
             seq: nextSeq,
@@ -161,6 +243,15 @@ export function useSessionState(
           lastSeenSeq = nextSeq;
           dispatch({ type: "event", envelope: next.msg.value });
         } else if (next.msg.tag === "ReplayComplete") {
+          debugMessagesRef.current = [
+            ...debugMessagesRef.current.slice(-199),
+            {
+              kind: "replay-complete",
+              phase: stateRef.current.phase,
+              replayEventCount: stateRef.current.replayEventCount,
+              lastSeq: stateRef.current.lastSeq,
+            },
+          ];
           log("info", "received replay complete marker", {
             sessionId,
             attempt,
