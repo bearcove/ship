@@ -76,6 +76,13 @@ Before starting work, make sure your branch is up to date with main (`git rebase
 
 Stay within the scope of the assigned task. If a frontend task depends on a backend RPC, shared type, generated artifact, or other backend-owned surface that is not already present in your worktree, stop and report the missing dependency to the coordinator instead of implementing backend work from the frontend worktree. The same rule applies in reverse for backend tasks that depend on frontend work.
 
+## Generated code
+
+- Never hand-edit generated files.
+- Change the source-of-truth inputs only.
+- Then run `cargo xtask codegen` and commit the regenerated artifacts.
+- If generated output looks wrong, fix the schema/codegen/runtime input that produced it rather than patching the output directly.
+
 ## Coordinator git safety
 
 - Coordinator git operations that mutate repository state MUST be run sequentially, never in parallel

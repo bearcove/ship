@@ -25,6 +25,17 @@ Worktrees are **persistent** — don't remove them between passes.
 - Do not dispatch the `fullstack` lane in parallel with either split lane on overlapping source files.
 - Before dispatching any mode, the coordinator must prepare the target worktree so its branch already matches current `main`.
 
+## Worktree preparation checklist
+
+Before every dispatch, the coordinator must:
+
+1. reset or fast-forward the target branch so it matches current `main`
+2. verify the worktree is clean
+3. verify any prompt-dependent coordinator changes are already present there
+4. only then send the prompt
+
+Do not assume a worktree is ready because it was ready earlier in the day.
+
 ## Merge cycle
 
 1. Agent commits to its branch in its worktree.
@@ -68,6 +79,8 @@ Worktrees are **persistent** — don't remove them between passes.
 - Agent branches must stay clean fast-forward candidates for `main`.
 - After coordinator merges agent work into `main`, the corresponding worktree branch should normally be either identical to `main` or a simple descendant of it.
 - Rebasing a worktree branch onto `main` must not duplicate already-merged coordinator commits under new SHAs. If that happens, stop and repair the branch before dispatching more work.
+- If one branch becomes the architecture/design-center branch for a seam, freeze overlapping slices on other branches until that branch lands.
+- Do not continue dispatching overlapping frontend/backend/fullstack work and assume it can be sorted out later.
 
 ## Recovery procedure
 
@@ -118,3 +131,4 @@ Done by the coordinator on main, between agent merges. Steps:
 - Coordinator git mutations must be run sequentially, never in parallel.
 - Never touch an active agent worktree while that agent is working. Rebase, reset, or branch repair only happens between tasks.
 - When topology changes (for example switching from split lanes to a fullstack lane), update this file first so the workflow is explicit before dispatch.
+- Never instruct an agent to edit generated files by hand. Prompts must explicitly say to edit source-of-truth code and run `cargo xtask codegen` when generated artifacts need to change.
