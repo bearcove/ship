@@ -31,3 +31,4 @@ Open bugs:
 - [018-session-creation-starts-an-implicit-task.md](bugs/018-session-creation-starts-an-implicit-task.md)
 - [019-server-hardcodes-the-captain-mate-workflow.md](bugs/019-server-hardcodes-the-captain-mate-workflow.md)
 - [020-captain-mcp-tools-not-implemented.md](bugs/020-captain-mcp-tools-not-implemented.md)
+- [021-websocket-client-invalidation-leaks-connections.md](bugs/021-websocket-client-invalidation-leaks-connections.md)
