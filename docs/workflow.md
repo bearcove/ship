@@ -5,6 +5,7 @@
 - **Coordinator**: the Claude session on `main`. Merges work, runs tracey annotation passes, writes agent prompts, dispatches agents.
 - **Frontend agent**: works in `~/bearcove/ship-frontend` on the `frontend` branch.
 - **Backend agent**: works in `~/bearcove/ship-backend` on the `backend` branch.
+- **Fullstack agent**: works in `~/bearcove/ship-fullstack` on the `fullstack` branch when one agent owns both backend and frontend work for a pass.
 
 ## Worktree layout
 
@@ -13,8 +14,16 @@
 | `~/bearcove/ship` | `main` | Integration point. Coordinator works here. |
 | `~/bearcove/ship-frontend` | `frontend` | Frontend agent works here. |
 | `~/bearcove/ship-backend` | `backend` | Backend agent works here. |
+| `~/bearcove/ship-fullstack` | `fullstack` | Single agent owns both backend and frontend work for one pass. |
 
 Worktrees are **persistent** — don't remove them between passes.
+
+## Dispatch modes
+
+- Use the split `frontend` / `backend` lanes when the work can be cleanly divided and sequenced.
+- Use the `fullstack` lane when one pass must change backend and frontend together.
+- Do not dispatch the `fullstack` lane in parallel with either split lane on overlapping source files.
+- Before dispatching any mode, the coordinator must prepare the target worktree so its branch already matches current `main`.
 
 ## Merge cycle
 
@@ -40,6 +49,11 @@ Worktrees are **persistent** — don't remove them between passes.
 - Only after that backend dependency is merged, pushed, and the agent worktrees are refreshed from `main` may the frontend task be dispatched.
 - In that situation, the frontend prompt must treat the backend surface as an existing prerequisite, not as work to be invented during the frontend pass.
 - If the required backend surface is missing when the frontend agent starts, that is a blocker to report back to the coordinator, not an invitation to edit backend code from the frontend worktree.
+- In a `fullstack` pass, the same dependency rule still applies, but inside one prompt:
+  1. backend/shared/spec work first
+  2. codegen/regenerated artifacts next
+  3. frontend consumer work last
+- A `fullstack` prompt must make that order explicit instead of mixing backend and frontend steps together loosely.
 
 ## Prompt scoping
 
@@ -66,6 +80,7 @@ If a worktree branch stops being a clean fast-forward candidate for `main`:
    ```
    cd ~/bearcove/ship-frontend && git checkout -B frontend main
    cd ~/bearcove/ship-backend && git checkout -B backend main
+   cd ~/bearcove/ship-fullstack && git checkout -B fullstack main
    ```
 5. Only after the branch has been reset to match `main` should the next agent task begin.
 
@@ -102,3 +117,4 @@ Done by the coordinator on main, between agent merges. Steps:
 - If the coordinator adds or changes files that agent prompts depend on (for example bug tracker files, docs, or generated artifacts), the coordinator must rebase the agent worktrees before sending those prompts.
 - Coordinator git mutations must be run sequentially, never in parallel.
 - Never touch an active agent worktree while that agent is working. Rebase, reset, or branch repair only happens between tasks.
+- When topology changes (for example switching from split lanes to a fullstack lane), update this file first so the workflow is explicit before dispatch.
