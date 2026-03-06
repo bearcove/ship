@@ -4,6 +4,7 @@ mod acp_launcher;
 mod fakes;
 mod git_worktree;
 mod json_store;
+mod mcp;
 mod project_registry;
 mod session_manager;
 
@@ -13,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 
 use futures_core::Stream;
-use ship_types::{AgentKind, PersistedSession, Role, SessionEvent, SessionId};
+use ship_types::{AgentKind, McpServerConfig, PersistedSession, Role, SessionEvent, SessionId};
 
 pub use acp_driver::AcpAgentDriver;
 pub use acp_launcher::{
@@ -24,6 +25,7 @@ pub use fakes::{
 };
 pub use git_worktree::GitWorktreeOps;
 pub use json_store::JsonSessionStore;
+pub use mcp::{McpConfigError, resolve_mcp_servers};
 pub use project_registry::{ProjectRegistry, ProjectRegistryError};
 pub use session_manager::{
     ActiveSession, PendingPermission, SessionManager, SessionManagerError, SessionStateView,
@@ -57,6 +59,12 @@ pub struct PromptResponse {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentError {
     pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentSessionConfig {
+    pub worktree_path: PathBuf,
+    pub mcp_servers: Vec<McpServerConfig>,
 }
 
 impl fmt::Display for AgentError {
@@ -100,7 +108,7 @@ pub trait AgentDriver: Send + Sync {
         &self,
         kind: AgentKind,
         role: Role,
-        worktree_path: &Path,
+        config: &AgentSessionConfig,
     ) -> Result<AgentHandle, AgentError>;
 
     async fn prompt(

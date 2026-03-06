@@ -3,8 +3,9 @@ use std::path::PathBuf;
 use ship_core::{JsonSessionStore, SessionStore};
 use ship_types::{
     AgentKind, AgentSnapshot, AgentState, AutonomyMode, BlockId, ContentBlock, CurrentTask,
-    PersistedSession, ProjectName, Role, SessionConfig, SessionEvent, SessionEventEnvelope,
-    SessionId, TaskContentRecord, TaskId, TaskRecord, TaskStatus,
+    McpServerConfig, McpStdioServerConfig, PersistedSession, ProjectName, Role, SessionConfig,
+    SessionEvent, SessionEventEnvelope, SessionId, TaskContentRecord, TaskId, TaskRecord,
+    TaskStatus,
 };
 
 fn make_temp_dir(test_name: &str) -> PathBuf {
@@ -23,6 +24,12 @@ fn make_persisted_session(id: &str, description: &str) -> PersistedSession {
             captain_kind: AgentKind::Claude,
             mate_kind: AgentKind::Codex,
             autonomy_mode: AutonomyMode::HumanInTheLoop,
+            mcp_servers: vec![McpServerConfig::Stdio(McpStdioServerConfig {
+                name: "filesystem".to_owned(),
+                command: "/usr/bin/fs-mcp".to_owned(),
+                args: vec!["--root".to_owned(), "/repo".to_owned()],
+                env: Vec::new(),
+            })],
         },
         captain: AgentSnapshot {
             role: Role::Captain,
@@ -89,6 +96,7 @@ async fn json_store_round_trip() {
         .expect("session should exist");
     assert_eq!(loaded.id.0, first.id.0);
     assert_eq!(loaded.config.branch_name, first.config.branch_name);
+    assert_eq!(loaded.config.mcp_servers, first.config.mcp_servers);
     assert_eq!(
         loaded
             .current_task

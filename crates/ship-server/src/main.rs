@@ -128,9 +128,8 @@ async fn run_serve(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
     ensure_project_ship_gitignored(&project_registry)?;
 
     let sessions_dir = project_registry.config_dir().join("sessions");
-    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let state = AppState {
-        ship: ShipImpl::new(project_registry, sessions_dir, repo_root, agent_discovery),
+        ship: ShipImpl::new(project_registry, sessions_dir, agent_discovery),
         http_client: reqwest::Client::new(),
         frontend_mode,
     };

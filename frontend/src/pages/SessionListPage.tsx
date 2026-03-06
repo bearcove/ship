@@ -251,6 +251,7 @@ function NewSessionDialog({
         mate_kind: mateKind,
         base_branch: branch,
         task_description: taskDescription,
+        mcp_servers: null,
       });
       onOpenChange(false);
       navigate(`/sessions/${result.session_id}`);

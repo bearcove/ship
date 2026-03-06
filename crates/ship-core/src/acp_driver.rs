@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::path::Path;
 use std::pin::Pin;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -16,7 +15,10 @@ use tokio::sync::{mpsc, oneshot};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 use crate::acp_client::ShipAcpClient;
-use crate::{AgentDriver, AgentError, AgentHandle, PromptResponse, SessionId, StopReason};
+use crate::mcp::to_acp_mcp_server;
+use crate::{
+    AgentDriver, AgentError, AgentHandle, AgentSessionConfig, PromptResponse, SessionId, StopReason,
+};
 use crate::{SystemBinaryPathProbe, resolve_agent_launcher};
 
 struct AcpHandle {
@@ -68,14 +70,14 @@ impl AgentDriver for AcpAgentDriver {
         &self,
         kind: ship_types::AgentKind,
         role: Role,
-        worktree_path: &Path,
+        config: &AgentSessionConfig,
     ) -> Result<AgentHandle, AgentError> {
         let handle = AgentHandle::new(SessionId::new());
         let (command_tx, command_rx) = mpsc::unbounded_channel::<DriverCommand>();
         let (notifications_tx, notifications_rx) = mpsc::unbounded_channel::<SessionEvent>();
         let (ready_tx, ready_rx) = oneshot::channel::<Result<(), String>>();
 
-        let worktree_path = worktree_path.to_path_buf();
+        let config = config.clone();
         let worker_thread = std::thread::spawn(move || {
             let runtime = match tokio::runtime::Builder::new_current_thread()
                 .enable_all()
@@ -90,15 +92,8 @@ impl AgentDriver for AcpAgentDriver {
 
             let local_set = tokio::task::LocalSet::new();
             runtime.block_on(local_set.run_until(async move {
-                if let Err(error) = run_acp_worker(
-                    kind,
-                    role,
-                    worktree_path,
-                    command_rx,
-                    notifications_tx,
-                    ready_tx,
-                )
-                .await
+                if let Err(error) =
+                    run_acp_worker(kind, role, config, command_rx, notifications_tx, ready_tx).await
                 {
                     tracing::warn!(%error, "acp worker exited with error");
                 }
@@ -276,7 +271,7 @@ impl AgentDriver for AcpAgentDriver {
 async fn run_acp_worker(
     kind: ship_types::AgentKind,
     role: Role,
-    worktree_path: std::path::PathBuf,
+    config: AgentSessionConfig,
     mut command_rx: mpsc::UnboundedReceiver<DriverCommand>,
     notifications_tx: mpsc::UnboundedSender<SessionEvent>,
     ready_tx: oneshot::Sender<Result<(), String>>,
@@ -294,7 +289,7 @@ async fn run_acp_worker(
     let mut command = command_for_launcher(launcher);
 
     let mut child = command
-        .current_dir(&worktree_path)
+        .current_dir(&config.worktree_path)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::inherit())
@@ -313,7 +308,7 @@ async fn run_acp_worker(
 
     let client = Rc::new(ShipAcpClient::new(
         role,
-        worktree_path.clone(),
+        config.worktree_path.clone(),
         notifications_tx,
     ));
 
@@ -348,7 +343,7 @@ async fn run_acp_worker(
         .map_err(acp_error)?;
 
     let session_id = connection
-        .new_session(NewSessionRequest::new(worktree_path).mcp_servers(vec![]))
+        .new_session(build_new_session_request(&config))
         .await
         .map_err(acp_error)?
         .session_id;
@@ -409,6 +404,12 @@ fn command_for_launcher(launcher: crate::AgentLauncher) -> Command {
     command
 }
 
+// r[acp.mcp.passthrough]
+fn build_new_session_request(config: &AgentSessionConfig) -> NewSessionRequest {
+    NewSessionRequest::new(config.worktree_path.clone())
+        .mcp_servers(config.mcp_servers.iter().map(to_acp_mcp_server).collect())
+}
+
 fn map_prompt_response(response: agent_client_protocol::PromptResponse) -> PromptResponse {
     PromptResponse {
         stop_reason: match response.stop_reason {
@@ -431,10 +432,16 @@ fn acp_error(error: Error) -> AgentError {
 
 #[cfg(test)]
 mod tests {
-    use ship_types::AgentKind;
+    use std::path::PathBuf;
 
-    use super::command_for_launcher;
-    use crate::{AgentLauncher, BinaryPathProbe, resolve_agent_launcher};
+    use agent_client_protocol::McpServer;
+    use ship_types::{
+        AgentKind, McpEnvVar, McpHeader, McpHttpServerConfig, McpServerConfig, McpSseServerConfig,
+        McpStdioServerConfig,
+    };
+
+    use super::{build_new_session_request, command_for_launcher};
+    use crate::{AgentLauncher, AgentSessionConfig, BinaryPathProbe, resolve_agent_launcher};
 
     #[derive(Clone, Copy)]
     struct FakeProbe {
@@ -504,5 +511,67 @@ mod tests {
             command.as_std().get_args().collect::<Vec<_>>(),
             vec!["pkg", "--flag"]
         );
+    }
+
+    // r[verify acp.mcp.passthrough]
+    // r[verify acp.conn.new-session]
+    #[test]
+    fn new_session_request_includes_configured_mcp_servers() {
+        let config = AgentSessionConfig {
+            worktree_path: PathBuf::from("/repo/worktree"),
+            mcp_servers: vec![
+                McpServerConfig::Http(McpHttpServerConfig {
+                    name: "tracey".to_owned(),
+                    url: "http://127.0.0.1:9001/mcp".to_owned(),
+                    headers: vec![McpHeader {
+                        name: "Authorization".to_owned(),
+                        value: "Bearer token".to_owned(),
+                    }],
+                }),
+                McpServerConfig::Sse(McpSseServerConfig {
+                    name: "sse".to_owned(),
+                    url: "http://127.0.0.1:9002/sse".to_owned(),
+                    headers: Vec::new(),
+                }),
+                McpServerConfig::Stdio(McpStdioServerConfig {
+                    name: "filesystem".to_owned(),
+                    command: "/usr/bin/fs-mcp".to_owned(),
+                    args: vec!["--root".to_owned(), "/repo".to_owned()],
+                    env: vec![McpEnvVar {
+                        name: "HOME".to_owned(),
+                        value: "/tmp/home".to_owned(),
+                    }],
+                }),
+            ],
+        };
+
+        let request = build_new_session_request(&config);
+
+        assert_eq!(request.cwd, PathBuf::from("/repo/worktree"));
+        assert_eq!(request.mcp_servers.len(), 3);
+        assert!(matches!(
+            &request.mcp_servers[0],
+            McpServer::Http(server)
+                if server.name == "tracey"
+                    && server.url == "http://127.0.0.1:9001/mcp"
+                    && server.headers.len() == 1
+                    && server.headers[0].name == "Authorization"
+                    && server.headers[0].value == "Bearer token"
+        ));
+        assert!(matches!(
+            &request.mcp_servers[1],
+            McpServer::Sse(server)
+                if server.name == "sse" && server.url == "http://127.0.0.1:9002/sse"
+        ));
+        assert!(matches!(
+            &request.mcp_servers[2],
+            McpServer::Stdio(server)
+                if server.name == "filesystem"
+                    && server.command == PathBuf::from("/usr/bin/fs-mcp")
+                    && server.args == vec!["--root".to_owned(), "/repo".to_owned()]
+                    && server.env.len() == 1
+                    && server.env[0].name == "HOME"
+                    && server.env[0].value == "/tmp/home"
+        ));
     }
 }

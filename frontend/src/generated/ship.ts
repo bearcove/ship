@@ -100,12 +100,47 @@ export interface SessionDetail {
   pending_steer: string | null;
 }
 
+export interface McpHeader {
+  name: string;
+  value: string;
+}
+
+export interface McpHttpServerConfig {
+  name: string;
+  url: string;
+  headers: McpHeader[];
+}
+
+export interface McpSseServerConfig {
+  name: string;
+  url: string;
+  headers: McpHeader[];
+}
+
+export interface McpEnvVar {
+  name: string;
+  value: string;
+}
+
+export interface McpStdioServerConfig {
+  name: string;
+  command: string;
+  args: string[];
+  env: McpEnvVar[];
+}
+
+export type McpServerConfig =
+  | { tag: "Http"; value: McpHttpServerConfig }
+  | { tag: "Sse"; value: McpSseServerConfig }
+  | { tag: "Stdio"; value: McpStdioServerConfig };
+
 export interface CreateSessionRequest {
   project: string;
   captain_kind: AgentKind;
   mate_kind: AgentKind;
   base_branch: string;
   task_description: string;
+  mcp_servers: McpServerConfig[] | null;
 }
 
 export interface CreateSessionResponse {
@@ -538,7 +573,7 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0x490e8a15a18ccb11n) {
+    } else if (method.id === 0x3ba75452759f1e83n) {
       try {
         const result = await this.handler.createSession(args[0] as CreateSessionRequest);
         call.reply(result);
@@ -1159,7 +1194,7 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: "createSession",
-      id: 0x490e8a15a18ccb11n,
+      id: 0x3ba75452759f1e83n,
       args: {
         kind: "tuple",
         elements: [
@@ -1183,6 +1218,69 @@ export const ship_descriptor: ServiceDescriptor = {
               },
               base_branch: { kind: "string" },
               task_description: { kind: "string" },
+              mcp_servers: {
+                kind: "option",
+                inner: {
+                  kind: "vec",
+                  element: {
+                    kind: "enum",
+                    variants: [
+                      {
+                        name: "Http",
+                        fields: {
+                          kind: "struct",
+                          fields: {
+                            name: { kind: "string" },
+                            url: { kind: "string" },
+                            headers: {
+                              kind: "vec",
+                              element: {
+                                kind: "struct",
+                                fields: { name: { kind: "string" }, value: { kind: "string" } },
+                              },
+                            },
+                          },
+                        },
+                      },
+                      {
+                        name: "Sse",
+                        fields: {
+                          kind: "struct",
+                          fields: {
+                            name: { kind: "string" },
+                            url: { kind: "string" },
+                            headers: {
+                              kind: "vec",
+                              element: {
+                                kind: "struct",
+                                fields: { name: { kind: "string" }, value: { kind: "string" } },
+                              },
+                            },
+                          },
+                        },
+                      },
+                      {
+                        name: "Stdio",
+                        fields: {
+                          kind: "struct",
+                          fields: {
+                            name: { kind: "string" },
+                            command: { kind: "string" },
+                            args: { kind: "vec", element: { kind: "string" } },
+                            env: {
+                              kind: "vec",
+                              element: {
+                                kind: "struct",
+                                fields: { name: { kind: "string" }, value: { kind: "string" } },
+                              },
+                            },
+                          },
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
             },
           },
         ],

@@ -11,6 +11,7 @@ use ship_types::{
 };
 use tokio::sync::broadcast;
 
+use crate::AgentSessionConfig;
 use crate::{AgentDriver, SessionStore, StopReason, WorktreeOps};
 
 #[derive(Debug)]
@@ -120,16 +121,21 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             .map_err(|error| SessionManagerError::Worktree(error.message))?;
 
         let branch_name = format!("ship/{}/{slug}", short_id(&session_id));
+        let mcp_servers = req.mcp_servers.clone().unwrap_or_default();
+        let agent_session_config = AgentSessionConfig {
+            worktree_path: worktree_path.clone(),
+            mcp_servers: mcp_servers.clone(),
+        };
 
         let captain_handle = self
             .agent_driver
-            .spawn(req.captain_kind, Role::Captain, &worktree_path)
+            .spawn(req.captain_kind, Role::Captain, &agent_session_config)
             .await
             .map_err(|error| SessionManagerError::Agent(error.message))?;
 
         let mate_handle = self
             .agent_driver
-            .spawn(req.mate_kind, Role::Mate, &worktree_path)
+            .spawn(req.mate_kind, Role::Mate, &agent_session_config)
             .await
             .map_err(|error| SessionManagerError::Agent(error.message))?;
 
@@ -144,6 +150,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                 captain_kind: req.captain_kind,
                 mate_kind: req.mate_kind,
                 autonomy_mode: AutonomyMode::HumanInTheLoop,
+                mcp_servers,
             },
             worktree_path,
             captain_handle,

@@ -8,15 +8,15 @@ use futures_util::stream;
 use ship_types::{AgentKind, PersistedSession, Role, SessionEvent, SessionId};
 
 use crate::{
-    AgentDriver, AgentError, AgentHandle, PromptResponse, SessionStore, StopReason, StoreError,
-    WorktreeError, WorktreeOps,
+    AgentDriver, AgentError, AgentHandle, AgentSessionConfig, PromptResponse, SessionStore,
+    StopReason, StoreError, WorktreeError, WorktreeOps,
 };
 
 #[derive(Debug, Clone)]
 pub struct SpawnRecord {
     pub kind: AgentKind,
     pub role: Role,
-    pub worktree_path: PathBuf,
+    pub session_config: AgentSessionConfig,
     pub handle: AgentHandle,
 }
 
@@ -108,7 +108,7 @@ impl AgentDriver for FakeAgentDriver {
         &self,
         kind: AgentKind,
         role: Role,
-        worktree_path: &Path,
+        config: &AgentSessionConfig,
     ) -> Result<AgentHandle, AgentError> {
         let handle = AgentHandle::new(SessionId::new());
 
@@ -119,7 +119,7 @@ impl AgentDriver for FakeAgentDriver {
             .push(SpawnRecord {
                 kind,
                 role,
-                worktree_path: worktree_path.to_path_buf(),
+                session_config: config.clone(),
                 handle: handle.clone(),
             });
 

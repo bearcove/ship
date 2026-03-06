@@ -6,7 +6,8 @@ use ship_core::{
 };
 use ship_types::{
     AgentKind, AgentState, AutonomyMode, BlockId, CloseSessionResponse, ContentBlock,
-    CreateSessionRequest, ProjectName, Role, SessionEvent, SessionEventEnvelope, TaskStatus,
+    CreateSessionRequest, McpServerConfig, McpStdioServerConfig, ProjectName, Role, SessionEvent,
+    SessionEventEnvelope, TaskStatus,
 };
 use tokio::time::timeout;
 
@@ -17,6 +18,7 @@ fn make_request(task_description: &str) -> CreateSessionRequest {
         mate_kind: AgentKind::Codex,
         base_branch: "main".to_owned(),
         task_description: task_description.to_owned(),
+        mcp_servers: None,
     }
 }
 
@@ -80,6 +82,11 @@ async fn test_create_session() {
     assert_eq!(spawns.len(), 2);
     assert!(spawns.iter().any(|spawn| spawn.role == Role::Captain));
     assert!(spawns.iter().any(|spawn| spawn.role == Role::Mate));
+    assert!(
+        spawns
+            .iter()
+            .all(|spawn| spawn.session_config.mcp_servers.is_empty())
+    );
 
     assert_eq!(worktree.created_paths().len(), 1);
 
@@ -92,6 +99,41 @@ async fn test_create_session() {
     let current = persisted.current_task.expect("current task should exist");
     assert_eq!(current.record.id, task_id);
     assert_eq!(current.record.status, TaskStatus::ReviewPending);
+    assert!(persisted.config.mcp_servers.is_empty());
+}
+
+// r[verify acp.mcp.config]
+#[tokio::test]
+async fn test_create_session_persists_session_mcp_override() {
+    let (mut manager, agent, _worktree, store) = make_manager();
+    let mut request = make_request("Implement MCP override");
+    request.mcp_servers = Some(vec![McpServerConfig::Stdio(McpStdioServerConfig {
+        name: "tracey".to_owned(),
+        command: "/usr/bin/tracey-mcp".to_owned(),
+        args: vec!["serve".to_owned()],
+        env: Vec::new(),
+    })]);
+
+    agent.push_response(StopReason::EndTurn);
+    agent.push_response(StopReason::EndTurn);
+    agent.push_response(StopReason::EndTurn);
+
+    let (session_id, _) = manager
+        .create_session(request, Path::new("/repo"))
+        .await
+        .expect("create session should succeed");
+
+    let spawns = agent.spawn_records();
+    assert_eq!(spawns.len(), 2);
+    assert_eq!(spawns[0].session_config.mcp_servers.len(), 1);
+    assert_eq!(spawns[1].session_config.mcp_servers.len(), 1);
+
+    let persisted = store
+        .load_session(&session_id)
+        .await
+        .expect("store load should work")
+        .expect("session should be persisted");
+    assert_eq!(persisted.config.mcp_servers.len(), 1);
 }
 
 // r[verify task.progress]

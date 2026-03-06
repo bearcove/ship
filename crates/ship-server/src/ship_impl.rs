@@ -5,17 +5,18 @@ use std::sync::{Arc, Mutex};
 use futures_util::StreamExt;
 use roam::Tx;
 use ship_core::{
-    AcpAgentDriver, ActiveSession, AgentDriver, GitWorktreeOps, JsonSessionStore, ProjectRegistry,
-    SessionStore, WorktreeOps, apply_event, archive_terminal_task, current_task_status,
-    rebuild_materialized_from_event_log, set_agent_state, transition_task,
+    AcpAgentDriver, ActiveSession, AgentDriver, AgentSessionConfig, GitWorktreeOps,
+    JsonSessionStore, ProjectRegistry, SessionStore, WorktreeOps, apply_event,
+    archive_terminal_task, current_task_status, rebuild_materialized_from_event_log,
+    resolve_mcp_servers, set_agent_state, transition_task,
 };
 use ship_service::Ship;
 use ship_types::{
     AgentDiscovery, AgentKind, AgentSnapshot, AgentState, AutonomyMode, BlockId,
     CloseSessionRequest, CloseSessionResponse, ContentBlock, CreateSessionRequest,
-    CreateSessionResponse, CurrentTask, PersistedSession, ProjectInfo, ProjectName, Role,
-    SessionConfig, SessionDetail, SessionEvent, SessionId, SessionSummary, SubscribeMessage,
-    TaskId, TaskRecord, TaskStatus,
+    CreateSessionResponse, CurrentTask, McpServerConfig, PersistedSession, ProjectInfo,
+    ProjectName, Role, SessionConfig, SessionDetail, SessionEvent, SessionId, SessionSummary,
+    SubscribeMessage, TaskId, TaskRecord, TaskStatus,
 };
 use tokio::sync::broadcast;
 
@@ -28,14 +29,12 @@ pub struct ShipImpl {
     worktree_ops: Arc<GitWorktreeOps>,
     store: Arc<JsonSessionStore>,
     sessions: Arc<Mutex<HashMap<SessionId, ActiveSession>>>,
-    repo_root: Arc<std::path::PathBuf>,
 }
 
 impl ShipImpl {
     pub fn new(
         registry: ProjectRegistry,
         sessions_dir: std::path::PathBuf,
-        repo_root: std::path::PathBuf,
         agent_discovery: AgentDiscovery,
     ) -> Self {
         Self {
@@ -45,7 +44,6 @@ impl ShipImpl {
             worktree_ops: Arc::new(GitWorktreeOps),
             store: Arc::new(JsonSessionStore::new(sessions_dir)),
             sessions: Arc::new(Mutex::new(HashMap::new())),
-            repo_root: Arc::new(repo_root),
         }
     }
 
@@ -109,6 +107,30 @@ impl ShipImpl {
 
     fn log_error(action: &str, error: &str) {
         tracing::warn!(%action, %error, "ship_impl call failed");
+    }
+
+    // r[acp.mcp.config]
+    // r[acp.mcp.defaults]
+    // r[project.mcp-defaults]
+    async fn resolve_session_mcp_servers(
+        &self,
+        project: &ProjectName,
+        session_override: Option<Vec<McpServerConfig>>,
+    ) -> Result<(std::path::PathBuf, Vec<McpServerConfig>), String> {
+        let (config_dir, project_root) = {
+            let registry = self.registry.lock().await;
+            let config_dir = registry.config_dir().to_path_buf();
+            let project = registry
+                .get(&project.0)
+                .ok_or_else(|| format!("project not found: {}", project.0))?;
+            (config_dir, std::path::PathBuf::from(project.path))
+        };
+
+        let mcp_servers = resolve_mcp_servers(&config_dir, &project_root, session_override)
+            .await
+            .map_err(|error| error.message)?;
+
+        Ok((project_root, mcp_servers))
     }
 
     fn repo_root_for_worktree(worktree_path: &std::path::Path) -> Result<&std::path::Path, String> {
@@ -537,16 +559,25 @@ impl Ship for ShipImpl {
     }
 
     async fn create_session(&self, req: CreateSessionRequest) -> CreateSessionResponse {
+        let (repo_root, mcp_servers) = match self
+            .resolve_session_mcp_servers(&req.project, req.mcp_servers.clone())
+            .await
+        {
+            Ok(resolved) => resolved,
+            Err(error) => {
+                Self::log_error("resolve_session_mcp_servers", &error);
+                return CreateSessionResponse {
+                    session_id: SessionId::new(),
+                    task_id: TaskId::new(),
+                };
+            }
+        };
+
         let session_id = SessionId::new();
         let slug = slugify(&req.task_description);
         let worktree_path = match self
             .worktree_ops
-            .create_worktree(
-                &session_id,
-                &req.base_branch,
-                &slug,
-                self.repo_root.as_ref(),
-            )
+            .create_worktree(&session_id, &req.base_branch, &slug, &repo_root)
             .await
         {
             Ok(path) => path,
@@ -560,10 +591,14 @@ impl Ship for ShipImpl {
         };
 
         let branch_name = format!("ship/{}/{slug}", short_id(&session_id));
+        let agent_session_config = AgentSessionConfig {
+            worktree_path: worktree_path.clone(),
+            mcp_servers: mcp_servers.clone(),
+        };
 
         let captain_handle = match self
             .agent_driver
-            .spawn(req.captain_kind, Role::Captain, &worktree_path)
+            .spawn(req.captain_kind, Role::Captain, &agent_session_config)
             .await
         {
             Ok(handle) => handle,
@@ -578,7 +613,7 @@ impl Ship for ShipImpl {
 
         let mate_handle = match self
             .agent_driver
-            .spawn(req.mate_kind, Role::Mate, &worktree_path)
+            .spawn(req.mate_kind, Role::Mate, &agent_session_config)
             .await
         {
             Ok(handle) => handle,
@@ -602,6 +637,7 @@ impl Ship for ShipImpl {
                 captain_kind: req.captain_kind,
                 mate_kind: req.mate_kind,
                 autonomy_mode: AutonomyMode::HumanInTheLoop,
+                mcp_servers,
             },
             worktree_path,
             captain_handle,
@@ -985,7 +1021,7 @@ mod tests {
 
     use ship_core::ProjectRegistry;
     use ship_service::Ship;
-    use ship_types::AgentDiscovery;
+    use ship_types::{AgentDiscovery, McpServerConfig, McpStdioServerConfig, ProjectName};
 
     use super::ShipImpl;
 
@@ -1010,14 +1046,65 @@ mod tests {
             claude: true,
             codex: false,
         };
+        let ship = ShipImpl::new(registry, dir.join("sessions"), expected.clone());
+
+        assert_eq!(Ship::agent_discovery(&ship).await, expected);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    // r[verify acp.mcp.defaults]
+    // r[verify project.mcp-defaults]
+    #[tokio::test]
+    async fn resolve_session_mcp_servers_prefers_project_defaults() {
+        let dir = make_temp_dir("mcp-defaults");
+        let config_dir = dir.join("config");
+        let project_root = dir.join("project");
+        std::fs::create_dir_all(&config_dir).expect("config dir should exist");
+        std::fs::create_dir_all(project_root.join(".ship")).expect("project ship dir should exist");
+        std::fs::write(
+            config_dir.join("mcp-servers.json"),
+            r#"[{"name":"global","command":"/usr/bin/global-mcp","args":[],"env":[]}]"#,
+        )
+        .expect("global mcp defaults should be written");
+        std::fs::write(
+            project_root.join(".ship/mcp-servers.json"),
+            r#"[{"name":"project","command":"/usr/bin/project-mcp","args":[],"env":[]}]"#,
+        )
+        .expect("project mcp defaults should be written");
+
+        let mut registry = ProjectRegistry::load_in(config_dir.clone())
+            .await
+            .expect("project registry should load");
+        registry
+            .add(&project_root)
+            .await
+            .expect("project should be added");
+
         let ship = ShipImpl::new(
             registry,
             dir.join("sessions"),
-            dir.join("repo"),
-            expected.clone(),
+            AgentDiscovery {
+                claude: true,
+                codex: true,
+            },
         );
 
-        assert_eq!(Ship::agent_discovery(&ship).await, expected);
+        let (resolved_root, mcp_servers) = ship
+            .resolve_session_mcp_servers(&ProjectName("project".to_owned()), None)
+            .await
+            .expect("mcp defaults should resolve");
+
+        assert_eq!(resolved_root, project_root);
+        assert_eq!(
+            mcp_servers,
+            vec![McpServerConfig::Stdio(McpStdioServerConfig {
+                name: "project".to_owned(),
+                command: "/usr/bin/project-mcp".to_owned(),
+                args: Vec::new(),
+                env: Vec::new(),
+            })]
+        );
 
         let _ = std::fs::remove_dir_all(dir);
     }

@@ -289,6 +289,49 @@ pub mod protocol {
     use crate::ids::{ProjectName, SessionId};
     use crate::task::{TaskRecord, TaskStatus};
 
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct McpHeader {
+        pub name: String,
+        pub value: String,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct McpEnvVar {
+        pub name: String,
+        pub value: String,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct McpHttpServerConfig {
+        pub name: String,
+        pub url: String,
+        pub headers: Vec<McpHeader>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct McpSseServerConfig {
+        pub name: String,
+        pub url: String,
+        pub headers: Vec<McpHeader>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct McpStdioServerConfig {
+        pub name: String,
+        pub command: String,
+        pub args: Vec<String>,
+        pub env: Vec<McpEnvVar>,
+    }
+
+    // r[acp.mcp.config]
+    #[repr(u8)]
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub enum McpServerConfig {
+        Http(McpHttpServerConfig),
+        Sse(McpSseServerConfig),
+        Stdio(McpStdioServerConfig),
+    }
+
     // r[autonomy.toggle]
     #[repr(u8)]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, facet::Facet)]
@@ -305,6 +348,7 @@ pub mod protocol {
         pub mate_kind: AgentKind,
         pub base_branch: String,
         pub task_description: String,
+        pub mcp_servers: Option<Vec<McpServerConfig>>,
     }
 
     // r[proto.create-session]
@@ -379,7 +423,7 @@ pub mod persistence {
     use crate::agent::{AgentKind, AgentSnapshot, Role};
     use crate::events::{ContentBlock, SessionEventEnvelope};
     use crate::ids::{BlockId, ProjectName, SessionId};
-    use crate::protocol::AutonomyMode;
+    use crate::protocol::{AutonomyMode, McpServerConfig};
     use crate::task::TaskRecord;
 
     #[derive(Debug, Clone, facet::Facet)]
@@ -390,6 +434,7 @@ pub mod persistence {
         pub captain_kind: AgentKind,
         pub mate_kind: AgentKind,
         pub autonomy_mode: AutonomyMode,
+        pub mcp_servers: Vec<McpServerConfig>,
     }
 
     // r[mate.output.persisted]
@@ -431,6 +476,7 @@ pub use ids::{BlockId, ProjectName, SessionId, TaskId};
 pub use persistence::{CurrentTask, PersistedSession, SessionConfig, TaskContentRecord};
 pub use protocol::{
     AgentDiscovery, AutonomyMode, CloseSessionRequest, CloseSessionResponse, CreateSessionRequest,
-    CreateSessionResponse, ProjectInfo, SessionDetail, SessionSummary,
+    CreateSessionResponse, McpEnvVar, McpHeader, McpHttpServerConfig, McpServerConfig,
+    McpSseServerConfig, McpStdioServerConfig, ProjectInfo, SessionDetail, SessionSummary,
 };
 pub use task::{TaskRecord, TaskStatus};
