@@ -10,6 +10,7 @@ function TestTheme({ children }: { children: ReactNode }) {
   );
 }
 
+// r[frontend.test.rtl]
 export function renderWithTheme(ui: ReactElement) {
   return render(ui, { wrapper: TestTheme });
 }
