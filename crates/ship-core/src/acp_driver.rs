@@ -432,7 +432,7 @@ fn acp_error(error: Error) -> AgentError {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     use agent_client_protocol::McpServer;
     use ship_types::{
@@ -567,7 +567,7 @@ mod tests {
             &request.mcp_servers[2],
             McpServer::Stdio(server)
                 if server.name == "filesystem"
-                    && server.command == PathBuf::from("/usr/bin/fs-mcp")
+                    && server.command == Path::new("/usr/bin/fs-mcp")
                     && server.args == vec!["--root".to_owned(), "/repo".to_owned()]
                     && server.env.len() == 1
                     && server.env[0].name == "HOME"
