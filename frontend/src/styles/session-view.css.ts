@@ -151,10 +151,6 @@ export const agentHeaderRow = style({
   gap: "var(--space-2)",
 });
 
-export const agentHeaderMeta = style({
-  marginLeft: "auto",
-});
-
 export const stickyPlan = style({
   position: "sticky",
   top: 0,
@@ -191,6 +187,13 @@ export const feedMessageCard = style({
 
 export const feedMessageCardAgent = style({
   marginRight: "auto",
+});
+
+export const feedMessageCardThought = style({
+  marginRight: "auto",
+  background: "var(--gray-a1)",
+  borderStyle: "dashed",
+  color: "var(--gray-11)",
 });
 
 export const feedMessageCardUser = style({

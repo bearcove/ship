@@ -13,7 +13,7 @@ describe("TextBlock", () => {
         block={{
           tag: "Text",
           text: "Paragraph with `shipctl`.\n\n```ts\nconst answer = 42;\n```",
-          source: { tag: "Agent" },
+          source: { tag: "AgentMessage" },
         }}
       />,
     );
@@ -34,7 +34,7 @@ describe("TextBlock", () => {
         block={{
           tag: "Text",
           text: "```\nplain block\n```",
-          source: { tag: "Agent" },
+          source: { tag: "AgentMessage" },
         }}
       />,
     );

@@ -571,7 +571,7 @@ impl ShipImpl {
                         role: Role::Captain,
                         block: ContentBlock::Text {
                             text: content.clone(),
-                            source: ship_types::TextSource::Agent,
+                            source: ship_types::TextSource::AgentMessage,
                         },
                     },
                 );
@@ -680,7 +680,7 @@ impl ShipImpl {
                         role: Role::Captain,
                         block: ContentBlock::Text {
                             text: summary,
-                            source: ship_types::TextSource::Agent,
+                            source: ship_types::TextSource::AgentMessage,
                         },
                     },
                 );

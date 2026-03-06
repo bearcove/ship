@@ -123,7 +123,7 @@ describe("sessionReducer event handling", () => {
           tag: "BlockAppend",
           block_id: "b1",
           role: { tag: "Captain" },
-          block: { tag: "Text", text: "hello", source: { tag: "Agent" } },
+          block: { tag: "Text", text: "hello", source: { tag: "AgentMessage" } },
         },
       },
     });

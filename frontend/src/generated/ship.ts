@@ -251,7 +251,7 @@ export type CloseSessionResponse =
 
 export type BlockId = string;
 
-export type TextSource = { tag: "Agent" } | { tag: "Human" };
+export type TextSource = { tag: "Human" } | { tag: "AgentMessage" } | { tag: "AgentThought" };
 
 export interface ToolCallLocation {
   path: string;
@@ -835,7 +835,7 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0xc7ad0f993ab7d94bn) {
+    } else if (method.id === 0x6d4e6db0592d059fn) {
       try {
         const result = await this.handler.subscribeEvents(
           args[0] as SessionId,
@@ -1312,8 +1312,9 @@ const ship_schema_registry: SchemaRegistry = new Map<string, Schema>([
     {
       kind: "enum",
       variants: [
-        { name: "Agent", fields: null },
         { name: "Human", fields: null },
+        { name: "AgentMessage", fields: null },
+        { name: "AgentThought", fields: null },
       ],
     },
   ],
@@ -1915,7 +1916,7 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: "subscribeEvents",
-      id: 0xc7ad0f993ab7d94bn,
+      id: 0x6d4e6db0592d059fn,
       args: {
         kind: "tuple",
         elements: [

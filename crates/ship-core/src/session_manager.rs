@@ -474,7 +474,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                     role: Role::Captain,
                     block: ContentBlock::Text {
                         text: message.clone(),
-                        source: ship_types::TextSource::Agent,
+                        source: ship_types::TextSource::AgentMessage,
                     },
                 },
             );

@@ -79,7 +79,7 @@ fn make_persisted_session(id: &str, description: &str) -> PersistedSession {
                 role: Role::Mate,
                 block: ContentBlock::Text {
                     text: "Started implementation".to_owned(),
-                    source: ship_types::TextSource::Agent,
+                    source: ship_types::TextSource::AgentMessage,
                 },
             }],
             event_log: vec![SessionEventEnvelope {

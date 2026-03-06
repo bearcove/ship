@@ -312,8 +312,9 @@ pub mod events {
     #[repr(u8)]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, facet::Facet)]
     pub enum TextSource {
-        Agent,
         Human,
+        AgentMessage,
+        AgentThought,
     }
 
     #[repr(u8)]

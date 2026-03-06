@@ -1,39 +1,11 @@
-import { Badge, Box, Button, Callout, Flex, Progress, Text } from "@radix-ui/themes";
+import { Box, Button, Callout, Flex, Progress, Text } from "@radix-ui/themes";
 import { ArrowsClockwise, Warning } from "@phosphor-icons/react";
 import type { AgentSnapshot } from "../generated/ship";
 import { AgentKindIcon } from "./AgentKindIcon";
-import { agentHeader, agentHeaderMeta, agentHeaderRow } from "../styles/session-view.css";
+import { agentHeader, agentHeaderRow } from "../styles/session-view.css";
 
 interface Props {
   agent: AgentSnapshot;
-}
-
-// r[ui.agent-header.state-indicator]
-function AgentStateBadge({ agent }: { agent: AgentSnapshot }) {
-  switch (agent.state.tag) {
-    case "AwaitingPermission":
-      return (
-        <Badge color="amber" size="1">
-          Awaiting Permission
-        </Badge>
-      );
-    case "ContextExhausted":
-      return (
-        <Badge color="red" size="1">
-          Context Exhausted
-        </Badge>
-      );
-    case "Error":
-      return (
-        <Badge color="red" size="1">
-          <Warning size={10} />
-          Error
-        </Badge>
-      );
-    case "Working":
-    case "Idle":
-      return null;
-  }
 }
 
 // r[ui.agent-header.layout]
@@ -45,22 +17,16 @@ export function AgentHeader({ agent }: Props) {
   return (
     <Box className={agentHeader}>
       <Flex className={agentHeaderRow}>
+        <AgentKindIcon kind={agent.kind} />
         <Text size="2" weight="medium">
           {agent.role.tag}
         </Text>
-        <AgentKindIcon kind={agent.kind} />
         {/* r[ui.agent-header.context-bar] */}
         {contextPct !== null && agent.state.tag !== "ContextExhausted" && (
-          <Progress
-            value={contextPct}
-            color={contextLow ? "red" : "blue"}
-            size="1"
-            style={{ width: 56, flexShrink: 0, marginLeft: "auto" }}
-          />
+          <Box style={{ width: 56, flexShrink: 0, marginLeft: "auto" }}>
+            <Progress value={contextPct} color={contextLow ? "red" : "blue"} size="1" />
+          </Box>
         )}
-        <Box className={agentHeaderMeta}>
-          <AgentStateBadge agent={agent} />
-        </Box>
       </Flex>
 
       {/* r[context.warning] */}

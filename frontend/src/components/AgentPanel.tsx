@@ -20,6 +20,7 @@ import {
   eventStream,
   feedMessageCard,
   feedMessageCardAgent,
+  feedMessageCardThought,
   feedMessageCardUser,
   feedMessageMeta,
   feedMessageRow,
@@ -115,10 +116,17 @@ export function AgentPanel({
     switch (block.tag) {
       case "Text": {
         const cardClassName =
-          block.source.tag === "Human" ? feedMessageCardUser : feedMessageCardAgent;
+          block.source.tag === "Human"
+            ? feedMessageCardUser
+            : block.source.tag === "AgentThought"
+              ? feedMessageCardThought
+              : feedMessageCardAgent;
         return (
           <Box className={feedMessageRow}>
             <Box className={`${feedMessageCard} ${cardClassName}`}>
+              {block.source.tag === "AgentThought" && (
+                <Text className={feedMessageMeta}>Thinking</Text>
+              )}
               <TextBlock block={block as TextBlockType} />
             </Box>
           </Box>

@@ -19,7 +19,7 @@ use ship_types::{
     AgentState, BlockId, BlockPatch, ContentBlock as ShipContentBlock, JsonEntry,
     JsonValue as ShipJsonValue, PermissionOption, PermissionOptionKind as ShipPermissionOptionKind,
     PermissionRequest, PlanStep, PlanStepPriority, PlanStepStatus, Role, SessionEvent,
-    TerminalExit as ShipTerminalExit, TerminalSnapshot as ShipTerminalSnapshot,
+    TerminalExit as ShipTerminalExit, TerminalSnapshot as ShipTerminalSnapshot, TextSource,
     ToolCallContent as ShipToolCallContent, ToolCallError as ShipToolCallError,
     ToolCallKind as ShipToolCallKind, ToolCallLocation as ShipToolCallLocation,
     ToolCallStatus as ShipToolCallStatus, ToolTarget as ShipToolTarget,
@@ -32,7 +32,7 @@ pub struct ShipAcpClient {
     role: Role,
     worktree_path: PathBuf,
     notifications_tx: mpsc::UnboundedSender<SessionEvent>,
-    active_text_block: Rc<RefCell<Option<BlockId>>>,
+    active_text_block: Rc<RefCell<Option<(BlockId, TextSource)>>>,
     tool_call_blocks: Rc<RefCell<HashMap<String, BlockId>>>,
     tool_calls: Rc<RefCell<HashMap<String, agent_client_protocol::ToolCall>>>,
     pending_permissions: Rc<RefCell<HashMap<String, oneshot::Sender<String>>>>,
@@ -85,6 +85,28 @@ impl ShipAcpClient {
 
     fn reset_text_block(&self) {
         *self.active_text_block.borrow_mut() = None;
+    }
+
+    fn append_text_chunk(&self, text: String, source: TextSource) -> Vec<SessionEvent> {
+        let existing_block = self.active_text_block.borrow().clone();
+        match existing_block {
+            Some((block_id, existing_source)) if existing_source == source => {
+                vec![SessionEvent::BlockPatch {
+                    block_id,
+                    role: self.role,
+                    patch: BlockPatch::TextAppend { text },
+                }]
+            }
+            _ => {
+                let block_id = BlockId::new();
+                *self.active_text_block.borrow_mut() = Some((block_id.clone(), source));
+                vec![SessionEvent::BlockAppend {
+                    block_id,
+                    role: self.role,
+                    block: ShipContentBlock::Text { text, source },
+                }]
+            }
+        }
     }
 
     // r[acp.content-blocks]
@@ -192,33 +214,17 @@ impl ShipAcpClient {
 
     fn map_session_update(&self, update: SessionUpdate) -> Vec<SessionEvent> {
         match update {
-            SessionUpdate::UserMessageChunk(chunk)
-            | SessionUpdate::AgentMessageChunk(chunk)
-            | SessionUpdate::AgentThoughtChunk(chunk) => {
-                let text = format_content_block(chunk.content);
-                let existing_block = self.active_text_block.borrow().clone();
-                match existing_block {
-                    Some(block_id) => vec![SessionEvent::BlockPatch {
-                        // r[event.block-id.text]
-                        block_id,
-                        role: self.role,
-                        patch: BlockPatch::TextAppend { text },
-                    }],
-                    None => {
-                        let block_id = BlockId::new();
-                        *self.active_text_block.borrow_mut() = Some(block_id.clone());
-                        vec![SessionEvent::BlockAppend {
-                            // r[event.block-id.text]
-                            block_id,
-                            role: self.role,
-                            block: ShipContentBlock::Text {
-                                text,
-                                source: ship_types::TextSource::Agent,
-                            },
-                        }]
-                    }
-                }
+            SessionUpdate::UserMessageChunk(chunk) => {
+                self.append_text_chunk(format_content_block(chunk.content), TextSource::Human)
             }
+            SessionUpdate::AgentMessageChunk(chunk) => self.append_text_chunk(
+                format_content_block(chunk.content),
+                TextSource::AgentMessage,
+            ),
+            SessionUpdate::AgentThoughtChunk(chunk) => self.append_text_chunk(
+                format_content_block(chunk.content),
+                TextSource::AgentThought,
+            ),
             SessionUpdate::ToolCall(tool_call) => {
                 self.reset_text_block();
                 self.upsert_tool_call(tool_call)
