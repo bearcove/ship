@@ -25,11 +25,11 @@ importers:
   frontend:
     dependencies:
       '@bearcove/roam-core':
-        specifier: 7.1.0
-        version: 7.1.0
+        specifier: 7.2.0
+        version: 7.2.0
       '@bearcove/roam-ws':
-        specifier: 7.1.0
-        version: 7.1.0
+        specifier: 7.2.0
+        version: 7.2.0
       '@phosphor-icons/react':
         specifier: ^2.1.10
         version: 2.1.10(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -197,20 +197,20 @@ packages:
     resolution: {integrity: sha512-LwdZHpScM4Qz8Xw2iKSzS+cfglZzJGvofQICy7W7v4caru4EaAmyUuO6BGrbyQ2mYV11W0U8j5mBhd14dd3B0A==}
     engines: {node: '>=6.9.0'}
 
-  '@bearcove/roam-core@7.1.0':
-    resolution: {integrity: sha512-h1tg38BUe7mlzVSOJvWl5h6xp/Hs2yi5LexWmOM+itrBUp/nq/vy/Wd5k2yzUxIICkpr9d3KWigySJPi0U1mSQ==}
+  '@bearcove/roam-core@7.2.0':
+    resolution: {integrity: sha512-Kxe/rXuIzmpkRrvx09P2F0JBh1r2wMnPOo8JbDI1rtnz2DVzrJdmpxZ/tkjt/Ey19OMJLwwgXNeyqsBS5+bHeQ==}
 
-  '@bearcove/roam-postcard@7.1.0':
-    resolution: {integrity: sha512-9L40h1oP6X1uGlQwY6w+l0Ks5J4aRNC8509uXHJneBz6EQSw6jvOP3zze9xV6RN4stWAp1zowsIJk1OKLsNZ9A==}
+  '@bearcove/roam-postcard@7.2.0':
+    resolution: {integrity: sha512-Lu7WCjLFCFbLJn+3D2kGOI5zXylnUH8nwFudjvg76sI90wdDO2R2Gdad/eG8aNOkrku2tE1NdUUu/YYIemaHMw==}
 
-  '@bearcove/roam-tcp@7.1.0':
-    resolution: {integrity: sha512-ewTiiHKJvQm/NxCXF9fh8dGmDyWjECI8bGvICk7TJswWDp2lte5rY2/J5aaRKaZQlb4mtagDIcY8MRJQUBq6Nw==}
+  '@bearcove/roam-tcp@7.2.0':
+    resolution: {integrity: sha512-vA91pxI3lXQPxAA5UXPPOWj54awaWuM1lPUz3wUX5HTGmvWmfdTDlsCMe+YMmLSRIcQbYF8zkD0itgSFpUHaTg==}
 
-  '@bearcove/roam-wire@7.1.0':
-    resolution: {integrity: sha512-Src9eOylW64fbjNsmciLHtZ8BSV8u1BIerGuHTlcJ1SBb7jG2OxbXQaHX6uLbiG4wcvVrnQZf9NKAdsbS93k2A==}
+  '@bearcove/roam-wire@7.2.0':
+    resolution: {integrity: sha512-ccA6BodWzlvmy+6WsgMioacJBcbqLv39SfXmItpZUR0pHB6t1sKf89n8iuEXknv5aSh3EGFAxwUMrwhG/NJ1Dw==}
 
-  '@bearcove/roam-ws@7.1.0':
-    resolution: {integrity: sha512-OjCQ9BsjRMCmQj1RBrnDUt4H9xK4EBQnQ0DGDxMnzfZR7ZsiXGFeHOwBIzsbpSmSsqchsdheRO/4QrfF09UzuA==}
+  '@bearcove/roam-ws@7.2.0':
+    resolution: {integrity: sha512-zTdWJX0HGk+5C/Y/0cRyt8O/bimNFC72aqQa1zlNaW43gP+xzOgfTRaiHTGRTcfeWBgJ4UeQFMYxqZIhl9hfQw==}
 
   '@bramus/specificity@2.4.2':
     resolution: {integrity: sha512-ctxtJ/eA+t+6q2++vj5j7FYX3nRu311q1wfYH3xjlLOsczhlhxAg2FWNUXhpGvAw3BWo1xBcvOV6/YLc2r5FJw==}
@@ -2962,25 +2962,25 @@ snapshots:
       '@babel/helper-string-parser': 7.27.1
       '@babel/helper-validator-identifier': 7.28.5
 
-  '@bearcove/roam-core@7.1.0':
+  '@bearcove/roam-core@7.2.0':
     dependencies:
-      '@bearcove/roam-postcard': 7.1.0
-      '@bearcove/roam-wire': 7.1.0
+      '@bearcove/roam-postcard': 7.2.0
+      '@bearcove/roam-wire': 7.2.0
 
-  '@bearcove/roam-postcard@7.1.0': {}
+  '@bearcove/roam-postcard@7.2.0': {}
 
-  '@bearcove/roam-tcp@7.1.0':
+  '@bearcove/roam-tcp@7.2.0':
     dependencies:
-      '@bearcove/roam-core': 7.1.0
+      '@bearcove/roam-core': 7.2.0
 
-  '@bearcove/roam-wire@7.1.0':
+  '@bearcove/roam-wire@7.2.0':
     dependencies:
-      '@bearcove/roam-postcard': 7.1.0
+      '@bearcove/roam-postcard': 7.2.0
 
-  '@bearcove/roam-ws@7.1.0':
+  '@bearcove/roam-ws@7.2.0':
     dependencies:
-      '@bearcove/roam-core': 7.1.0
-      '@bearcove/roam-tcp': 7.1.0
+      '@bearcove/roam-core': 7.2.0
+      '@bearcove/roam-tcp': 7.2.0
 
   '@bramus/specificity@2.4.2':
     dependencies:
