@@ -449,8 +449,16 @@ impl ShipImpl {
 
         let mut stream = self.agent_driver.notifications(&handle);
         while let Some(event) = stream.next().await {
+            let event_seq = {
+                let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                let Some(session) = sessions.get(session_id) else {
+                    break;
+                };
+                session.next_event_seq
+            };
             tracing::debug!(
                 session_id = %session_id.0,
+                seq = event_seq,
                 role = ?role,
                 event_kind = Self::event_kind(&event),
                 block_id = Self::event_block_id(&event),

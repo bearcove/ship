@@ -114,10 +114,34 @@ export function useSessionState(
   const stateRef = useRef(state);
   const sessionRef = useRef(session);
   const debugMessagesRef = useRef<DebugMessage[]>([]);
+  const previousPhaseRef = useRef(state.phase);
 
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
+
+  useEffect(() => {
+    const previousPhase = previousPhaseRef.current;
+    previousPhaseRef.current = state.phase;
+
+    if (state.phase === "live" && previousPhase !== "live") {
+      log("info", "replay complete", {
+        sessionId,
+        replayEventCount: state.replayEventCount,
+        lastSeq: state.lastSeq,
+      });
+      return;
+    }
+
+    if (state.lastSeq !== null && state.lastEventKind) {
+      log("debug", "applied session event", {
+        sessionId,
+        seq: state.lastSeq,
+        eventKind: state.lastEventKind,
+        phase: state.phase,
+      });
+    }
+  }, [sessionId, state.lastEventKind, state.lastSeq, state.phase, state.replayEventCount]);
 
   useEffect(() => {
     sessionRef.current = session;
@@ -131,17 +155,6 @@ export function useSessionState(
   }, [sessionId, state]);
 
   useEffect(() => {
-    if (state.lastSeq !== null && state.lastEventKind) {
-      log("debug", "applied session event", {
-        sessionId,
-        seq: state.lastSeq,
-        eventKind: state.lastEventKind,
-        phase: state.phase,
-      });
-    }
-  }, [sessionId, state.lastEventKind, state.lastSeq, state.phase]);
-
-  useEffect(() => {
     if (state.phase === "replaying") {
       log("info", "replay in progress", {
         sessionId,
@@ -149,14 +162,7 @@ export function useSessionState(
         attempt: state.connectionAttempt,
       });
     }
-    if (state.phase === "live") {
-      log("info", "replay complete", {
-        sessionId,
-        replayEventCount: state.replayEventCount,
-        lastSeq: state.lastSeq,
-      });
-    }
-  }, [sessionId, state.connectionAttempt, state.lastSeq, state.phase, state.replayEventCount]);
+  }, [sessionId, state.connectionAttempt, state.phase, state.replayEventCount]);
 
   useEffect(() => {
     let cancelled = false;
