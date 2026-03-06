@@ -13,6 +13,10 @@ rustdoc-args = ["--html-in-header", "arborium-header.html"]
 name = "ship"
 path = "src/main.rs"
 
+[[bin]]
+name = "ship-startup-probe"
+path = "src/startup_probe.rs"
+
 [dependencies]
 axum = { workspace = true }
 facet = { workspace = true }
