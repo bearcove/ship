@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Box, Callout, Flex, IconButton, Spinner, Switch, Tabs, Text } from "@radix-ui/themes";
-import { Bug, Clock, SpeakerHigh, SpeakerSlash } from "@phosphor-icons/react";
+import { Box, Flex, IconButton, Spinner, Switch, Tabs, Text } from "@radix-ui/themes";
+import { Bug, SpeakerHigh, SpeakerSlash } from "@phosphor-icons/react";
 import { useSoundEnabled } from "../context/SoundContext";
 import { useSession } from "../hooks/useSession";
 import { useSessionState } from "../hooks/useSessionState";
@@ -23,21 +23,13 @@ import {
   panelColumn,
   mobileTabs,
   mobilePanel,
-  idleBanner,
 } from "../styles/session-view.css";
 import type { TaskRecord, TaskStatus } from "../generated/ship";
 
 function getIdleMessage(
-  startupStateTag: string | null,
   taskStatus: TaskStatus | null,
   mateAwaitingPermission: boolean,
 ): string | null {
-  if (startupStateTag === "Pending" || startupStateTag === "Running") {
-    return "Session startup is in progress.";
-  }
-  if (startupStateTag === "Failed") {
-    return "Session startup failed.";
-  }
   if (taskStatus?.tag === "ReviewPending")
     return "Mate finished — review the work or send the next steer.";
   if (taskStatus?.tag === "SteerPending")
@@ -115,7 +107,6 @@ export function SessionViewPage() {
   const startupState = eventState.startupState ?? session.startup_state;
   const mateAwaitingPermission = mate.state.tag === "AwaitingPermission";
   const idle = getIdleMessage(
-    startupState?.tag ?? null,
     eventState.currentTaskStatus ?? session.current_task?.status ?? null,
     mateAwaitingPermission,
   );
@@ -204,19 +195,12 @@ export function SessionViewPage() {
         </Tabs.Root>
       </Box>
 
-      {/* r[ui.idle.banner] */}
       {idle && (
-        <Callout.Root color="amber" size="1" className={idleBanner}>
-          <Callout.Icon>
-            <Clock size={14} />
-          </Callout.Icon>
-          <Callout.Text>{idle}</Callout.Text>
-        </Callout.Root>
-      )}
-      {startupState && startupState.tag === "Failed" && (
-        <Callout.Root color="red" size="1" className={idleBanner}>
-          <Callout.Text>{startupState.message}</Callout.Text>
-        </Callout.Root>
+        <Box px="4" py="2" style={{ borderBottom: "1px solid var(--gray-a4)", flexShrink: 0 }}>
+          <Text size="1" color="gray">
+            {idle}
+          </Text>
+        </Box>
       )}
 
       <Box style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>

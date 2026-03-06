@@ -74,6 +74,27 @@ beforeEach(() => {
 // r[verify frontend.test.vitest]
 // r[verify frontend.test.rtl]
 describe("AgentPanel plan rendering", () => {
+  // r[verify view.session]
+  it("renders startup progress inline in the captain feed", () => {
+    renderWithTheme(
+      <AgentPanel
+        sessionId="session-1"
+        agent={agent}
+        blocks={[]}
+        loading={false}
+        startupState={{
+          tag: "Running",
+          stage: { tag: "StartingCaptain" },
+          message: "Starting captain (0.4s elapsed)",
+        }}
+        taskStatus={null}
+      />,
+    );
+
+    expect(screen.getByText("Session startup")).toBeInTheDocument();
+    expect(screen.getByText("Starting captain (0.4s elapsed)")).toBeInTheDocument();
+  });
+
   // r[verify ui.block.plan.layout]
   // r[verify ui.block.plan.position]
   // r[verify ui.block.plan.filtering]

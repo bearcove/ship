@@ -205,4 +205,22 @@ describe("SessionViewPage UX slice", () => {
       screen.getByText("Send your own steer here to override the captain's pending draft."),
     ).toBeInTheDocument();
   });
+
+  // r[verify view.session]
+  it("renders startup progress in the captain feed instead of a page banner", () => {
+    mocks.session = {
+      ...makeSession(),
+      startup_state: {
+        tag: "Running",
+        stage: { tag: "StartingCaptain" },
+        message: "Starting captain (0.8s elapsed)",
+      },
+      current_task: null,
+    };
+
+    renderPage();
+
+    expect(screen.getAllByText("Session startup").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Session startup is in progress.")).not.toBeInTheDocument();
+  });
 });

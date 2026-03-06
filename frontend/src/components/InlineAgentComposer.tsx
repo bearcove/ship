@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Box, Button, Flex, Text, TextArea } from "@radix-ui/themes";
 import { getShipClient } from "../api/client";
 import type { Role, SessionStartupState, TaskStatus } from "../generated/ship";
@@ -38,15 +38,56 @@ function getStatusCopy(
   agentStateTag: Props["agentStateTag"],
   startupState: SessionStartupState | null,
   taskStatus: TaskStatus | null,
-): { label: string; hint: string | null; disabled: boolean } {
-  if (startupState !== null && startupState.tag !== "Ready") {
+  queuedText: string | null,
+): {
+  label: string;
+  hint: string | null;
+  disableInput: boolean;
+  disableSubmit: boolean;
+  queueOnSubmit: boolean;
+  submitLabel: string;
+} {
+  if (queuedText) {
     return {
-      label: startupState.tag === "Failed" ? "Failed" : "Starting",
-      hint:
-        startupState.tag === "Failed"
-          ? startupState.message
-          : "Session startup is still in progress.",
-      disabled: true,
+      label: "Queued",
+      hint: "Your message will send as soon as session startup finishes.",
+      disableInput: false,
+      disableSubmit: false,
+      queueOnSubmit: true,
+      submitLabel: "Replace queue",
+    };
+  }
+
+  if (startupState !== null && startupState.tag !== "Ready") {
+    if (startupState.tag === "Failed") {
+      return {
+        label: "Failed",
+        hint: startupState.message,
+        disableInput: true,
+        disableSubmit: true,
+        queueOnSubmit: false,
+        submitLabel: "Send",
+      };
+    }
+
+    if (role.tag === "Captain") {
+      return {
+        label: "Starting",
+        hint: "You can type now and queue a captain note while startup finishes.",
+        disableInput: false,
+        disableSubmit: false,
+        queueOnSubmit: true,
+        submitLabel: "Queue",
+      };
+    }
+
+    return {
+      label: "Starting",
+      hint: "You can draft mate steer now. Sending unlocks after startup and task setup.",
+      disableInput: false,
+      disableSubmit: true,
+      queueOnSubmit: false,
+      submitLabel: "Send",
     };
   }
 
@@ -54,7 +95,10 @@ function getStatusCopy(
     return {
       label: stateLabel(agentStateTag),
       hint: "Approve the pending permission request before sending more guidance.",
-      disabled: true,
+      disableInput: true,
+      disableSubmit: true,
+      queueOnSubmit: false,
+      submitLabel: "Send",
     };
   }
 
@@ -62,7 +106,10 @@ function getStatusCopy(
     return {
       label: stateLabel(agentStateTag),
       hint: "Rotate or retry the agent before sending more guidance.",
-      disabled: true,
+      disableInput: true,
+      disableSubmit: true,
+      queueOnSubmit: false,
+      submitLabel: "Send",
     };
   }
 
@@ -70,7 +117,10 @@ function getStatusCopy(
     return {
       label: stateLabel(agentStateTag),
       hint: "Retry the agent before sending more guidance.",
-      disabled: true,
+      disableInput: true,
+      disableSubmit: true,
+      queueOnSubmit: false,
+      submitLabel: "Send",
     };
   }
 
@@ -79,7 +129,10 @@ function getStatusCopy(
       return {
         label: "No active task",
         hint: "Assign a task before steering the mate directly.",
-        disabled: true,
+        disableInput: false,
+        disableSubmit: true,
+        queueOnSubmit: false,
+        submitLabel: "Send",
       };
     }
 
@@ -87,7 +140,10 @@ function getStatusCopy(
       return {
         label: "Captain steer pending",
         hint: "Send your own steer here to override the captain's pending draft.",
-        disabled: false,
+        disableInput: false,
+        disableSubmit: false,
+        queueOnSubmit: false,
+        submitLabel: "Send",
       };
     }
 
@@ -95,14 +151,20 @@ function getStatusCopy(
       return {
         label: "Awaiting review",
         hint: "Need to bypass the captain? Send human steer directly to the mate.",
-        disabled: false,
+        disableInput: false,
+        disableSubmit: false,
+        queueOnSubmit: false,
+        submitLabel: "Send",
       };
     }
 
     return {
       label: stateLabel(agentStateTag),
       hint: "Human steer can redirect the mate at any time during the task.",
-      disabled: false,
+      disableInput: false,
+      disableSubmit: false,
+      queueOnSubmit: false,
+      submitLabel: "Send",
     };
   }
 
@@ -110,7 +172,10 @@ function getStatusCopy(
     return {
       label: stateLabel(agentStateTag),
       hint: "Talk to the captain directly. Assign a task when you want work to start.",
-      disabled: false,
+      disableInput: false,
+      disableSubmit: false,
+      queueOnSubmit: false,
+      submitLabel: "Send",
     };
   }
 
@@ -118,7 +183,10 @@ function getStatusCopy(
     return {
       label: "Steer pending",
       hint: "Ask the captain to revise or clarify the pending steer before you send it.",
-      disabled: false,
+      disableInput: false,
+      disableSubmit: false,
+      queueOnSubmit: false,
+      submitLabel: "Send",
     };
   }
 
@@ -126,14 +194,20 @@ function getStatusCopy(
     return {
       label: "Review pending",
       hint: "Ask the captain to review the mate's latest work or draft the next steer.",
-      disabled: false,
+      disableInput: false,
+      disableSubmit: false,
+      queueOnSubmit: false,
+      submitLabel: "Send",
     };
   }
 
   return {
     label: stateLabel(agentStateTag),
     hint: "Send direct guidance to the captain.",
-    disabled: false,
+    disableInput: false,
+    disableSubmit: false,
+    queueOnSubmit: false,
+    submitLabel: "Send",
   };
 }
 
@@ -146,14 +220,12 @@ export function InlineAgentComposer({
   taskStatus,
 }: Props) {
   const [text, setText] = useState("");
+  const [queuedText, setQueuedText] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const status = getStatusCopy(role, agentStateTag, startupState, taskStatus);
+  const status = getStatusCopy(role, agentStateTag, startupState, taskStatus, queuedText);
 
-  async function handleSubmit() {
-    const value = text.trim();
-    if (!value || loading || status.disabled) return;
-
+  async function sendNow(value: string) {
     setLoading(true);
     setError(null);
     try {
@@ -163,7 +235,8 @@ export function InlineAgentComposer({
       } else {
         await client.steer(sessionId, value);
       }
-      setText("");
+      setQueuedText(null);
+      return true;
     } catch (error) {
       setError(error instanceof Error ? error.message : String(error));
       console.error("[ship/session] failed to send inline guidance", {
@@ -171,8 +244,35 @@ export function InlineAgentComposer({
         role: role.tag,
         error,
       });
+      return false;
     } finally {
       setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (startupState?.tag !== "Ready" || role.tag !== "Captain" || !queuedText || loading) {
+      return;
+    }
+
+    void (async () => {
+      await sendNow(queuedText);
+    })();
+  }, [loading, queuedText, role.tag, startupState?.tag]);
+
+  async function handleSubmit() {
+    const value = text.trim();
+    if (!value || loading || status.disableSubmit) return;
+
+    if (status.queueOnSubmit) {
+      setQueuedText(value);
+      setText("");
+      setError(null);
+      return;
+    }
+
+    if (await sendNow(value)) {
+      setText("");
     }
   }
 
@@ -203,17 +303,17 @@ export function InlineAgentComposer({
             void handleSubmit();
           }
         }}
-        disabled={status.disabled || loading}
+        disabled={status.disableInput || loading}
         aria-label={role.tag === "Captain" ? "Captain steer input" : "Mate steer input"}
       />
       <Flex className={composerActions} align="center" justify="end" gap="2">
         <Button
           size="1"
           onClick={() => void handleSubmit()}
-          disabled={!text.trim() || status.disabled}
+          disabled={!text.trim() || status.disableSubmit}
           loading={loading}
         >
-          Send{" "}
+          {status.submitLabel}{" "}
           <Box asChild style={{ opacity: 0.65, fontSize: "11px", fontFamily: "monospace" }}>
             <kbd>⌘↵</kbd>
           </Box>
