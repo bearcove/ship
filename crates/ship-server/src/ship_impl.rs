@@ -341,6 +341,21 @@ impl ShipImpl {
         format!("{} ({elapsed:.1}s elapsed)", Self::startup_message(stage))
     }
 
+    fn log_startup_step_elapsed(
+        &self,
+        session_id: &SessionId,
+        step: &'static str,
+        started_at: Instant,
+    ) {
+        tracing::info!(
+            session_id = %session_id.0,
+            step,
+            step_elapsed_ms = started_at.elapsed().as_millis(),
+            startup_elapsed_ms = self.startup_elapsed(session_id).as_millis(),
+            "startup step finished"
+        );
+    }
+
     async fn set_startup_stage(
         &self,
         session_id: &SessionId,
@@ -929,6 +944,7 @@ impl ShipImpl {
         let stage = SessionStartupStage::ResolvingMcp;
         let _ = self.set_startup_stage(&session_id, stage).await;
 
+        let step_started_at = Instant::now();
         let (project, base_branch, resolved_mcp_servers) = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let Some(session) = sessions.get(&session_id) else {
@@ -940,7 +956,9 @@ impl ShipImpl {
                 session.config.mcp_servers.clone(),
             )
         };
+        self.log_startup_step_elapsed(&session_id, "read-session-config", step_started_at);
 
+        let step_started_at = Instant::now();
         let repo_root = match self.resolve_project_root(&project).await {
             Ok(value) => value,
             Err(error) => {
@@ -948,9 +966,11 @@ impl ShipImpl {
                 return;
             }
         };
+        self.log_startup_step_elapsed(&session_id, "resolve-project-root", step_started_at);
 
         let stage = SessionStartupStage::CreatingWorktree;
         let _ = self.set_startup_stage(&session_id, stage).await;
+        let step_started_at = Instant::now();
         let worktree_path = match self
             .worktree_ops
             .create_worktree(&session_id, &base_branch, "session", &repo_root)
@@ -962,6 +982,7 @@ impl ShipImpl {
                 return;
             }
         };
+        self.log_startup_step_elapsed(&session_id, "create-worktree", step_started_at);
         {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             if let Some(session) = sessions.get_mut(&session_id) {
@@ -970,6 +991,7 @@ impl ShipImpl {
         }
         let _ = self.persist_session(&session_id).await;
 
+        let step_started_at = Instant::now();
         let captain_ship_mcp = match self
             .install_captain_mcp_server(&session_id, &worktree_path)
             .await
@@ -981,9 +1003,11 @@ impl ShipImpl {
                 return;
             }
         };
+        self.log_startup_step_elapsed(&session_id, "install-captain-mcp-server", step_started_at);
 
         let stage = SessionStartupStage::StartingCaptain;
         let _ = self.set_startup_stage(&session_id, stage).await;
+        let step_started_at = Instant::now();
         let captain_handle = match self
             .agent_driver
             .spawn(
@@ -1014,6 +1038,7 @@ impl ShipImpl {
                 return;
             }
         };
+        self.log_startup_step_elapsed(&session_id, "spawn-captain", step_started_at);
         {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             if let Some(session) = sessions.get_mut(&session_id) {
@@ -1022,8 +1047,22 @@ impl ShipImpl {
         }
         let _ = self.persist_session(&session_id).await;
 
+        let stage = SessionStartupStage::GreetingCaptain;
+        let _ = self.set_startup_stage(&session_id, stage).await;
+        let step_started_at = Instant::now();
+        if let Err(error) = self
+            .prompt_agent(&session_id, Role::Captain, Self::captain_bootstrap_prompt())
+            .await
+        {
+            Self::log_error("startup_prompt_captain", &error);
+            self.fail_startup(&session_id, stage, error).await;
+            return;
+        }
+        self.log_startup_step_elapsed(&session_id, "greet-captain", step_started_at);
+
         let stage = SessionStartupStage::StartingMate;
         let _ = self.set_startup_stage(&session_id, stage).await;
+        let step_started_at = Instant::now();
         let mate_handle = match self
             .agent_driver
             .spawn(
@@ -1049,6 +1088,7 @@ impl ShipImpl {
                 return;
             }
         };
+        self.log_startup_step_elapsed(&session_id, "spawn-mate", step_started_at);
         {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             if let Some(session) = sessions.get_mut(&session_id) {
@@ -1067,16 +1107,6 @@ impl ShipImpl {
             .lock()
             .expect("startup timer mutex poisoned")
             .remove(&session_id);
-
-        let this = self.clone();
-        tokio::spawn(async move {
-            if let Err(error) = this
-                .prompt_agent(&session_id, Role::Captain, Self::captain_bootstrap_prompt())
-                .await
-            {
-                Self::log_error("startup_prompt_captain", &error);
-            }
-        });
     }
 
     fn repo_root_for_worktree(worktree_path: &std::path::Path) -> Result<&std::path::Path, String> {

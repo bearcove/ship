@@ -71,13 +71,16 @@ function getStatusCopy(
     }
 
     if (role.tag === "Captain") {
+      const captainBusy = agentStateTag === "Working";
       return {
-        label: "Starting",
-        hint: "You can type now and queue a captain note while startup finishes.",
+        label: captainBusy ? "Starting" : stateLabel(agentStateTag),
+        hint: captainBusy
+          ? "You can type now and queue a captain note while the greeting finishes."
+          : "Captain is ready. Mate startup can continue in the background.",
         disableInput: false,
         disableSubmit: false,
-        queueOnSubmit: true,
-        submitLabel: "Queue",
+        queueOnSubmit: captainBusy,
+        submitLabel: captainBusy ? "Queue" : "Send",
       };
     }
 
@@ -251,14 +254,22 @@ export function InlineAgentComposer({
   }
 
   useEffect(() => {
-    if (startupState?.tag !== "Ready" || role.tag !== "Captain" || !queuedText || loading) {
+    if (role.tag !== "Captain" || !queuedText || loading) {
+      return;
+    }
+
+    if (startupState?.tag === "Failed") {
+      return;
+    }
+
+    if (agentStateTag === "Working") {
       return;
     }
 
     void (async () => {
       await sendNow(queuedText);
     })();
-  }, [loading, queuedText, role.tag, startupState?.tag]);
+  }, [agentStateTag, loading, queuedText, role.tag, startupState?.tag]);
 
   async function handleSubmit() {
     const value = text.trim();

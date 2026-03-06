@@ -22,16 +22,16 @@ beforeEach(() => {
 
 describe("InlineAgentComposer", () => {
   // r[verify ui.task-bar.actions]
-  it("queues captain guidance during startup and sends it when the session becomes ready", async () => {
+  it("queues captain guidance during startup and sends it once the captain is no longer busy", async () => {
     const view = renderWithTheme(
       <InlineAgentComposer
         sessionId="session-1"
         role={{ tag: "Captain" }}
-        agentStateTag="Idle"
+        agentStateTag="Working"
         startupState={{
           tag: "Running",
-          stage: { tag: "StartingCaptain" },
-          message: "Starting captain",
+          stage: { tag: "GreetingCaptain" },
+          message: "Greeting user",
         }}
         taskStatus={null}
       />,
@@ -52,13 +52,46 @@ describe("InlineAgentComposer", () => {
         sessionId="session-1"
         role={{ tag: "Captain" }}
         agentStateTag="Idle"
-        startupState={{ tag: "Ready" }}
+        startupState={{
+          tag: "Running",
+          stage: { tag: "StartingMate" },
+          message: "Starting mate",
+        }}
         taskStatus={null}
       />,
     );
 
     await waitFor(() => {
       expect(apiMocks.promptCaptain).toHaveBeenCalledWith("session-1", "Queue this for startup.");
+    });
+  });
+
+  // r[verify ui.task-bar.actions]
+  it("sends captain guidance immediately once the captain is ready even if mate startup continues", async () => {
+    renderWithTheme(
+      <InlineAgentComposer
+        sessionId="session-1"
+        role={{ tag: "Captain" }}
+        agentStateTag="Idle"
+        startupState={{
+          tag: "Running",
+          stage: { tag: "StartingMate" },
+          message: "Starting mate",
+        }}
+        taskStatus={null}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Captain steer input"), {
+      target: { value: "Say hi while mate startup continues." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Send/i }));
+
+    await waitFor(() => {
+      expect(apiMocks.promptCaptain).toHaveBeenCalledWith(
+        "session-1",
+        "Say hi while mate startup continues.",
+      );
     });
   });
 
