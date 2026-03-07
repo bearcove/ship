@@ -777,11 +777,12 @@ The captain MUST be able to inspect the current task state and the mate's
 streamed output through Ship's session view and event history. Ship MUST keep
 the captain's conversation long-lived across prompts within the session.
 
-r[captain.no-filesystem]
-The captain agent MUST NOT be configured with filesystem or terminal ACP
+r[captain.capabilities]
+The captain agent MUST NOT be configured with raw ACP filesystem or terminal
 capabilities. It reviews output, it does not execute. The captain does have
-access to Ship's MCP tools (`ship_steer`, `ship_accept`, `ship_reject`) —
-these are MCP tools, not ACP filesystem/terminal capabilities.
+access to Ship's captain MCP tools (`captain_assign`, `captain_steer`,
+`captain_accept`, `captain_cancel`, `captain_notify_human`) — these are MCP
+tools, not ACP filesystem/terminal capabilities.
 
 ### Captain Tools
 
@@ -970,8 +971,9 @@ engineer: write code, run tests, follow the captain's direction. It MUST
 include the task description and any steer history.
 
 r[mate.capabilities]
-The mate agent MUST be configured with full ACP capabilities: filesystem
-read/write, terminal create/output/kill/release.
+The mate agent MUST NOT be configured with raw ACP filesystem or terminal
+capabilities. File access, search, editing, planning, and command execution
+MUST flow through Ship's mate MCP tools instead of ACP built-ins.
 
 r[mate.worktree-scope]
 The mate MUST operate exclusively within the session's git worktree. Its

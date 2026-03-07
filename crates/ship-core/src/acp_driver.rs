@@ -480,22 +480,31 @@ async fn run_acp_worker(
 
 fn build_initialize_request(role: Role) -> InitializeRequest {
     let client_capabilities = match role {
-        // r[captain.no-filesystem]
-        Role::Captain => ClientCapabilities::new()
-            .terminal(false)
-            .fs(FileSystemCapability::new()
-                .read_text_file(false)
-                .write_text_file(false)),
-        Role::Mate => ClientCapabilities::new()
-            .terminal(true)
-            .fs(FileSystemCapability::new()
-                .read_text_file(true)
-                .write_text_file(true)),
+        Role::Captain => captain_client_capabilities(),
+        Role::Mate => mate_client_capabilities(),
     };
 
     InitializeRequest::new(ProtocolVersion::LATEST)
         .client_info(Implementation::new("ship", env!("CARGO_PKG_VERSION")))
         .client_capabilities(client_capabilities)
+}
+
+// r[captain.capabilities]
+fn captain_client_capabilities() -> ClientCapabilities {
+    ClientCapabilities::new()
+        .terminal(false)
+        .fs(FileSystemCapability::new()
+            .read_text_file(false)
+            .write_text_file(false))
+}
+
+// r[mate.capabilities]
+fn mate_client_capabilities() -> ClientCapabilities {
+    ClientCapabilities::new()
+        .terminal(false)
+        .fs(FileSystemCapability::new()
+            .read_text_file(false)
+            .write_text_file(false))
 }
 
 fn command_for_launcher(launcher: crate::AgentLauncher) -> Command {
@@ -537,7 +546,7 @@ mod tests {
     use std::sync::atomic::AtomicBool;
     use std::sync::{Arc, Mutex};
 
-    use agent_client_protocol::McpServer;
+    use agent_client_protocol::{ClientCapabilities, McpServer};
     use ship_types::{
         AgentKind, McpEnvVar, McpHeader, McpHttpServerConfig, McpServerConfig, McpSseServerConfig,
         McpStdioServerConfig, Role,
@@ -546,7 +555,7 @@ mod tests {
 
     use super::{
         AcpAgentDriver, AcpHandle, build_initialize_request, build_new_session_request,
-        command_for_launcher,
+        captain_client_capabilities, command_for_launcher, mate_client_capabilities,
     };
     use crate::{
         AgentDriver, AgentHandle, AgentLauncher, AgentSessionConfig, BinaryPathProbe, SessionId,
@@ -711,7 +720,7 @@ mod tests {
         assert_eq!(error.message, "prompt already in flight");
     }
 
-    // r[verify captain.no-filesystem]
+    // r[verify captain.capabilities]
     #[test]
     fn captain_initialize_request_disables_filesystem_and_terminal_capabilities() {
         let request = build_initialize_request(Role::Captain);
@@ -722,10 +731,24 @@ mod tests {
 
     // r[verify mate.capabilities]
     #[test]
-    fn mate_initialize_request_keeps_filesystem_and_terminal_capabilities() {
+    fn mate_initialize_request_disables_filesystem_and_terminal_capabilities() {
         let request = build_initialize_request(Role::Mate);
-        assert!(request.client_capabilities.terminal);
-        assert!(request.client_capabilities.fs.read_text_file);
-        assert!(request.client_capabilities.fs.write_text_file);
+        assert!(!request.client_capabilities.terminal);
+        assert!(!request.client_capabilities.fs.read_text_file);
+        assert!(!request.client_capabilities.fs.write_text_file);
+    }
+
+    // r[verify captain.capabilities]
+    #[test]
+    fn captain_capability_builder_returns_mcp_only_access() {
+        let capabilities = captain_client_capabilities();
+        assert_eq!(capabilities, ClientCapabilities::new());
+    }
+
+    // r[verify mate.capabilities]
+    #[test]
+    fn mate_capability_builder_returns_mcp_only_access() {
+        let capabilities = mate_client_capabilities();
+        assert_eq!(capabilities, ClientCapabilities::new());
     }
 }
