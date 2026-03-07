@@ -10,6 +10,8 @@ interface Props {
 }
 
 // r[ui.steer-review.layout]
+// r[proto.steer]
+// r[task.steer]
 export function SteerReview({ sessionId, steerText, onDismiss }: Props) {
   const [editMode, setEditMode] = useState(false);
   const [editText, setEditText] = useState(steerText);

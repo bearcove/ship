@@ -531,11 +531,6 @@ to produce a new block value, and trigger a re-render of that block only.
 If the block ID is not found (e.g., due to a missed event), the frontend
 MUST re-subscribe to get a full replay.
 
-r[event.store.clear-on-new-task]
-On receiving a `TaskStarted` event (per `event.task-started`), the frontend
-MUST clear both block stores. The sequence counter is NOT reset — it
-continues increasing for the lifetime of the session.
-
 r[event.store.immutable-updates]
 Block store updates MUST use immutable data patterns (new object references
 on mutation) so that React can detect changes via reference equality. Do NOT

@@ -61,6 +61,7 @@ function DisabledTooltip({
   return <Tooltip content={content}>{children}</Tooltip>;
 }
 
+// r[session.agent.kind]
 function AgentKindControl({
   label,
   value,
@@ -279,6 +280,8 @@ function BranchCombobox({
 }
 
 // r[ui.session-list.create]
+// r[proto.create-session]
+// r[session.create]
 function NewSessionDialog({
   open,
   onOpenChange,
@@ -510,6 +513,7 @@ const LAST_PROJECT_KEY = "ship.lastProject";
 
 // r[view.session-list]
 // r[ui.session-list.layout]
+// r[session.list]
 export function SessionListPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const rawFilter = searchParams.get("project");

@@ -212,6 +212,7 @@ impl ShipAcpClient {
         }
     }
 
+    // r[acp.notifications]
     fn map_session_update(&self, update: SessionUpdate) -> Vec<SessionEvent> {
         match update {
             SessionUpdate::UserMessageChunk(chunk) => {
@@ -233,6 +234,7 @@ impl ShipAcpClient {
                 self.reset_text_block();
                 self.apply_tool_call_update(update)
             }
+            // r[acp.plans]
             SessionUpdate::Plan(plan) => {
                 self.reset_text_block();
                 vec![SessionEvent::AgentStateChanged {
@@ -280,6 +282,7 @@ impl ShipAcpClient {
 #[async_trait::async_trait(?Send)]
 impl Client for ShipAcpClient {
     // r[acp.client.permission]
+    // r[acp.permissions]
     async fn request_permission(
         &self,
         args: RequestPermissionRequest,

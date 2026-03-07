@@ -234,6 +234,10 @@ impl ShipImpl {
         });
     }
 
+    // r[event.replay-complete]
+    // r[event.replay.same-events]
+    // r[event.replay.followed-by-marker]
+    // r[event.replay.per-subscriber]
     async fn forward_event_subscription<Send, SendFuture, Close, CloseFuture>(
         session: &SessionId,
         mut receiver: broadcast::Receiver<ship_types::SessionEventEnvelope>,
@@ -455,6 +459,7 @@ impl ShipImpl {
             .remove(session_id);
     }
 
+    // r[captain.system-prompt]
     fn captain_bootstrap_prompt() -> String {
         [
             "You are the Ship captain for this session.",
@@ -467,12 +472,15 @@ impl ShipImpl {
         .join("\n")
     }
 
+    // r[captain.initial-prompt]
     fn captain_assignment_prompt(description: &str) -> String {
         format!(
             "The human assigned a new task:\n{description}\n\nReview it as the captain. You may ask a clarifying question in plain text, or call Ship MCP tools when you want to delegate, accept, or reject the task. Do not write code directly."
         )
     }
 
+    // r[captain.tool.transport]
+    // r[session.agent.captain]
     async fn install_captain_mcp_server(
         &self,
         session_id: &SessionId,
@@ -499,6 +507,7 @@ impl ShipImpl {
         }))
     }
 
+    // r[session.agent.mate]
     async fn install_mate_mcp_server(
         &self,
         session_id: &SessionId,
@@ -602,6 +611,7 @@ impl ShipImpl {
         Ok(())
     }
 
+    // r[task.accept]
     async fn accept_task(
         &self,
         session_id: &SessionId,
@@ -641,6 +651,7 @@ impl ShipImpl {
         self.persist_session(session_id).await
     }
 
+    // r[task.cancel]
     async fn cancel_task(
         &self,
         session_id: &SessionId,
@@ -738,6 +749,8 @@ impl ShipImpl {
         Ok(())
     }
 
+    // r[task.assign]
+    // r[captain.tool.assign]
     async fn captain_tool_assign(
         &self,
         session_id: &SessionId,
@@ -761,6 +774,8 @@ impl ShipImpl {
         Ok(format!("Task {} assigned to the mate.", task_id.0))
     }
 
+    // r[task.steer]
+    // r[captain.tool.steer]
     async fn captain_tool_steer(
         &self,
         session_id: &SessionId,
@@ -798,6 +813,7 @@ impl ShipImpl {
         Ok("Steer sent to the mate.".to_owned())
     }
 
+    // r[captain.tool.accept]
     async fn captain_tool_accept(
         &self,
         session_id: &SessionId,
@@ -1385,6 +1401,7 @@ impl ShipImpl {
         Ok(response.stop_reason)
     }
 
+    // r[acp.stop-reason]
     async fn handle_mate_stop_reason(
         &self,
         session_id: &SessionId,
@@ -1420,6 +1437,7 @@ impl ShipImpl {
         self.persist_session(session_id).await
     }
 
+    // r[session.single-task]
     async fn start_task(
         &self,
         session_id: &SessionId,
@@ -1549,6 +1567,7 @@ impl Ship for ShipImpl {
             .collect()
     }
 
+    // r[session.list]
     async fn list_sessions(&self) -> Vec<SessionSummary> {
         let sessions = self.sessions.lock().expect("sessions mutex poisoned");
         sessions.values().map(Self::to_session_summary).collect()
@@ -1562,6 +1581,7 @@ impl Ship for ShipImpl {
             .unwrap_or_else(|| Self::fallback_session_detail(id))
     }
 
+    // r[session.create]
     async fn create_session(&self, req: CreateSessionRequest) -> CreateSessionResponse {
         let project_exists = {
             let registry = self.registry.lock().await;
@@ -1868,6 +1888,9 @@ impl Ship for ShipImpl {
         CloseSessionResponse::Closed
     }
 
+    // r[event.subscribe.replay]
+    // r[event.subscribe.roam-channel]
+    // r[sharing.event-broadcast]
     async fn subscribe_events(&self, session: SessionId, output: Tx<SubscribeMessage>) {
         tracing::info!(session_id = %session.0, "subscriber connected");
         let session_data = {

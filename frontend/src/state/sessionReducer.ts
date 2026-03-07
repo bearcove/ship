@@ -8,6 +8,8 @@ import type {
 import { type BlockStore, createBlockStore, appendBlock, patchBlock } from "./blockStore";
 
 // r[event.client.view-state]
+// r[session.agent.captain]
+// r[session.agent.mate]
 export interface SessionViewState {
   captain: AgentSnapshot | null;
   mate: AgentSnapshot | null;
@@ -70,6 +72,7 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         currentTaskStatus: action.session.current_task?.status ?? null,
       };
 
+    // r[event.replay-complete]
     case "replay-complete":
       return { ...state, phase: "live" };
 
@@ -107,7 +110,10 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
       };
       const ev = envelope.event;
 
+      // r[event.envelope]
+      // r[event.ordering]
       switch (ev.tag) {
+        // r[event.append]
         case "BlockAppend": {
           const isCaptain = ev.role.tag === "Captain";
           if (isCaptain) {
@@ -122,6 +128,7 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
           };
         }
 
+        // r[event.patch]
         case "BlockPatch": {
           const isCaptain = ev.role.tag === "Captain";
           if (isCaptain) {
@@ -134,6 +141,7 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
           return { ...nextState, mateBlocks: patched };
         }
 
+        // r[event.agent-state-changed]
         case "AgentStateChanged": {
           const isCaptain = ev.role.tag === "Captain";
           if (isCaptain && nextState.captain) {
@@ -148,9 +156,11 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         case "SessionStartupChanged":
           return { ...nextState, startupState: ev.state };
 
+        // r[event.task-status-changed]
         case "TaskStatusChanged":
           return { ...nextState, currentTaskStatus: ev.status };
 
+        // r[event.context-updated]
         case "ContextUpdated": {
           const isCaptain = ev.role.tag === "Captain";
           if (isCaptain && nextState.captain) {
@@ -168,6 +178,7 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
           return nextState;
         }
 
+        // r[event.task-started]
         case "TaskStarted":
           return {
             ...nextState,

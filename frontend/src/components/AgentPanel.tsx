@@ -74,6 +74,7 @@ function StartupFeedState({ startupState }: { startupState: SessionStartupState 
 // r[view.agent-panel.state]
 // r[ui.block.plan.position]
 // r[ui.block.plan.filtering]
+// r[proto.resolve-permission]
 export function AgentPanel({
   sessionId,
   agent,

@@ -72,6 +72,8 @@ function TaskHistoryPopover({ sessionId }: { sessionId: string }) {
 }
 
 // r[ui.task-bar.new-task]
+// r[proto.assign]
+// r[task.assign]
 function NewTaskDialog({
   sessionId,
   startupState,
@@ -151,6 +153,10 @@ interface Props {
 }
 
 // r[ui.task-bar.layout]
+// r[proto.accept]
+// r[proto.cancel]
+// r[task.accept]
+// r[task.cancel]
 export function TaskBar({ sessionId, startupState, task }: Props) {
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);

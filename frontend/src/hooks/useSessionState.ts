@@ -172,6 +172,7 @@ function inspectPatchApplicability(store: BlockStore, blockId: string, patchTag:
 // r[event.client.hydration-sequence]
 // r[event.client.connection-lifecycle]
 // r[event.subscribe]
+// r[session.persistent]
 export function useSessionState(
   sessionId: string,
   session: SessionDetail | null,

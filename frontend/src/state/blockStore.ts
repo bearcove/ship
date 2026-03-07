@@ -51,9 +51,11 @@ export function patchBlock(
 
 function applyPatch(block: ContentBlock, patch: BlockPatch): ContentBlock | null {
   switch (patch.tag) {
+    // r[event.patch.text-append]
     case "TextAppend":
       if (block.tag !== "Text") return null;
       return { ...block, text: block.text + patch.text };
+    // r[event.patch.tool-call-update]
     case "ToolCallUpdate":
       if (block.tag !== "ToolCall") return null;
       return {
@@ -68,16 +70,13 @@ function applyPatch(block: ContentBlock, patch: BlockPatch): ContentBlock | null
         content: patch.content ?? block.content,
         error: patch.error ?? block.error,
       };
+    // r[event.patch.plan-replace]
     case "PlanReplace":
       if (block.tag !== "PlanUpdate") return null;
       return { ...block, steps: patch.steps };
+    // r[event.patch.permission-resolve]
     case "PermissionResolve":
       if (block.tag !== "Permission") return null;
       return { ...block, resolution: patch.resolution };
   }
-}
-
-// r[event.store.clear-on-new-task]
-export function clearBlocks(): BlockStore {
-  return createBlockStore();
 }
