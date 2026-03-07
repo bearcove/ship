@@ -44,7 +44,7 @@ describe("InlineAgentComposer", () => {
     fireEvent.click(screen.getByRole("button", { name: /Queue/i }));
 
     expect(apiMocks.promptCaptain).not.toHaveBeenCalled();
-    expect(screen.getByText("Queued")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Replace queue/i })).toBeInTheDocument();
 
     view.rerender(
       <InlineAgentComposer
@@ -106,10 +106,5 @@ describe("InlineAgentComposer", () => {
 
     expect(screen.getByLabelText("Mate steer input")).toBeEnabled();
     expect(screen.getByRole("button", { name: /Send/i })).toBeDisabled();
-    expect(
-      screen.getByText(
-        "You can draft mate steer now. Sending unlocks after startup and task setup.",
-      ),
-    ).toBeInTheDocument();
   });
 });

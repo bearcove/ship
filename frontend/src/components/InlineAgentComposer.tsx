@@ -12,21 +12,6 @@ interface Props {
   taskStatus: TaskStatus | null;
 }
 
-function stateLabel(agentStateTag: Props["agentStateTag"]): string {
-  switch (agentStateTag) {
-    case "Working":
-      return "Working";
-    case "Idle":
-      return "Ready";
-    case "AwaitingPermission":
-      return "Needs permission";
-    case "ContextExhausted":
-      return "Context exhausted";
-    case "Error":
-      return "Error";
-  }
-}
-
 function getStatusCopy(
   role: Role,
   agentStateTag: Props["agentStateTag"],
@@ -34,8 +19,6 @@ function getStatusCopy(
   taskStatus: TaskStatus | null,
   queuedText: string | null,
 ): {
-  label: string;
-  hint: string | null;
   disableInput: boolean;
   disableSubmit: boolean;
   queueOnSubmit: boolean;
@@ -43,8 +26,6 @@ function getStatusCopy(
 } {
   if (queuedText) {
     return {
-      label: "Queued",
-      hint: "Your message will send as soon as session startup finishes.",
       disableInput: false,
       disableSubmit: false,
       queueOnSubmit: true,
@@ -55,8 +36,6 @@ function getStatusCopy(
   if (startupState !== null && startupState.tag !== "Ready") {
     if (startupState.tag === "Failed") {
       return {
-        label: "Failed",
-        hint: startupState.message,
         disableInput: true,
         disableSubmit: true,
         queueOnSubmit: false,
@@ -67,10 +46,6 @@ function getStatusCopy(
     if (role.tag === "Captain") {
       const captainBusy = agentStateTag === "Working";
       return {
-        label: captainBusy ? "Starting" : stateLabel(agentStateTag),
-        hint: captainBusy
-          ? "You can type now and queue a captain note while the greeting finishes."
-          : "Captain is ready. Mate startup can continue in the background.",
         disableInput: false,
         disableSubmit: false,
         queueOnSubmit: captainBusy,
@@ -79,8 +54,6 @@ function getStatusCopy(
     }
 
     return {
-      label: "Starting",
-      hint: "You can draft mate steer now. Sending unlocks after startup and task setup.",
       disableInput: false,
       disableSubmit: true,
       queueOnSubmit: false,
@@ -90,8 +63,6 @@ function getStatusCopy(
 
   if (agentStateTag === "AwaitingPermission") {
     return {
-      label: stateLabel(agentStateTag),
-      hint: "Approve the pending permission request before sending more guidance.",
       disableInput: true,
       disableSubmit: true,
       queueOnSubmit: false,
@@ -101,8 +72,6 @@ function getStatusCopy(
 
   if (agentStateTag === "ContextExhausted") {
     return {
-      label: stateLabel(agentStateTag),
-      hint: "Rotate or retry the agent before sending more guidance.",
       disableInput: true,
       disableSubmit: true,
       queueOnSubmit: false,
@@ -112,8 +81,6 @@ function getStatusCopy(
 
   if (agentStateTag === "Error") {
     return {
-      label: stateLabel(agentStateTag),
-      hint: "Retry the agent before sending more guidance.",
       disableInput: true,
       disableSubmit: true,
       queueOnSubmit: false,
@@ -121,86 +88,16 @@ function getStatusCopy(
     };
   }
 
-  if (role.tag === "Mate") {
-    if (taskStatus === null) {
-      return {
-        label: "No active task",
-        hint: "Assign a task before steering the mate directly.",
-        disableInput: false,
-        disableSubmit: true,
-        queueOnSubmit: false,
-        submitLabel: "Send",
-      };
-    }
-
-    if (taskStatus.tag === "SteerPending") {
-      return {
-        label: "Captain steer pending",
-        hint: "Send your own steer here to override the captain's pending draft.",
-        disableInput: false,
-        disableSubmit: false,
-        queueOnSubmit: false,
-        submitLabel: "Send",
-      };
-    }
-
-    if (taskStatus.tag === "ReviewPending") {
-      return {
-        label: "Awaiting review",
-        hint: "Need to bypass the captain? Send human steer directly to the mate.",
-        disableInput: false,
-        disableSubmit: false,
-        queueOnSubmit: false,
-        submitLabel: "Send",
-      };
-    }
-
+  if (role.tag === "Mate" && taskStatus === null) {
     return {
-      label: stateLabel(agentStateTag),
-      hint: "Human steer can redirect the mate at any time during the task.",
       disableInput: false,
-      disableSubmit: false,
-      queueOnSubmit: false,
-      submitLabel: "Send",
-    };
-  }
-
-  if (taskStatus === null) {
-    return {
-      label: stateLabel(agentStateTag),
-      hint: "Talk to the captain directly. Assign a task when you want work to start.",
-      disableInput: false,
-      disableSubmit: false,
-      queueOnSubmit: false,
-      submitLabel: "Send",
-    };
-  }
-
-  if (taskStatus.tag === "SteerPending") {
-    return {
-      label: "Steer pending",
-      hint: "Ask the captain to revise or clarify the pending steer before you send it.",
-      disableInput: false,
-      disableSubmit: false,
-      queueOnSubmit: false,
-      submitLabel: "Send",
-    };
-  }
-
-  if (taskStatus.tag === "ReviewPending") {
-    return {
-      label: "Review pending",
-      hint: "Ask the captain to review the mate's latest work or draft the next steer.",
-      disableInput: false,
-      disableSubmit: false,
+      disableSubmit: true,
       queueOnSubmit: false,
       submitLabel: "Send",
     };
   }
 
   return {
-    label: stateLabel(agentStateTag),
-    hint: "Send direct guidance to the captain.",
     disableInput: false,
     disableSubmit: false,
     queueOnSubmit: false,

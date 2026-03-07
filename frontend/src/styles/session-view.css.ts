@@ -239,14 +239,6 @@ export const composerRoot = style({
   flexShrink: 0,
 });
 
-export const composerStatus = style({
-  fontWeight: "var(--font-weight-medium)",
-});
-
-export const composerHint = style({
-  textAlign: "right",
-});
-
 export const composerInput = style({
   resize: "vertical",
 });
