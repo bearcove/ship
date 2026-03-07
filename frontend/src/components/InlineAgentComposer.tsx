@@ -1,8 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Box, Button, Flex, Text, TextArea } from "@radix-ui/themes";
 import { getShipClient } from "../api/client";
 import type { Role, SessionStartupState, TaskStatus } from "../generated/ship";
-import { composerActions, composerInput, composerRoot } from "../styles/session-view.css";
+import {
+  composerActions,
+  composerInput,
+  composerInputWrapper,
+  composerRoot,
+  fileMentionItem,
+  fileMentionPopup,
+} from "../styles/session-view.css";
+import { useWorktreeFiles } from "../hooks/useWorktreeFiles";
 
 interface Props {
   sessionId: string;
@@ -105,6 +113,14 @@ function getStatusCopy(
   };
 }
 
+// r[ui.composer.file-mention]
+function getAtMentionQuery(text: string, cursorPos: number): string | null {
+  const textBefore = text.slice(0, cursorPos);
+  const match = textBefore.match(/@([a-zA-Z0-9/._-]*)$/);
+  if (match) return match[1];
+  return null;
+}
+
 // r[ui.keys.steer-send]
 export function InlineAgentComposer({
   sessionId,
@@ -117,7 +133,18 @@ export function InlineAgentComposer({
   const [queuedText, setQueuedText] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const status = getStatusCopy(role, agentStateTag, startupState, taskStatus, queuedText);
+  const worktreeFiles = useWorktreeFiles(sessionId);
+
+  const filteredFiles =
+    mentionQuery !== null
+      ? worktreeFiles
+          .filter((f) => f.toLowerCase().includes(mentionQuery.toLowerCase()))
+          .slice(0, 10)
+      : [];
 
   async function sendNow(value: string) {
     setLoading(true);
@@ -178,26 +205,97 @@ export function InlineAgentComposer({
     }
   }
 
+  function handleTextChange(event: React.ChangeEvent<HTMLTextAreaElement>) {
+    const newText = event.target.value;
+    setText(newText);
+    const cursorPos = event.target.selectionStart ?? newText.length;
+    const query = getAtMentionQuery(newText, cursorPos);
+    setMentionQuery(query);
+    setSelectedIndex(0);
+  }
+
+  function insertMention(file: string) {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    const cursorPos = textarea.selectionStart ?? text.length;
+    const textBefore = text.slice(0, cursorPos);
+    const atIndex = textBefore.lastIndexOf("@");
+    if (atIndex === -1) return;
+    const newText = text.slice(0, atIndex) + "@" + file + text.slice(cursorPos);
+    setText(newText);
+    setMentionQuery(null);
+    const newCursorPos = atIndex + 1 + file.length;
+    requestAnimationFrame(() => {
+      textarea.setSelectionRange(newCursorPos, newCursorPos);
+      textarea.focus();
+    });
+  }
+
+  function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (mentionQuery !== null && filteredFiles.length > 0) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setSelectedIndex((i) => Math.min(i + 1, filteredFiles.length - 1));
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setSelectedIndex((i) => Math.max(i - 1, 0));
+        return;
+      }
+      if (event.key === "Enter" && !event.metaKey && !event.ctrlKey) {
+        event.preventDefault();
+        insertMention(filteredFiles[selectedIndex]);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setMentionQuery(null);
+        return;
+      }
+    }
+
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      event.preventDefault();
+      void handleSubmit();
+    }
+  }
+
   return (
     <Flex className={composerRoot} direction="column" gap="2">
-      <TextArea
-        className={composerInput}
-        size="2"
-        rows={2}
-        placeholder={
-          role.tag === "Captain" ? "Steer the captain directly…" : "Steer the mate directly…"
-        }
-        value={text}
-        onChange={(event) => setText(event.target.value)}
-        onKeyDown={(event) => {
-          if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-            event.preventDefault();
-            void handleSubmit();
+      <div className={composerInputWrapper}>
+        {mentionQuery !== null && filteredFiles.length > 0 && (
+          <div className={fileMentionPopup}>
+            {filteredFiles.map((file, index) => (
+              <div
+                key={file}
+                className={fileMentionItem}
+                data-selected={index === selectedIndex}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  insertMention(file);
+                }}
+              >
+                {file}
+              </div>
+            ))}
+          </div>
+        )}
+        <TextArea
+          ref={textareaRef}
+          className={composerInput}
+          size="2"
+          rows={2}
+          placeholder={
+            role.tag === "Captain" ? "Steer the captain directly…" : "Steer the mate directly…"
           }
-        }}
-        disabled={status.disableInput || loading}
-        aria-label={role.tag === "Captain" ? "Captain steer input" : "Mate steer input"}
-      />
+          value={text}
+          onChange={handleTextChange}
+          onKeyDown={handleKeyDown}
+          disabled={status.disableInput || loading}
+          aria-label={role.tag === "Captain" ? "Captain steer input" : "Mate steer input"}
+        />
+      </div>
       <Flex className={composerActions} align="center" justify="end" gap="2">
         <Button
           size="1"

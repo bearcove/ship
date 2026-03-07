@@ -1161,6 +1161,14 @@ Each project MAY have a `.ship/mcp-servers.json` in its repository root for
 project-specific MCP server defaults. A global default MAY also be configured
 in `~/.config/ship/mcp-servers.json`. Project-level config takes precedence.
 
+## Composer
+
+r[ui.composer.file-mention]
+The composer MUST support @-triggered file autocomplete. Typing @ opens a
+dropdown of worktree files filtered by the text after @. Selecting a file
+inserts the path. On submit, the backend expands @path mentions by injecting
+the referenced file contents into the prompt.
+
 ## Cost Tracking
 
 r[cost.not-tracked]

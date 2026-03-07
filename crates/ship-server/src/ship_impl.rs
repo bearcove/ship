@@ -33,6 +33,9 @@ use tokio::process::Command as TokioCommand;
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 
+const FILE_MENTION_LINE_LIMIT: usize = 200;
+const MAX_WORKTREE_FILES: usize = 5000;
+
 const PLAN_REQUIRED_MESSAGE: &str = "You must create a plan with plan_create before starting work.";
 const BLOCKED_COMMAND_MESSAGE: &str = "This command is blocked. Stop current work and explain the situation to the captain using mate_ask_captain.";
 const RUN_COMMAND_GUARDRAIL_TEMPLATE: &str = "Commands like `{command}` can affect the worktree in ways that are hard to undo. Please explain what you're trying to accomplish by calling mate_ask_captain, and the captain will help you find the right approach.";
@@ -1697,6 +1700,130 @@ impl ShipImpl {
         } else {
             Ok(format!("{truncated}\nexit code: {exit_code}"))
         }
+    }
+
+    // r[ui.composer.file-mention]
+    async fn expand_file_mentions(&self, session_id: &SessionId, content: String) -> String {
+        let worktree_path = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let Some(session) = sessions.get(session_id) else {
+                return content;
+            };
+            match session.worktree_path.clone() {
+                Some(p) => p,
+                None => return content,
+            }
+        };
+        let content_clone = content.clone();
+        tokio::task::spawn_blocking(move || {
+            Self::expand_file_mentions_sync(&worktree_path, &content_clone)
+        })
+        .await
+        .unwrap_or(content)
+    }
+
+    fn expand_file_mentions_sync(worktree: &Path, content: &str) -> String {
+        let mut result = String::with_capacity(content.len());
+        let mut chars = content.char_indices().peekable();
+        while let Some((_i, c)) = chars.next() {
+            if c != '@' {
+                result.push(c);
+                continue;
+            }
+            let mut path = String::new();
+            loop {
+                match chars.peek() {
+                    Some((_, ch)) if matches!(ch, 'a'..='z' | 'A'..='Z' | '0'..='9' | '/' | '.' | '_' | '-') =>
+                    {
+                        path.push(chars.next().unwrap().1);
+                    }
+                    _ => break,
+                }
+            }
+            if path.is_empty() {
+                result.push('@');
+                continue;
+            }
+            match Self::read_file_for_mention(worktree, &path) {
+                Ok(file_content) => {
+                    let lang = Path::new(&path)
+                        .extension()
+                        .and_then(|ext| ext.to_str())
+                        .unwrap_or("");
+                    result.push_str(&format!("@{path}:\n```{lang}\n{file_content}\n```"));
+                }
+                Err(_) => {
+                    result.push('@');
+                    result.push_str(&path);
+                }
+            }
+        }
+        result
+    }
+
+    fn read_file_for_mention(worktree: &Path, path_str: &str) -> Result<String, String> {
+        let rel_path = Self::validate_worktree_path(path_str)?;
+        let canonical_worktree =
+            fs::canonicalize(worktree).map_err(|e| format!("worktree canonicalize: {e}"))?;
+        let candidate = canonical_worktree.join(rel_path);
+        let metadata = fs::metadata(&candidate).map_err(|_| "not found".to_owned())?;
+        if metadata.is_dir() {
+            return Err("is a directory".to_owned());
+        }
+        let canonical_file =
+            fs::canonicalize(&candidate).map_err(|_| "canonicalize failed".to_owned())?;
+        if !canonical_file.starts_with(&canonical_worktree) {
+            return Err("path escapes worktree".to_owned());
+        }
+        let mut f = fs::File::open(&canonical_file).map_err(|e| format!("open: {e}"))?;
+        let mut probe = vec![0u8; BINARY_DETECTION_BYTES];
+        let probe_len = f.read(&mut probe).map_err(|e| format!("probe read: {e}"))?;
+        if probe[..probe_len].contains(&0) {
+            return Err("binary file".to_owned());
+        }
+        let f2 = fs::File::open(&canonical_file).map_err(|e| format!("open: {e}"))?;
+        let reader = BufReader::new(f2);
+        let mut lines = Vec::new();
+        let mut truncated = false;
+        for line in reader.lines() {
+            if lines.len() >= FILE_MENTION_LINE_LIMIT {
+                truncated = true;
+                break;
+            }
+            lines.push(line.map_err(|e| format!("read line: {e}"))?);
+        }
+        let mut file_content = lines.join("\n");
+        if truncated {
+            file_content.push_str(&format!(
+                "\n(truncated — showing first {FILE_MENTION_LINE_LIMIT} lines)"
+            ));
+        }
+        Ok(file_content)
+    }
+
+    async fn list_worktree_files_impl(
+        &self,
+        session_id: &SessionId,
+    ) -> Result<Vec<String>, String> {
+        let worktree_path = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions
+                .get(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            Self::current_task_worktree_path(session)?.to_path_buf()
+        };
+        let output = TokioCommand::new(Self::fd_program())
+            .args(["--type", "f"])
+            .current_dir(&worktree_path)
+            .output()
+            .await
+            .map_err(|e| format!("fd failed: {e}"))?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(stdout
+            .lines()
+            .take(MAX_WORKTREE_FILES)
+            .map(|s| s.to_owned())
+            .collect())
     }
 
     // r[mate.tool.read-file]
@@ -3437,6 +3564,7 @@ impl Ship for ShipImpl {
     }
 
     async fn steer(&self, session: SessionId, content: String) {
+        let content = self.expand_file_mentions(&session, content).await;
         if let Err(error) = self.dispatch_steer_to_mate(&session, content).await {
             Self::log_error("steer", &error);
         }
@@ -3444,6 +3572,7 @@ impl Ship for ShipImpl {
 
     // r[acp.prompt]
     async fn prompt_captain(&self, session: SessionId, content: String) {
+        let content = self.expand_file_mentions(&session, content).await;
         if let Err(error) = self
             .append_human_message(&session, Role::Captain, content.clone())
             .await
@@ -3671,6 +3800,17 @@ impl Ship for ShipImpl {
     // r[event.subscribe.replay]
     // r[event.subscribe.roam-channel]
     // r[sharing.event-broadcast]
+    // r[ui.composer.file-mention]
+    async fn list_worktree_files(&self, session: SessionId) -> Vec<String> {
+        match self.list_worktree_files_impl(&session).await {
+            Ok(files) => files,
+            Err(error) => {
+                Self::log_error("list_worktree_files", &error);
+                vec![]
+            }
+        }
+    }
+
     async fn subscribe_events(&self, session: SessionId, output: Tx<SubscribeMessage>) {
         tracing::info!(session_id = %session.0, "subscriber connected");
         let session_data = {

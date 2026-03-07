@@ -239,12 +239,49 @@ export const composerRoot = style({
   flexShrink: 0,
 });
 
+export const composerInputWrapper = style({
+  position: "relative",
+});
+
 export const composerInput = style({
   resize: "vertical",
 });
 
 export const composerActions = style({
   flexShrink: 0,
+});
+
+export const fileMentionPopup = style({
+  position: "absolute",
+  bottom: "100%",
+  left: 0,
+  right: 0,
+  zIndex: 50,
+  marginBottom: 4,
+  maxHeight: "14rem",
+  overflowY: "auto",
+  border: "1px solid var(--gray-a6)",
+  borderRadius: "var(--radius-3)",
+  background: "var(--color-panel-solid)",
+  boxShadow: "var(--shadow-4)",
+});
+
+export const fileMentionItem = style({
+  padding: "var(--space-2) var(--space-3)",
+  cursor: "pointer",
+  fontFamily: monoFontStack,
+  fontSize: "var(--font-size-1)",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+  selectors: {
+    '&[data-selected="true"]': {
+      background: "var(--accent-a3)",
+    },
+    "&:hover": {
+      background: "var(--gray-a3)",
+    },
+  },
 });
 
 export const toolCallBlock = style({

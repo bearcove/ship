@@ -62,6 +62,9 @@ pub trait Ship {
     // r[proto.close-session]
     async fn close_session(&self, req: CloseSessionRequest) -> CloseSessionResponse;
 
+    // r[ui.composer.file-mention]
+    async fn list_worktree_files(&self, session: SessionId) -> Vec<String>;
+
     // r[event.subscribe.roam-channel]
     async fn subscribe_events(&self, session: SessionId, output: Tx<SubscribeMessage>);
 }
