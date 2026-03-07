@@ -1,4 +1,7 @@
 use std::collections::HashMap;
+use std::fs;
+use std::io::{BufRead, BufReader, Read};
+use std::path::{Component, Path};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -30,6 +33,9 @@ use tokio::task::JoinHandle;
 
 const PLAN_REQUIRED_MESSAGE: &str = "You must create a plan with plan_create before starting work.";
 const BLOCKED_COMMAND_MESSAGE: &str = "This command is blocked. Stop current work and explain the situation to the captain using mate_ask_captain.";
+const DEFAULT_READ_FILE_LIMIT: usize = 2000;
+const MAX_READ_FILE_LINE_LENGTH: usize = 2000;
+const BINARY_DETECTION_BYTES: usize = 8 * 1024;
 
 struct AutoCommitResult {
     commit_hash: String,
@@ -1008,6 +1014,141 @@ impl ShipImpl {
             .worktree_path
             .as_deref()
             .ok_or_else(|| "session worktree is not ready".to_owned())
+    }
+
+    fn validate_read_file_path(path: &str) -> Result<&Path, String> {
+        let candidate = Path::new(path);
+        if candidate.is_absolute() {
+            return Err("Absolute paths are not allowed.".to_owned());
+        }
+        if candidate
+            .components()
+            .any(|component| matches!(component, Component::ParentDir))
+        {
+            return Err("Path resolves outside the worktree.".to_owned());
+        }
+        Ok(candidate)
+    }
+
+    fn format_read_file_excerpt(
+        path: &Path,
+        offset: usize,
+        limit: usize,
+    ) -> Result<String, String> {
+        let mut binary_probe =
+            fs::File::open(path).map_err(|error| format!("Failed to read file: {error}"))?;
+        let mut probe = vec![0; BINARY_DETECTION_BYTES];
+        let probe_len = binary_probe
+            .read(&mut probe)
+            .map_err(|error| format!("Failed to read file: {error}"))?;
+        if probe[..probe_len].contains(&0) {
+            return Err("Binary file — cannot display.".to_owned());
+        }
+
+        let file = fs::File::open(path).map_err(|error| format!("Failed to read file: {error}"))?;
+        let reader = BufReader::new(file);
+        let mut lines = Vec::new();
+        for line in reader.lines() {
+            lines.push(line.map_err(|error| format!("Failed to read file: {error}"))?);
+        }
+
+        if lines.is_empty() {
+            return Ok("File is empty.".to_owned());
+        }
+
+        let total = lines.len();
+        if offset > total {
+            return Err(format!(
+                "Offset {offset} is past end of file ({total} lines)."
+            ));
+        }
+
+        let start_index = offset - 1;
+        let end_index = total.min(start_index.saturating_add(limit));
+        let width = end_index.to_string().len();
+        let mut rendered = Vec::with_capacity(end_index - start_index + 1);
+        for (line_number, line) in lines[start_index..end_index].iter().enumerate() {
+            let line_number = start_index + line_number + 1;
+            let display = if line.chars().count() > MAX_READ_FILE_LINE_LENGTH {
+                let truncated: String = line.chars().take(MAX_READ_FILE_LINE_LENGTH).collect();
+                format!("{truncated}…")
+            } else {
+                line.clone()
+            };
+            rendered.push(format!("{line_number:>width$}→{display}"));
+        }
+
+        if end_index < total {
+            rendered.push(format!(
+                "(truncated — file has {total} lines, showing {offset}–{end_index}. Use offset/limit to read more.)"
+            ));
+        }
+
+        Ok(rendered.join("\n"))
+    }
+
+    // r[mate.tool.read-file]
+    async fn mate_tool_read_file(
+        &self,
+        session_id: &SessionId,
+        path: String,
+        offset: Option<u64>,
+        limit: Option<u64>,
+    ) -> Result<String, String> {
+        let offset = match offset {
+            Some(0) => return Err("offset must be at least 1".to_owned()),
+            Some(offset) => {
+                usize::try_from(offset).map_err(|_| "offset is too large".to_owned())?
+            }
+            None => 1,
+        };
+        let limit = match limit {
+            Some(0) => return Err("limit must be at least 1".to_owned()),
+            Some(limit) => usize::try_from(limit).map_err(|_| "limit is too large".to_owned())?,
+            None => DEFAULT_READ_FILE_LIMIT,
+        };
+        let relative_path = Self::validate_read_file_path(&path)?.to_path_buf();
+        let worktree_path = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions
+                .get(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            Self::current_task_worktree_path(session)?.to_path_buf()
+        };
+
+        tokio::task::spawn_blocking(move || {
+            let canonical_worktree = fs::canonicalize(&worktree_path).map_err(|error| {
+                format!(
+                    "Failed to resolve worktree path {}: {error}",
+                    worktree_path.display()
+                )
+            })?;
+            let candidate_path = canonical_worktree.join(&relative_path);
+            let metadata = fs::metadata(&candidate_path).map_err(|error| {
+                if error.kind() == std::io::ErrorKind::NotFound {
+                    format!("File not found: {}", relative_path.display())
+                } else {
+                    format!("Failed to access file: {error}")
+                }
+            })?;
+            if metadata.is_dir() {
+                return Err("Path is a directory, not a file.".to_owned());
+            }
+
+            let canonical_file = fs::canonicalize(&candidate_path).map_err(|error| {
+                format!(
+                    "Failed to resolve file path {}: {error}",
+                    candidate_path.display()
+                )
+            })?;
+            if !canonical_file.starts_with(&canonical_worktree) {
+                return Err("Path resolves outside the worktree.".to_owned());
+            }
+
+            Self::format_read_file_excerpt(&canonical_file, offset, limit)
+        })
+        .await
+        .map_err(|error| format!("read_file task failed: {error}"))?
     }
 
     async fn auto_commit_worktree(
@@ -2780,6 +2921,20 @@ impl MateMcpSessionService {
 }
 
 impl MateMcp for MateMcpSessionService {
+    // r[mate.tool.read-file]
+    async fn read_file(
+        &self,
+        path: String,
+        offset: Option<u64>,
+        limit: Option<u64>,
+    ) -> McpToolCallResponse {
+        Self::response(
+            self.ship
+                .mate_tool_read_file(&self.session_id, path, offset, limit)
+                .await,
+        )
+    }
+
     // r[mate.tool.send-update]
     async fn mate_send_update(&self, message: String) -> McpToolCallResponse {
         Self::response(
@@ -3373,6 +3528,86 @@ mod tests {
                 .expect("plan should still be persisted");
             assert_eq!(plan[0].status, PlanStepStatus::Completed);
         }
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    // r[verify mate.tool.read-file]
+    #[tokio::test]
+    async fn mate_read_file_formats_numbered_slices_and_errors() {
+        let (dir, ship, session_id) = create_session_for_workflow_test("mate-read-file").await;
+        let project_root = dir.join("project");
+        std::fs::create_dir_all(project_root.join("src")).expect("src directory should be created");
+        std::fs::write(
+            project_root.join("src/lib.rs"),
+            "first line\nsecond line\nthird line\n",
+        )
+        .expect("test file should be written");
+        std::fs::write(project_root.join("empty.txt"), "").expect("empty file should be written");
+        std::fs::write(project_root.join("binary.bin"), [0, 1, 2, 3])
+            .expect("binary file should be written");
+
+        {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(&session_id).expect("session should exist");
+            session.worktree_path = Some(project_root.clone());
+        }
+
+        let full = ship
+            .mate_tool_read_file(&session_id, "src/lib.rs".to_owned(), None, None)
+            .await
+            .expect("full read should succeed");
+        assert_eq!(full, "1→first line\n2→second line\n3→third line");
+
+        let slice = ship
+            .mate_tool_read_file(&session_id, "src/lib.rs".to_owned(), Some(2), Some(1))
+            .await
+            .expect("sliced read should succeed");
+        assert_eq!(
+            slice,
+            "2→second line\n(truncated — file has 3 lines, showing 2–2. Use offset/limit to read more.)"
+        );
+
+        let empty = ship
+            .mate_tool_read_file(&session_id, "empty.txt".to_owned(), None, None)
+            .await
+            .expect("empty file should be readable");
+        assert_eq!(empty, "File is empty.");
+
+        let binary = ship
+            .mate_tool_read_file(&session_id, "binary.bin".to_owned(), None, None)
+            .await
+            .expect_err("binary file should be rejected");
+        assert_eq!(binary, "Binary file — cannot display.");
+
+        let directory = ship
+            .mate_tool_read_file(&session_id, "src".to_owned(), None, None)
+            .await
+            .expect_err("directory should be rejected");
+        assert_eq!(directory, "Path is a directory, not a file.");
+
+        let missing = ship
+            .mate_tool_read_file(&session_id, "missing.rs".to_owned(), None, None)
+            .await
+            .expect_err("missing file should be rejected");
+        assert_eq!(missing, "File not found: missing.rs");
+
+        let escaped = ship
+            .mate_tool_read_file(&session_id, "../Cargo.toml".to_owned(), None, None)
+            .await
+            .expect_err("path escape should be rejected");
+        assert_eq!(escaped, "Path resolves outside the worktree.");
+
+        let absolute = ship
+            .mate_tool_read_file(
+                &session_id,
+                project_root.join("src/lib.rs").display().to_string(),
+                None,
+                None,
+            )
+            .await
+            .expect_err("absolute path should be rejected");
+        assert_eq!(absolute, "Absolute paths are not allowed.");
 
         let _ = std::fs::remove_dir_all(dir);
     }

@@ -52,6 +52,32 @@ impl ServerHandler for MateMcpHandler {
     ) -> Result<CallToolResult, CallToolError> {
         let arguments = params.arguments.map(Value::Object).unwrap_or(Value::Null);
         let result = match params.name.as_str() {
+            // r[mate.tool.read-file]
+            "read_file" => {
+                let Some(path) = arguments.get("path").and_then(Value::as_str) else {
+                    return Ok(tool_result("missing required argument: path", true));
+                };
+                let offset = match arguments.get("offset") {
+                    Some(value) => Some(
+                        value
+                            .as_u64()
+                            .ok_or_else(|| call_tool_rpc_error("offset must be an integer"))?,
+                    ),
+                    None => None,
+                };
+                let limit = match arguments.get("limit") {
+                    Some(value) => Some(
+                        value
+                            .as_u64()
+                            .ok_or_else(|| call_tool_rpc_error("limit must be an integer"))?,
+                    ),
+                    None => None,
+                };
+                self.client
+                    .read_file(path.to_owned(), offset, limit)
+                    .await
+                    .map_err(call_tool_rpc_error)?
+            }
             // r[mate.tool.send-update]
             "mate_send_update" => {
                 let Some(message) = arguments.get("message").and_then(Value::as_str) else {
@@ -193,6 +219,20 @@ fn server_details() -> InitializeResult {
 
 fn tool_definitions() -> Vec<ToolDefinition> {
     vec![
+        ToolDefinition {
+            name: "read_file",
+            description: "Read a text file from the current task worktree with line numbers. Supports optional 1-based offset and line limit.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string" },
+                    "offset": { "type": "integer", "minimum": 1 },
+                    "limit": { "type": "integer", "minimum": 1 }
+                },
+                "required": ["path"],
+                "additionalProperties": false,
+            }),
+        },
         ToolDefinition {
             name: "mate_send_update",
             description: "Send a progress update to the captain. Returns immediately without waiting for a response.",

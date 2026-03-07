@@ -837,6 +837,15 @@ Mate tools MUST be implemented as MCP tools served by Ship itself. The mate's
 `NewSessionRequest` MUST include Ship's mate MCP server in its `mcp_servers`
 list. A separate per-session stdio proxy is spawned for the mate.
 
+r[mate.tool.read-file]
+The mate MUST have access to a `read_file` tool that takes a worktree-relative
+`path` argument (string), plus optional 1-based `offset` and `limit`
+arguments. Ship MUST reject absolute paths, directory traversal, directories,
+binary files, and missing files with clear errors. For text files, Ship MUST
+return numbered lines in a code-reading format, truncate individual lines
+longer than 2000 characters, and truncate output to at most the requested line
+window with a message explaining how to read more.
+
 r[mate.tool.send-update]
 The mate MUST have access to a `mate_send_update` tool that takes a `message`
 argument (string). The message is injected into the captain's context as a
