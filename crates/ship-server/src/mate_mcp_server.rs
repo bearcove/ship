@@ -78,6 +78,19 @@ impl ServerHandler for MateMcpHandler {
                     .await
                     .map_err(call_tool_rpc_error)?
             }
+            // r[mate.tool.write-file]
+            "write_file" => {
+                let Some(path) = arguments.get("path").and_then(Value::as_str) else {
+                    return Ok(tool_result("missing required argument: path", true));
+                };
+                let Some(content) = arguments.get("content").and_then(Value::as_str) else {
+                    return Ok(tool_result("missing required argument: content", true));
+                };
+                self.client
+                    .write_file(path.to_owned(), content.to_owned())
+                    .await
+                    .map_err(call_tool_rpc_error)?
+            }
             // r[mate.tool.send-update]
             "mate_send_update" => {
                 let Some(message) = arguments.get("message").and_then(Value::as_str) else {
@@ -230,6 +243,19 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "limit": { "type": "integer", "minimum": 1 }
                 },
                 "required": ["path"],
+                "additionalProperties": false,
+            }),
+        },
+        ToolDefinition {
+            name: "write_file",
+            description: "Write a file in the current task worktree. Rust files are syntax-checked with rustfmt and auto-formatted before the write is committed.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string" },
+                    "content": { "type": "string" }
+                },
+                "required": ["path", "content"],
                 "additionalProperties": false,
             }),
         },

@@ -96,6 +96,9 @@ pub trait MateMcp {
         limit: Option<u64>,
     ) -> McpToolCallResponse;
 
+    // r[mate.tool.write-file]
+    async fn write_file(&self, path: String, content: String) -> McpToolCallResponse;
+
     // r[mate.tool.send-update]
     async fn mate_send_update(&self, message: String) -> McpToolCallResponse;
 

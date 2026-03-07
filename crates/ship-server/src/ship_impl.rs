@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fs;
-use std::io::{BufRead, BufReader, Read};
-use std::path::{Component, Path};
+use std::io::{BufRead, BufReader, Read, Write};
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -41,6 +41,15 @@ struct AutoCommitResult {
     commit_hash: String,
     diff_stat: String,
 }
+
+enum RustfmtOutcome {
+    Success,
+    NotFound,
+    Failure(String),
+}
+
+#[cfg(test)]
+static TEST_RUSTFMT_PROGRAM: Mutex<Option<std::ffi::OsString>> = Mutex::new(None);
 
 pub enum MateReviewOutcome {
     Accepted { summary: Option<String> },
@@ -1016,7 +1025,7 @@ impl ShipImpl {
             .ok_or_else(|| "session worktree is not ready".to_owned())
     }
 
-    fn validate_read_file_path(path: &str) -> Result<&Path, String> {
+    fn validate_worktree_path(path: &str) -> Result<&Path, String> {
         let candidate = Path::new(path);
         if candidate.is_absolute() {
             return Err("Absolute paths are not allowed.".to_owned());
@@ -1028,6 +1037,119 @@ impl ShipImpl {
             return Err("Path resolves outside the worktree.".to_owned());
         }
         Ok(candidate)
+    }
+
+    fn resolve_worktree_file_path(
+        canonical_worktree: &Path,
+        relative_path: &Path,
+    ) -> Result<PathBuf, String> {
+        let parent = relative_path
+            .parent()
+            .map(|parent| canonical_worktree.join(parent))
+            .unwrap_or_else(|| canonical_worktree.to_path_buf());
+        fs::create_dir_all(&parent)
+            .map_err(|error| format!("Failed to create parent directory: {error}"))?;
+        let canonical_parent = fs::canonicalize(&parent).map_err(|error| {
+            format!(
+                "Failed to resolve parent directory path {}: {error}",
+                parent.display()
+            )
+        })?;
+        if !canonical_parent.starts_with(canonical_worktree) {
+            return Err("Path resolves outside the worktree.".to_owned());
+        }
+        let Some(file_name) = relative_path.file_name() else {
+            return Err("Path must point to a file.".to_owned());
+        };
+        Ok(canonical_parent.join(file_name))
+    }
+
+    fn line_count(content: &str) -> usize {
+        if content.is_empty() {
+            0
+        } else {
+            content.lines().count()
+        }
+    }
+
+    fn rustfmt_program() -> std::ffi::OsString {
+        #[cfg(test)]
+        if let Some(program) = TEST_RUSTFMT_PROGRAM
+            .lock()
+            .expect("test rustfmt program mutex poisoned")
+            .clone()
+        {
+            return program;
+        }
+
+        std::ffi::OsString::from("rustfmt")
+    }
+
+    fn run_rustfmt(program: &std::ffi::OsString, path: &Path) -> Result<RustfmtOutcome, String> {
+        let mut command = Command::new(program);
+        let output = match command.arg(path).output() {
+            Ok(output) => output,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(RustfmtOutcome::NotFound);
+            }
+            Err(error) => return Err(format!("failed to run rustfmt: {error}")),
+        };
+
+        if output.status.success() {
+            return Ok(RustfmtOutcome::Success);
+        }
+
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        let details = if !stderr.is_empty() {
+            stderr
+        } else if !stdout.is_empty() {
+            stdout
+        } else {
+            "rustfmt failed".to_owned()
+        };
+        Ok(RustfmtOutcome::Failure(details))
+    }
+
+    fn restore_written_file(target: &Path, backup: Option<&Path>) -> Result<(), String> {
+        if target.exists() {
+            fs::remove_file(target).map_err(|error| {
+                format!(
+                    "Failed to remove invalid file {}: {error}",
+                    target.display()
+                )
+            })?;
+        }
+        if let Some(backup) = backup {
+            fs::rename(backup, target).map_err(|error| {
+                format!(
+                    "Failed to restore original file from {} to {}: {error}",
+                    backup.display(),
+                    target.display()
+                )
+            })?;
+        }
+        Ok(())
+    }
+
+    fn write_text_file(
+        target: &Path,
+        content: &str,
+        relative_display: &Path,
+    ) -> Result<usize, String> {
+        let mut file = fs::File::create(target).map_err(|error| {
+            format!(
+                "Failed to create file {}: {error}",
+                relative_display.display()
+            )
+        })?;
+        file.write_all(content.as_bytes()).map_err(|error| {
+            format!(
+                "Failed to write file {}: {error}",
+                relative_display.display()
+            )
+        })?;
+        Ok(Self::line_count(content))
     }
 
     fn format_read_file_excerpt(
@@ -1107,7 +1229,7 @@ impl ShipImpl {
             Some(limit) => usize::try_from(limit).map_err(|_| "limit is too large".to_owned())?,
             None => DEFAULT_READ_FILE_LIMIT,
         };
-        let relative_path = Self::validate_read_file_path(&path)?.to_path_buf();
+        let relative_path = Self::validate_worktree_path(&path)?.to_path_buf();
         let worktree_path = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let session = sessions
@@ -1149,6 +1271,122 @@ impl ShipImpl {
         })
         .await
         .map_err(|error| format!("read_file task failed: {error}"))?
+    }
+
+    // r[mate.tool.write-file]
+    async fn mate_tool_write_file(
+        &self,
+        session_id: &SessionId,
+        path: String,
+        content: String,
+    ) -> Result<String, String> {
+        let relative_path = Self::validate_worktree_path(&path)?.to_path_buf();
+        let worktree_path = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions
+                .get(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            Self::current_task_worktree_path(session)?.to_path_buf()
+        };
+
+        tokio::task::spawn_blocking(move || {
+            let canonical_worktree = fs::canonicalize(&worktree_path).map_err(|error| {
+                format!(
+                    "Failed to resolve worktree path {}: {error}",
+                    worktree_path.display()
+                )
+            })?;
+            let target_path = Self::resolve_worktree_file_path(&canonical_worktree, &relative_path)?;
+
+            if let Ok(metadata) = fs::metadata(&target_path) {
+                if metadata.is_dir() {
+                    return Err("Path is a directory, not a file.".to_owned());
+                }
+            }
+
+            let line_count = if relative_path.extension().and_then(|ext| ext.to_str()) == Some("rs")
+            {
+                let backup_path = if target_path.exists() {
+                    let backup_name = format!(
+                        "{}.ship-backup-{}",
+                        target_path
+                            .file_name()
+                            .and_then(|name| name.to_str())
+                            .ok_or_else(|| "Path must point to a file.".to_owned())?,
+                        std::process::id()
+                    );
+                    let backup = target_path.with_file_name(backup_name);
+                    fs::rename(&target_path, &backup).map_err(|error| {
+                        format!(
+                            "Failed to back up existing file {}: {error}",
+                            relative_path.display()
+                        )
+                    })?;
+                    Some(backup)
+                } else {
+                    None
+                };
+
+                let write_result = Self::write_text_file(&target_path, &content, &relative_path);
+                let line_count = match write_result {
+                    Ok(line_count) => line_count,
+                    Err(error) => {
+                        if let Some(backup) = backup_path.as_deref() {
+                            let _ = fs::rename(backup, &target_path);
+                        }
+                        return Err(error);
+                    }
+                };
+
+                let rustfmt_program = Self::rustfmt_program();
+                let format_output =
+                    Self::run_rustfmt(&rustfmt_program, &target_path).map_err(|error| {
+                        let restore_error =
+                            Self::restore_written_file(&target_path, backup_path.as_deref());
+                        match restore_error {
+                            Ok(()) => error,
+                            Err(restore_error) => format!("{error}\n{restore_error}"),
+                        }
+                    })?;
+
+                match format_output {
+                    RustfmtOutcome::NotFound => {
+                        tracing::warn!(path = %relative_path.display(), "rustfmt not found; writing Rust file without validation");
+                    }
+                    RustfmtOutcome::Failure(details) => {
+                        let restore_error =
+                            Self::restore_written_file(&target_path, backup_path.as_deref());
+                        let error = format!("Syntax error in {}:\n{details}", relative_path.display());
+                        return match restore_error {
+                            Ok(()) => Err(error),
+                            Err(restore_error) => Err(format!("{error}\n{restore_error}")),
+                        };
+                    }
+                    RustfmtOutcome::Success => {}
+                }
+
+                if let Some(backup) = backup_path {
+                    fs::remove_file(&backup).map_err(|error| {
+                        format!(
+                            "Failed to remove backup file {}: {error}",
+                            backup.display()
+                        )
+                    })?;
+                }
+
+                line_count
+            } else {
+                Self::write_text_file(&target_path, &content, &relative_path)?
+            };
+
+            Ok(format!(
+                "Wrote {} ({} lines)",
+                relative_path.display(),
+                line_count
+            ))
+        })
+        .await
+        .map_err(|error| format!("write_file task failed: {error}"))?
     }
 
     async fn auto_commit_worktree(
@@ -2935,6 +3173,15 @@ impl MateMcp for MateMcpSessionService {
         )
     }
 
+    // r[mate.tool.write-file]
+    async fn write_file(&self, path: String, content: String) -> McpToolCallResponse {
+        Self::response(
+            self.ship
+                .mate_tool_write_file(&self.session_id, path, content)
+                .await,
+        )
+    }
+
     // r[mate.tool.send-update]
     async fn mate_send_update(&self, message: String) -> McpToolCallResponse {
         Self::response(
@@ -3009,7 +3256,9 @@ fn short_id(id: &SessionId) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::OsString;
     use std::path::PathBuf;
+    use std::sync::{Mutex, MutexGuard};
     use std::time::Duration;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -3025,6 +3274,33 @@ mod tests {
     use tokio::time::timeout;
 
     use super::ShipImpl;
+
+    static WRITE_FILE_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    fn lock_write_file_tests() -> MutexGuard<'static, ()> {
+        WRITE_FILE_TEST_LOCK
+            .lock()
+            .expect("write_file test lock should not be poisoned")
+    }
+
+    struct TestRustfmtProgramGuard;
+
+    impl TestRustfmtProgramGuard {
+        fn set(program: &str) -> Self {
+            *super::TEST_RUSTFMT_PROGRAM
+                .lock()
+                .expect("test rustfmt program mutex poisoned") = Some(OsString::from(program));
+            Self
+        }
+    }
+
+    impl Drop for TestRustfmtProgramGuard {
+        fn drop(&mut self) {
+            *super::TEST_RUSTFMT_PROGRAM
+                .lock()
+                .expect("test rustfmt program mutex poisoned") = None;
+        }
+    }
 
     fn make_temp_dir(test_name: &str) -> PathBuf {
         let nanos = SystemTime::now()
@@ -3608,6 +3884,143 @@ mod tests {
             .await
             .expect_err("absolute path should be rejected");
         assert_eq!(absolute, "Absolute paths are not allowed.");
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    // r[verify mate.tool.write-file]
+    #[tokio::test]
+    async fn mate_write_file_writes_formats_and_creates_missing_parents() {
+        let _guard = lock_write_file_tests();
+        let (dir, ship, session_id) =
+            create_session_for_workflow_test("mate-write-file-valid").await;
+        let project_root = dir.join("project");
+        std::fs::create_dir_all(project_root.join("src")).expect("src directory should be created");
+        std::fs::write(project_root.join("src/blah.rs"), "pub fn helper() {}\n")
+            .expect("module file should be written");
+
+        {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(&session_id).expect("session should exist");
+            session.worktree_path = Some(project_root.clone());
+        }
+
+        let result = ship
+            .mate_tool_write_file(
+                &session_id,
+                "src/lib.rs".to_owned(),
+                "mod blah;\npub fn main( ) -> u32 {1}\n".to_owned(),
+            )
+            .await
+            .expect("valid rust file should be written");
+        assert_eq!(result, "Wrote src/lib.rs (2 lines)");
+        assert_eq!(
+            std::fs::read_to_string(project_root.join("src/lib.rs"))
+                .expect("written rust file should exist"),
+            "mod blah;\npub fn main() -> u32 {\n    1\n}\n"
+        );
+
+        let nested = ship
+            .mate_tool_write_file(
+                &session_id,
+                "notes/nested/file.txt".to_owned(),
+                "alpha\nbeta\n".to_owned(),
+            )
+            .await
+            .expect("nested non-rust write should succeed");
+        assert_eq!(nested, "Wrote notes/nested/file.txt (2 lines)");
+        assert_eq!(
+            std::fs::read_to_string(project_root.join("notes/nested/file.txt"))
+                .expect("nested file should exist"),
+            "alpha\nbeta\n"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    // r[verify mate.tool.write-file]
+    #[tokio::test]
+    async fn mate_write_file_rejects_bad_paths_and_rolls_back_invalid_rust() {
+        let _guard = lock_write_file_tests();
+        let (dir, ship, session_id) =
+            create_session_for_workflow_test("mate-write-file-invalid").await;
+        let project_root = dir.join("project");
+        std::fs::create_dir_all(project_root.join("src")).expect("src directory should be created");
+        std::fs::write(project_root.join("src/lib.rs"), "pub fn preserved() {}\n")
+            .expect("existing rust file should be written");
+
+        {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(&session_id).expect("session should exist");
+            session.worktree_path = Some(project_root.clone());
+        }
+
+        let escaped = ship
+            .mate_tool_write_file(&session_id, "../Cargo.toml".to_owned(), "nope".to_owned())
+            .await
+            .expect_err("path escape should be rejected");
+        assert_eq!(escaped, "Path resolves outside the worktree.");
+
+        let absolute = ship
+            .mate_tool_write_file(
+                &session_id,
+                project_root.join("src/lib.rs").display().to_string(),
+                "nope".to_owned(),
+            )
+            .await
+            .expect_err("absolute path should be rejected");
+        assert_eq!(absolute, "Absolute paths are not allowed.");
+
+        let invalid = ship
+            .mate_tool_write_file(
+                &session_id,
+                "src/lib.rs".to_owned(),
+                "pub fn broken( {\n".to_owned(),
+            )
+            .await
+            .expect_err("invalid rust file should be rejected");
+        assert!(
+            invalid.contains("Syntax error in src/lib.rs:"),
+            "unexpected error: {invalid}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(project_root.join("src/lib.rs"))
+                .expect("original file should be restored"),
+            "pub fn preserved() {}\n"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    // r[verify mate.tool.write-file]
+    #[tokio::test]
+    async fn mate_write_file_falls_back_when_rustfmt_is_unavailable() {
+        let _guard = lock_write_file_tests();
+        let _rustfmt_guard = TestRustfmtProgramGuard::set("rustfmt-does-not-exist-for-ship-tests");
+        let (dir, ship, session_id) =
+            create_session_for_workflow_test("mate-write-file-no-rustfmt").await;
+        let project_root = dir.join("project");
+
+        {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(&session_id).expect("session should exist");
+            session.worktree_path = Some(project_root.clone());
+        }
+
+        let result = ship
+            .mate_tool_write_file(
+                &session_id,
+                "src/lib.rs".to_owned(),
+                "pub fn unformatted( ) -> u32 {1}\n".to_owned(),
+            )
+            .await
+            .expect("write should succeed without rustfmt");
+        assert_eq!(result, "Wrote src/lib.rs (1 lines)");
+        assert_eq!(
+            std::fs::read_to_string(project_root.join("src/lib.rs"))
+                .expect("file should still be written"),
+            "pub fn unformatted( ) -> u32 {1}\n"
+        );
 
         let _ = std::fs::remove_dir_all(dir);
     }

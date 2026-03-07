@@ -846,6 +846,14 @@ return numbered lines in a code-reading format, truncate individual lines
 longer than 2000 characters, and truncate output to at most the requested line
 window with a message explaining how to read more.
 
+r[mate.tool.write-file]
+The mate MUST have access to a `write_file` tool that takes `path` (relative
+to worktree) and `content` arguments. For Rust files, the backend MUST write
+the candidate file into place, run `rustfmt`, and restore the previous file
+contents if formatting fails; if validation fails the file is not written and
+the error is returned. Valid Rust files are auto-formatted. Parent directories
+are created as needed.
+
 r[mate.tool.send-update]
 The mate MUST have access to a `mate_send_update` tool that takes a `message`
 argument (string). The message is injected into the captain's context as a
