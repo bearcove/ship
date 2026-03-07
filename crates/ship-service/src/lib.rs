@@ -91,6 +91,12 @@ pub trait MateMcp {
     // r[mate.tool.send-update]
     async fn mate_send_update(&self, message: String) -> McpToolCallResponse;
 
+    // r[mate.tool.plan-create]
+    async fn plan_create(&self, steps: Vec<String>) -> McpToolCallResponse;
+
+    // r[mate.tool.plan-step-complete]
+    async fn plan_step_complete(&self, step_index: u64, summary: String) -> McpToolCallResponse;
+
     // r[mate.tool.ask-captain]
     async fn mate_ask_captain(&self, question: String) -> McpToolCallResponse;
 

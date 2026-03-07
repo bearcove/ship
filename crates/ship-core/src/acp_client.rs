@@ -87,6 +87,44 @@ impl ShipAcpClient {
         *self.active_text_block.borrow_mut() = None;
     }
 
+    fn blocked_permission_option_id(&self, request: &RequestPermissionRequest) -> Option<String> {
+        if self.role != Role::Mate {
+            return None;
+        }
+
+        let tool_kind = request.tool_call.fields.kind?;
+        let raw_input = request.tool_call.fields.raw_input.as_ref();
+        let command =
+            map_command_target(&self.worktree_path, raw_input).map(|target| match target {
+                ShipToolTarget::Command { command, .. } => command,
+                _ => unreachable!("map_command_target only returns command targets"),
+            });
+
+        let is_dangerous = match tool_kind {
+            ToolKind::Execute => command
+                .as_deref()
+                .map(is_dangerous_command)
+                .unwrap_or(false),
+            ToolKind::Delete => command
+                .as_deref()
+                .map(is_broad_recursive_delete)
+                .unwrap_or(false),
+            _ => false,
+        };
+
+        if !is_dangerous {
+            return None;
+        }
+
+        request.options.iter().find_map(|option| {
+            matches!(
+                option.kind,
+                PermissionOptionKind::RejectOnce | PermissionOptionKind::RejectAlways
+            )
+            .then_some(option.option_id.0.to_string())
+        })
+    }
+
     fn append_text_chunk(&self, text: String, source: TextSource) -> Vec<SessionEvent> {
         let existing_block = self.active_text_block.borrow().clone();
         match existing_block {
@@ -347,6 +385,19 @@ impl Client for ShipAcpClient {
                 },
             },
         });
+
+        if let Some(option_id) = self.blocked_permission_option_id(&args) {
+            self.send_event(SessionEvent::AgentStateChanged {
+                role: self.role,
+                state: AgentState::Working {
+                    plan: None,
+                    activity: Some("Blocked dangerous command".to_owned()),
+                },
+            });
+            return Ok(RequestPermissionResponse::new(
+                RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(option_id)),
+            ));
+        }
 
         let (resolution_tx, resolution_rx) = oneshot::channel();
         self.pending_permissions
@@ -984,6 +1035,46 @@ fn map_permission_option_kind(kind: PermissionOptionKind) -> ShipPermissionOptio
     }
 }
 
+fn is_dangerous_command(command: &str) -> bool {
+    let trimmed = command.trim();
+    let normalized = trimmed.to_ascii_lowercase();
+    let mut parts = normalized.split_whitespace();
+    let Some(program) = parts.next() else {
+        return false;
+    };
+    let subcommand = parts.next();
+
+    if program == "git" && matches!(subcommand, Some("checkout" | "restore" | "clean" | "reset")) {
+        return true;
+    }
+
+    program == "rm" && is_broad_recursive_delete(trimmed)
+}
+
+fn is_broad_recursive_delete(command: &str) -> bool {
+    let normalized = command.trim().to_ascii_lowercase();
+    if !normalized.starts_with("rm ") {
+        return false;
+    }
+
+    let has_recursive = normalized.contains(" -r")
+        || normalized.contains(" -rf")
+        || normalized.contains(" -fr")
+        || normalized.contains(" --recursive");
+    let has_force = normalized.contains(" -f")
+        || normalized.contains(" -rf")
+        || normalized.contains(" -fr")
+        || normalized.contains(" --force");
+    let targets_rootish = normalized.contains(" *")
+        || normalized.ends_with(" .")
+        || normalized.contains(" ./")
+        || normalized.contains(" /")
+        || normalized.contains(" ..")
+        || normalized.contains(" ~");
+
+    has_recursive && has_force && targets_rootish
+}
+
 fn display_path_for_path(worktree_path: &Path, path: &Path) -> Option<String> {
     if path.as_os_str().is_empty() {
         return None;
@@ -1413,6 +1504,70 @@ mod tests {
                         "allow-always",
                     ))
                 );
+            })
+            .await;
+    }
+
+    // r[verify mate.tool.guardrails]
+    #[tokio::test(flavor = "current_thread")]
+    async fn dangerous_mate_commands_are_rejected_automatically() {
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async {
+                let (tx, mut rx) = mpsc::unbounded_channel();
+                let client = Rc::new(ShipAcpClient::new(
+                    Role::Mate,
+                    PathBuf::from("/tmp/worktree"),
+                    tx,
+                ));
+
+                let request = RequestPermissionRequest::new(
+                    "session-1",
+                    ToolCallUpdate::new(
+                        "toolu_perm_blocked",
+                        ToolCallUpdateFields::new()
+                            .title("Shell Command".to_owned())
+                            .kind(ToolKind::Execute)
+                            .raw_input(serde_json::json!({
+                                "command": "git reset --hard HEAD~1",
+                            })),
+                    ),
+                    vec![
+                        AcpPermissionOption::new(
+                            "allow-once",
+                            "Allow once",
+                            PermissionOptionKind::AllowOnce,
+                        ),
+                        AcpPermissionOption::new(
+                            "reject-once",
+                            "Reject once",
+                            PermissionOptionKind::RejectOnce,
+                        ),
+                    ],
+                );
+
+                let response = client
+                    .request_permission(request)
+                    .await
+                    .expect("permission request should succeed");
+
+                assert_eq!(
+                    response.outcome,
+                    RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
+                        "reject-once",
+                    ))
+                );
+
+                let _ = rx.recv().await.expect("permission block event");
+                let _ = rx.recv().await.expect("awaiting permission state event");
+                let working = rx.recv().await.expect("working state event");
+                let SessionEvent::AgentStateChanged { state, .. } = working else {
+                    panic!("unexpected event: {working:?}");
+                };
+                let AgentState::Working { activity, .. } = state else {
+                    panic!("unexpected state: {state:?}");
+                };
+                assert_eq!(activity.as_deref(), Some("Blocked dangerous command"));
             })
             .await;
     }

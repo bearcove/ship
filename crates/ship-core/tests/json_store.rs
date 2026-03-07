@@ -78,6 +78,8 @@ fn make_persisted_session(id: &str, description: &str) -> PersistedSession {
                 description: description.to_owned(),
                 status: TaskStatus::Working,
             },
+            mate_plan: None,
+            pending_mate_guidance: None,
             content_history: vec![TaskContentRecord {
                 block_id: BlockId::new(),
                 role: Role::Mate,

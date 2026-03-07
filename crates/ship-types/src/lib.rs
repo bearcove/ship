@@ -651,7 +651,7 @@ pub mod protocol {
 }
 
 pub mod persistence {
-    use crate::agent::{AgentKind, AgentSnapshot, Role};
+    use crate::agent::{AgentKind, AgentSnapshot, PlanStep, Role};
     use crate::events::{ContentBlock, SessionEventEnvelope};
     use crate::ids::{BlockId, ProjectName, SessionId};
     use crate::protocol::{AutonomyMode, McpServerConfig};
@@ -680,6 +680,8 @@ pub mod persistence {
     #[derive(Debug, Clone, facet::Facet)]
     pub struct CurrentTask {
         pub record: TaskRecord,
+        pub mate_plan: Option<Vec<PlanStep>>,
+        pub pending_mate_guidance: Option<String>,
         pub content_history: Vec<TaskContentRecord>,
         // r[backend.persistence-contents]
         pub event_log: Vec<SessionEventEnvelope>,

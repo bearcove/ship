@@ -20,12 +20,21 @@ use ship_types::{
     AgentDiscovery, AgentKind, AgentSnapshot, AgentState, AutonomyMode, BlockId,
     CloseSessionRequest, CloseSessionResponse, ContentBlock, CreateSessionRequest,
     CreateSessionResponse, CurrentTask, McpServerConfig, McpStdioServerConfig, McpToolCallResponse,
-    PersistedSession, ProjectInfo, ProjectName, Role, SessionConfig, SessionDetail, SessionEvent,
-    SessionEventEnvelope, SessionId, SessionStartupStage, SessionStartupState, SessionSummary,
-    SetAgentModelResponse, SubscribeMessage, TaskId, TaskRecord, TaskStatus,
+    PersistedSession, PlanStep, PlanStepPriority, PlanStepStatus, ProjectInfo, ProjectName, Role,
+    SessionConfig, SessionDetail, SessionEvent, SessionEventEnvelope, SessionId,
+    SessionStartupStage, SessionStartupState, SessionSummary, SetAgentModelResponse,
+    SubscribeMessage, TaskId, TaskRecord, TaskStatus, ToolCallKind, ToolTarget,
 };
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
+
+const PLAN_REQUIRED_MESSAGE: &str = "You must create a plan with plan_create before starting work.";
+const BLOCKED_COMMAND_MESSAGE: &str = "This command is blocked. Stop current work and explain the situation to the captain using mate_ask_captain.";
+
+struct AutoCommitResult {
+    commit_hash: String,
+    diff_stat: String,
+}
 
 pub enum MateReviewOutcome {
     Accepted { summary: Option<String> },
@@ -968,6 +977,157 @@ impl ShipImpl {
         }
     }
 
+    fn format_plan_status(steps: &[PlanStep]) -> String {
+        steps
+            .iter()
+            .enumerate()
+            .map(|(index, step)| {
+                let marker = match step.status {
+                    PlanStepStatus::Completed => "[x]",
+                    _ => "[ ]",
+                };
+                format!("{marker} Step {}: {}", index + 1, step.description)
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    fn build_plan_steps(steps: Vec<String>) -> Vec<PlanStep> {
+        steps
+            .into_iter()
+            .map(|description| PlanStep {
+                description,
+                priority: PlanStepPriority::Medium,
+                status: PlanStepStatus::Pending,
+            })
+            .collect()
+    }
+
+    fn current_task_worktree_path(session: &ActiveSession) -> Result<&std::path::Path, String> {
+        session
+            .worktree_path
+            .as_deref()
+            .ok_or_else(|| "session worktree is not ready".to_owned())
+    }
+
+    async fn auto_commit_worktree(
+        worktree_path: &std::path::Path,
+        message: String,
+    ) -> Result<Option<AutoCommitResult>, String> {
+        let worktree_path = worktree_path.to_path_buf();
+        tokio::task::spawn_blocking(move || {
+            let add_status = Command::new("git")
+                .arg("-C")
+                .arg(&worktree_path)
+                .args(["add", "-A"])
+                .status()
+                .map_err(|error| format!("git add failed: {error}"))?;
+            if !add_status.success() {
+                return Err("git add -A failed".to_owned());
+            }
+
+            let diff_status = Command::new("git")
+                .arg("-C")
+                .arg(&worktree_path)
+                .args(["diff", "--cached", "--quiet"])
+                .status()
+                .map_err(|error| format!("git diff --cached --quiet failed: {error}"))?;
+            if diff_status.success() {
+                return Ok(None);
+            }
+
+            let commit_output = Command::new("git")
+                .arg("-C")
+                .arg(&worktree_path)
+                .args(["commit", "-m", &message])
+                .output()
+                .map_err(|error| format!("git commit failed: {error}"))?;
+            if !commit_output.status.success() {
+                let stderr = String::from_utf8_lossy(&commit_output.stderr)
+                    .trim()
+                    .to_owned();
+                return Err(if stderr.is_empty() {
+                    "git commit failed".to_owned()
+                } else {
+                    format!("git commit failed: {stderr}")
+                });
+            }
+
+            let commit_hash = Command::new("git")
+                .arg("-C")
+                .arg(&worktree_path)
+                .args(["rev-parse", "HEAD"])
+                .output()
+                .map_err(|error| format!("git rev-parse HEAD failed: {error}"))?;
+            if !commit_hash.status.success() {
+                return Err("git rev-parse HEAD failed".to_owned());
+            }
+            let commit_hash = String::from_utf8_lossy(&commit_hash.stdout)
+                .trim()
+                .to_owned();
+
+            let diff_stat = Command::new("git")
+                .arg("-C")
+                .arg(&worktree_path)
+                .args(["show", "--stat", "--format=", "--shortstat", "HEAD"])
+                .output()
+                .map_err(|error| format!("git show --stat failed: {error}"))?;
+            if !diff_stat.status.success() {
+                return Err("git show --stat failed".to_owned());
+            }
+
+            Ok(Some(AutoCommitResult {
+                commit_hash,
+                diff_stat: String::from_utf8_lossy(&diff_stat.stdout).trim().to_owned(),
+            }))
+        })
+        .await
+        .map_err(|error| format!("git auto-commit task failed: {error}"))?
+    }
+
+    // r[task.progress]
+    async fn notify_captain_progress(
+        &self,
+        session_id: &SessionId,
+        message: String,
+    ) -> Result<(), String> {
+        self.append_human_message(session_id, Role::Captain, message.clone())
+            .await?;
+
+        let this = self.clone();
+        let session_id = session_id.clone();
+        tokio::spawn(async move {
+            if let Err(error) = this.prompt_agent(&session_id, Role::Captain, message).await {
+                Self::log_error("notify_captain_progress", &error);
+            }
+        });
+
+        Ok(())
+    }
+
+    fn commit_summary(result: Option<&AutoCommitResult>) -> String {
+        match result {
+            Some(result) if result.diff_stat.is_empty() => {
+                format!("Commit: {}", result.commit_hash)
+            }
+            Some(result) => format!("Commit: {}\nDiff: {}", result.commit_hash, result.diff_stat),
+            None => "Commit: skipped (worktree clean)".to_owned(),
+        }
+    }
+
+    fn queue_mate_guidance(session: &mut ActiveSession, message: &str) {
+        if let Some(task) = session.current_task.as_mut() {
+            task.pending_mate_guidance = Some(message.to_owned());
+        }
+    }
+
+    fn take_pending_mate_guidance(session: &mut ActiveSession) -> Option<String> {
+        session
+            .current_task
+            .as_mut()
+            .and_then(|task| task.pending_mate_guidance.take())
+    }
+
     async fn mate_tool_send_update(
         &self,
         session_id: &SessionId,
@@ -990,6 +1150,141 @@ impl ShipImpl {
         });
 
         Ok("Update sent to the captain.".to_owned())
+    }
+
+    // r[mate.tool.plan-create]
+    // r[task.progress]
+    async fn mate_tool_plan_create(
+        &self,
+        session_id: &SessionId,
+        steps: Vec<String>,
+    ) -> Result<String, String> {
+        if steps.is_empty() {
+            return Err("plan_create requires at least one step".to_owned());
+        }
+
+        let plan = Self::build_plan_steps(steps);
+        let (task_description, captain_message, commit_summary) = {
+            let (task_description, worktree_path) = {
+                let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                let session = sessions
+                    .get_mut(session_id)
+                    .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+                let task_description = {
+                    let task = session
+                        .current_task
+                        .as_mut()
+                        .ok_or_else(|| "session has no active task".to_owned())?;
+                    task.mate_plan = Some(plan.clone());
+                    task.pending_mate_guidance = None;
+                    task.record.description.clone()
+                };
+                set_agent_state(
+                    session,
+                    Role::Mate,
+                    AgentState::Working {
+                        plan: Some(plan.clone()),
+                        activity: Some("Ship plan created".to_owned()),
+                    },
+                );
+                (
+                    task_description,
+                    Self::current_task_worktree_path(session)?.to_path_buf(),
+                )
+            };
+
+            self.persist_session(session_id).await?;
+
+            let commit =
+                Self::auto_commit_worktree(&worktree_path, format!("plan: {}", task_description))
+                    .await?;
+            let commit_summary = Self::commit_summary(commit.as_ref());
+            let captain_message = format!(
+                "Task: {task_description}\n\nMate plan update:\n{}\n\n{}",
+                Self::format_plan_status(&plan),
+                commit_summary
+            );
+            (task_description, captain_message, commit_summary)
+        };
+
+        self.notify_captain_progress(session_id, captain_message)
+            .await?;
+
+        Ok(format!(
+            "Plan created for task '{task_description}'. {commit_summary}"
+        ))
+    }
+
+    // r[mate.tool.plan-step-complete]
+    // r[task.progress]
+    async fn mate_tool_plan_step_complete(
+        &self,
+        session_id: &SessionId,
+        step_index: usize,
+        summary: String,
+    ) -> Result<String, String> {
+        let (task_description, updated_plan, step_description, worktree_path) = {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions
+                .get_mut(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            let (task_description, updated_plan, step_description) = {
+                let task = session
+                    .current_task
+                    .as_mut()
+                    .ok_or_else(|| "session has no active task".to_owned())?;
+                let plan = task
+                    .mate_plan
+                    .as_mut()
+                    .ok_or_else(|| PLAN_REQUIRED_MESSAGE.to_owned())?;
+                let Some(step) = plan.get_mut(step_index) else {
+                    return Err(format!("plan step {step_index} does not exist"));
+                };
+                step.status = PlanStepStatus::Completed;
+                let step_description = step.description.clone();
+                let updated_plan = plan.clone();
+                (
+                    task.record.description.clone(),
+                    updated_plan,
+                    step_description,
+                )
+            };
+            set_agent_state(
+                session,
+                Role::Mate,
+                AgentState::Working {
+                    plan: Some(updated_plan.clone()),
+                    activity: Some(format!("Completed step: {step_description}")),
+                },
+            );
+            (
+                task_description,
+                updated_plan,
+                step_description,
+                Self::current_task_worktree_path(session)?.to_path_buf(),
+            )
+        };
+
+        self.persist_session(session_id).await?;
+
+        let commit =
+            Self::auto_commit_worktree(&worktree_path, format!("{step_description}: {summary}"))
+                .await?;
+        let commit_summary = Self::commit_summary(commit.as_ref());
+        let captain_message = format!(
+            "Task: {task_description}\n\nMate plan update:\n{}\n\n{}",
+            Self::format_plan_status(&updated_plan),
+            commit_summary
+        );
+
+        self.notify_captain_progress(session_id, captain_message)
+            .await?;
+
+        Ok(format!(
+            "Marked step {} complete. {}",
+            step_index + 1,
+            commit_summary
+        ))
     }
 
     async fn mate_tool_ask_captain(
@@ -1036,6 +1331,21 @@ impl ShipImpl {
         session_id: &SessionId,
         summary: String,
     ) -> Result<String, String> {
+        {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions
+                .get_mut(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            let task = session
+                .current_task
+                .as_mut()
+                .ok_or_else(|| "session has no active task".to_owned())?;
+            if task.mate_plan.is_none() {
+                task.pending_mate_guidance = Some(PLAN_REQUIRED_MESSAGE.to_owned());
+                return Err(PLAN_REQUIRED_MESSAGE.to_owned());
+            }
+        }
+
         let (tx, rx) = tokio::sync::oneshot::channel::<MateReviewOutcome>();
         {
             let mut ops = self
@@ -1360,6 +1670,109 @@ impl ShipImpl {
             .map_err(|error| format!("store error: {}", error.message))
     }
 
+    fn event_starts_substantive_mate_work(event: &SessionEvent) -> bool {
+        let kind = match event {
+            SessionEvent::BlockAppend {
+                role: Role::Mate,
+                block: ContentBlock::ToolCall { kind, .. } | ContentBlock::Permission { kind, .. },
+                ..
+            } => *kind,
+            _ => None,
+        };
+
+        matches!(
+            kind,
+            Some(
+                ToolCallKind::Read
+                    | ToolCallKind::Edit
+                    | ToolCallKind::Delete
+                    | ToolCallKind::Move
+                    | ToolCallKind::Search
+                    | ToolCallKind::Execute
+                    | ToolCallKind::Fetch
+            )
+        )
+    }
+
+    fn blocked_command_from_event(event: &SessionEvent) -> Option<String> {
+        let target = match event {
+            SessionEvent::BlockAppend {
+                role: Role::Mate,
+                block: ContentBlock::Permission { target, .. },
+                ..
+            } => target.as_ref(),
+            _ => None,
+        }?;
+
+        match target {
+            ToolTarget::Command { command, .. } if Self::is_dangerous_command(command) => {
+                Some(command.clone())
+            }
+            _ => None,
+        }
+    }
+
+    fn is_dangerous_command(command: &str) -> bool {
+        let normalized = command.trim().to_ascii_lowercase();
+        let mut parts = normalized.split_whitespace();
+        let Some(program) = parts.next() else {
+            return false;
+        };
+        let subcommand = parts.next();
+
+        if program == "git"
+            && matches!(subcommand, Some("checkout" | "restore" | "clean" | "reset"))
+        {
+            return true;
+        }
+
+        if program != "rm" {
+            return false;
+        }
+
+        let has_recursive = normalized.contains(" -r")
+            || normalized.contains(" -rf")
+            || normalized.contains(" -fr")
+            || normalized.contains(" --recursive");
+        let has_force = normalized.contains(" -f")
+            || normalized.contains(" -rf")
+            || normalized.contains(" -fr")
+            || normalized.contains(" --force");
+        let broad_target = normalized.contains(" *")
+            || normalized.ends_with(" .")
+            || normalized.contains(" ./")
+            || normalized.contains(" /")
+            || normalized.contains(" ..")
+            || normalized.contains(" ~");
+
+        has_recursive && has_force && broad_target
+    }
+
+    fn inspect_mate_event_for_guardrails(
+        session: &mut ActiveSession,
+        event: &SessionEvent,
+    ) -> Option<String> {
+        if Self::event_starts_substantive_mate_work(event)
+            && session
+                .current_task
+                .as_ref()
+                .is_some_and(|task| task.mate_plan.is_none())
+        {
+            Self::queue_mate_guidance(session, PLAN_REQUIRED_MESSAGE);
+        }
+
+        let blocked = Self::blocked_command_from_event(event)?;
+        Self::queue_mate_guidance(session, BLOCKED_COMMAND_MESSAGE);
+        let task_description = session
+            .current_task
+            .as_ref()
+            .map(|task| task.record.description.clone())
+            .unwrap_or_else(|| "unknown task".to_owned());
+        Some(format!(
+            "Task: {task_description}\n\nThe mate attempted a blocked command: {blocked}\n\nThe command was rejected automatically. The mate will be told to stop and explain the situation via mate_ask_captain."
+        ))
+    }
+
     async fn drain_notifications(&self, session_id: &SessionId, role: Role) -> Result<(), String> {
         let handle = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
@@ -1391,11 +1804,23 @@ impl ShipImpl {
                 task_id = Self::event_task_id(&event),
                 "applying agent notification"
             );
-            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
-            let Some(session) = sessions.get_mut(session_id) else {
-                break;
+            let captain_notification = {
+                let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                let Some(session) = sessions.get_mut(session_id) else {
+                    break;
+                };
+                let captain_notification = if role == Role::Mate {
+                    Self::inspect_mate_event_for_guardrails(session, &event)
+                } else {
+                    None
+                };
+                apply_event(session, event);
+                captain_notification
             };
-            apply_event(session, event);
+
+            if let Some(message) = captain_notification {
+                self.notify_captain_progress(session_id, message).await?;
+            }
         }
         drop(stream);
 
@@ -1573,6 +1998,8 @@ impl ShipImpl {
                     description: description.clone(),
                     status: TaskStatus::Assigned,
                 },
+                mate_plan: None,
+                pending_mate_guidance: None,
                 content_history: Vec::new(),
                 event_log: Vec::new(),
             });
@@ -1694,6 +2121,21 @@ impl ShipImpl {
                     return;
                 }
             };
+
+            let pending_guidance = {
+                let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                let Some(session) = sessions.get_mut(&session_id) else {
+                    return;
+                };
+                Self::take_pending_mate_guidance(session)
+            };
+            if let Some(message) = pending_guidance {
+                if let Err(error) = self.persist_session(&session_id).await {
+                    Self::log_error("persist_pending_mate_guidance", &error);
+                }
+                prompt = message;
+                continue;
+            }
 
             match stop_reason {
                 // r[task.completion.enforce-submit]
@@ -2347,6 +2789,30 @@ impl MateMcp for MateMcpSessionService {
         )
     }
 
+    // r[mate.tool.plan-create]
+    async fn plan_create(&self, steps: Vec<String>) -> McpToolCallResponse {
+        Self::response(
+            self.ship
+                .mate_tool_plan_create(&self.session_id, steps)
+                .await,
+        )
+    }
+
+    // r[mate.tool.plan-step-complete]
+    async fn plan_step_complete(&self, step_index: u64, summary: String) -> McpToolCallResponse {
+        let Ok(step_index) = usize::try_from(step_index) else {
+            return McpToolCallResponse {
+                text: "step_index is too large".to_owned(),
+                is_error: true,
+            };
+        };
+        Self::response(
+            self.ship
+                .mate_tool_plan_step_complete(&self.session_id, step_index, summary)
+                .await,
+        )
+    }
+
     // r[mate.tool.ask-captain]
     async fn mate_ask_captain(&self, question: String) -> McpToolCallResponse {
         Self::response(
@@ -2395,9 +2861,10 @@ mod tests {
     use ship_core::{ProjectRegistry, SessionStore};
     use ship_service::Ship;
     use ship_types::{
-        AgentDiscovery, AgentKind, CreateSessionRequest, CreateSessionResponse, CurrentTask,
-        McpServerConfig, McpStdioServerConfig, ProjectName, SessionEvent, SessionEventEnvelope,
-        SessionId, SessionStartupState, SubscribeMessage, TaskId, TaskRecord, TaskStatus,
+        AgentDiscovery, AgentKind, ContentBlock, CreateSessionRequest, CreateSessionResponse,
+        CurrentTask, McpServerConfig, McpStdioServerConfig, PlanStepStatus, ProjectName,
+        SessionEvent, SessionEventEnvelope, SessionId, SessionStartupState, SubscribeMessage,
+        TaskId, TaskRecord, TaskStatus,
     };
     use tokio::sync::{broadcast, mpsc};
     use tokio::time::timeout;
@@ -2466,12 +2933,38 @@ mod tests {
                     description: "Investigate workflow".to_owned(),
                     status: TaskStatus::Assigned,
                 },
+                mate_plan: None,
+                pending_mate_guidance: None,
                 content_history: Vec::new(),
                 event_log: Vec::new(),
             });
         }
 
         (dir, ship, session_id)
+    }
+
+    fn init_git_repo(path: &std::path::Path) {
+        let status = std::process::Command::new("git")
+            .arg("init")
+            .arg("-b")
+            .arg("main")
+            .arg(path)
+            .status()
+            .expect("git init should run");
+        assert!(status.success(), "git init should succeed");
+
+        for (key, value) in [
+            ("user.name", "Ship Tests"),
+            ("user.email", "ship-tests@example.com"),
+        ] {
+            let status = std::process::Command::new("git")
+                .arg("-C")
+                .arg(path)
+                .args(["config", key, value])
+                .status()
+                .expect("git config should run");
+            assert!(status.success(), "git config should succeed");
+        }
     }
 
     // r[verify server.agent-discovery]
@@ -2806,6 +3299,80 @@ mod tests {
             TaskStatus::Working
         );
         assert!(detail.pending_steer.is_none());
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    // r[verify mate.tool.plan-create]
+    // r[verify mate.tool.plan-step-complete]
+    #[tokio::test]
+    async fn mate_plan_tools_persist_plan_commit_worktree_and_notify_captain() {
+        let (dir, ship, session_id) = create_session_for_workflow_test("mate-plan-tools").await;
+        let project_root = dir.join("project");
+        init_git_repo(&project_root);
+        std::fs::write(project_root.join("notes.txt"), "first draft\n")
+            .expect("test file should be written");
+
+        {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(&session_id).expect("session should exist");
+            session.worktree_path = Some(project_root.clone());
+        }
+
+        ship.mate_tool_plan_create(
+            &session_id,
+            vec!["Set up types".to_owned(), "Implement handler".to_owned()],
+        )
+        .await
+        .expect("plan_create should succeed");
+
+        let create_head = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&project_root)
+            .args(["rev-list", "--count", "HEAD"])
+            .output()
+            .expect("git rev-list should run");
+        assert_eq!(String::from_utf8_lossy(&create_head.stdout).trim(), "1");
+
+        {
+            let sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get(&session_id).expect("session should exist");
+            let task = session.current_task.as_ref().expect("task should exist");
+            let plan = task.mate_plan.as_ref().expect("plan should be persisted");
+            assert_eq!(plan.len(), 2);
+            assert!(task.content_history.iter().any(|entry| matches!(
+                &entry.block,
+                ContentBlock::Text { text, .. } if text.contains("Mate plan update:")
+            )));
+        }
+
+        std::fs::write(
+            project_root.join("notes.txt"),
+            "first draft\nsecond draft\n",
+        )
+        .expect("updated test file should be written");
+        ship.mate_tool_plan_step_complete(&session_id, 0, "added initial notes".to_owned())
+            .await
+            .expect("plan_step_complete should succeed");
+
+        let step_head = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&project_root)
+            .args(["rev-list", "--count", "HEAD"])
+            .output()
+            .expect("git rev-list should run");
+        assert_eq!(String::from_utf8_lossy(&step_head.stdout).trim(), "2");
+
+        {
+            let sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get(&session_id).expect("session should exist");
+            let task = session.current_task.as_ref().expect("task should exist");
+            let plan = task
+                .mate_plan
+                .as_ref()
+                .expect("plan should still be persisted");
+            assert_eq!(plan[0].status, PlanStepStatus::Completed);
+        }
 
         let _ = std::fs::remove_dir_all(dir);
     }

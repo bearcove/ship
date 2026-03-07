@@ -843,6 +843,21 @@ argument (string). The message is injected into the captain's context as a
 user message and the captain is prompted. Returns immediately without waiting
 for a response.
 
+r[mate.tool.plan-create]
+The mate MUST have access to a `plan_create` tool that takes a `steps`
+argument (`Vec<String>`). The mate MUST call this before starting substantive
+work. The backend persists the plan, auto-commits any pending worktree
+changes, and asynchronously notifies the captain with the full plan without
+blocking the mate on captain review.
+
+r[mate.tool.plan-step-complete]
+The mate MUST have access to a `plan_step_complete` tool that takes a
+`step_index` argument (`usize`) and a `summary` argument (string). The backend
+marks the indexed plan step completed, auto-commits any pending worktree
+changes with a commit message derived from the step description and summary,
+and asynchronously notifies the captain with the updated plan plus commit
+details.
+
 r[mate.tool.ask-captain]
 The mate MUST have access to a `mate_ask_captain` tool that takes a `question`
 argument (string). The question is injected into the captain's context and the
@@ -857,6 +872,12 @@ blocks until the captain responds:
 - `captain_accept` → returns an accepted message; task transitions to accepted.
 - `captain_steer` → returns captain feedback; mate continues working.
 - `captain_cancel` → returns a cancellation error; task transitions to cancelled.
+
+r[mate.tool.guardrails]
+Ship MUST block dangerous mate commands that can destroy work, including git
+reset/restore/checkout/clean and broad recursive deletion commands. When such
+a command is blocked, Ship MUST reject the tool call and steer the mate to
+stop current work and explain the situation to the captain.
 
 ### Captain Review Cycle
 

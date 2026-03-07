@@ -62,6 +62,34 @@ impl ServerHandler for MateMcpHandler {
                     .await
                     .map_err(call_tool_rpc_error)?
             }
+            // r[mate.tool.plan-create]
+            "plan_create" => {
+                let Some(steps) = arguments.get("steps").and_then(Value::as_array) else {
+                    return Ok(tool_result("missing required argument: steps", true));
+                };
+                let steps = steps
+                    .iter()
+                    .map(|value| value.as_str().map(ToOwned::to_owned))
+                    .collect::<Option<Vec<_>>>()
+                    .ok_or_else(|| call_tool_rpc_error("steps must be strings"))?;
+                self.client
+                    .plan_create(steps)
+                    .await
+                    .map_err(call_tool_rpc_error)?
+            }
+            // r[mate.tool.plan-step-complete]
+            "plan_step_complete" => {
+                let Some(step_index) = arguments.get("step_index").and_then(Value::as_u64) else {
+                    return Ok(tool_result("missing required argument: step_index", true));
+                };
+                let Some(summary) = arguments.get("summary").and_then(Value::as_str) else {
+                    return Ok(tool_result("missing required argument: summary", true));
+                };
+                self.client
+                    .plan_step_complete(step_index, summary.to_owned())
+                    .await
+                    .map_err(call_tool_rpc_error)?
+            }
             // r[mate.tool.ask-captain]
             "mate_ask_captain" => {
                 let Some(question) = arguments.get("question").and_then(Value::as_str) else {
@@ -174,6 +202,35 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "message": { "type": "string" }
                 },
                 "required": ["message"],
+                "additionalProperties": false,
+            }),
+        },
+        ToolDefinition {
+            name: "plan_create",
+            description: "Create the Ship-owned work plan before starting implementation. Auto-commits pending changes and notifies the captain asynchronously.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "steps": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "minItems": 1
+                    }
+                },
+                "required": ["steps"],
+                "additionalProperties": false,
+            }),
+        },
+        ToolDefinition {
+            name: "plan_step_complete",
+            description: "Mark a Ship-owned plan step complete. Auto-commits pending changes and notifies the captain asynchronously.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "step_index": { "type": "integer", "minimum": 0 },
+                    "summary": { "type": "string" }
+                },
+                "required": ["step_index", "summary"],
                 "additionalProperties": false,
             }),
         },

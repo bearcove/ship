@@ -468,6 +468,8 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                     description: description.clone(),
                     status: TaskStatus::Assigned,
                 },
+                mate_plan: None,
+                pending_mate_guidance: None,
                 content_history: Vec::new(),
                 event_log: Vec::new(),
             });
