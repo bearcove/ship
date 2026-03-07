@@ -92,6 +92,92 @@ impl ShipImpl {
             .expect("server websocket url mutex poisoned") = url.into();
     }
 
+    // r[resilience.server-restart]
+    pub async fn load_persisted_sessions(&self) {
+        let sessions_list = match self.store.list_sessions().await {
+            Ok(list) => list,
+            Err(error) => {
+                tracing::warn!(%error, "failed to list persisted sessions on startup");
+                return;
+            }
+        };
+
+        let count = sessions_list.len();
+        tracing::info!(count, "loading persisted sessions");
+
+        let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+        for persisted in sessions_list {
+            let needs_respawn = persisted
+                .current_task
+                .as_ref()
+                .map(|t| !t.record.status.is_terminal())
+                .unwrap_or(false);
+
+            const RESPAWN_MSG: &str = "Server restarted — agents need respawn.";
+
+            let (agent_state, startup_state) = if needs_respawn {
+                (
+                    AgentState::Error {
+                        message: RESPAWN_MSG.into(),
+                    },
+                    SessionStartupState::Failed {
+                        stage: SessionStartupStage::StartingCaptain,
+                        message: RESPAWN_MSG.into(),
+                    },
+                )
+            } else {
+                (AgentState::Idle, persisted.startup_state.clone())
+            };
+
+            let next_event_seq = persisted
+                .session_event_log
+                .iter()
+                .chain(
+                    persisted
+                        .current_task
+                        .as_ref()
+                        .into_iter()
+                        .flat_map(|t| t.event_log.iter()),
+                )
+                .map(|e| e.seq.saturating_add(1))
+                .max()
+                .unwrap_or(0);
+
+            let (events_tx, _) = broadcast::channel(256);
+            let session_id = persisted.id.clone();
+            let session = ActiveSession {
+                id: persisted.id,
+                config: persisted.config,
+                worktree_path: None,
+                captain_handle: None,
+                mate_handle: None,
+                captain: AgentSnapshot {
+                    state: agent_state.clone(),
+                    ..persisted.captain
+                },
+                mate: AgentSnapshot {
+                    state: agent_state,
+                    ..persisted.mate
+                },
+                startup_state,
+                session_event_log: persisted.session_event_log,
+                current_task: persisted.current_task,
+                task_history: persisted.task_history,
+                captain_block_count: 0,
+                mate_block_count: 0,
+                pending_permissions: HashMap::new(),
+                pending_steer: None,
+                events_tx,
+                next_event_seq,
+            };
+
+            tracing::info!(session_id = %session_id.0, needs_respawn, "loaded persisted session");
+            sessions.insert(session_id, session);
+        }
+
+        tracing::info!(count, "persisted sessions loaded");
+    }
+
     fn fallback_agent(role: Role, kind: AgentKind) -> AgentSnapshot {
         AgentSnapshot {
             role,

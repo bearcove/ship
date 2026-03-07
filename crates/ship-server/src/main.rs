@@ -164,6 +164,8 @@ async fn run_serve(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
 
     let sessions_dir = project_registry.config_dir().join("sessions");
     let ship = ShipImpl::new(project_registry, sessions_dir, agent_discovery);
+    // r[resilience.server-restart]
+    ship.load_persisted_sessions().await;
     let state = AppState {
         ship: ship.clone(),
         http_client: reqwest::Client::new(),
