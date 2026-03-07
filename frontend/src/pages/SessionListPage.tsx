@@ -506,11 +506,25 @@ function AddProjectDialog({
   );
 }
 
+const LAST_PROJECT_KEY = "ship.lastProject";
+
 // r[view.session-list]
 // r[ui.session-list.layout]
 export function SessionListPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const projectFilter = searchParams.get("project") ?? undefined;
+  const rawFilter = searchParams.get("project");
+  const projectFilter = rawFilter ?? undefined;
+
+  useEffect(() => {
+    if (rawFilter) {
+      localStorage.setItem(LAST_PROJECT_KEY, rawFilter);
+    } else {
+      const last = localStorage.getItem(LAST_PROJECT_KEY);
+      if (last) {
+        setSearchParams({ project: last }, { replace: true });
+      }
+    }
+  }, [rawFilter, setSearchParams]);
 
   const allProjects = useProjects();
   const validProjects = allProjects.filter((p) => p.valid);
@@ -534,6 +548,7 @@ export function SessionListPage() {
                 return;
               }
               if (v === "__all__") {
+                localStorage.removeItem(LAST_PROJECT_KEY);
                 setSearchParams({});
               } else {
                 setSearchParams({ project: v });
@@ -595,16 +610,8 @@ export function SessionListPage() {
         <Flex justify="center" mt="8">
           <Callout.Root size="2" style={{ maxWidth: 400 }}>
             <Callout.Text>
-              {projectFilter
-                ? `No sessions in ${projectFilter} yet. Start one for this project.`
-                : "No sessions yet. Create one to get started."}
+              {projectFilter ? `No sessions in ${projectFilter} yet.` : "No sessions yet."}
             </Callout.Text>
-            <Box mt="3">
-              <Button onClick={() => setNewSessionOpen(true)}>
-                <Plus size={16} />
-                New Session
-              </Button>
-            </Box>
           </Callout.Root>
         </Flex>
       ) : (
