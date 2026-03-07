@@ -68,12 +68,16 @@ function makeSession(): SessionDetail {
       kind: { tag: "Claude" },
       state: { tag: "Working", plan: null, activity: null },
       context_remaining_percent: 82,
+      model_id: null,
+      available_models: [],
     },
     mate: {
       role: { tag: "Mate" },
       kind: { tag: "Codex" },
       state: { tag: "Idle" },
       context_remaining_percent: 91,
+      model_id: null,
+      available_models: [],
     },
     current_task: {
       id: "task-1",

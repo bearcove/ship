@@ -70,12 +70,16 @@ describe("sessionReducer event handling", () => {
           kind: { tag: "Claude" },
           state: { tag: "Idle" },
           context_remaining_percent: 75,
+          model_id: null,
+          available_models: [],
         },
         mate: {
           role: { tag: "Mate" },
           kind: { tag: "Codex" },
           state: { tag: "Working", plan: null, activity: "Running" },
           context_remaining_percent: 55,
+          model_id: null,
+          available_models: [],
         },
         startup_state: { tag: "Ready" },
         current_task: {

@@ -24,19 +24,7 @@ import {
   mobileTabs,
   mobilePanel,
 } from "../styles/session-view.css";
-import type { TaskRecord, TaskStatus } from "../generated/ship";
-
-function getIdleMessage(
-  taskStatus: TaskStatus | null,
-  mateAwaitingPermission: boolean,
-): string | null {
-  if (taskStatus?.tag === "ReviewPending")
-    return "Mate finished — review the work or send the next steer.";
-  if (taskStatus?.tag === "SteerPending")
-    return "Captain drafted the next steer — review it above or override it with your own.";
-  if (mateAwaitingPermission) return "Mate needs permission approval before it can continue.";
-  return null;
-}
+import type { TaskRecord } from "../generated/ship";
 
 function readDebugPreference(): boolean {
   if (
@@ -105,11 +93,6 @@ export function SessionViewPage() {
   const captain = eventState.captain ?? session.captain;
   const mate = eventState.mate ?? session.mate;
   const startupState = eventState.startupState ?? session.startup_state;
-  const mateAwaitingPermission = mate.state.tag === "AwaitingPermission";
-  const idle = getIdleMessage(
-    eventState.currentTaskStatus ?? session.current_task?.status ?? null,
-    mateAwaitingPermission,
-  );
   const isReplaying = eventState.phase !== "live";
   const replayLabel = eventState.connected
     ? eventState.replayEventCount > 0
@@ -198,18 +181,10 @@ export function SessionViewPage() {
         </Tabs.Root>
       </Box>
 
-      {idle && (
-        <Box px="4" py="2" style={{ borderBottom: "1px solid var(--gray-a4)", flexShrink: 0 }}>
-          <Text size="1" color="gray">
-            {idle}
-          </Text>
-        </Box>
-      )}
-
       <Box style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
         <Box className={desktopGrid} style={{ flex: 1 }}>
           <Box className={panelColumn}>
-            <AgentHeader agent={captain} />
+            <AgentHeader sessionId={session.id} agent={captain} />
             <AgentPanel
               sessionId={session.id}
               agent={captain}
@@ -222,7 +197,7 @@ export function SessionViewPage() {
             />
           </Box>
           <Box className={panelColumn}>
-            <AgentHeader agent={mate} />
+            <AgentHeader sessionId={session.id} agent={mate} />
             <AgentPanel
               sessionId={session.id}
               agent={mate}
@@ -239,7 +214,7 @@ export function SessionViewPage() {
         <Box className={mobilePanel}>
           {mobileTab === "captain" ? (
             <>
-              <AgentHeader agent={captain} />
+              <AgentHeader sessionId={session.id} agent={captain} />
               <AgentPanel
                 sessionId={session.id}
                 agent={captain}
@@ -253,7 +228,7 @@ export function SessionViewPage() {
             </>
           ) : (
             <>
-              <AgentHeader agent={mate} />
+              <AgentHeader sessionId={session.id} agent={mate} />
               <AgentPanel
                 sessionId={session.id}
                 agent={mate}

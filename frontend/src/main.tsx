@@ -12,8 +12,14 @@ import { SoundProvider } from "./context/SoundContext";
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter>
-      {/* r[frontend.components.radix-theme] r[ui.theme.config] r[ui.theme.dark-only] */}
-      <Theme appearance="dark" accentColor="iris" grayColor="slate" radius="medium" scaling="100%">
+      {/* r[frontend.components.radix-theme] r[ui.theme.config] */}
+      <Theme
+        appearance="inherit"
+        accentColor="iris"
+        grayColor="slate"
+        radius="medium"
+        scaling="100%"
+      >
         <SoundProvider>
           <App />
         </SoundProvider>

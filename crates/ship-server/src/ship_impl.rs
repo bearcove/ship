@@ -21,8 +21,8 @@ use ship_types::{
     BlockId, CloseSessionRequest, CloseSessionResponse, ContentBlock, CreateSessionRequest,
     CreateSessionResponse, CurrentTask, McpServerConfig, McpStdioServerConfig, McpToolCallResponse,
     PersistedSession, ProjectInfo, ProjectName, Role, SessionConfig, SessionDetail, SessionEvent,
-    SessionId, SessionStartupStage, SessionStartupState, SessionSummary, SubscribeMessage, TaskId,
-    TaskRecord, TaskStatus,
+    SessionId, SessionStartupStage, SessionStartupState, SessionSummary, SetAgentModelResponse,
+    SubscribeMessage, TaskId, TaskRecord, TaskStatus,
 };
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
@@ -100,6 +100,8 @@ impl ShipImpl {
                 message: "session not found".to_owned(),
             },
             context_remaining_percent: None,
+            model_id: None,
+            available_models: Vec::new(),
         }
     }
 
@@ -733,7 +735,7 @@ impl ShipImpl {
             },
         };
 
-        let new_handle = self
+        let (new_handle, model_id, available_models) = self
             .agent_driver
             .spawn(mate_kind, Role::Mate, &mate_config)
             .await
@@ -743,6 +745,8 @@ impl ShipImpl {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             if let Some(session) = sessions.get_mut(session_id) {
                 session.mate_handle = Some(new_handle);
+                session.mate.model_id = model_id;
+                session.mate.available_models = available_models;
             }
         }
 
@@ -1099,23 +1103,23 @@ impl ShipImpl {
                 .spawn(captain_kind, Role::Captain, &captain_config),
             self.agent_driver.spawn(mate_kind, Role::Mate, &mate_config),
         );
-        let captain_handle = match captain_result {
-            Ok(handle) => {
+        let (captain_handle, captain_model_id, captain_available_models) = match captain_result {
+            Ok(result) => {
                 self.log_startup_step_elapsed(&session_id, "spawn-captain", captain_started_at);
-                handle
+                result
             }
             Err(error) => {
-                if let Ok(handle) = mate_result {
-                    let _ = self.agent_driver.kill(&handle).await;
+                if let Ok((mate_handle, _, _)) = mate_result {
+                    let _ = self.agent_driver.kill(&mate_handle).await;
                 }
                 self.fail_startup(&session_id, stage, error.message).await;
                 return;
             }
         };
-        let mate_handle = match mate_result {
-            Ok(handle) => {
+        let (mate_handle, mate_model_id, mate_available_models) = match mate_result {
+            Ok(result) => {
                 self.log_startup_step_elapsed(&session_id, "spawn-mate", mate_started_at);
-                handle
+                result
             }
             Err(error) => {
                 let _ = self.agent_driver.kill(&captain_handle).await;
@@ -1132,7 +1136,11 @@ impl ShipImpl {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             if let Some(session) = sessions.get_mut(&session_id) {
                 session.captain_handle = Some(captain_handle);
+                session.captain.model_id = captain_model_id;
+                session.captain.available_models = captain_available_models;
                 session.mate_handle = Some(mate_handle);
+                session.mate.model_id = mate_model_id;
+                session.mate.available_models = mate_available_models;
             }
         }
         let _ = self.persist_session(&session_id).await;
@@ -1626,12 +1634,16 @@ impl Ship for ShipImpl {
                 kind: req.captain_kind,
                 state: AgentState::Idle,
                 context_remaining_percent: None,
+                model_id: None,
+                available_models: Vec::new(),
             },
             mate: AgentSnapshot {
                 role: Role::Mate,
                 kind: req.mate_kind,
                 state: AgentState::Idle,
                 context_remaining_percent: None,
+                model_id: None,
+                available_models: Vec::new(),
             },
             startup_state: SessionStartupState::Pending,
             session_event_log: Vec::new(),
@@ -1831,6 +1843,47 @@ impl Ship for ShipImpl {
     }
 
     async fn retry_agent(&self, _session: SessionId, _role: Role) {}
+
+    async fn set_agent_model(
+        &self,
+        session: SessionId,
+        role: Role,
+        model_id: String,
+    ) -> SetAgentModelResponse {
+        let agent_driver = self.agent_driver.clone();
+        let sessions = self.sessions.clone();
+
+        let handle = {
+            let sessions = sessions.lock().expect("sessions mutex poisoned");
+            let Some(session_state) = sessions.get(&session) else {
+                return SetAgentModelResponse::SessionNotFound;
+            };
+            match role {
+                Role::Captain => session_state.captain_handle.clone(),
+                Role::Mate => session_state.mate_handle.clone(),
+            }
+        };
+
+        let Some(handle) = handle else {
+            return SetAgentModelResponse::AgentNotSpawned;
+        };
+
+        match agent_driver.set_model(&handle, &model_id).await {
+            Ok(()) => {
+                let mut sessions = sessions.lock().expect("sessions mutex poisoned");
+                if let Some(session_state) = sessions.get_mut(&session) {
+                    match role {
+                        Role::Captain => session_state.captain.model_id = Some(model_id),
+                        Role::Mate => session_state.mate.model_id = Some(model_id),
+                    }
+                }
+                SetAgentModelResponse::Ok
+            }
+            Err(error) => SetAgentModelResponse::Failed {
+                message: error.message,
+            },
+        }
+    }
 
     // r[backend.worktree-management]
     // r[worktree.cleanup]

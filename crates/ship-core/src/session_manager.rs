@@ -145,12 +145,16 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                 kind: req.captain_kind,
                 state: AgentState::Idle,
                 context_remaining_percent: None,
+                model_id: None,
+                available_models: Vec::new(),
             },
             mate: AgentSnapshot {
                 role: Role::Mate,
                 kind: req.mate_kind,
                 state: AgentState::Idle,
                 context_remaining_percent: None,
+                model_id: None,
+                available_models: Vec::new(),
             },
             startup_state: SessionStartupState::Pending,
             session_event_log: Vec::new(),
@@ -226,7 +230,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             },
         )
         .await?;
-        let captain_handle = self
+        let (captain_handle, captain_model_id, captain_available_models) = self
             .agent_driver
             .spawn(captain_kind, Role::Captain, &agent_session_config)
             .await
@@ -237,6 +241,8 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                 .get_mut(session_id)
                 .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
             session.captain_handle = Some(captain_handle);
+            session.captain.model_id = captain_model_id;
+            session.captain.available_models = captain_available_models;
         }
         self.persist_session(session_id).await?;
 
@@ -248,7 +254,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             },
         )
         .await?;
-        let mate_handle = self
+        let (mate_handle, mate_model_id, mate_available_models) = self
             .agent_driver
             .spawn(mate_kind, Role::Mate, &agent_session_config)
             .await
@@ -259,6 +265,8 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                 .get_mut(session_id)
                 .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
             session.mate_handle = Some(mate_handle);
+            session.mate.model_id = mate_model_id;
+            session.mate.available_models = mate_available_models;
         }
         self.set_startup_state(session_id, SessionStartupState::Ready)
             .await
@@ -279,6 +287,38 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                 state: state.clone(),
             },
         );
+        self.persist_session(session_id).await
+    }
+
+    pub async fn set_agent_model(
+        &mut self,
+        session_id: &SessionId,
+        role: Role,
+        model_id: String,
+    ) -> Result<(), SessionManagerError> {
+        let handle = {
+            let session = self
+                .sessions
+                .get(session_id)
+                .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
+            match role {
+                Role::Captain => session.captain_handle.clone(),
+                Role::Mate => session.mate_handle.clone(),
+            }
+            .ok_or(SessionManagerError::Agent("agent not spawned".to_owned()))?
+        };
+        self.agent_driver
+            .set_model(&handle, &model_id)
+            .await
+            .map_err(|error| SessionManagerError::Agent(error.message))?;
+        let session = self
+            .sessions
+            .get_mut(session_id)
+            .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
+        match role {
+            Role::Captain => session.captain.model_id = Some(model_id),
+            Role::Mate => session.mate.model_id = Some(model_id),
+        }
         self.persist_session(session_id).await
     }
 

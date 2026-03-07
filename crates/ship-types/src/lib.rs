@@ -143,6 +143,8 @@ pub mod agent {
         pub kind: AgentKind,
         pub state: AgentState,
         pub context_remaining_percent: Option<u8>,
+        pub model_id: Option<String>,
+        pub available_models: Vec<String>,
     }
 }
 
@@ -586,6 +588,15 @@ pub mod protocol {
         pub force: bool,
     }
 
+    #[repr(u8)]
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub enum SetAgentModelResponse {
+        Ok,
+        SessionNotFound,
+        AgentNotSpawned,
+        Failed { message: String },
+    }
+
     // r[proto.close-session]
     #[repr(u8)]
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
@@ -705,7 +716,7 @@ pub use protocol::{
     AgentDiscovery, AssignTaskResponse, AutonomyMode, CloseSessionRequest, CloseSessionResponse,
     CreateSessionRequest, CreateSessionResponse, McpEnvVar, McpHeader, McpHttpServerConfig,
     McpServerConfig, McpSseServerConfig, McpStdioServerConfig, McpToolCallResponse, ProjectInfo,
-    SessionDetail, SessionSummary,
+    SessionDetail, SessionSummary, SetAgentModelResponse,
 };
 pub use session::{SessionStartupStage, SessionStartupState};
 pub use structured::{

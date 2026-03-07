@@ -109,7 +109,7 @@ impl AgentDriver for FakeAgentDriver {
         kind: AgentKind,
         role: Role,
         config: &AgentSessionConfig,
-    ) -> Result<AgentHandle, AgentError> {
+    ) -> Result<(AgentHandle, Option<String>, Vec<String>), AgentError> {
         let handle = AgentHandle::new(SessionId::new());
 
         self.inner
@@ -123,7 +123,7 @@ impl AgentDriver for FakeAgentDriver {
                 handle: handle.clone(),
             });
 
-        Ok(handle)
+        Ok((handle, None, Vec::new()))
     }
 
     async fn prompt(
@@ -196,6 +196,10 @@ impl AgentDriver for FakeAgentDriver {
         _permission_id: &str,
         _option_id: &str,
     ) -> Result<(), AgentError> {
+        Ok(())
+    }
+
+    async fn set_model(&self, _handle: &AgentHandle, _model_id: &str) -> Result<(), AgentError> {
         Ok(())
     }
 

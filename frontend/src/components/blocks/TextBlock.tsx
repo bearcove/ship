@@ -16,7 +16,20 @@ interface Props {
   block: TextBlockType;
 }
 
-const shikiTheme = "github-dark";
+function useColorScheme(): "dark" | "light" {
+  const [scheme, setScheme] = useState<"dark" | "light">(() =>
+    window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light",
+  );
+
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const handler = (e: MediaQueryListEvent) => setScheme(e.matches ? "dark" : "light");
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+
+  return scheme;
+}
 
 function resolveLanguage(className?: string): BundledLanguage | null {
   const match = /language-([^\s]+)/.exec(className ?? "");
@@ -28,6 +41,8 @@ function resolveLanguage(className?: string): BundledLanguage | null {
 function MarkdownCodeBlock({ className, code }: { className?: string; code: string }) {
   const [highlightedHtml, setHighlightedHtml] = useState<string | null>(null);
   const language = resolveLanguage(className);
+  const colorScheme = useColorScheme();
+  const shikiTheme = colorScheme === "dark" ? "github-dark" : "github-light";
 
   useEffect(() => {
     let cancelled = false;
@@ -46,7 +61,7 @@ function MarkdownCodeBlock({ className, code }: { className?: string; code: stri
     return () => {
       cancelled = true;
     };
-  }, [code, language]);
+  }, [code, language, shikiTheme]);
 
   if (highlightedHtml) {
     return (

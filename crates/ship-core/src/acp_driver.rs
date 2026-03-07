@@ -43,6 +43,10 @@ enum DriverCommand {
         option_id: String,
         response: oneshot::Sender<Result<(), AgentError>>,
     },
+    SetModel {
+        model_id: String,
+        response: oneshot::Sender<Result<(), AgentError>>,
+    },
     Kill {
         response: oneshot::Sender<Result<(), AgentError>>,
     },
@@ -74,11 +78,12 @@ impl AgentDriver for AcpAgentDriver {
         kind: ship_types::AgentKind,
         role: Role,
         config: &AgentSessionConfig,
-    ) -> Result<AgentHandle, AgentError> {
+    ) -> Result<(AgentHandle, Option<String>, Vec<String>), AgentError> {
         let handle = AgentHandle::new(SessionId::new());
         let (command_tx, command_rx) = mpsc::unbounded_channel::<DriverCommand>();
         let (notifications_tx, notifications_rx) = mpsc::unbounded_channel::<SessionEvent>();
-        let (ready_tx, ready_rx) = oneshot::channel::<Result<(), String>>();
+        let (ready_tx, ready_rx) =
+            oneshot::channel::<Result<(Option<String>, Vec<String>), String>>();
 
         let config = config.clone();
         let worker_thread = std::thread::spawn(move || {
@@ -104,7 +109,7 @@ impl AgentDriver for AcpAgentDriver {
         });
 
         match ready_rx.await {
-            Ok(Ok(())) => {
+            Ok(Ok((model_id, available_models))) => {
                 let prompt_in_flight = Arc::new(AtomicBool::new(false));
                 self.handles
                     .lock()
@@ -118,7 +123,7 @@ impl AgentDriver for AcpAgentDriver {
                             worker_thread: Some(worker_thread),
                         },
                     );
-                Ok(handle)
+                Ok((handle, model_id, available_models))
             }
             Ok(Err(message)) => Err(AgentError { message }),
             Err(error) => Err(AgentError {
@@ -251,6 +256,33 @@ impl AgentDriver for AcpAgentDriver {
         })?
     }
 
+    async fn set_model(&self, handle: &AgentHandle, model_id: &str) -> Result<(), AgentError> {
+        let command_tx = {
+            let handles = self.handles.lock().expect("acp handles mutex poisoned");
+            handles
+                .get(handle)
+                .ok_or_else(|| AgentError {
+                    message: "agent handle not found".to_owned(),
+                })?
+                .command_tx
+                .clone()
+        };
+
+        let (response_tx, response_rx) = oneshot::channel();
+        command_tx
+            .send(DriverCommand::SetModel {
+                model_id: model_id.to_owned(),
+                response: response_tx,
+            })
+            .map_err(|error| AgentError {
+                message: format!("failed to send set model command: {error}"),
+            })?;
+
+        response_rx.await.map_err(|error| AgentError {
+            message: format!("set model response channel closed: {error}"),
+        })?
+    }
+
     async fn kill(&self, handle: &AgentHandle) -> Result<(), AgentError> {
         let mut acp_handle = self
             .handles
@@ -289,7 +321,7 @@ async fn run_acp_worker(
     config: AgentSessionConfig,
     mut command_rx: mpsc::UnboundedReceiver<DriverCommand>,
     notifications_tx: mpsc::UnboundedSender<SessionEvent>,
-    ready_tx: oneshot::Sender<Result<(), String>>,
+    ready_tx: oneshot::Sender<Result<(Option<String>, Vec<String>), String>>,
 ) -> Result<(), AgentError> {
     tracing::info!(role = ?role, kind = ?kind, worktree_path = %config.worktree_path.display(), "starting ACP worker");
     let launcher = resolve_agent_launcher(kind, &SystemBinaryPathProbe).ok_or_else(|| {
@@ -354,14 +386,26 @@ async fn run_acp_worker(
     tracing::debug!(role = ?role, kind = ?kind, "initialized ACP connection");
 
     tracing::info!(role = ?role, kind = ?kind, "starting ACP session creation");
-    let session_id = connection
+    let new_session_response = connection
         .new_session(build_new_session_request(&config))
         .await
-        .map_err(acp_error)?
-        .session_id;
-    tracing::info!(role = ?role, kind = ?kind, acp_session_id = ?session_id, "started ACP session");
+        .map_err(acp_error)?;
+    let session_id = new_session_response.session_id;
+    let (model_id, available_models) = match new_session_response.models.as_ref() {
+        Some(m) => {
+            let current = m.current_model_id.0.as_ref().to_owned();
+            let available = m
+                .available_models
+                .iter()
+                .map(|info| info.model_id.0.as_ref().to_owned())
+                .collect();
+            (Some(current), available)
+        }
+        None => (None, Vec::new()),
+    };
+    tracing::info!(role = ?role, kind = ?kind, acp_session_id = ?session_id, model_id = ?model_id, "started ACP session");
 
-    let _ = ready_tx.send(Ok(()));
+    let _ = ready_tx.send(Ok((model_id, available_models)));
 
     while let Some(command) = command_rx.recv().await {
         match command {
@@ -402,6 +446,18 @@ async fn run_acp_worker(
                 let result = client
                     .resolve_permission(&permission_id, &option_id)
                     .map_err(|message| AgentError { message });
+                let _ = response.send(result);
+            }
+            DriverCommand::SetModel { model_id, response } => {
+                use agent_client_protocol::{ModelId, SetSessionModelRequest};
+                let result = connection
+                    .set_session_model(SetSessionModelRequest::new(
+                        session_id.clone(),
+                        ModelId::new(model_id.as_str()),
+                    ))
+                    .await
+                    .map(|_| ())
+                    .map_err(acp_error);
                 let _ = response.send(result);
             }
             DriverCommand::Kill { response } => {

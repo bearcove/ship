@@ -28,6 +28,8 @@ const agent: AgentSnapshot = {
   kind: { tag: "Codex" },
   state: { tag: "Working", plan: null, activity: null },
   context_remaining_percent: 88,
+  model_id: null,
+  available_models: [],
 };
 
 const blocks: BlockEntry[] = [

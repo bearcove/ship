@@ -2,7 +2,7 @@ use roam::Tx;
 use ship_types::{
     AgentDiscovery, AssignTaskResponse, CloseSessionRequest, CloseSessionResponse,
     CreateSessionRequest, CreateSessionResponse, McpToolCallResponse, ProjectInfo, ProjectName,
-    Role, SessionDetail, SessionId, SessionSummary, SubscribeMessage,
+    Role, SessionDetail, SessionId, SessionSummary, SetAgentModelResponse, SubscribeMessage,
 };
 
 // r[backend.rpc]
@@ -54,6 +54,13 @@ pub trait Ship {
 
     // r[proto.retry-agent]
     async fn retry_agent(&self, session: SessionId, role: Role);
+
+    async fn set_agent_model(
+        &self,
+        session: SessionId,
+        role: Role,
+        model_id: String,
+    ) -> SetAgentModelResponse;
 
     // r[proto.close-session]
     async fn close_session(&self, req: CloseSessionRequest) -> CloseSessionResponse;

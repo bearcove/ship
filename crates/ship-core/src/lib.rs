@@ -109,7 +109,7 @@ pub trait AgentDriver: Send + Sync {
         kind: AgentKind,
         role: Role,
         config: &AgentSessionConfig,
-    ) -> Result<AgentHandle, AgentError>;
+    ) -> Result<(AgentHandle, Option<String>, Vec<String>), AgentError>;
 
     async fn prompt(
         &self,
@@ -130,6 +130,8 @@ pub trait AgentDriver: Send + Sync {
         permission_id: &str,
         option_id: &str,
     ) -> Result<(), AgentError>;
+
+    async fn set_model(&self, handle: &AgentHandle, model_id: &str) -> Result<(), AgentError>;
 
     async fn kill(&self, handle: &AgentHandle) -> Result<(), AgentError>;
 }

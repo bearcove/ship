@@ -1,18 +1,25 @@
-import { Box, Button, Callout, Flex, Progress, Text } from "@radix-ui/themes";
+import { Box, Button, Callout, DropdownMenu, Flex, Progress, Text } from "@radix-ui/themes";
 import { ArrowsClockwise, Warning } from "@phosphor-icons/react";
 import type { AgentSnapshot } from "../generated/ship";
 import { AgentKindIcon } from "./AgentKindIcon";
+import { getShipClient } from "../api/client";
 import { agentHeader, agentHeaderRow } from "../styles/session-view.css";
 
 interface Props {
+  sessionId: string;
   agent: AgentSnapshot;
 }
 
 // r[ui.agent-header.layout]
 // r[view.agent-panel.state]
-export function AgentHeader({ agent }: Props) {
+export function AgentHeader({ sessionId, agent }: Props) {
   const contextPct = agent.context_remaining_percent;
   const contextLow = contextPct !== null && contextPct < 20;
+
+  async function handleSelectModel(modelId: string) {
+    const client = await getShipClient();
+    await client.setAgentModel(sessionId, agent.role, modelId);
+  }
 
   return (
     <Box className={agentHeader}>
@@ -21,6 +28,34 @@ export function AgentHeader({ agent }: Props) {
         <Text size="2" weight="medium">
           {agent.role.tag}
         </Text>
+        {agent.model_id !== null && agent.available_models.length > 1 ? (
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger>
+              <Text
+                size="1"
+                color="gray"
+                style={{ cursor: "pointer", textDecoration: "underline dotted" }}
+              >
+                {agent.model_id}
+              </Text>
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Content size="1">
+              {agent.available_models.map((modelId) => (
+                <DropdownMenu.Item
+                  key={modelId}
+                  onSelect={() => handleSelectModel(modelId)}
+                  style={modelId === agent.model_id ? { fontWeight: "bold" } : undefined}
+                >
+                  {modelId}
+                </DropdownMenu.Item>
+              ))}
+            </DropdownMenu.Content>
+          </DropdownMenu.Root>
+        ) : agent.model_id !== null ? (
+          <Text size="1" color="gray">
+            {agent.model_id}
+          </Text>
+        ) : null}
         {/* r[ui.agent-header.context-bar] */}
         {contextPct !== null && agent.state.tag !== "ContextExhausted" && (
           <Box style={{ width: 56, flexShrink: 0, marginLeft: "auto" }}>
