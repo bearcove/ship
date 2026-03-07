@@ -391,13 +391,10 @@ a `Badge` (gray for human-in-the-loop, blue for autonomous).
 ### Theme Configuration
 
 r[ui.theme.config]
-The Radix `Theme` provider MUST be configured with: `appearance="dark"`,
+The Radix `Theme` provider MUST be configured with: `appearance="inherit"`,
 `accentColor="iris"`, `grayColor="slate"`, `radius="medium"`,
-`scaling="100%"`.
-
-r[ui.theme.dark-only]
-Ship is dark mode only. There MUST NOT be a theme switcher or light mode
-support. The `appearance` prop is hardcoded to `"dark"`.
+`scaling="100%"`. Using `appearance="inherit"` causes Radix to follow the
+OS-level `prefers-color-scheme` preference automatically — no manual toggle.
 
 r[ui.theme.font]
 The app MUST use a monospace font stack for all code-related content (diffs,
