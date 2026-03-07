@@ -1,17 +1,21 @@
-import { Routes, Route, Link, useLocation } from "react-router-dom";
+import { Routes, Route, Link, useMatch } from "react-router-dom";
 import { Flex, Box, Text, IconButton } from "@radix-ui/themes";
 import { SpeakerHigh, SpeakerSlash } from "@phosphor-icons/react";
 import { SessionListPage } from "./pages/SessionListPage";
 import { SessionViewPage } from "./pages/SessionViewPage";
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { NotificationPrompt } from "./components/NotificationPrompt";
+import { SessionSidebar } from "./components/SessionSidebar";
 import { useSoundEnabled } from "./context/SoundContext";
+import { useSessionList } from "./hooks/useSessionList";
 
 // r[ui.layout.shell]
 export function App() {
-  const location = useLocation();
+  const sessionMatch = useMatch("/sessions/:sessionId");
+  const currentSessionId = sessionMatch?.params.sessionId;
+  const inSessionView = !!sessionMatch;
   const { soundEnabled, setSoundEnabled } = useSoundEnabled();
-  const inSessionView = location.pathname.startsWith("/sessions/");
+  const allSessions = useSessionList();
 
   return (
     <Flex direction="column" style={{ height: "100vh" }}>
@@ -21,6 +25,7 @@ export function App() {
           py="2"
           style={{
             borderBottom: "1px solid var(--gray-a5)",
+            flexShrink: 0,
           }}
         >
           <Flex align="center" justify="between">
@@ -52,12 +57,24 @@ export function App() {
       />
       <NotificationPrompt />
 
-      <Box style={{ flex: 1, overflow: "auto" }}>
-        <Routes>
-          <Route path="/" element={<SessionListPage />} />
-          <Route path="/sessions/:sessionId" element={<SessionViewPage />} />
-        </Routes>
-      </Box>
+      <Flex style={{ flex: 1, overflow: "hidden", minHeight: 0 }}>
+        {allSessions.length > 0 && (
+          <SessionSidebar sessions={allSessions} currentSessionId={currentSessionId} />
+        )}
+        <Box
+          style={{
+            flex: 1,
+            overflow: inSessionView ? "hidden" : "auto",
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+          <Routes>
+            <Route path="/" element={<SessionListPage />} />
+            <Route path="/sessions/:sessionId" element={<SessionViewPage />} />
+          </Routes>
+        </Box>
+      </Flex>
     </Flex>
   );
 }

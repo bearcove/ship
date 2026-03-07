@@ -282,7 +282,7 @@ function BranchCombobox({
 // r[ui.session-list.create]
 // r[proto.create-session]
 // r[session.create]
-function NewSessionDialog({
+export function NewSessionDialog({
   open,
   onOpenChange,
   preselectedProject,
@@ -620,7 +620,6 @@ export function SessionListPage() {
         </Flex>
       ) : (
         <Flex direction="column" gap="3">
-          {/* r[ui.session-list.nav] */}
           {sessions.map((session) => (
             <Link
               key={session.id}

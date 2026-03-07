@@ -13,8 +13,13 @@ vi.mock("./components/NotificationPrompt", () => ({
   NotificationPrompt: () => null,
 }));
 
+vi.mock("./hooks/useSessionList", () => ({
+  useSessionList: () => [],
+}));
+
 vi.mock("./pages/SessionListPage", () => ({
   SessionListPage: () => <div>Session list page</div>,
+  NewSessionDialog: () => null,
 }));
 
 vi.mock("./pages/SessionViewPage", () => ({
