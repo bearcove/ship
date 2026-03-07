@@ -14,7 +14,7 @@ pre-commit {
 }
 
 pre-push {
-  // clippy false
+  clippy false
   // nextest false
   // doc-tests false
   // docs false
