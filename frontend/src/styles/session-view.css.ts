@@ -234,23 +234,6 @@ export const startupFeedBody = style({
   minWidth: 0,
 });
 
-export const taskBar = style({
-  display: "flex",
-  alignItems: "center",
-  gap: "var(--space-3)",
-  padding: "var(--space-2) var(--space-4)",
-  borderTop: "1px solid var(--gray-a5)",
-  flexShrink: 0,
-});
-
-export const taskDescription = style({
-  flex: 1,
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "nowrap",
-  minWidth: 0,
-});
-
 export const composerRoot = style({
   padding: "var(--space-2) var(--space-3) var(--space-3)",
   flexShrink: 0,

@@ -1,6 +1,6 @@
 # 039: Remove explicit task creation — human just talks to the captain
 
-Status: open
+Status: closed
 Owner: backend + frontend
 
 ## Symptom

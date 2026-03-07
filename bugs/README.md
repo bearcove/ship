@@ -12,7 +12,6 @@ Open items:
 - [036-captain-lacks-mate-context.md](036-captain-lacks-mate-context.md)
 - [037-mate-has-raw-filesystem-access.md](037-mate-has-raw-filesystem-access.md)
 - [038-captain-spawns-explore-subagent.md](038-captain-spawns-explore-subagent.md)
-- [039-human-assign-conflicts-with-captain-assign.md](039-human-assign-conflicts-with-captain-assign.md)
 - [040-permission-banner-offsets-layout.md](040-permission-banner-offsets-layout.md)
 - [041-always-approve-scope-unclear.md](041-always-approve-scope-unclear.md)
 - [042-captain-gets-no-updates-while-mate-works.md](042-captain-gets-no-updates-while-mate-works.md)

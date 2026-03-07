@@ -112,8 +112,9 @@ working.
 ### Task Panel
 
 r[view.task-panel]
-The UI MUST display a task panel with the active task description, update
-history, and steer/accept/cancel controls.
+The UI displays task status (description and current state) inline in the agent
+panels. There is no separate task panel or explicit task-creation control; the
+human interacts with the captain directly via the inline composer.
 
 ### Permission Dialog
 
@@ -172,13 +173,6 @@ uses this to populate the branch selector in the create-session dialog.
 r[proto.list-sessions]
 The protocol MUST support a `list_sessions` operation that returns summaries
 of all active sessions.
-
-r[proto.assign]
-The protocol MUST support an `assign` operation where the human assigns a new
-task to the session, returning a `TaskId`. Assignment creates the active task
-record and prompts the captain with the task description (per
-`captain.initial-prompt`). The mate is not prompted implicitly by the backend;
-delegation happens only if the captain explicitly calls Ship MCP tools.
 
 r[proto.steer]
 The protocol MUST support a `steer` operation where the human explicitly sends
@@ -316,8 +310,9 @@ state, it moves to the session's task history and cannot be modified.
 ### Task Flow
 
 r[task.assign]
-Task creation begins when the human (or captain) sends an `assign` with a task
-description.
+Task creation begins when the captain calls the `captain_assign` MCP tool with
+a task description. There is no human-facing assign RPC; the captain is the
+sole entry point for creating tasks.
 
 r[task.prompt]
 On assignment, the backend MUST send a `SessionPrompt` to the captain via ACP.

@@ -436,7 +436,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         Ok(())
     }
 
-    // r[proto.assign]
+    // r[captain.tool.assign]
     pub async fn assign(
         &mut self,
         session_id: &SessionId,

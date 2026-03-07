@@ -236,10 +236,6 @@ export type CreateSessionResponse =
   | { tag: "Created"; session_id: SessionId }
   | { tag: "Failed"; message: string };
 
-export type AssignTaskResponse =
-  | { tag: "Assigned"; task_id: TaskId }
-  | { tag: "Failed"; message: string };
-
 export type SetAgentModelResponse =
   | { tag: "Ok" }
   | { tag: "SessionNotFound" }
@@ -386,12 +382,6 @@ export type AgentDiscoveryResponse = AgentDiscovery;
 export type GetSessionRequest = [SessionId];
 export type GetSessionResponse = SessionDetail;
 
-export type AssignRequest = [
-  SessionId, // session
-  string, // description
-];
-export type AssignResponse = AssignTaskResponse;
-
 export type SteerRequest = [
   SessionId, // session
   string, // content
@@ -444,7 +434,6 @@ export interface ShipCaller {
   agentDiscovery(): CallBuilder<AgentDiscovery>;
   getSession(id: SessionId): CallBuilder<SessionDetail>;
   createSession(req: CreateSessionRequest): CallBuilder<CreateSessionResponse>;
-  assign(session: SessionId, description: string): CallBuilder<AssignTaskResponse>;
   steer(session: SessionId, content: string): CallBuilder<void>;
   promptCaptain(session: SessionId, content: string): CallBuilder<void>;
   accept(session: SessionId): CallBuilder<void>;
@@ -566,22 +555,8 @@ export class ShipClient implements ShipCaller {
     });
   }
 
-  assign(session: SessionId, description: string): CallBuilder<AssignTaskResponse> {
-    const descriptor = ship_descriptor.methods[7];
-    return new CallBuilder(async (metadata) => {
-      const value = await this.caller.call({
-        method: "Ship.assign",
-        args: { session, description },
-        descriptor,
-        schemaRegistry: ship_descriptor.schema_registry,
-        metadata,
-      });
-      return value as AssignTaskResponse;
-    });
-  }
-
   steer(session: SessionId, content: string): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[8];
+    const descriptor = ship_descriptor.methods[7];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.steer",
@@ -595,7 +570,7 @@ export class ShipClient implements ShipCaller {
   }
 
   promptCaptain(session: SessionId, content: string): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[9];
+    const descriptor = ship_descriptor.methods[8];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.promptCaptain",
@@ -609,7 +584,7 @@ export class ShipClient implements ShipCaller {
   }
 
   accept(session: SessionId): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[10];
+    const descriptor = ship_descriptor.methods[9];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.accept",
@@ -623,7 +598,7 @@ export class ShipClient implements ShipCaller {
   }
 
   cancel(session: SessionId): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[11];
+    const descriptor = ship_descriptor.methods[10];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.cancel",
@@ -637,7 +612,7 @@ export class ShipClient implements ShipCaller {
   }
 
   resolvePermission(session: SessionId, permissionId: string, optionId: string): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[12];
+    const descriptor = ship_descriptor.methods[11];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.resolvePermission",
@@ -651,7 +626,7 @@ export class ShipClient implements ShipCaller {
   }
 
   retryAgent(session: SessionId, role: Role): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[13];
+    const descriptor = ship_descriptor.methods[12];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.retryAgent",
@@ -669,7 +644,7 @@ export class ShipClient implements ShipCaller {
     role: Role,
     modelId: string,
   ): CallBuilder<SetAgentModelResponse> {
-    const descriptor = ship_descriptor.methods[14];
+    const descriptor = ship_descriptor.methods[13];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.setAgentModel",
@@ -683,7 +658,7 @@ export class ShipClient implements ShipCaller {
   }
 
   closeSession(req: CloseSessionRequest): CallBuilder<CloseSessionResponse> {
-    const descriptor = ship_descriptor.methods[15];
+    const descriptor = ship_descriptor.methods[14];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.closeSession",
@@ -697,7 +672,7 @@ export class ShipClient implements ShipCaller {
   }
 
   subscribeEvents(session: SessionId, output: Tx<SubscribeMessage>): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[16];
+    const descriptor = ship_descriptor.methods[15];
     // Bind any Tx/Rx channels in arguments and collect channel IDs
     const channels = bindChannels(
       descriptor.args.elements,
@@ -740,7 +715,6 @@ export interface ShipHandler {
   agentDiscovery(): Promise<AgentDiscovery> | AgentDiscovery;
   getSession(id: SessionId): Promise<SessionDetail> | SessionDetail;
   createSession(req: CreateSessionRequest): Promise<CreateSessionResponse> | CreateSessionResponse;
-  assign(session: SessionId, description: string): Promise<AssignTaskResponse> | AssignTaskResponse;
   steer(session: SessionId, content: string): Promise<void> | void;
   promptCaptain(session: SessionId, content: string): Promise<void> | void;
   accept(session: SessionId): Promise<void> | void;
@@ -814,13 +788,6 @@ export class ShipDispatcher implements ChannelingDispatcher {
     } else if (method.id === 0x8e760a2d21c1236fn) {
       try {
         const result = await this.handler.createSession(args[0] as CreateSessionRequest);
-        call.reply(result);
-      } catch {
-        call.replyInternalError();
-      }
-    } else if (method.id === 0x10ff88a1099d15cfn) {
-      try {
-        const result = await this.handler.assign(args[0] as SessionId, args[1] as string);
         call.reply(result);
       } catch {
         call.replyInternalError();
@@ -1337,16 +1304,6 @@ const ship_schema_registry: SchemaRegistry = new Map<string, Schema>([
     },
   ],
   [
-    "AssignTaskResponse",
-    {
-      kind: "enum",
-      variants: [
-        { name: "Assigned", fields: { task_id: { kind: "string" } } },
-        { name: "Failed", fields: { message: { kind: "string" } } },
-      ],
-    },
-  ],
-  [
     "SetAgentModelResponse",
     {
       kind: "enum",
@@ -1788,29 +1745,6 @@ export const ship_descriptor: ServiceDescriptor = {
         kind: "enum",
         variants: [
           { name: "Ok", fields: { kind: "ref", name: "CreateSessionResponse" } },
-          {
-            name: "Err",
-            fields: {
-              kind: "enum",
-              variants: [
-                { name: "User", fields: null },
-                { name: "UnknownMethod", fields: null },
-                { name: "InvalidPayload", fields: null },
-                { name: "Cancelled", fields: null },
-              ],
-            },
-          },
-        ],
-      },
-    },
-    {
-      name: "assign",
-      id: 0x10ff88a1099d15cfn,
-      args: { kind: "tuple", elements: [{ kind: "string" }, { kind: "string" }] },
-      result: {
-        kind: "enum",
-        variants: [
-          { name: "Ok", fields: { kind: "ref", name: "AssignTaskResponse" } },
           {
             name: "Err",
             fields: {

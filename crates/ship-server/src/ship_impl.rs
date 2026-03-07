@@ -17,8 +17,8 @@ use ship_core::{
 };
 use ship_service::{CaptainMcp, CaptainMcpDispatcher, MateMcp, MateMcpDispatcher, Ship};
 use ship_types::{
-    AgentDiscovery, AgentKind, AgentSnapshot, AgentState, AssignTaskResponse, AutonomyMode,
-    BlockId, CloseSessionRequest, CloseSessionResponse, ContentBlock, CreateSessionRequest,
+    AgentDiscovery, AgentKind, AgentSnapshot, AgentState, AutonomyMode, BlockId,
+    CloseSessionRequest, CloseSessionResponse, ContentBlock, CreateSessionRequest,
     CreateSessionResponse, CurrentTask, McpServerConfig, McpStdioServerConfig, McpToolCallResponse,
     PersistedSession, ProjectInfo, ProjectName, Role, SessionConfig, SessionDetail, SessionEvent,
     SessionId, SessionStartupStage, SessionStartupState, SessionSummary, SetAgentModelResponse,
@@ -476,13 +476,6 @@ impl ShipImpl {
             "Do not delegate to the mate yet.",
         ]
         .join("\n")
-    }
-
-    // r[captain.initial-prompt]
-    fn captain_assignment_prompt(description: &str) -> String {
-        format!(
-            "The human assigned a new task:\n{description}\n\nReview it as the captain. You may ask a clarifying question in plain text, or call Ship MCP tools when you want to delegate, accept, or reject the task. Do not write code directly."
-        )
     }
 
     // r[captain.tool.transport]
@@ -1697,40 +1690,6 @@ impl Ship for ShipImpl {
         });
 
         CreateSessionResponse::Created { session_id }
-    }
-
-    async fn assign(&self, session: SessionId, description: String) -> AssignTaskResponse {
-        match self.start_task(&session, description).await {
-            Ok(task_id) => {
-                let this = self.clone();
-                let session_for_prompt = session.clone();
-                let description_for_prompt = {
-                    let sessions = self.sessions.lock().expect("sessions mutex poisoned");
-                    sessions
-                        .get(&session)
-                        .and_then(|active| active.current_task.as_ref())
-                        .map(|task| task.record.description.clone())
-                        .unwrap_or_default()
-                };
-                tokio::spawn(async move {
-                    if let Err(error) = this
-                        .prompt_agent(
-                            &session_for_prompt,
-                            Role::Captain,
-                            Self::captain_assignment_prompt(&description_for_prompt),
-                        )
-                        .await
-                    {
-                        Self::log_error("prompt_captain_assign", &error);
-                    }
-                });
-                AssignTaskResponse::Assigned { task_id }
-            }
-            Err(error) => {
-                Self::log_error("assign", &error);
-                AssignTaskResponse::Failed { message: error }
-            }
-        }
     }
 
     async fn steer(&self, session: SessionId, content: String) {

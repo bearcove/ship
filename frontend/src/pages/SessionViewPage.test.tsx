@@ -45,7 +45,6 @@ vi.mock("../api/client", () => ({
     resolvePermission: async () => undefined,
     accept: async () => undefined,
     cancel: async () => undefined,
-    assign: async () => "task-2",
   }),
 }));
 
@@ -185,7 +184,6 @@ describe("SessionViewPage UX slice", () => {
     });
   });
 
-  // r[verify ui.task-bar.actions]
   // r[verify ui.steer-review.layout]
   it("shows captain steer review without stale accept actions in steer-pending state", async () => {
     mocks.session = {

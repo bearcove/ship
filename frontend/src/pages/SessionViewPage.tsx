@@ -7,7 +7,6 @@ import { useSession } from "../hooks/useSession";
 import { useSessionState } from "../hooks/useSessionState";
 import { AgentHeader } from "../components/AgentHeader";
 import { AgentPanel } from "../components/AgentPanel";
-import { TaskBar } from "../components/TaskBar";
 import { SteerReview } from "../components/SteerReview";
 import { ConnectionBanner } from "../components/ConnectionBanner";
 import {
@@ -251,8 +250,6 @@ export function SessionViewPage() {
           onDismiss={() => {}}
         />
       )}
-
-      <TaskBar sessionId={session.id} startupState={startupState} task={liveTask} />
     </Flex>
   );
 }

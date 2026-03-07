@@ -21,7 +21,6 @@ beforeEach(() => {
 });
 
 describe("InlineAgentComposer", () => {
-  // r[verify ui.task-bar.actions]
   it("queues captain guidance during startup and sends it once the captain is no longer busy", async () => {
     const view = renderWithTheme(
       <InlineAgentComposer
@@ -66,7 +65,6 @@ describe("InlineAgentComposer", () => {
     });
   });
 
-  // r[verify ui.task-bar.actions]
   it("sends captain guidance immediately once the captain is ready even if mate startup continues", async () => {
     renderWithTheme(
       <InlineAgentComposer
@@ -95,7 +93,6 @@ describe("InlineAgentComposer", () => {
     });
   });
 
-  // r[verify ui.task-bar.actions]
   it("keeps mate steer editable during startup while making send state explicit", () => {
     renderWithTheme(
       <InlineAgentComposer

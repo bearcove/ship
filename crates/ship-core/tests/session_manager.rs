@@ -156,7 +156,7 @@ async fn test_start_session_brings_up_runtime_after_persistence() {
     );
 }
 
-// r[verify proto.assign]
+// r[verify captain.tool.assign]
 #[tokio::test]
 async fn test_assign_requires_startup_to_finish() {
     let (mut manager, _agent, _worktree, _store) = make_manager();
