@@ -28,6 +28,7 @@ use ship_types::{
     SessionStartupStage, SessionStartupState, SessionSummary, SetAgentModelResponse,
     SubscribeMessage, TaskId, TaskRecord, TaskStatus, ToolCallKind, ToolTarget,
 };
+use tokio::process::Command as TokioCommand;
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 
@@ -36,6 +37,9 @@ const BLOCKED_COMMAND_MESSAGE: &str = "This command is blocked. Stop current wor
 const DEFAULT_READ_FILE_LIMIT: usize = 2000;
 const MAX_READ_FILE_LINE_LENGTH: usize = 2000;
 const BINARY_DETECTION_BYTES: usize = 8 * 1024;
+const MAX_TOOL_OUTPUT_LINES: usize = 1000;
+const MAX_TOOL_OUTPUT_BYTES: usize = 50 * 1024;
+const MATE_TOOL_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 
 struct AutoCommitResult {
     commit_hash: String,
@@ -50,6 +54,10 @@ enum RustfmtOutcome {
 
 #[cfg(test)]
 static TEST_RUSTFMT_PROGRAM: Mutex<Option<std::ffi::OsString>> = Mutex::new(None);
+#[cfg(test)]
+static TEST_RG_PROGRAM: Mutex<Option<std::ffi::OsString>> = Mutex::new(None);
+#[cfg(test)]
+static TEST_FD_PROGRAM: Mutex<Option<std::ffi::OsString>> = Mutex::new(None);
 
 pub enum MateReviewOutcome {
     Accepted { summary: Option<String> },
@@ -1085,6 +1093,32 @@ impl ShipImpl {
         std::ffi::OsString::from("rustfmt")
     }
 
+    fn rg_program() -> std::ffi::OsString {
+        #[cfg(test)]
+        if let Some(program) = TEST_RG_PROGRAM
+            .lock()
+            .expect("test rg program mutex poisoned")
+            .clone()
+        {
+            return program;
+        }
+
+        std::ffi::OsString::from("rg")
+    }
+
+    fn fd_program() -> std::ffi::OsString {
+        #[cfg(test)]
+        if let Some(program) = TEST_FD_PROGRAM
+            .lock()
+            .expect("test fd program mutex poisoned")
+            .clone()
+        {
+            return program;
+        }
+
+        std::ffi::OsString::from("fd")
+    }
+
     fn run_rustfmt(program: &std::ffi::OsString, path: &Path) -> Result<RustfmtOutcome, String> {
         let mut command = Command::new(program);
         let output = match command.arg(path).output() {
@@ -1109,6 +1143,110 @@ impl ShipImpl {
             "rustfmt failed".to_owned()
         };
         Ok(RustfmtOutcome::Failure(details))
+    }
+
+    fn truncate_tool_output(output: &str) -> String {
+        let output = output.trim_end_matches('\n');
+        if output.is_empty() {
+            return String::new();
+        }
+
+        if output.len() <= MAX_TOOL_OUTPUT_BYTES && output.lines().count() <= MAX_TOOL_OUTPUT_LINES
+        {
+            return output.to_owned();
+        }
+
+        let lines = output.lines().collect::<Vec<_>>();
+        let total_lines = lines.len();
+        let mut rendered = String::new();
+
+        for line in lines.iter().take(MAX_TOOL_OUTPUT_LINES) {
+            let line_len = line.len();
+            let projected_len = if rendered.is_empty() {
+                line_len
+            } else {
+                rendered.len() + 1 + line_len
+            };
+            if projected_len > MAX_TOOL_OUTPUT_BYTES {
+                break;
+            }
+
+            if !rendered.is_empty() {
+                rendered.push('\n');
+            }
+            rendered.push_str(line);
+        }
+
+        if !rendered.is_empty() {
+            rendered.push('\n');
+        }
+        rendered.push_str(&format!(
+            "(output truncated - {total_lines} lines total. Narrow your search.)"
+        ));
+        rendered
+    }
+
+    async fn run_worktree_shell_command(
+        worktree_path: PathBuf,
+        program: std::ffi::OsString,
+        args: String,
+        missing_program_message: &'static str,
+        no_matches_message: Option<&'static str>,
+    ) -> Result<String, String> {
+        let command_text = if args.trim().is_empty() {
+            program.to_string_lossy().into_owned()
+        } else {
+            format!("{} {}", program.to_string_lossy(), args)
+        };
+
+        let mut command = TokioCommand::new("/bin/sh");
+        command
+            .arg("-c")
+            .arg(&command_text)
+            .current_dir(&worktree_path)
+            .kill_on_drop(true)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        let child = command
+            .spawn()
+            .map_err(|error| format!("failed to start command: {error}"))?;
+
+        let output =
+            match tokio::time::timeout(MATE_TOOL_COMMAND_TIMEOUT, child.wait_with_output()).await {
+                Ok(Ok(output)) => output,
+                Ok(Err(error)) => return Err(format!("command execution failed: {error}")),
+                Err(_) => return Err("command timed out after 30 seconds".to_owned()),
+            };
+
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            return Ok(Self::truncate_tool_output(&stdout));
+        }
+
+        if output.status.code() == Some(1) {
+            if let Some(no_matches_message) = no_matches_message {
+                return Ok(no_matches_message.to_owned());
+            }
+        }
+
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+        if output.status.code() == Some(127)
+            || stderr.contains("not found")
+            || stderr.contains("command not found")
+        {
+            return Err(missing_program_message.to_owned());
+        }
+
+        if !stderr.is_empty() {
+            return Err(stderr);
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        if !stdout.is_empty() {
+            return Err(stdout);
+        }
+
+        Err("command failed".to_owned())
     }
 
     fn restore_written_file(target: &Path, backup: Option<&Path>) -> Result<(), String> {
@@ -1387,6 +1525,54 @@ impl ShipImpl {
         })
         .await
         .map_err(|error| format!("write_file task failed: {error}"))?
+    }
+
+    // r[mate.tool.search-files]
+    async fn mate_tool_search_files(
+        &self,
+        session_id: &SessionId,
+        args: String,
+    ) -> Result<String, String> {
+        let worktree_path = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions
+                .get(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            Self::current_task_worktree_path(session)?.to_path_buf()
+        };
+
+        Self::run_worktree_shell_command(
+            worktree_path,
+            Self::rg_program(),
+            args,
+            "ripgrep (rg) is not installed.",
+            Some("No matches found."),
+        )
+        .await
+    }
+
+    // r[mate.tool.list-files]
+    async fn mate_tool_list_files(
+        &self,
+        session_id: &SessionId,
+        args: String,
+    ) -> Result<String, String> {
+        let worktree_path = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions
+                .get(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            Self::current_task_worktree_path(session)?.to_path_buf()
+        };
+
+        Self::run_worktree_shell_command(
+            worktree_path,
+            Self::fd_program(),
+            args,
+            "fd is not installed.",
+            None,
+        )
+        .await
     }
 
     async fn auto_commit_worktree(
@@ -3182,6 +3368,20 @@ impl MateMcp for MateMcpSessionService {
         )
     }
 
+    // r[mate.tool.search-files]
+    async fn search_files(&self, args: String) -> McpToolCallResponse {
+        Self::response(
+            self.ship
+                .mate_tool_search_files(&self.session_id, args)
+                .await,
+        )
+    }
+
+    // r[mate.tool.list-files]
+    async fn list_files(&self, args: String) -> McpToolCallResponse {
+        Self::response(self.ship.mate_tool_list_files(&self.session_id, args).await)
+    }
+
     // r[mate.tool.send-update]
     async fn mate_send_update(&self, message: String) -> McpToolCallResponse {
         Self::response(
@@ -3275,12 +3475,12 @@ mod tests {
 
     use super::ShipImpl;
 
-    static WRITE_FILE_TEST_LOCK: Mutex<()> = Mutex::new(());
+    static MATE_TOOL_TEST_LOCK: Mutex<()> = Mutex::new(());
 
-    fn lock_write_file_tests() -> MutexGuard<'static, ()> {
-        WRITE_FILE_TEST_LOCK
+    fn lock_mate_tool_tests() -> MutexGuard<'static, ()> {
+        MATE_TOOL_TEST_LOCK
             .lock()
-            .expect("write_file test lock should not be poisoned")
+            .expect("mate tool test lock should not be poisoned")
     }
 
     struct TestRustfmtProgramGuard;
@@ -3299,6 +3499,44 @@ mod tests {
             *super::TEST_RUSTFMT_PROGRAM
                 .lock()
                 .expect("test rustfmt program mutex poisoned") = None;
+        }
+    }
+
+    struct TestRgProgramGuard;
+
+    impl TestRgProgramGuard {
+        fn set(program: &str) -> Self {
+            *super::TEST_RG_PROGRAM
+                .lock()
+                .expect("test rg program mutex poisoned") = Some(OsString::from(program));
+            Self
+        }
+    }
+
+    impl Drop for TestRgProgramGuard {
+        fn drop(&mut self) {
+            *super::TEST_RG_PROGRAM
+                .lock()
+                .expect("test rg program mutex poisoned") = None;
+        }
+    }
+
+    struct TestFdProgramGuard;
+
+    impl TestFdProgramGuard {
+        fn set(program: &str) -> Self {
+            *super::TEST_FD_PROGRAM
+                .lock()
+                .expect("test fd program mutex poisoned") = Some(OsString::from(program));
+            Self
+        }
+    }
+
+    impl Drop for TestFdProgramGuard {
+        fn drop(&mut self) {
+            *super::TEST_FD_PROGRAM
+                .lock()
+                .expect("test fd program mutex poisoned") = None;
         }
     }
 
@@ -3888,10 +4126,131 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
+    // r[verify mate.tool.search-files]
+    #[tokio::test]
+    async fn mate_search_files_returns_matches_no_matches_and_truncates_output() {
+        let _guard = lock_mate_tool_tests();
+        let (dir, ship, session_id) = create_session_for_workflow_test("mate-search-files").await;
+        let project_root = dir.join("project");
+        std::fs::create_dir_all(project_root.join("src")).expect("src directory should be created");
+        std::fs::write(
+            project_root.join("src/lib.rs"),
+            "fn alpha() {}\nfn beta() {}\n",
+        )
+        .expect("test file should be written");
+
+        let large_output = (0..1_200)
+            .map(|index| format!("alpha {index}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        std::fs::write(project_root.join("many.txt"), format!("{large_output}\n"))
+            .expect("large search corpus should be written");
+
+        {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(&session_id).expect("session should exist");
+            session.worktree_path = Some(project_root.clone());
+        }
+
+        let matches = ship
+            .mate_tool_search_files(&session_id, "-n -F 'fn beta' src/lib.rs".to_owned())
+            .await
+            .expect("match search should succeed");
+        assert_eq!(matches, "2:fn beta() {}");
+
+        let no_matches = ship
+            .mate_tool_search_files(&session_id, "-n -F 'does not exist' src/lib.rs".to_owned())
+            .await
+            .expect("no-match search should still succeed");
+        assert_eq!(no_matches, "No matches found.");
+
+        let truncated = ship
+            .mate_tool_search_files(&session_id, "-n -F alpha many.txt".to_owned())
+            .await
+            .expect("large search should succeed");
+        assert!(
+            truncated.contains("(output truncated - 1200 lines total. Narrow your search.)"),
+            "unexpected truncation output: {truncated}"
+        );
+        assert_eq!(truncated.lines().count(), 1001);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    // r[verify mate.tool.search-files]
+    #[tokio::test]
+    async fn mate_search_files_reports_missing_binary() {
+        let _guard = lock_mate_tool_tests();
+        let _rg_guard = TestRgProgramGuard::set("rg-does-not-exist-for-ship-tests");
+        let (dir, ship, session_id) =
+            create_session_for_workflow_test("mate-search-files-missing-rg").await;
+        let project_root = dir.join("project");
+        std::fs::write(project_root.join("file.txt"), "alpha\n").expect("test file should exist");
+
+        {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(&session_id).expect("session should exist");
+            session.worktree_path = Some(project_root.clone());
+        }
+
+        let error = ship
+            .mate_tool_search_files(&session_id, "-n -F alpha file.txt".to_owned())
+            .await
+            .expect_err("missing rg should error");
+        assert_eq!(error, "ripgrep (rg) is not installed.");
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    // r[verify mate.tool.list-files]
+    #[tokio::test]
+    async fn mate_list_files_filters_results_and_reports_missing_binary() {
+        let _guard = lock_mate_tool_tests();
+        let (dir, ship, session_id) = create_session_for_workflow_test("mate-list-files").await;
+        let project_root = dir.join("project");
+        std::fs::create_dir_all(project_root.join("src/nested"))
+            .expect("test directories should be created");
+        std::fs::write(project_root.join("src/lib.rs"), "pub fn lib() {}\n")
+            .expect("lib file should exist");
+        std::fs::write(project_root.join("src/nested/main.rs"), "fn main() {}\n")
+            .expect("main file should exist");
+        std::fs::write(project_root.join("src/nested/readme.txt"), "notes\n")
+            .expect("text file should exist");
+
+        {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(&session_id).expect("session should exist");
+            session.worktree_path = Some(project_root.clone());
+        }
+
+        let listed = ship
+            .mate_tool_list_files(&session_id, ". src/ -e rs".to_owned())
+            .await
+            .expect("fd listing should succeed");
+        assert!(listed.contains("src/lib.rs"), "unexpected output: {listed}");
+        assert!(
+            listed.contains("src/nested/main.rs"),
+            "unexpected output: {listed}"
+        );
+        assert!(
+            !listed.contains("readme.txt"),
+            "extension filtering should exclude readme.txt: {listed}"
+        );
+
+        let _fd_guard = TestFdProgramGuard::set("fd-does-not-exist-for-ship-tests");
+        let error = ship
+            .mate_tool_list_files(&session_id, ". src/ -e rs".to_owned())
+            .await
+            .expect_err("missing fd should error");
+        assert_eq!(error, "fd is not installed.");
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
     // r[verify mate.tool.write-file]
     #[tokio::test]
     async fn mate_write_file_writes_formats_and_creates_missing_parents() {
-        let _guard = lock_write_file_tests();
+        let _guard = lock_mate_tool_tests();
         let (dir, ship, session_id) =
             create_session_for_workflow_test("mate-write-file-valid").await;
         let project_root = dir.join("project");
@@ -3941,7 +4300,7 @@ mod tests {
     // r[verify mate.tool.write-file]
     #[tokio::test]
     async fn mate_write_file_rejects_bad_paths_and_rolls_back_invalid_rust() {
-        let _guard = lock_write_file_tests();
+        let _guard = lock_mate_tool_tests();
         let (dir, ship, session_id) =
             create_session_for_workflow_test("mate-write-file-invalid").await;
         let project_root = dir.join("project");
@@ -3995,7 +4354,7 @@ mod tests {
     // r[verify mate.tool.write-file]
     #[tokio::test]
     async fn mate_write_file_falls_back_when_rustfmt_is_unavailable() {
-        let _guard = lock_write_file_tests();
+        let _guard = lock_mate_tool_tests();
         let _rustfmt_guard = TestRustfmtProgramGuard::set("rustfmt-does-not-exist-for-ship-tests");
         let (dir, ship, session_id) =
             create_session_for_workflow_test("mate-write-file-no-rustfmt").await;

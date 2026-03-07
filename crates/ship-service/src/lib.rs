@@ -99,6 +99,12 @@ pub trait MateMcp {
     // r[mate.tool.write-file]
     async fn write_file(&self, path: String, content: String) -> McpToolCallResponse;
 
+    // r[mate.tool.search-files]
+    async fn search_files(&self, args: String) -> McpToolCallResponse;
+
+    // r[mate.tool.list-files]
+    async fn list_files(&self, args: String) -> McpToolCallResponse;
+
     // r[mate.tool.send-update]
     async fn mate_send_update(&self, message: String) -> McpToolCallResponse;
 

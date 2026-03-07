@@ -91,6 +91,26 @@ impl ServerHandler for MateMcpHandler {
                     .await
                     .map_err(call_tool_rpc_error)?
             }
+            // r[mate.tool.search-files]
+            "search_files" => {
+                let Some(args) = arguments.get("args").and_then(Value::as_str) else {
+                    return Ok(tool_result("missing required argument: args", true));
+                };
+                self.client
+                    .search_files(args.to_owned())
+                    .await
+                    .map_err(call_tool_rpc_error)?
+            }
+            // r[mate.tool.list-files]
+            "list_files" => {
+                let Some(args) = arguments.get("args").and_then(Value::as_str) else {
+                    return Ok(tool_result("missing required argument: args", true));
+                };
+                self.client
+                    .list_files(args.to_owned())
+                    .await
+                    .map_err(call_tool_rpc_error)?
+            }
             // r[mate.tool.send-update]
             "mate_send_update" => {
                 let Some(message) = arguments.get("message").and_then(Value::as_str) else {
@@ -256,6 +276,30 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "content": { "type": "string" }
                 },
                 "required": ["path", "content"],
+                "additionalProperties": false,
+            }),
+        },
+        ToolDefinition {
+            name: "search_files",
+            description: "Search file contents using ripgrep (rg). Args are passed directly to rg.\nRuns in the worktree root. Output is line-numbered matches.\n\nKey flags:\n  rg PATTERN [PATH...]          Search for pattern\n  -t, --type TYPE               Filter by file type (rust, ts, py, json, ...)\n  -g, --glob GLOB               Include/exclude files by glob (-g '!vendor/')\n  -i, --ignore-case             Case-insensitive search\n  -w, --word-regexp             Match whole words only\n  -l, --files-with-matches      Only print file names\n  -c, --count                   Only print match counts per file\n  -C NUM, --context NUM         Show NUM lines of context\n  -n, --line-number             Show line numbers (default)\n  -F, --fixed-strings           Treat pattern as literal string\n  --multiline                   Match across line boundaries\n\nExample: \"fn handle_.*event\" -t rust src/",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "args": { "type": "string" }
+                },
+                "required": ["args"],
+                "additionalProperties": false,
+            }),
+        },
+        ToolDefinition {
+            name: "list_files",
+            description: "List files using fd. Args are passed directly to fd.\nRuns in the worktree root.\n\nKey flags:\n  fd [PATTERN] [PATH...]        Search for files matching pattern\n  -e, --extension EXT           Filter by extension\n  -t, --type TYPE               f=file, d=directory, l=symlink\n  -d, --max-depth DEPTH         Limit directory traversal depth\n  -H, --hidden                  Include hidden files\n  -g, --glob PATTERN            Glob-based search instead of regex\n  -E, --exclude PATTERN         Exclude entries matching pattern\n\nExample: -e rs src/",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "args": { "type": "string" }
+                },
+                "required": ["args"],
                 "additionalProperties": false,
             }),
         },

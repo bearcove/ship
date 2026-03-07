@@ -854,6 +854,16 @@ contents if formatting fails; if validation fails the file is not written and
 the error is returned. Valid Rust files are auto-formatted. Parent directories
 are created as needed.
 
+r[mate.tool.search-files]
+The mate MUST have access to a `search_files` tool that takes raw ripgrep
+arguments as a string. The command runs in the worktree root. Output is
+truncated at 1000 lines.
+
+r[mate.tool.list-files]
+The mate MUST have access to a `list_files` tool that takes raw fd arguments
+as a string. The command runs in the worktree root. Output is truncated at
+1000 lines.
+
 r[mate.tool.send-update]
 The mate MUST have access to a `mate_send_update` tool that takes a `message`
 argument (string). The message is injected into the captain's context as a
