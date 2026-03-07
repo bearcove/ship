@@ -91,6 +91,45 @@ impl ServerHandler for MateMcpHandler {
                     .await
                     .map_err(call_tool_rpc_error)?
             }
+            // r[mate.tool.edit-prepare]
+            "edit_prepare" => {
+                let Some(path) = arguments.get("path").and_then(Value::as_str) else {
+                    return Ok(tool_result("missing required argument: path", true));
+                };
+                let Some(old_string) = arguments.get("old_string").and_then(Value::as_str) else {
+                    return Ok(tool_result("missing required argument: old_string", true));
+                };
+                let Some(new_string) = arguments.get("new_string").and_then(Value::as_str) else {
+                    return Ok(tool_result("missing required argument: new_string", true));
+                };
+                let replace_all = match arguments.get("replace_all") {
+                    Some(value) => Some(
+                        value
+                            .as_bool()
+                            .ok_or_else(|| call_tool_rpc_error("replace_all must be a boolean"))?,
+                    ),
+                    None => None,
+                };
+                self.client
+                    .edit_prepare(
+                        path.to_owned(),
+                        old_string.to_owned(),
+                        new_string.to_owned(),
+                        replace_all,
+                    )
+                    .await
+                    .map_err(call_tool_rpc_error)?
+            }
+            // r[mate.tool.edit-confirm]
+            "edit_confirm" => {
+                let Some(edit_id) = arguments.get("edit_id").and_then(Value::as_str) else {
+                    return Ok(tool_result("missing required argument: edit_id", true));
+                };
+                self.client
+                    .edit_confirm(edit_id.to_owned())
+                    .await
+                    .map_err(call_tool_rpc_error)?
+            }
             // r[mate.tool.search-files]
             "search_files" => {
                 let Some(args) = arguments.get("args").and_then(Value::as_str) else {
@@ -276,6 +315,33 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "content": { "type": "string" }
                 },
                 "required": ["path", "content"],
+                "additionalProperties": false,
+            }),
+        },
+        ToolDefinition {
+            name: "edit_prepare",
+            description: "Prepare a search-and-replace edit. Returns a diff preview without modifying the file. You MUST call edit_confirm to apply it.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string" },
+                    "old_string": { "type": "string" },
+                    "new_string": { "type": "string" },
+                    "replace_all": { "type": "boolean" }
+                },
+                "required": ["path", "old_string", "new_string"],
+                "additionalProperties": false,
+            }),
+        },
+        ToolDefinition {
+            name: "edit_confirm",
+            description: "Apply a previously prepared edit. Runs syntax validation for Rust files. If validation fails, the file is not modified and the error is returned.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "edit_id": { "type": "string" }
+                },
+                "required": ["edit_id"],
                 "additionalProperties": false,
             }),
         },

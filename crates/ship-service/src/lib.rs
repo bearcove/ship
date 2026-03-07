@@ -99,6 +99,18 @@ pub trait MateMcp {
     // r[mate.tool.write-file]
     async fn write_file(&self, path: String, content: String) -> McpToolCallResponse;
 
+    // r[mate.tool.edit-prepare]
+    async fn edit_prepare(
+        &self,
+        path: String,
+        old_string: String,
+        new_string: String,
+        replace_all: Option<bool>,
+    ) -> McpToolCallResponse;
+
+    // r[mate.tool.edit-confirm]
+    async fn edit_confirm(&self, edit_id: String) -> McpToolCallResponse;
+
     // r[mate.tool.search-files]
     async fn search_files(&self, args: String) -> McpToolCallResponse;
 

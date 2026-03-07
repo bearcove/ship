@@ -64,6 +64,13 @@ pub struct PendingPermission {
 }
 
 #[derive(Debug, Clone)]
+pub struct PendingEdit {
+    pub path: PathBuf,
+    pub old_content: String,
+    pub new_content: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct ActiveSession {
     pub id: SessionId,
     pub config: SessionConfig,
@@ -79,6 +86,7 @@ pub struct ActiveSession {
     pub captain_block_count: usize,
     pub mate_block_count: usize,
     pub pending_permissions: HashMap<String, PendingPermission>,
+    pub pending_edits: HashMap<String, PendingEdit>,
     pub pending_steer: Option<String>,
     pub events_tx: broadcast::Sender<SessionEventEnvelope>,
     pub next_event_seq: u64,
@@ -163,6 +171,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             captain_block_count: 0,
             mate_block_count: 0,
             pending_permissions: HashMap::new(),
+            pending_edits: HashMap::new(),
             pending_steer: None,
             events_tx,
             next_event_seq: 0,

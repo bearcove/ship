@@ -854,6 +854,19 @@ contents if formatting fails; if validation fails the file is not written and
 the error is returned. Valid Rust files are auto-formatted. Parent directories
 are created as needed.
 
+r[mate.tool.edit-prepare]
+The mate MUST have access to an `edit_prepare` tool that takes `path`,
+`old_string`, and `new_string` arguments, plus an optional `replace_all`
+flag. The tool computes the replacement and returns a unified diff preview
+with an `edit_id`. The file is not modified. The `old_string` must match
+exactly once unless `replace_all` is true.
+
+r[mate.tool.edit-confirm]
+The mate MUST have access to an `edit_confirm` tool that takes an `edit_id`.
+The tool applies the prepared edit, runs syntax validation for Rust files,
+and returns success or error. If validation fails or the file was modified
+since prepare, the edit is rejected and the file is unchanged.
+
 r[mate.tool.search-files]
 The mate MUST have access to a `search_files` tool that takes raw ripgrep
 arguments as a string. The command runs in the worktree root. Output is

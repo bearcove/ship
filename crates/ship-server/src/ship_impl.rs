@@ -3,6 +3,7 @@ use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -14,7 +15,7 @@ use roam::{
 };
 use ship_core::{
     AcpAgentDriver, ActiveSession, AgentDriver, AgentSessionConfig, GitWorktreeOps,
-    JsonSessionStore, ProjectRegistry, SessionStore, WorktreeOps, apply_event,
+    JsonSessionStore, PendingEdit, ProjectRegistry, SessionStore, WorktreeOps, apply_event,
     archive_terminal_task, current_task_status, rebuild_materialized_from_event_log,
     resolve_mcp_servers, set_agent_state, transition_task,
 };
@@ -44,6 +45,18 @@ const MATE_TOOL_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 struct AutoCommitResult {
     commit_hash: String,
     diff_stat: String,
+}
+
+struct ReplacementOccurrence {
+    old_start: usize,
+    old_end: usize,
+    new_start: usize,
+    new_end: usize,
+}
+
+struct PreparedEdit {
+    pending: PendingEdit,
+    diff: String,
 }
 
 enum RustfmtOutcome {
@@ -96,6 +109,7 @@ pub struct ShipImpl {
     pending_mcp_ops: Arc<Mutex<HashMap<SessionId, PendingMcpOps>>>,
     server_ws_url: Arc<Mutex<String>>,
     startup_started_at: Arc<Mutex<HashMap<SessionId, Instant>>>,
+    next_edit_id: Arc<AtomicU64>,
 }
 
 impl ShipImpl {
@@ -114,6 +128,7 @@ impl ShipImpl {
             pending_mcp_ops: Arc::new(Mutex::new(HashMap::new())),
             server_ws_url: Arc::new(Mutex::new("ws://127.0.0.1:9/ws".to_owned())),
             startup_started_at: Arc::new(Mutex::new(HashMap::new())),
+            next_edit_id: Arc::new(AtomicU64::new(1)),
         }
     }
 
@@ -198,6 +213,7 @@ impl ShipImpl {
                 captain_block_count: 0,
                 mate_block_count: 0,
                 pending_permissions: HashMap::new(),
+                pending_edits: HashMap::new(),
                 pending_steer: None,
                 events_tx,
                 next_event_seq,
@@ -1290,6 +1306,213 @@ impl ShipImpl {
         Ok(Self::line_count(content))
     }
 
+    fn restore_file_from_content(
+        target: &Path,
+        relative_display: &Path,
+        original_content: &str,
+    ) -> Result<(), String> {
+        Self::write_text_file(target, original_content, relative_display).map(|_| ())
+    }
+
+    fn validate_rust_file(target: &Path, relative_display: &Path) -> Result<(), String> {
+        let rustfmt_program = Self::rustfmt_program();
+        match Self::run_rustfmt(&rustfmt_program, target)? {
+            RustfmtOutcome::NotFound => {
+                tracing::warn!(path = %relative_display.display(), "rustfmt not found; writing Rust file without validation");
+                Ok(())
+            }
+            RustfmtOutcome::Failure(details) => Err(format!(
+                "Syntax error in {}:\n{details}",
+                relative_display.display()
+            )),
+            RustfmtOutcome::Success => Ok(()),
+        }
+    }
+
+    fn line_start_offsets(content: &str) -> Vec<usize> {
+        let mut offsets = vec![0];
+        for (index, byte) in content.bytes().enumerate() {
+            if byte == b'\n' {
+                offsets.push(index + 1);
+            }
+        }
+        offsets
+    }
+
+    fn byte_offset_to_line_index(line_offsets: &[usize], byte_offset: usize) -> usize {
+        line_offsets
+            .partition_point(|start| *start <= byte_offset)
+            .saturating_sub(1)
+    }
+
+    fn byte_span_to_line_range(line_offsets: &[usize], start: usize, end: usize) -> (usize, usize) {
+        let start_line = Self::byte_offset_to_line_index(line_offsets, start);
+        if start == end {
+            return (start_line, start_line);
+        }
+        let end_line = Self::byte_offset_to_line_index(line_offsets, end.saturating_sub(1)) + 1;
+        (start_line, end_line)
+    }
+
+    fn find_match_offsets(content: &str, needle: &str) -> Vec<usize> {
+        content
+            .match_indices(needle)
+            .map(|(index, _)| index)
+            .collect()
+    }
+
+    fn build_prepared_edit(
+        relative_path: &Path,
+        old_content: String,
+        old_string: String,
+        new_string: String,
+        replace_all: bool,
+    ) -> Result<PreparedEdit, String> {
+        if old_string.is_empty() {
+            return Err("old_string must not be empty.".to_owned());
+        }
+
+        let match_offsets = Self::find_match_offsets(&old_content, &old_string);
+        if match_offsets.is_empty() {
+            return Err(format!(
+                "old_string not found in {}.",
+                relative_path.display()
+            ));
+        }
+        if !replace_all && match_offsets.len() > 1 {
+            return Err(format!(
+                "old_string matches {} locations in {}. Provide more surrounding context to make the match unique.",
+                match_offsets.len(),
+                relative_path.display()
+            ));
+        }
+
+        let mut new_content = String::with_capacity(
+            old_content.len()
+                + match_offsets.len() * new_string.len().saturating_sub(old_string.len()),
+        );
+        let mut occurrences = Vec::with_capacity(match_offsets.len());
+        let mut old_cursor = 0;
+        let mut new_cursor = 0;
+
+        for old_start in match_offsets {
+            let old_end = old_start + old_string.len();
+            let unchanged = &old_content[old_cursor..old_start];
+            new_content.push_str(unchanged);
+            new_cursor += unchanged.len();
+
+            let new_start = new_cursor;
+            new_content.push_str(&new_string);
+            new_cursor += new_string.len();
+            occurrences.push(ReplacementOccurrence {
+                old_start,
+                old_end,
+                new_start,
+                new_end: new_cursor,
+            });
+            old_cursor = old_end;
+
+            if !replace_all {
+                break;
+            }
+        }
+
+        new_content.push_str(&old_content[old_cursor..]);
+        let diff = Self::render_prepared_edit_diff(
+            relative_path,
+            &old_content,
+            &new_content,
+            &occurrences,
+        );
+
+        Ok(PreparedEdit {
+            pending: PendingEdit {
+                path: relative_path.to_path_buf(),
+                old_content,
+                new_content,
+            },
+            diff,
+        })
+    }
+
+    fn render_prepared_edit_diff(
+        relative_path: &Path,
+        old_content: &str,
+        new_content: &str,
+        occurrences: &[ReplacementOccurrence],
+    ) -> String {
+        const CONTEXT_LINES: usize = 3;
+
+        let old_lines = old_content.lines().collect::<Vec<_>>();
+        let new_lines = new_content.lines().collect::<Vec<_>>();
+        let old_offsets = Self::line_start_offsets(old_content);
+        let new_offsets = Self::line_start_offsets(new_content);
+
+        let mut hunks: Vec<(usize, usize, usize, usize)> = Vec::new();
+        for occurrence in occurrences {
+            let (old_start_line, old_end_line) = Self::byte_span_to_line_range(
+                &old_offsets,
+                occurrence.old_start,
+                occurrence.old_end,
+            );
+            let (new_start_line, new_end_line) = Self::byte_span_to_line_range(
+                &new_offsets,
+                occurrence.new_start,
+                occurrence.new_end,
+            );
+
+            if let Some(previous) = hunks.last_mut() {
+                let previous_old_context_end = previous.1.saturating_add(CONTEXT_LINES);
+                let previous_new_context_end = previous.3.saturating_add(CONTEXT_LINES);
+                if old_start_line <= previous_old_context_end
+                    || new_start_line <= previous_new_context_end
+                {
+                    previous.1 = previous.1.max(old_end_line);
+                    previous.3 = previous.3.max(new_end_line);
+                    continue;
+                }
+            }
+            hunks.push((old_start_line, old_end_line, new_start_line, new_end_line));
+        }
+
+        let mut rendered = vec![
+            format!("--- {}", relative_path.display()),
+            format!("+++ {}", relative_path.display()),
+        ];
+
+        for (old_start_line, old_end_line, new_start_line, new_end_line) in hunks {
+            let old_context_start = old_start_line.saturating_sub(CONTEXT_LINES);
+            let new_context_start = new_start_line.saturating_sub(CONTEXT_LINES);
+            let old_context_end = old_lines.len().min(old_end_line + CONTEXT_LINES);
+            let new_context_end = new_lines.len().min(new_end_line + CONTEXT_LINES);
+
+            rendered.push(format!(
+                "@@ -{},{} +{},{} @@",
+                old_context_start + 1,
+                old_context_end.saturating_sub(old_context_start),
+                new_context_start + 1,
+                new_context_end.saturating_sub(new_context_start),
+            ));
+
+            for line in &old_lines[old_context_start..old_start_line] {
+                rendered.push(format!(" {line}"));
+            }
+            for line in &old_lines[old_start_line..old_end_line] {
+                rendered.push(format!("-{line}"));
+            }
+            for line in &new_lines[new_start_line..new_end_line] {
+                rendered.push(format!("+{line}"));
+            }
+
+            let old_suffix = old_lines.get(old_end_line..old_context_end).unwrap_or(&[]);
+            for line in old_suffix {
+                rendered.push(format!(" {line}"));
+            }
+        }
+
+        rendered.join("\n")
+    }
+
     fn format_read_file_excerpt(
         path: &Path,
         offset: usize,
@@ -1434,7 +1657,8 @@ impl ShipImpl {
                     worktree_path.display()
                 )
             })?;
-            let target_path = Self::resolve_worktree_file_path(&canonical_worktree, &relative_path)?;
+            let target_path =
+                Self::resolve_worktree_file_path(&canonical_worktree, &relative_path)?;
 
             if let Ok(metadata) = fs::metadata(&target_path) {
                 if metadata.is_dir() {
@@ -1476,39 +1700,18 @@ impl ShipImpl {
                     }
                 };
 
-                let rustfmt_program = Self::rustfmt_program();
-                let format_output =
-                    Self::run_rustfmt(&rustfmt_program, &target_path).map_err(|error| {
-                        let restore_error =
-                            Self::restore_written_file(&target_path, backup_path.as_deref());
-                        match restore_error {
-                            Ok(()) => error,
-                            Err(restore_error) => format!("{error}\n{restore_error}"),
-                        }
-                    })?;
-
-                match format_output {
-                    RustfmtOutcome::NotFound => {
-                        tracing::warn!(path = %relative_path.display(), "rustfmt not found; writing Rust file without validation");
-                    }
-                    RustfmtOutcome::Failure(details) => {
-                        let restore_error =
-                            Self::restore_written_file(&target_path, backup_path.as_deref());
-                        let error = format!("Syntax error in {}:\n{details}", relative_path.display());
-                        return match restore_error {
-                            Ok(()) => Err(error),
-                            Err(restore_error) => Err(format!("{error}\n{restore_error}")),
-                        };
-                    }
-                    RustfmtOutcome::Success => {}
+                if let Err(error) = Self::validate_rust_file(&target_path, &relative_path) {
+                    let restore_error =
+                        Self::restore_written_file(&target_path, backup_path.as_deref());
+                    return match restore_error {
+                        Ok(()) => Err(error),
+                        Err(restore_error) => Err(format!("{error}\n{restore_error}")),
+                    };
                 }
 
                 if let Some(backup) = backup_path {
                     fs::remove_file(&backup).map_err(|error| {
-                        format!(
-                            "Failed to remove backup file {}: {error}",
-                            backup.display()
-                        )
+                        format!("Failed to remove backup file {}: {error}", backup.display())
                     })?;
                 }
 
@@ -1525,6 +1728,187 @@ impl ShipImpl {
         })
         .await
         .map_err(|error| format!("write_file task failed: {error}"))?
+    }
+
+    // r[mate.tool.edit-prepare]
+    async fn mate_tool_edit_prepare(
+        &self,
+        session_id: &SessionId,
+        path: String,
+        old_string: String,
+        new_string: String,
+        replace_all: Option<bool>,
+    ) -> Result<String, String> {
+        let relative_path = Self::validate_worktree_path(&path)?.to_path_buf();
+        let worktree_path = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions
+                .get(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            Self::current_task_worktree_path(session)?.to_path_buf()
+        };
+
+        let prepared = tokio::task::spawn_blocking({
+            let relative_path = relative_path.clone();
+            move || {
+                let canonical_worktree = fs::canonicalize(&worktree_path).map_err(|error| {
+                    format!(
+                        "Failed to resolve worktree path {}: {error}",
+                        worktree_path.display()
+                    )
+                })?;
+                let candidate_path = canonical_worktree.join(&relative_path);
+                let metadata = fs::metadata(&candidate_path).map_err(|error| {
+                    if error.kind() == std::io::ErrorKind::NotFound {
+                        format!("File not found: {}", relative_path.display())
+                    } else {
+                        format!("Failed to access file: {error}")
+                    }
+                })?;
+                if metadata.is_dir() {
+                    return Err("Path is a directory, not a file.".to_owned());
+                }
+
+                let canonical_file = fs::canonicalize(&candidate_path).map_err(|error| {
+                    format!(
+                        "Failed to resolve file path {}: {error}",
+                        candidate_path.display()
+                    )
+                })?;
+                if !canonical_file.starts_with(&canonical_worktree) {
+                    return Err("Path resolves outside the worktree.".to_owned());
+                }
+
+                let old_content = fs::read_to_string(&canonical_file)
+                    .map_err(|error| format!("Failed to read file: {error}"))?;
+                Self::build_prepared_edit(
+                    &relative_path,
+                    old_content,
+                    old_string,
+                    new_string,
+                    replace_all.unwrap_or(false),
+                )
+            }
+        })
+        .await
+        .map_err(|error| format!("edit_prepare task failed: {error}"))??;
+
+        let edit_id = format!("edit-{}", self.next_edit_id.fetch_add(1, Ordering::Relaxed));
+        {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions
+                .get_mut(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            session
+                .pending_edits
+                .retain(|_, pending| pending.path != prepared.pending.path);
+            session
+                .pending_edits
+                .insert(edit_id.clone(), prepared.pending);
+        }
+
+        Ok(format!("edit_id: {edit_id}\n{}", prepared.diff))
+    }
+
+    // r[mate.tool.edit-confirm]
+    async fn mate_tool_edit_confirm(
+        &self,
+        session_id: &SessionId,
+        edit_id: String,
+    ) -> Result<String, String> {
+        let (worktree_path, pending_edit) = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions
+                .get(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            let pending_edit = session
+                .pending_edits
+                .get(&edit_id)
+                .cloned()
+                .ok_or_else(|| {
+                    "edit_id not found. It may have expired or been superseded.".to_owned()
+                })?;
+            (
+                Self::current_task_worktree_path(session)?.to_path_buf(),
+                pending_edit,
+            )
+        };
+
+        let confirmed_path = pending_edit.path.clone();
+        let confirmed = tokio::task::spawn_blocking(move || {
+            let canonical_worktree = fs::canonicalize(&worktree_path).map_err(|error| {
+                format!(
+                    "Failed to resolve worktree path {}: {error}",
+                    worktree_path.display()
+                )
+            })?;
+            let target_path = canonical_worktree.join(&pending_edit.path);
+            let metadata = fs::metadata(&target_path).map_err(|error| {
+                if error.kind() == std::io::ErrorKind::NotFound {
+                    format!("File not found: {}", pending_edit.path.display())
+                } else {
+                    format!("Failed to access file: {error}")
+                }
+            })?;
+            if metadata.is_dir() {
+                return Err("Path is a directory, not a file.".to_owned());
+            }
+
+            let canonical_file = fs::canonicalize(&target_path).map_err(|error| {
+                format!(
+                    "Failed to resolve file path {}: {error}",
+                    target_path.display()
+                )
+            })?;
+            if !canonical_file.starts_with(&canonical_worktree) {
+                return Err("Path resolves outside the worktree.".to_owned());
+            }
+
+            let current_content = fs::read_to_string(&canonical_file)
+                .map_err(|error| format!("Failed to read file: {error}"))?;
+            if current_content != pending_edit.old_content {
+                return Err(
+                    "File has been modified since edit was prepared. Run edit_prepare again."
+                        .to_owned(),
+                );
+            }
+
+            Self::write_text_file(
+                &canonical_file,
+                &pending_edit.new_content,
+                &pending_edit.path,
+            )?;
+            if pending_edit.path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
+                if let Err(error) = Self::validate_rust_file(&canonical_file, &pending_edit.path) {
+                    let restore_error = Self::restore_file_from_content(
+                        &canonical_file,
+                        &pending_edit.path,
+                        &pending_edit.old_content,
+                    );
+                    return match restore_error {
+                        Ok(()) => Err(error),
+                        Err(restore_error) => Err(format!("{error}\n{restore_error}")),
+                    };
+                }
+            }
+
+            Ok(())
+        })
+        .await
+        .map_err(|error| format!("edit_confirm task failed: {error}"))?;
+        confirmed?;
+
+        {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions
+                .get_mut(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            session
+                .pending_edits
+                .retain(|_, pending| pending.path != confirmed_path);
+        }
+
+        Ok(format!("Applied {edit_id} to {}", confirmed_path.display()))
     }
 
     // r[mate.tool.search-files]
@@ -2891,6 +3275,7 @@ impl Ship for ShipImpl {
             captain_block_count: 0,
             mate_block_count: 0,
             pending_permissions: HashMap::new(),
+            pending_edits: HashMap::new(),
             pending_steer: None,
             events_tx,
             next_event_seq: 0,
@@ -3368,6 +3753,30 @@ impl MateMcp for MateMcpSessionService {
         )
     }
 
+    // r[mate.tool.edit-prepare]
+    async fn edit_prepare(
+        &self,
+        path: String,
+        old_string: String,
+        new_string: String,
+        replace_all: Option<bool>,
+    ) -> McpToolCallResponse {
+        Self::response(
+            self.ship
+                .mate_tool_edit_prepare(&self.session_id, path, old_string, new_string, replace_all)
+                .await,
+        )
+    }
+
+    // r[mate.tool.edit-confirm]
+    async fn edit_confirm(&self, edit_id: String) -> McpToolCallResponse {
+        Self::response(
+            self.ship
+                .mate_tool_edit_confirm(&self.session_id, edit_id)
+                .await,
+        )
+    }
+
     // r[mate.tool.search-files]
     async fn search_files(&self, args: String) -> McpToolCallResponse {
         Self::response(
@@ -3634,6 +4043,14 @@ mod tests {
                 .expect("git config should run");
             assert!(status.success(), "git config should succeed");
         }
+    }
+
+    fn parse_edit_id(response: &str) -> String {
+        response
+            .lines()
+            .find_map(|line| line.strip_prefix("edit_id: "))
+            .expect("edit_id line should be present")
+            .to_owned()
     }
 
     // r[verify server.agent-discovery]
@@ -4379,6 +4796,283 @@ mod tests {
             std::fs::read_to_string(project_root.join("src/lib.rs"))
                 .expect("file should still be written"),
             "pub fn unformatted( ) -> u32 {1}\n"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    // r[verify mate.tool.edit-prepare]
+    // r[verify mate.tool.edit-confirm]
+    #[tokio::test]
+    async fn mate_edit_prepare_and_confirm_apply_valid_rust_edit() {
+        let _guard = lock_mate_tool_tests();
+        let (dir, ship, session_id) = create_session_for_workflow_test("mate-edit-confirm").await;
+        let project_root = dir.join("project");
+        std::fs::create_dir_all(project_root.join("src")).expect("src directory should be created");
+        std::fs::write(
+            project_root.join("src/lib.rs"),
+            "pub fn greet() {\n    old_name();\n}\n",
+        )
+        .expect("source file should exist");
+
+        {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(&session_id).expect("session should exist");
+            session.worktree_path = Some(project_root.clone());
+        }
+
+        let prepared = ship
+            .mate_tool_edit_prepare(
+                &session_id,
+                "src/lib.rs".to_owned(),
+                "old_name();".to_owned(),
+                "new_name( );".to_owned(),
+                None,
+            )
+            .await
+            .expect("edit_prepare should succeed");
+        assert!(
+            prepared.contains("--- src/lib.rs"),
+            "unexpected diff: {prepared}"
+        );
+        assert!(
+            prepared.contains("-    old_name();"),
+            "unexpected diff: {prepared}"
+        );
+        assert!(
+            prepared.contains("+    new_name( );"),
+            "unexpected diff: {prepared}"
+        );
+        let edit_id = parse_edit_id(&prepared);
+
+        let confirmed = ship
+            .mate_tool_edit_confirm(&session_id, edit_id.clone())
+            .await
+            .expect("edit_confirm should succeed");
+        assert_eq!(confirmed, format!("Applied {edit_id} to src/lib.rs"));
+        assert_eq!(
+            std::fs::read_to_string(project_root.join("src/lib.rs"))
+                .expect("edited file should exist"),
+            "pub fn greet() {\n    new_name();\n}\n"
+        );
+
+        let sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+        let session = sessions.get(&session_id).expect("session should exist");
+        assert!(
+            session.pending_edits.is_empty(),
+            "confirmed edit should clear pending edits"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    // r[verify mate.tool.edit-prepare]
+    #[tokio::test]
+    async fn mate_edit_prepare_rejects_missing_and_ambiguous_matches() {
+        let _guard = lock_mate_tool_tests();
+        let (dir, ship, session_id) =
+            create_session_for_workflow_test("mate-edit-prepare-errors").await;
+        let project_root = dir.join("project");
+        std::fs::write(project_root.join("notes.txt"), "alpha\nbeta\nalpha\n")
+            .expect("test file should exist");
+
+        {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(&session_id).expect("session should exist");
+            session.worktree_path = Some(project_root.clone());
+        }
+
+        let missing = ship
+            .mate_tool_edit_prepare(
+                &session_id,
+                "notes.txt".to_owned(),
+                "gamma".to_owned(),
+                "delta".to_owned(),
+                None,
+            )
+            .await
+            .expect_err("missing old_string should fail");
+        assert_eq!(missing, "old_string not found in notes.txt.");
+
+        let ambiguous = ship
+            .mate_tool_edit_prepare(
+                &session_id,
+                "notes.txt".to_owned(),
+                "alpha".to_owned(),
+                "delta".to_owned(),
+                None,
+            )
+            .await
+            .expect_err("ambiguous old_string should fail");
+        assert_eq!(
+            ambiguous,
+            "old_string matches 2 locations in notes.txt. Provide more surrounding context to make the match unique."
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    // r[verify mate.tool.edit-prepare]
+    // r[verify mate.tool.edit-confirm]
+    #[tokio::test]
+    async fn mate_edit_prepare_replace_all_supersedes_older_edit_for_same_file() {
+        let _guard = lock_mate_tool_tests();
+        let (dir, ship, session_id) =
+            create_session_for_workflow_test("mate-edit-prepare-replace-all").await;
+        let project_root = dir.join("project");
+        std::fs::write(project_root.join("notes.txt"), "foo\nmiddle\nfoo\n")
+            .expect("test file should exist");
+
+        {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(&session_id).expect("session should exist");
+            session.worktree_path = Some(project_root.clone());
+        }
+
+        let first = ship
+            .mate_tool_edit_prepare(
+                &session_id,
+                "notes.txt".to_owned(),
+                "middle".to_owned(),
+                "center".to_owned(),
+                None,
+            )
+            .await
+            .expect("first prepare should succeed");
+        let first_id = parse_edit_id(&first);
+
+        let second = ship
+            .mate_tool_edit_prepare(
+                &session_id,
+                "notes.txt".to_owned(),
+                "foo".to_owned(),
+                "bar".to_owned(),
+                Some(true),
+            )
+            .await
+            .expect("replace_all prepare should succeed");
+        assert!(second.contains("-foo"), "unexpected diff: {second}");
+        assert_eq!(
+            second.matches("+bar").count(),
+            2,
+            "unexpected diff: {second}"
+        );
+        let second_id = parse_edit_id(&second);
+
+        let old_confirm = ship
+            .mate_tool_edit_confirm(&session_id, first_id)
+            .await
+            .expect_err("superseded edit should be removed");
+        assert_eq!(
+            old_confirm,
+            "edit_id not found. It may have expired or been superseded."
+        );
+
+        ship.mate_tool_edit_confirm(&session_id, second_id)
+            .await
+            .expect("replace_all confirm should succeed");
+        assert_eq!(
+            std::fs::read_to_string(project_root.join("notes.txt"))
+                .expect("edited file should exist"),
+            "bar\nmiddle\nbar\n"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    // r[verify mate.tool.edit-confirm]
+    #[tokio::test]
+    async fn mate_edit_confirm_rejects_stale_and_unknown_edits() {
+        let _guard = lock_mate_tool_tests();
+        let (dir, ship, session_id) =
+            create_session_for_workflow_test("mate-edit-confirm-stale").await;
+        let project_root = dir.join("project");
+        std::fs::write(project_root.join("notes.txt"), "alpha\nbeta\n")
+            .expect("test file should exist");
+
+        {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(&session_id).expect("session should exist");
+            session.worktree_path = Some(project_root.clone());
+        }
+
+        let prepared = ship
+            .mate_tool_edit_prepare(
+                &session_id,
+                "notes.txt".to_owned(),
+                "beta".to_owned(),
+                "gamma".to_owned(),
+                None,
+            )
+            .await
+            .expect("prepare should succeed");
+        let edit_id = parse_edit_id(&prepared);
+
+        std::fs::write(project_root.join("notes.txt"), "alpha\nchanged\n")
+            .expect("file mutation should succeed");
+
+        let stale = ship
+            .mate_tool_edit_confirm(&session_id, edit_id)
+            .await
+            .expect_err("stale edit should fail");
+        assert_eq!(
+            stale,
+            "File has been modified since edit was prepared. Run edit_prepare again."
+        );
+
+        let unknown = ship
+            .mate_tool_edit_confirm(&session_id, "edit-does-not-exist".to_owned())
+            .await
+            .expect_err("unknown edit id should fail");
+        assert_eq!(
+            unknown,
+            "edit_id not found. It may have expired or been superseded."
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    // r[verify mate.tool.edit-confirm]
+    #[tokio::test]
+    async fn mate_edit_confirm_restores_file_when_rust_validation_fails() {
+        let _guard = lock_mate_tool_tests();
+        let (dir, ship, session_id) =
+            create_session_for_workflow_test("mate-edit-confirm-invalid-rust").await;
+        let project_root = dir.join("project");
+        std::fs::create_dir_all(project_root.join("src")).expect("src directory should be created");
+        std::fs::write(project_root.join("src/lib.rs"), "pub fn intact() {}\n")
+            .expect("source file should exist");
+
+        {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(&session_id).expect("session should exist");
+            session.worktree_path = Some(project_root.clone());
+        }
+
+        let prepared = ship
+            .mate_tool_edit_prepare(
+                &session_id,
+                "src/lib.rs".to_owned(),
+                "pub fn intact() {}\n".to_owned(),
+                "pub fn broken( {\n".to_owned(),
+                None,
+            )
+            .await
+            .expect("prepare should succeed");
+        let edit_id = parse_edit_id(&prepared);
+
+        let invalid = ship
+            .mate_tool_edit_confirm(&session_id, edit_id)
+            .await
+            .expect_err("invalid rust edit should fail");
+        assert!(
+            invalid.contains("Syntax error in src/lib.rs:"),
+            "unexpected error: {invalid}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(project_root.join("src/lib.rs"))
+                .expect("original file should be restored"),
+            "pub fn intact() {}\n"
         );
 
         let _ = std::fs::remove_dir_all(dir);

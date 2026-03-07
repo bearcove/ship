@@ -28,9 +28,9 @@ pub use json_store::JsonSessionStore;
 pub use mcp::{McpConfigError, resolve_mcp_servers};
 pub use project_registry::{ProjectRegistry, ProjectRegistryError};
 pub use session_manager::{
-    ActiveSession, PendingPermission, SessionManager, SessionManagerError, SessionStateView,
-    apply_event, archive_terminal_task, current_task_status, rebuild_materialized_from_event_log,
-    set_agent_state, transition_task,
+    ActiveSession, PendingEdit, PendingPermission, SessionManager, SessionManagerError,
+    SessionStateView, apply_event, archive_terminal_task, current_task_status,
+    rebuild_materialized_from_event_log, set_agent_state, transition_task,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
