@@ -186,6 +186,17 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
             currentTaskDescription: ev.description,
             currentTaskStatus: { tag: "Assigned" },
           };
+
+        case "AgentModelChanged": {
+          const isCaptain = ev.role.tag === "Captain";
+          if (isCaptain && nextState.captain) {
+            return { ...nextState, captain: { ...nextState.captain, model_id: ev.model_id } };
+          }
+          if (!isCaptain && nextState.mate) {
+            return { ...nextState, mate: { ...nextState.mate, model_id: ev.model_id } };
+          }
+          return nextState;
+        }
       }
     }
   }

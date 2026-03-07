@@ -16,6 +16,5 @@ Open items:
 - [040-permission-banner-offsets-layout.md](040-permission-banner-offsets-layout.md)
 - [041-always-approve-scope-unclear.md](041-always-approve-scope-unclear.md)
 - [042-captain-gets-no-updates-while-mate-works.md](042-captain-gets-no-updates-while-mate-works.md)
-- [043-no-model-indicator-in-session-view.md](043-no-model-indicator-in-session-view.md)
 - [044-captain-did-not-auto-review-mate-work.md](044-captain-did-not-auto-review-mate-work.md)
 - [045-post-accept-state-is-unclear.md](045-post-accept-state-is-unclear.md)

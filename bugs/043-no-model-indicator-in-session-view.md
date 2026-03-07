@@ -1,6 +1,6 @@
 # 043: No exact model indicator in session view
 
-Status: open
+Status: closed
 Owner: backend + frontend
 
 ## Symptom

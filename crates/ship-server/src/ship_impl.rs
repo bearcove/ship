@@ -171,6 +171,7 @@ impl ShipImpl {
             SessionEvent::TaskStatusChanged { .. } => "TaskStatusChanged",
             SessionEvent::ContextUpdated { .. } => "ContextUpdated",
             SessionEvent::TaskStarted { .. } => "TaskStarted",
+            SessionEvent::AgentModelChanged { .. } => "AgentModelChanged",
         }
     }
 
@@ -179,7 +180,8 @@ impl ShipImpl {
             SessionEvent::BlockAppend { role, .. }
             | SessionEvent::BlockPatch { role, .. }
             | SessionEvent::AgentStateChanged { role, .. }
-            | SessionEvent::ContextUpdated { role, .. } => Some(*role),
+            | SessionEvent::ContextUpdated { role, .. }
+            | SessionEvent::AgentModelChanged { role, .. } => Some(*role),
             SessionEvent::SessionStartupChanged { .. }
             | SessionEvent::TaskStatusChanged { .. }
             | SessionEvent::TaskStarted { .. } => None,
@@ -194,7 +196,8 @@ impl ShipImpl {
             | SessionEvent::SessionStartupChanged { .. }
             | SessionEvent::TaskStatusChanged { .. }
             | SessionEvent::ContextUpdated { .. }
-            | SessionEvent::TaskStarted { .. } => None,
+            | SessionEvent::TaskStarted { .. }
+            | SessionEvent::AgentModelChanged { .. } => None,
         }
     }
 
@@ -206,7 +209,8 @@ impl ShipImpl {
             | SessionEvent::BlockPatch { .. }
             | SessionEvent::AgentStateChanged { .. }
             | SessionEvent::SessionStartupChanged { .. }
-            | SessionEvent::ContextUpdated { .. } => None,
+            | SessionEvent::ContextUpdated { .. }
+            | SessionEvent::AgentModelChanged { .. } => None,
         }
     }
 
@@ -1872,10 +1876,10 @@ impl Ship for ShipImpl {
             Ok(()) => {
                 let mut sessions = sessions.lock().expect("sessions mutex poisoned");
                 if let Some(session_state) = sessions.get_mut(&session) {
-                    match role {
-                        Role::Captain => session_state.captain.model_id = Some(model_id),
-                        Role::Mate => session_state.mate.model_id = Some(model_id),
-                    }
+                    apply_event(
+                        session_state,
+                        ship_types::SessionEvent::AgentModelChanged { role, model_id },
+                    );
                 }
                 SetAgentModelResponse::Ok
             }

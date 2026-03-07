@@ -473,6 +473,10 @@ pub mod events {
             task_id: TaskId,
             description: String,
         },
+        AgentModelChanged {
+            role: Role,
+            model_id: String,
+        },
     }
 
     // r[event.envelope]

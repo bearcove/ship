@@ -315,10 +315,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             .sessions
             .get_mut(session_id)
             .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
-        match role {
-            Role::Captain => session.captain.model_id = Some(model_id),
-            Role::Mate => session.mate.model_id = Some(model_id),
-        }
+        apply_event(session, SessionEvent::AgentModelChanged { role, model_id });
         self.persist_session(session_id).await
     }
 
@@ -1127,6 +1124,10 @@ pub fn apply_event_to_materialized_state(session: &mut ActiveSession, event: &Se
         } => match role {
             Role::Captain => session.captain.context_remaining_percent = Some(*remaining_percent),
             Role::Mate => session.mate.context_remaining_percent = Some(*remaining_percent),
+        },
+        SessionEvent::AgentModelChanged { role, model_id } => match role {
+            Role::Captain => session.captain.model_id = Some(model_id.clone()),
+            Role::Mate => session.mate.model_id = Some(model_id.clone()),
         },
     }
 }

@@ -435,6 +435,9 @@ fn log_message(started_at: Instant, message: &SubscribeMessage) {
                 } => {
                     format!("context updated role={role:?} remaining={remaining_percent}%")
                 }
+                SessionEvent::AgentModelChanged { role, model_id } => {
+                    format!("model changed role={role:?} model_id={model_id:?}")
+                }
             };
             println!(
                 "[probe +{:>5}ms] seq={} {}",
