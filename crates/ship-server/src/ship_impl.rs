@@ -1140,11 +1140,23 @@ impl ShipImpl {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             if let Some(session) = sessions.get_mut(&session_id) {
                 session.captain_handle = Some(captain_handle);
-                session.captain.model_id = captain_model_id;
-                session.captain.available_models = captain_available_models;
                 session.mate_handle = Some(mate_handle);
-                session.mate.model_id = mate_model_id;
-                session.mate.available_models = mate_available_models;
+                apply_event(
+                    session,
+                    ship_types::SessionEvent::AgentModelChanged {
+                        role: Role::Captain,
+                        model_id: captain_model_id,
+                        available_models: captain_available_models,
+                    },
+                );
+                apply_event(
+                    session,
+                    ship_types::SessionEvent::AgentModelChanged {
+                        role: Role::Mate,
+                        model_id: mate_model_id,
+                        available_models: mate_available_models,
+                    },
+                );
             }
         }
         let _ = self.persist_session(&session_id).await;
@@ -1876,9 +1888,17 @@ impl Ship for ShipImpl {
             Ok(()) => {
                 let mut sessions = sessions.lock().expect("sessions mutex poisoned");
                 if let Some(session_state) = sessions.get_mut(&session) {
+                    let available_models = match role {
+                        Role::Captain => session_state.captain.available_models.clone(),
+                        Role::Mate => session_state.mate.available_models.clone(),
+                    };
                     apply_event(
                         session_state,
-                        ship_types::SessionEvent::AgentModelChanged { role, model_id },
+                        ship_types::SessionEvent::AgentModelChanged {
+                            role,
+                            model_id: Some(model_id),
+                            available_models,
+                        },
                     );
                 }
                 SetAgentModelResponse::Ok

@@ -475,7 +475,8 @@ pub mod events {
         },
         AgentModelChanged {
             role: Role,
-            model_id: String,
+            model_id: Option<String>,
+            available_models: Vec<String>,
         },
     }
 

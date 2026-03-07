@@ -190,10 +190,28 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         case "AgentModelChanged": {
           const isCaptain = ev.role.tag === "Captain";
           if (isCaptain && nextState.captain) {
-            return { ...nextState, captain: { ...nextState.captain, model_id: ev.model_id } };
+            return {
+              ...nextState,
+              captain: {
+                ...nextState.captain,
+                model_id: ev.model_id,
+                ...(ev.available_models.length > 0 && {
+                  available_models: ev.available_models,
+                }),
+              },
+            };
           }
           if (!isCaptain && nextState.mate) {
-            return { ...nextState, mate: { ...nextState.mate, model_id: ev.model_id } };
+            return {
+              ...nextState,
+              mate: {
+                ...nextState.mate,
+                model_id: ev.model_id,
+                ...(ev.available_models.length > 0 && {
+                  available_models: ev.available_models,
+                }),
+              },
+            };
           }
           return nextState;
         }

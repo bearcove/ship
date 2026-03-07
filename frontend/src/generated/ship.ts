@@ -356,7 +356,7 @@ export type SessionEvent =
   | { tag: "TaskStatusChanged"; task_id: TaskId; status: TaskStatus }
   | { tag: "ContextUpdated"; role: Role; remaining_percent: number }
   | { tag: "TaskStarted"; task_id: TaskId; description: string }
-  | { tag: "AgentModelChanged"; role: Role; model_id: string };
+  | { tag: "AgentModelChanged"; role: Role; model_id: string | null; available_models: string[] };
 
 export interface SessionEventEnvelope {
   seq: bigint;
@@ -889,7 +889,7 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0x42b1b69cd9a36037n) {
+    } else if (method.id === 0x40b02064b540aa98n) {
       try {
         const result = await this.handler.subscribeEvents(
           args[0] as SessionId,
@@ -1609,7 +1609,11 @@ const ship_schema_registry: SchemaRegistry = new Map<string, Schema>([
         },
         {
           name: "AgentModelChanged",
-          fields: { role: { kind: "ref", name: "Role" }, model_id: { kind: "string" } },
+          fields: {
+            role: { kind: "ref", name: "Role" },
+            model_id: { kind: "option", inner: { kind: "string" } },
+            available_models: { kind: "vec", element: { kind: "string" } },
+          },
         },
       ],
     },
@@ -2014,7 +2018,7 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: "subscribeEvents",
-      id: 0x42b1b69cd9a36037n,
+      id: 0x40b02064b540aa98n,
       args: {
         kind: "tuple",
         elements: [
