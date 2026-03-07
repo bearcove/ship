@@ -236,6 +236,10 @@ export type CreateSessionResponse =
   | { tag: "Created"; session_id: SessionId }
   | { tag: "Failed"; message: string };
 
+export type PromptContentPart =
+  | { tag: "Text"; text: string }
+  | { tag: "Image"; mime_type: string; data: Uint8Array };
+
 export type SetAgentModelResponse =
   | { tag: "Ok" }
   | { tag: "SessionNotFound" }
@@ -384,13 +388,13 @@ export type GetSessionResponse = SessionDetail;
 
 export type SteerRequest = [
   SessionId, // session
-  string, // content
+  PromptContentPart[], // parts
 ];
 export type SteerResponse = void;
 
 export type PromptCaptainRequest = [
   SessionId, // session
-  string, // content
+  PromptContentPart[], // parts
 ];
 export type PromptCaptainResponse = void;
 
@@ -437,8 +441,8 @@ export interface ShipCaller {
   agentDiscovery(): CallBuilder<AgentDiscovery>;
   getSession(id: SessionId): CallBuilder<SessionDetail>;
   createSession(req: CreateSessionRequest): CallBuilder<CreateSessionResponse>;
-  steer(session: SessionId, content: string): CallBuilder<void>;
-  promptCaptain(session: SessionId, content: string): CallBuilder<void>;
+  steer(session: SessionId, parts: PromptContentPart[]): CallBuilder<void>;
+  promptCaptain(session: SessionId, parts: PromptContentPart[]): CallBuilder<void>;
   accept(session: SessionId): CallBuilder<void>;
   cancel(session: SessionId): CallBuilder<void>;
   resolvePermission(session: SessionId, permissionId: string, optionId: string): CallBuilder<void>;
@@ -559,12 +563,12 @@ export class ShipClient implements ShipCaller {
     });
   }
 
-  steer(session: SessionId, content: string): CallBuilder<void> {
+  steer(session: SessionId, parts: PromptContentPart[]): CallBuilder<void> {
     const descriptor = ship_descriptor.methods[7];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.steer",
-        args: { session, content },
+        args: { session, parts },
         descriptor,
         schemaRegistry: ship_descriptor.schema_registry,
         metadata,
@@ -573,12 +577,12 @@ export class ShipClient implements ShipCaller {
     });
   }
 
-  promptCaptain(session: SessionId, content: string): CallBuilder<void> {
+  promptCaptain(session: SessionId, parts: PromptContentPart[]): CallBuilder<void> {
     const descriptor = ship_descriptor.methods[8];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.promptCaptain",
-        args: { session, content },
+        args: { session, parts },
         descriptor,
         schemaRegistry: ship_descriptor.schema_registry,
         metadata,
@@ -733,8 +737,8 @@ export interface ShipHandler {
   agentDiscovery(): Promise<AgentDiscovery> | AgentDiscovery;
   getSession(id: SessionId): Promise<SessionDetail> | SessionDetail;
   createSession(req: CreateSessionRequest): Promise<CreateSessionResponse> | CreateSessionResponse;
-  steer(session: SessionId, content: string): Promise<void> | void;
-  promptCaptain(session: SessionId, content: string): Promise<void> | void;
+  steer(session: SessionId, parts: PromptContentPart[]): Promise<void> | void;
+  promptCaptain(session: SessionId, parts: PromptContentPart[]): Promise<void> | void;
   accept(session: SessionId): Promise<void> | void;
   cancel(session: SessionId): Promise<void> | void;
   resolvePermission(
@@ -811,16 +815,22 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0x21e2296a9bb91730n) {
+    } else if (method.id === 0x72e214f61f19d2ccn) {
       try {
-        const result = await this.handler.steer(args[0] as SessionId, args[1] as string);
+        const result = await this.handler.steer(
+          args[0] as SessionId,
+          args[1] as PromptContentPart[],
+        );
         call.reply(result);
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0xa1e350c852b7c481n) {
+    } else if (method.id === 0x42b643cea37dbe08n) {
       try {
-        const result = await this.handler.promptCaptain(args[0] as SessionId, args[1] as string);
+        const result = await this.handler.promptCaptain(
+          args[0] as SessionId,
+          args[1] as PromptContentPart[],
+        );
         call.reply(result);
       } catch {
         call.replyInternalError();
@@ -1330,6 +1340,16 @@ const ship_schema_registry: SchemaRegistry = new Map<string, Schema>([
     },
   ],
   [
+    "PromptContentPart",
+    {
+      kind: "enum",
+      variants: [
+        { name: "Text", fields: { text: { kind: "string" } } },
+        { name: "Image", fields: { mime_type: { kind: "string" }, data: { kind: "bytes" } } },
+      ],
+    },
+  ],
+  [
     "SetAgentModelResponse",
     {
       kind: "enum",
@@ -1788,8 +1808,14 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: "steer",
-      id: 0x21e2296a9bb91730n,
-      args: { kind: "tuple", elements: [{ kind: "string" }, { kind: "string" }] },
+      id: 0x72e214f61f19d2ccn,
+      args: {
+        kind: "tuple",
+        elements: [
+          { kind: "string" },
+          { kind: "vec", element: { kind: "ref", name: "PromptContentPart" } },
+        ],
+      },
       result: {
         kind: "enum",
         variants: [
@@ -1811,8 +1837,14 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: "promptCaptain",
-      id: 0xa1e350c852b7c481n,
-      args: { kind: "tuple", elements: [{ kind: "string" }, { kind: "string" }] },
+      id: 0x42b643cea37dbe08n,
+      args: {
+        kind: "tuple",
+        elements: [
+          { kind: "string" },
+          { kind: "vec", element: { kind: "ref", name: "PromptContentPart" } },
+        ],
+      },
       result: {
         kind: "enum",
         variants: [

@@ -114,7 +114,7 @@ pub trait AgentDriver: Send + Sync {
     async fn prompt(
         &self,
         handle: &AgentHandle,
-        content: &str,
+        parts: &[ship_types::PromptContentPart],
     ) -> Result<PromptResponse, AgentError>;
 
     async fn cancel(&self, handle: &AgentHandle) -> Result<(), AgentError>;

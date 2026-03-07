@@ -1169,6 +1169,14 @@ dropdown of worktree files filtered by the text after @. Selecting a file
 inserts the path. On submit, the backend expands @path mentions by injecting
 the referenced file contents into the prompt.
 
+r[ui.composer.image-attach]
+The composer MUST support image attachment via drag-and-drop onto the composer
+area, clipboard paste (when the clipboard contains an image), and an attach
+button. Attached images are displayed as thumbnails before sending and can be
+removed individually. On submit, images are sent as vision content alongside
+text. The backend encodes images as base64 and passes them to the ACP agent
+as image content blocks.
+
 ## Cost Tracking
 
 r[cost.not-tracked]

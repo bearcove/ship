@@ -32,7 +32,7 @@ struct FakeAgentDriverInner {
     scripts: VecDeque<FakePromptScript>,
     notifications: HashMap<AgentHandle, VecDeque<SessionEvent>>,
     spawns: Vec<SpawnRecord>,
-    prompts: Vec<(AgentHandle, String)>,
+    prompts: Vec<(AgentHandle, Vec<ship_types::PromptContentPart>)>,
     cancelled: Vec<AgentHandle>,
     killed: Vec<AgentHandle>,
 }
@@ -78,7 +78,7 @@ impl FakeAgentDriver {
             .clone()
     }
 
-    pub fn prompt_log(&self) -> Vec<(AgentHandle, String)> {
+    pub fn prompt_log(&self) -> Vec<(AgentHandle, Vec<ship_types::PromptContentPart>)> {
         self.inner
             .lock()
             .expect("fake agent driver mutex poisoned")
@@ -129,10 +129,10 @@ impl AgentDriver for FakeAgentDriver {
     async fn prompt(
         &self,
         handle: &AgentHandle,
-        content: &str,
+        parts: &[ship_types::PromptContentPart],
     ) -> Result<PromptResponse, AgentError> {
         let mut inner = self.inner.lock().expect("fake agent driver mutex poisoned");
-        inner.prompts.push((handle.clone(), content.to_owned()));
+        inner.prompts.push((handle.clone(), parts.to_owned()));
 
         let script = inner
             .scripts

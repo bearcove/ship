@@ -1,8 +1,8 @@
 use roam::Tx;
 use ship_types::{
     AgentDiscovery, CloseSessionRequest, CloseSessionResponse, CreateSessionRequest,
-    CreateSessionResponse, McpToolCallResponse, ProjectInfo, ProjectName, Role, SessionDetail,
-    SessionId, SessionSummary, SetAgentModelResponse, SubscribeMessage,
+    CreateSessionResponse, McpToolCallResponse, ProjectInfo, ProjectName, PromptContentPart, Role,
+    SessionDetail, SessionId, SessionSummary, SetAgentModelResponse, SubscribeMessage,
 };
 
 // r[backend.rpc]
@@ -30,10 +30,10 @@ pub trait Ship {
     async fn create_session(&self, req: CreateSessionRequest) -> CreateSessionResponse;
 
     // r[proto.steer]
-    async fn steer(&self, session: SessionId, content: String);
+    async fn steer(&self, session: SessionId, parts: Vec<PromptContentPart>);
 
     // r[acp.prompt]
-    async fn prompt_captain(&self, session: SessionId, content: String);
+    async fn prompt_captain(&self, session: SessionId, parts: Vec<PromptContentPart>);
 
     // r[proto.accept]
     async fn accept(&self, session: SessionId);

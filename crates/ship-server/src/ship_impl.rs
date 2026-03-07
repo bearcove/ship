@@ -24,14 +24,35 @@ use ship_types::{
     AgentDiscovery, AgentKind, AgentSnapshot, AgentState, AutonomyMode, BlockId,
     CloseSessionRequest, CloseSessionResponse, ContentBlock, CreateSessionRequest,
     CreateSessionResponse, CurrentTask, McpServerConfig, McpStdioServerConfig, McpToolCallResponse,
-    PersistedSession, PlanStep, PlanStepPriority, PlanStepStatus, ProjectInfo, ProjectName, Role,
-    SessionConfig, SessionDetail, SessionEvent, SessionEventEnvelope, SessionId,
-    SessionStartupStage, SessionStartupState, SessionSummary, SetAgentModelResponse,
+    PersistedSession, PlanStep, PlanStepPriority, PlanStepStatus, ProjectInfo, ProjectName,
+    PromptContentPart, Role, SessionConfig, SessionDetail, SessionEvent, SessionEventEnvelope,
+    SessionId, SessionStartupStage, SessionStartupState, SessionSummary, SetAgentModelResponse,
     SubscribeMessage, TaskId, TaskRecord, TaskStatus, ToolCallKind, ToolTarget,
 };
 use tokio::process::Command as TokioCommand;
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
+
+fn parts_to_log_text(parts: &[PromptContentPart]) -> String {
+    let mut out = String::new();
+    for part in parts {
+        match part {
+            PromptContentPart::Text { text } => {
+                if !out.is_empty() {
+                    out.push('\n');
+                }
+                out.push_str(text);
+            }
+            PromptContentPart::Image { mime_type, .. } => {
+                if !out.is_empty() {
+                    out.push('\n');
+                }
+                out.push_str(&format!("[image: {mime_type}]"));
+            }
+        }
+    }
+    out
+}
 
 const FILE_MENTION_LINE_LIMIT: usize = 200;
 const MAX_WORKTREE_FILES: usize = 5000;
@@ -680,20 +701,21 @@ impl ShipImpl {
         &self,
         session_id: &SessionId,
         role: Role,
-        content: String,
+        parts: &[PromptContentPart],
     ) -> Result<(), String> {
         {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let session = sessions
                 .get_mut(session_id)
                 .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            let log_text = parts_to_log_text(parts);
             apply_event(
                 session,
                 SessionEvent::BlockAppend {
                     block_id: BlockId::new(),
                     role,
                     block: ContentBlock::Text {
-                        text: content,
+                        text: log_text,
                         source: ship_types::TextSource::Human,
                     },
                 },
@@ -706,7 +728,7 @@ impl ShipImpl {
     async fn dispatch_steer_to_mate(
         &self,
         session_id: &SessionId,
-        content: String,
+        parts: Vec<PromptContentPart>,
     ) -> Result<(), String> {
         {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
@@ -723,13 +745,14 @@ impl ShipImpl {
                 return Err("invalid task transition".to_owned());
             }
 
+            let log_text = parts_to_log_text(&parts);
             apply_event(
                 active,
                 SessionEvent::BlockAppend {
                     block_id: BlockId::new(),
                     role: Role::Mate,
                     block: ContentBlock::Text {
-                        text: content.clone(),
+                        text: log_text,
                         source: ship_types::TextSource::Human,
                     },
                 },
@@ -743,7 +766,7 @@ impl ShipImpl {
         let this = self.clone();
         let session_id = session_id.clone();
         tokio::spawn(async move {
-            this.prompt_mate_from_steer(session_id, content).await;
+            this.prompt_mate_from_steer(session_id, parts).await;
         });
 
         Ok(())
@@ -906,7 +929,13 @@ impl ShipImpl {
         let this = self.clone();
         let session_id = session_id.clone();
         tokio::spawn(async move {
-            if let Err(error) = this.dispatch_steer_to_mate(&session_id, description).await {
+            if let Err(error) = this
+                .dispatch_steer_to_mate(
+                    &session_id,
+                    vec![PromptContentPart::Text { text: description }],
+                )
+                .await
+            {
                 Self::log_error("captain_assign dispatch_steer_to_mate", &error);
             }
         });
@@ -945,8 +974,13 @@ impl ShipImpl {
                     message: message.clone(),
                 });
             } else {
-                self.dispatch_steer_to_mate(session_id, message.clone())
-                    .await?;
+                self.dispatch_steer_to_mate(
+                    session_id,
+                    vec![PromptContentPart::Text {
+                        text: message.clone(),
+                    }],
+                )
+                .await?;
             }
         }
 
@@ -1703,23 +1737,35 @@ impl ShipImpl {
     }
 
     // r[ui.composer.file-mention]
-    async fn expand_file_mentions(&self, session_id: &SessionId, content: String) -> String {
+    async fn expand_file_mentions(
+        &self,
+        session_id: &SessionId,
+        parts: Vec<PromptContentPart>,
+    ) -> Vec<PromptContentPart> {
         let worktree_path = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let Some(session) = sessions.get(session_id) else {
-                return content;
+                return parts;
             };
             match session.worktree_path.clone() {
                 Some(p) => p,
-                None => return content,
+                None => return parts,
             }
         };
-        let content_clone = content.clone();
+        let parts_clone = parts.clone();
         tokio::task::spawn_blocking(move || {
-            Self::expand_file_mentions_sync(&worktree_path, &content_clone)
+            parts_clone
+                .into_iter()
+                .map(|part| match part {
+                    PromptContentPart::Text { text } => PromptContentPart::Text {
+                        text: Self::expand_file_mentions_sync(&worktree_path, &text),
+                    },
+                    image @ PromptContentPart::Image { .. } => image,
+                })
+                .collect()
         })
         .await
-        .unwrap_or(content)
+        .unwrap_or(parts)
     }
 
     fn expand_file_mentions_sync(worktree: &Path, content: &str) -> String {
@@ -2296,13 +2342,22 @@ impl ShipImpl {
         session_id: &SessionId,
         message: String,
     ) -> Result<(), String> {
-        self.append_human_message(session_id, Role::Captain, message.clone())
-            .await?;
+        self.append_human_message(
+            session_id,
+            Role::Captain,
+            &[PromptContentPart::Text {
+                text: message.clone(),
+            }],
+        )
+        .await?;
 
         let this = self.clone();
         let session_id = session_id.clone();
         tokio::spawn(async move {
-            if let Err(error) = this.prompt_agent(&session_id, Role::Captain, message).await {
+            if let Err(error) = this
+                .prompt_agent_text(&session_id, Role::Captain, message)
+                .await
+            {
                 Self::log_error("notify_captain_progress", &error);
             }
         });
@@ -2340,14 +2395,20 @@ impl ShipImpl {
     ) -> Result<String, String> {
         // Inject the update into the captain's stream as a user message, then prompt the captain.
         let injected = format!("The mate sent you an update: {message}");
-        self.append_human_message(session_id, Role::Captain, injected.clone())
-            .await?;
+        self.append_human_message(
+            session_id,
+            Role::Captain,
+            &[PromptContentPart::Text {
+                text: injected.clone(),
+            }],
+        )
+        .await?;
 
         let this = self.clone();
         let session_id = session_id.clone();
         tokio::spawn(async move {
             if let Err(error) = this
-                .prompt_agent(&session_id, Role::Captain, injected)
+                .prompt_agent_text(&session_id, Role::Captain, injected)
                 .await
             {
                 Self::log_error("mate_send_update prompt_captain", &error);
@@ -2510,14 +2571,20 @@ impl ShipImpl {
         }
 
         let injected = format!("The mate has a question for you: {question}");
-        self.append_human_message(session_id, Role::Captain, injected.clone())
-            .await?;
+        self.append_human_message(
+            session_id,
+            Role::Captain,
+            &[PromptContentPart::Text {
+                text: injected.clone(),
+            }],
+        )
+        .await?;
 
         let this = self.clone();
         let session_id_clone = session_id.clone();
         tokio::spawn(async move {
             if let Err(error) = this
-                .prompt_agent(&session_id_clone, Role::Captain, injected)
+                .prompt_agent_text(&session_id_clone, Role::Captain, injected)
                 .await
             {
                 Self::log_error("mate_ask_captain prompt_captain", &error);
@@ -2572,14 +2639,20 @@ impl ShipImpl {
         self.persist_session(session_id).await?;
 
         let injected = format!("The mate has submitted their work for review: {summary}");
-        self.append_human_message(session_id, Role::Captain, injected.clone())
-            .await?;
+        self.append_human_message(
+            session_id,
+            Role::Captain,
+            &[PromptContentPart::Text {
+                text: injected.clone(),
+            }],
+        )
+        .await?;
 
         let this = self.clone();
         let session_id_clone = session_id.clone();
         tokio::spawn(async move {
             if let Err(error) = this
-                .prompt_agent(&session_id_clone, Role::Captain, injected)
+                .prompt_agent_text(&session_id_clone, Role::Captain, injected)
                 .await
             {
                 Self::log_error("mate_submit prompt_captain", &error);
@@ -2760,7 +2833,7 @@ impl ShipImpl {
         let _ = self.set_startup_stage(&session_id, stage).await;
         let step_started_at = Instant::now();
         if let Err(error) = self
-            .prompt_agent(&session_id, Role::Captain, Self::captain_bootstrap_prompt())
+            .prompt_agent_text(&session_id, Role::Captain, Self::captain_bootstrap_prompt())
             .await
         {
             Self::log_error("startup_prompt_captain", &error);
@@ -3061,13 +3134,33 @@ impl ShipImpl {
         (stop_tx, handle)
     }
 
+    async fn prompt_agent_text(
+        &self,
+        session_id: &SessionId,
+        role: Role,
+        text: String,
+    ) -> Result<ship_core::StopReason, String> {
+        self.prompt_agent(session_id, role, vec![PromptContentPart::Text { text }])
+            .await
+    }
+
     async fn prompt_agent(
         &self,
         session_id: &SessionId,
         role: Role,
-        prompt: String,
+        parts: Vec<PromptContentPart>,
     ) -> Result<ship_core::StopReason, String> {
-        tracing::info!(session_id = %session_id.0, role = ?role, prompt_len = prompt.len(), "starting agent prompt");
+        let text_len: usize = parts
+            .iter()
+            .filter_map(|p| {
+                if let PromptContentPart::Text { text } = p {
+                    Some(text.len())
+                } else {
+                    None
+                }
+            })
+            .sum();
+        tracing::info!(session_id = %session_id.0, role = ?role, text_len, "starting agent prompt");
         let handle = {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let session = sessions
@@ -3091,7 +3184,7 @@ impl ShipImpl {
         self.persist_session(session_id).await?;
 
         let (stop_tx, pump_handle) = self.spawn_notification_pump(session_id.clone(), role);
-        let response = match self.agent_driver.prompt(&handle, &prompt).await {
+        let response = match self.agent_driver.prompt(&handle, &parts).await {
             Ok(response) => response,
             Err(error) => {
                 let message = error.message;
@@ -3297,14 +3390,20 @@ impl ShipImpl {
         self.persist_session(session_id).await?;
 
         let injected = format!("{preamble}\n\n{summary}");
-        self.append_human_message(session_id, Role::Captain, injected.clone())
-            .await?;
+        self.append_human_message(
+            session_id,
+            Role::Captain,
+            &[PromptContentPart::Text {
+                text: injected.clone(),
+            }],
+        )
+        .await?;
 
         let this = self.clone();
         let session_id_clone = session_id.clone();
         tokio::spawn(async move {
             if let Err(error) = this
-                .prompt_agent(&session_id_clone, Role::Captain, injected)
+                .prompt_agent_text(&session_id_clone, Role::Captain, injected)
                 .await
             {
                 Self::log_error("force_mate_submit prompt_captain", &error);
@@ -3314,12 +3413,50 @@ impl ShipImpl {
         Ok(())
     }
 
-    async fn prompt_mate_from_steer(&self, session_id: SessionId, message: String) {
-        let mut prompt = format!("Captain steer:\n{message}");
+    async fn prompt_mate_from_steer(&self, session_id: SessionId, parts: Vec<PromptContentPart>) {
+        // Prepend "Captain steer:\n" to the text parts for the first prompt.
+        let initial_parts: Vec<PromptContentPart> = {
+            let mut result = Vec::with_capacity(parts.len() + 1);
+            let mut prefixed = false;
+            for part in &parts {
+                match part {
+                    PromptContentPart::Text { text } => {
+                        if !prefixed {
+                            result.push(PromptContentPart::Text {
+                                text: format!("Captain steer:\n{text}"),
+                            });
+                            prefixed = true;
+                        } else {
+                            result.push(PromptContentPart::Text { text: text.clone() });
+                        }
+                    }
+                    PromptContentPart::Image { .. } => {
+                        if !prefixed {
+                            result.push(PromptContentPart::Text {
+                                text: "Captain steer:\n".to_owned(),
+                            });
+                            prefixed = true;
+                        }
+                        result.push(part.clone());
+                    }
+                }
+            }
+            if !prefixed {
+                result.push(PromptContentPart::Text {
+                    text: "Captain steer:".to_owned(),
+                });
+            }
+            result
+        };
+        let mut current_parts: Option<Vec<PromptContentPart>> = Some(initial_parts);
         let mut enforce_submit_attempts = 0u32;
 
         loop {
-            let stop_reason = match self.prompt_agent(&session_id, Role::Mate, prompt).await {
+            let prompt_parts = current_parts.take().unwrap_or_default();
+            let stop_reason = match self
+                .prompt_agent(&session_id, Role::Mate, prompt_parts)
+                .await
+            {
                 Ok(stop_reason) => stop_reason,
                 Err(error) => {
                     Self::log_error("prompt_mate_steer", &error);
@@ -3338,7 +3475,7 @@ impl ShipImpl {
                 if let Err(error) = self.persist_session(&session_id).await {
                     Self::log_error("persist_pending_mate_guidance", &error);
                 }
-                prompt = message;
+                current_parts = Some(vec![PromptContentPart::Text { text: message }]);
                 continue;
             }
 
@@ -3369,9 +3506,11 @@ impl ShipImpl {
                         break;
                     }
 
-                    prompt = "You stopped without submitting your work. \
-                        Call mate_submit with a summary of what you accomplished."
-                        .to_owned();
+                    current_parts = Some(vec![PromptContentPart::Text {
+                        text: "You stopped without submitting your work. \
+                            Call mate_submit with a summary of what you accomplished."
+                            .to_owned(),
+                    }]);
                 }
                 ship_core::StopReason::ContextExhausted => {
                     {
@@ -3563,18 +3702,19 @@ impl Ship for ShipImpl {
         CreateSessionResponse::Created { session_id }
     }
 
-    async fn steer(&self, session: SessionId, content: String) {
-        let content = self.expand_file_mentions(&session, content).await;
-        if let Err(error) = self.dispatch_steer_to_mate(&session, content).await {
+    async fn steer(&self, session: SessionId, parts: Vec<PromptContentPart>) {
+        let parts = self.expand_file_mentions(&session, parts).await;
+        if let Err(error) = self.dispatch_steer_to_mate(&session, parts).await {
             Self::log_error("steer", &error);
         }
     }
 
     // r[acp.prompt]
-    async fn prompt_captain(&self, session: SessionId, content: String) {
-        let content = self.expand_file_mentions(&session, content).await;
+    // r[ui.composer.image-attach]
+    async fn prompt_captain(&self, session: SessionId, parts: Vec<PromptContentPart>) {
+        let parts = self.expand_file_mentions(&session, parts).await;
         if let Err(error) = self
-            .append_human_message(&session, Role::Captain, content.clone())
+            .append_human_message(&session, Role::Captain, &parts)
             .await
         {
             Self::log_error("prompt_captain_append_human_message", &error);
@@ -3583,7 +3723,7 @@ impl Ship for ShipImpl {
 
         let this = self.clone();
         tokio::spawn(async move {
-            if let Err(error) = this.prompt_agent(&session, Role::Captain, content).await {
+            if let Err(error) = this.prompt_agent(&session, Role::Captain, parts).await {
                 Self::log_error("prompt_captain", &error);
             }
         });
@@ -4154,8 +4294,8 @@ mod tests {
     use ship_types::{
         AgentDiscovery, AgentKind, ContentBlock, CreateSessionRequest, CreateSessionResponse,
         CurrentTask, McpServerConfig, McpStdioServerConfig, PlanStepStatus, ProjectName,
-        SessionEvent, SessionEventEnvelope, SessionId, SessionStartupState, SubscribeMessage,
-        TaskId, TaskRecord, TaskStatus,
+        PromptContentPart, SessionEvent, SessionEventEnvelope, SessionId, SessionStartupState,
+        SubscribeMessage, TaskId, TaskRecord, TaskStatus,
     };
     use tokio::sync::{broadcast, mpsc};
     use tokio::time::timeout;
@@ -4649,9 +4789,14 @@ mod tests {
             session.pending_steer = Some("Old captain steer".to_owned());
         }
 
-        ship.dispatch_steer_to_mate(&session_id, "Send the approved steer".to_owned())
-            .await
-            .expect("explicit steer should dispatch");
+        ship.dispatch_steer_to_mate(
+            &session_id,
+            vec![PromptContentPart::Text {
+                text: "Send the approved steer".to_owned(),
+            }],
+        )
+        .await
+        .expect("explicit steer should dispatch");
 
         let detail = Ship::get_session(&ship, session_id.clone()).await;
         assert_eq!(

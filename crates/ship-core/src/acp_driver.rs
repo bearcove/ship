@@ -6,9 +6,10 @@ use std::sync::{Arc, Mutex};
 
 use agent_client_protocol::{
     Agent, CancelNotification, ClientCapabilities, ClientSideConnection, ContentBlock, Error,
-    FileSystemCapability, Implementation, InitializeRequest, NewSessionRequest, PromptRequest,
-    ProtocolVersion, StopReason as AcpStopReason, TextContent,
+    FileSystemCapability, ImageContent, Implementation, InitializeRequest, NewSessionRequest,
+    PromptRequest, ProtocolVersion, StopReason as AcpStopReason, TextContent,
 };
+use base64::Engine as _;
 use futures::{Stream, stream};
 use ship_types::{Role, SessionEvent};
 use tokio::process::Command;
@@ -34,7 +35,7 @@ struct AcpHandle {
 
 enum DriverCommand {
     Prompt {
-        content: String,
+        parts: Vec<ship_types::PromptContentPart>,
         prompt_in_flight: Arc<AtomicBool>,
         response: oneshot::Sender<Result<PromptResponse, AgentError>>,
     },
@@ -137,7 +138,7 @@ impl AgentDriver for AcpAgentDriver {
     async fn prompt(
         &self,
         handle: &AgentHandle,
-        content: &str,
+        parts: &[ship_types::PromptContentPart],
     ) -> Result<PromptResponse, AgentError> {
         let (command_tx, prompt_in_flight) = {
             let handles = self.handles.lock().expect("acp handles mutex poisoned");
@@ -156,7 +157,7 @@ impl AgentDriver for AcpAgentDriver {
         let (response_tx, response_rx) = oneshot::channel();
         command_tx
             .send(DriverCommand::Prompt {
-                content: content.to_owned(),
+                parts: parts.to_owned(),
                 prompt_in_flight: prompt_in_flight.clone(),
                 response: response_tx,
             })
@@ -412,7 +413,7 @@ async fn run_acp_worker(
     while let Some(command) = command_rx.recv().await {
         match command {
             DriverCommand::Prompt {
-                content,
+                parts,
                 prompt_in_flight,
                 response,
             } => {
@@ -420,11 +421,9 @@ async fn run_acp_worker(
                 let connection = connection.clone();
                 let session_id = session_id.clone();
                 tokio::task::spawn_local(async move {
+                    let content_blocks = parts_to_content_blocks(parts);
                     let result = connection
-                        .prompt(PromptRequest::new(
-                            session_id,
-                            vec![ContentBlock::Text(TextContent::new(content))],
-                        ))
+                        .prompt(PromptRequest::new(session_id, content_blocks))
                         .await
                         .map(map_prompt_response)
                         .map_err(acp_error);
@@ -517,6 +516,21 @@ fn command_for_launcher(launcher: crate::AgentLauncher) -> Command {
 fn build_new_session_request(config: &AgentSessionConfig) -> NewSessionRequest {
     NewSessionRequest::new(config.worktree_path.clone())
         .mcp_servers(config.mcp_servers.iter().map(to_acp_mcp_server).collect())
+}
+
+fn parts_to_content_blocks(parts: Vec<ship_types::PromptContentPart>) -> Vec<ContentBlock> {
+    parts
+        .into_iter()
+        .map(|part| match part {
+            ship_types::PromptContentPart::Text { text } => {
+                ContentBlock::Text(TextContent::new(text))
+            }
+            ship_types::PromptContentPart::Image { mime_type, data } => {
+                let encoded = base64::engine::general_purpose::STANDARD.encode(&data);
+                ContentBlock::Image(ImageContent::new(encoded, mime_type))
+            }
+        })
+        .collect()
 }
 
 fn map_prompt_response(response: agent_client_protocol::PromptResponse) -> PromptResponse {
@@ -713,7 +727,7 @@ mod tests {
         };
 
         let error = driver
-            .prompt(&handle, "hello")
+            .prompt(&handle, &[])
             .await
             .expect_err("prompt should be rejected while another is in flight");
 

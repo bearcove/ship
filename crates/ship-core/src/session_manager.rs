@@ -907,9 +907,10 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             .ok_or_else(|| SessionManagerError::Agent("agent not ready".to_owned()))?
         };
 
+        let parts = vec![ship_types::PromptContentPart::Text { text: prompt }];
         let response = self
             .agent_driver
-            .prompt(&handle, &prompt)
+            .prompt(&handle, &parts)
             .await
             .map_err(|error| SessionManagerError::Agent(error.message))?;
 

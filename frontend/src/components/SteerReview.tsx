@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Box, Button, Card, Flex, Text, TextArea } from "@radix-ui/themes";
 import { getShipClient } from "../api/client";
+import type { PromptContentPart } from "../generated/ship";
 import { steerReviewCard } from "../styles/session-view.css";
 
 interface Props {
@@ -26,7 +27,8 @@ export function SteerReview({ sessionId, steerText, onDismiss }: Props) {
     setError(null);
     try {
       const client = await getShipClient();
-      await client.steer(sessionId, text);
+      const parts: PromptContentPart[] = [{ tag: "Text", text }];
+      await client.steer(sessionId, parts);
     } catch (error) {
       setError(error instanceof Error ? error.message : String(error));
     } finally {

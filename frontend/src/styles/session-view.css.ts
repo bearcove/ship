@@ -243,6 +243,61 @@ export const composerInputWrapper = style({
   position: "relative",
 });
 
+export const composerDropIndicator = style({
+  position: "absolute",
+  inset: 0,
+  zIndex: 10,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  background: "color-mix(in srgb, var(--accent-9) 10%, transparent)",
+  border: "2px dashed var(--accent-9)",
+  borderRadius: "var(--radius-3)",
+  color: "var(--accent-11)",
+  fontSize: "var(--font-size-2)",
+  fontWeight: "var(--font-weight-medium)",
+  pointerEvents: "none",
+});
+
+export const attachedImageThumbList = style({
+  display: "flex",
+  flexWrap: "wrap",
+  gap: "var(--space-2)",
+});
+
+export const attachedImageThumbWrapper = style({
+  position: "relative",
+  flexShrink: 0,
+});
+
+export const attachedImageThumb = style({
+  width: "56px",
+  height: "56px",
+  objectFit: "cover",
+  borderRadius: "var(--radius-2)",
+  border: "1px solid var(--gray-a5)",
+  display: "block",
+});
+
+export const attachedImageRemove = style({
+  position: "absolute",
+  top: "-6px",
+  right: "-6px",
+  width: "18px",
+  height: "18px",
+  borderRadius: "50%",
+  background: "var(--gray-12)",
+  color: "var(--gray-1)",
+  border: "none",
+  cursor: "pointer",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontSize: "12px",
+  lineHeight: 1,
+  padding: 0,
+});
+
 export const composerInput = style({
   resize: "vertical",
 });

@@ -1,9 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Box, Button, Flex, Text, TextArea } from "@radix-ui/themes";
 import { getShipClient } from "../api/client";
-import type { Role, SessionStartupState, TaskStatus } from "../generated/ship";
+import type { PromptContentPart, Role, SessionStartupState, TaskStatus } from "../generated/ship";
 import {
+  attachedImageRemove,
+  attachedImageThumb,
+  attachedImageThumbList,
+  attachedImageThumbWrapper,
   composerActions,
+  composerDropIndicator,
   composerInput,
   composerInputWrapper,
   composerRoot,
@@ -11,6 +16,14 @@ import {
   fileMentionPopup,
 } from "../styles/session-view.css";
 import { useWorktreeFiles } from "../hooks/useWorktreeFiles";
+
+interface AttachedImage {
+  id: string;
+  mimeType: string;
+  data: Uint8Array;
+  objectUrl: string;
+  name: string;
+}
 
 interface Props {
   sessionId: string;
@@ -122,6 +135,7 @@ function getAtMentionQuery(text: string, cursorPos: number): string | null {
 }
 
 // r[ui.keys.steer-send]
+// r[ui.composer.image-attach]
 export function InlineAgentComposer({
   sessionId,
   role,
@@ -135,7 +149,10 @@ export function InlineAgentComposer({
   const [error, setError] = useState<string | null>(null);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
+  const [isDragOver, setIsDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const status = getStatusCopy(role, agentStateTag, startupState, taskStatus, queuedText);
   const worktreeFiles = useWorktreeFiles(sessionId);
 
@@ -146,16 +163,32 @@ export function InlineAgentComposer({
           .slice(0, 10)
       : [];
 
+  function buildParts(value: string): PromptContentPart[] {
+    const parts: PromptContentPart[] = [];
+    if (value) {
+      parts.push({ tag: "Text", text: value });
+    }
+    for (const img of attachedImages) {
+      parts.push({ tag: "Image", mime_type: img.mimeType, data: img.data });
+    }
+    return parts;
+  }
+
   async function sendNow(value: string) {
     setLoading(true);
     setError(null);
     try {
       const client = await getShipClient();
+      const parts = buildParts(value);
       if (role.tag === "Captain") {
-        await client.promptCaptain(sessionId, value);
+        await client.promptCaptain(sessionId, parts);
       } else {
-        await client.steer(sessionId, value);
+        await client.steer(sessionId, parts);
       }
+      setAttachedImages((prev) => {
+        for (const img of prev) URL.revokeObjectURL(img.objectUrl);
+        return [];
+      });
       setQueuedText(null);
       return true;
     } catch (error) {
@@ -169,6 +202,48 @@ export function InlineAgentComposer({
     } finally {
       setLoading(false);
     }
+  }
+
+  function addImageFiles(files: FileList | File[]) {
+    for (const file of Array.from(files)) {
+      if (!file.type.startsWith("image/")) continue;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const buffer = reader.result as ArrayBuffer;
+        const data = new Uint8Array(buffer);
+        const objectUrl = URL.createObjectURL(file);
+        const id = `${Date.now()}-${Math.random()}`;
+        setAttachedImages((prev) => [
+          ...prev,
+          { id, mimeType: file.type, data, objectUrl, name: file.name || "pasted image" },
+        ]);
+      };
+      reader.readAsArrayBuffer(file);
+    }
+  }
+
+  function handleDragOver(event: React.DragEvent) {
+    event.preventDefault();
+    setIsDragOver(true);
+  }
+
+  function handleDragLeave() {
+    setIsDragOver(false);
+  }
+
+  function handleDrop(event: React.DragEvent) {
+    event.preventDefault();
+    setIsDragOver(false);
+    const files = event.dataTransfer.files;
+    if (files.length > 0) addImageFiles(files);
+  }
+
+  function removeImage(id: string) {
+    setAttachedImages((prev) => {
+      const img = prev.find((i) => i.id === id);
+      if (img) URL.revokeObjectURL(img.objectUrl);
+      return prev.filter((i) => i.id !== id);
+    });
   }
 
   useEffect(() => {
@@ -191,7 +266,7 @@ export function InlineAgentComposer({
 
   async function handleSubmit() {
     const value = text.trim();
-    if (!value || loading || status.disableSubmit) return;
+    if ((!value && attachedImages.length === 0) || loading || status.disableSubmit) return;
 
     if (status.queueOnSubmit) {
       setQueuedText(value);
@@ -231,6 +306,20 @@ export function InlineAgentComposer({
     });
   }
 
+  function handlePaste(event: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const imageFiles: File[] = [];
+    for (const item of Array.from(event.clipboardData.items)) {
+      if (item.type.startsWith("image/")) {
+        const file = item.getAsFile();
+        if (file) imageFiles.push(file);
+      }
+    }
+    if (imageFiles.length > 0) {
+      event.preventDefault();
+      addImageFiles(imageFiles);
+    }
+  }
+
   function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (mentionQuery !== null && filteredFiles.length > 0) {
       if (event.key === "ArrowDown") {
@@ -262,8 +351,18 @@ export function InlineAgentComposer({
   }
 
   return (
-    <Flex className={composerRoot} direction="column" gap="2">
+    <Flex
+      className={composerRoot}
+      direction="column"
+      gap="2"
+      onDragOver={handleDragOver}
+      onDragEnter={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      data-drag-over={isDragOver}
+    >
       <div className={composerInputWrapper}>
+        {isDragOver && <div className={composerDropIndicator}>Drop image here</div>}
         {mentionQuery !== null && filteredFiles.length > 0 && (
           <div className={fileMentionPopup}>
             {filteredFiles.map((file, index) => (
@@ -292,15 +391,52 @@ export function InlineAgentComposer({
           value={text}
           onChange={handleTextChange}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           disabled={status.disableInput || loading}
           aria-label={role.tag === "Captain" ? "Captain steer input" : "Mate steer input"}
         />
       </div>
+      {attachedImages.length > 0 && (
+        <div className={attachedImageThumbList}>
+          {attachedImages.map((img) => (
+            <div key={img.id} className={attachedImageThumbWrapper}>
+              <img src={img.objectUrl} alt={img.name} className={attachedImageThumb} />
+              <button
+                className={attachedImageRemove}
+                onClick={() => removeImage(img.id)}
+                aria-label={`Remove ${img.name}`}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        style={{ display: "none" }}
+        onChange={(e) => {
+          if (e.target.files) addImageFiles(e.target.files);
+          e.target.value = "";
+        }}
+      />
       <Flex className={composerActions} align="center" justify="end" gap="2">
         <Button
           size="1"
+          variant="ghost"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={status.disableInput || loading}
+          title="Attach image"
+        >
+          ⌗
+        </Button>
+        <Button
+          size="1"
           onClick={() => void handleSubmit()}
-          disabled={!text.trim() || status.disableSubmit}
+          disabled={(!text.trim() && attachedImages.length === 0) || status.disableSubmit}
           loading={loading}
         >
           {status.submitLabel}{" "}

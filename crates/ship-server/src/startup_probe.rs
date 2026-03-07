@@ -21,8 +21,8 @@ use ship_core::ProjectRegistry;
 use ship_impl::ShipImpl;
 use ship_service::{ShipClient, ShipDispatcher};
 use ship_types::{
-    AgentKind, CreateSessionRequest, CreateSessionResponse, SessionEvent, SessionId,
-    SessionStartupState, SubscribeMessage,
+    AgentKind, CreateSessionRequest, CreateSessionResponse, PromptContentPart, SessionEvent,
+    SessionId, SessionStartupState, SubscribeMessage,
 };
 use tokio::time::{sleep, timeout};
 use tracing::Level;
@@ -261,7 +261,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 created_at.elapsed().as_millis(),
                 prompt
             );
-            if let Err(error) = client.prompt_captain(session_id, prompt).await {
+            if let Err(error) = client
+                .prompt_captain(session_id, vec![PromptContentPart::Text { text: prompt }])
+                .await
+            {
                 eprintln!(
                     "[probe +{:>5}ms] prompt_captain failed: {:?}",
                     created_at.elapsed().as_millis(),

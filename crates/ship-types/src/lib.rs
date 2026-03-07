@@ -650,6 +650,16 @@ pub mod protocol {
     }
 }
 
+pub mod prompt {
+    // r[ui.composer.image-attach]
+    #[repr(u8)]
+    #[derive(Debug, Clone, facet::Facet)]
+    pub enum PromptContentPart {
+        Text { text: String },
+        Image { mime_type: String, data: Vec<u8> },
+    }
+}
+
 pub mod persistence {
     use crate::agent::{AgentKind, AgentSnapshot, PlanStep, Role};
     use crate::events::{ContentBlock, SessionEventEnvelope};
@@ -711,6 +721,7 @@ pub use events::{
 };
 pub use ids::{BlockId, ProjectName, SessionId, TaskId};
 pub use persistence::{CurrentTask, PersistedSession, SessionConfig, TaskContentRecord};
+pub use prompt::PromptContentPart;
 pub use protocol::{
     AgentDiscovery, AutonomyMode, CloseSessionRequest, CloseSessionResponse, CreateSessionRequest,
     CreateSessionResponse, McpEnvVar, McpHeader, McpHttpServerConfig, McpServerConfig,
