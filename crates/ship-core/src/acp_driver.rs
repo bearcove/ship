@@ -22,6 +22,9 @@ use crate::{
 };
 use crate::{SystemBinaryPathProbe, resolve_agent_launcher};
 
+type ModelInfo = (Option<String>, Vec<String>);
+type ReadyResult = Result<ModelInfo, String>;
+
 struct AcpHandle {
     command_tx: mpsc::UnboundedSender<DriverCommand>,
     notifications_rx: Arc<Mutex<mpsc::UnboundedReceiver<SessionEvent>>>,
@@ -82,8 +85,7 @@ impl AgentDriver for AcpAgentDriver {
         let handle = AgentHandle::new(SessionId::new());
         let (command_tx, command_rx) = mpsc::unbounded_channel::<DriverCommand>();
         let (notifications_tx, notifications_rx) = mpsc::unbounded_channel::<SessionEvent>();
-        let (ready_tx, ready_rx) =
-            oneshot::channel::<Result<(Option<String>, Vec<String>), String>>();
+        let (ready_tx, ready_rx) = oneshot::channel::<ReadyResult>();
 
         let config = config.clone();
         let worker_thread = std::thread::spawn(move || {
@@ -321,7 +323,7 @@ async fn run_acp_worker(
     config: AgentSessionConfig,
     mut command_rx: mpsc::UnboundedReceiver<DriverCommand>,
     notifications_tx: mpsc::UnboundedSender<SessionEvent>,
-    ready_tx: oneshot::Sender<Result<(Option<String>, Vec<String>), String>>,
+    ready_tx: oneshot::Sender<ReadyResult>,
 ) -> Result<(), AgentError> {
     tracing::info!(role = ?role, kind = ?kind, worktree_path = %config.worktree_path.display(), "starting ACP worker");
     let launcher = resolve_agent_launcher(kind, &SystemBinaryPathProbe).ok_or_else(|| {
