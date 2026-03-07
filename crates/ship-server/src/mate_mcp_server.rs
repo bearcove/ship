@@ -52,6 +52,24 @@ impl ServerHandler for MateMcpHandler {
     ) -> Result<CallToolResult, CallToolError> {
         let arguments = params.arguments.map(Value::Object).unwrap_or(Value::Null);
         let result = match params.name.as_str() {
+            // r[mate.tool.run-command]
+            "run_command" => {
+                let Some(command) = arguments.get("command").and_then(Value::as_str) else {
+                    return Ok(tool_result("missing required argument: command", true));
+                };
+                let cwd = match arguments.get("cwd") {
+                    Some(value) => Some(
+                        value
+                            .as_str()
+                            .ok_or_else(|| call_tool_rpc_error("cwd must be a string"))?,
+                    ),
+                    None => None,
+                };
+                self.client
+                    .run_command(command.to_owned(), cwd.map(ToOwned::to_owned))
+                    .await
+                    .map_err(call_tool_rpc_error)?
+            }
             // r[mate.tool.read-file]
             "read_file" => {
                 let Some(path) = arguments.get("path").and_then(Value::as_str) else {
@@ -291,6 +309,19 @@ fn server_details() -> InitializeResult {
 
 fn tool_definitions() -> Vec<ToolDefinition> {
     vec![
+        ToolDefinition {
+            name: "run_command",
+            description: "Run a shell command in the current task worktree via sh -c. Use this as a general-purpose escape hatch when no structured tool fits. Some risky commands require captain approval first. Optional cwd is relative to the worktree root.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "command": { "type": "string" },
+                    "cwd": { "type": "string" }
+                },
+                "required": ["command"],
+                "additionalProperties": false,
+            }),
+        },
         ToolDefinition {
             name: "read_file",
             description: "Read a text file from the current task worktree with line numbers. Supports optional 1-based offset and line limit.",

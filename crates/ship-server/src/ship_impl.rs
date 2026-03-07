@@ -35,12 +35,14 @@ use tokio::task::JoinHandle;
 
 const PLAN_REQUIRED_MESSAGE: &str = "You must create a plan with plan_create before starting work.";
 const BLOCKED_COMMAND_MESSAGE: &str = "This command is blocked. Stop current work and explain the situation to the captain using mate_ask_captain.";
+const RUN_COMMAND_GUARDRAIL_TEMPLATE: &str = "Commands like `{command}` can affect the worktree in ways that are hard to undo. Please explain what you're trying to accomplish by calling mate_ask_captain, and the captain will help you find the right approach.";
 const DEFAULT_READ_FILE_LIMIT: usize = 2000;
 const MAX_READ_FILE_LINE_LENGTH: usize = 2000;
 const BINARY_DETECTION_BYTES: usize = 8 * 1024;
 const MAX_TOOL_OUTPUT_LINES: usize = 1000;
 const MAX_TOOL_OUTPUT_BYTES: usize = 50 * 1024;
 const MATE_TOOL_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
+const RUN_COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
 
 struct AutoCommitResult {
     commit_hash: String,
@@ -1202,6 +1204,30 @@ impl ShipImpl {
         rendered
     }
 
+    fn truncate_run_command_output(output: &str) -> String {
+        let output = output.trim_end_matches('\n');
+        let lines = output.lines().collect::<Vec<_>>();
+        if lines.len() <= MAX_TOOL_OUTPUT_LINES {
+            return output.to_owned();
+        }
+
+        let mut rendered = lines
+            .iter()
+            .take(MAX_TOOL_OUTPUT_LINES)
+            .copied()
+            .collect::<Vec<_>>()
+            .join("\n");
+        if !rendered.is_empty() {
+            rendered.push('\n');
+        }
+        rendered.push_str(&format!(
+            "(output truncated - {} lines total, showing first {} lines.)",
+            lines.len(),
+            MAX_TOOL_OUTPUT_LINES
+        ));
+        rendered
+    }
+
     async fn run_worktree_shell_command(
         worktree_path: PathBuf,
         program: std::ffi::OsString,
@@ -1263,6 +1289,35 @@ impl ShipImpl {
         }
 
         Err("command failed".to_owned())
+    }
+
+    fn resolve_worktree_directory(
+        canonical_worktree: &Path,
+        relative_path: &Path,
+    ) -> Result<PathBuf, String> {
+        let candidate_path = canonical_worktree.join(relative_path);
+        let metadata = fs::metadata(&candidate_path).map_err(|error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                format!("Directory not found: {}", relative_path.display())
+            } else {
+                format!("Failed to access directory: {error}")
+            }
+        })?;
+        if !metadata.is_dir() {
+            return Err("cwd must point to a directory.".to_owned());
+        }
+
+        let canonical_dir = fs::canonicalize(&candidate_path).map_err(|error| {
+            format!(
+                "Failed to resolve directory path {}: {error}",
+                candidate_path.display()
+            )
+        })?;
+        if !canonical_dir.starts_with(canonical_worktree) {
+            return Err("Path resolves outside the worktree.".to_owned());
+        }
+
+        Ok(canonical_dir)
     }
 
     fn restore_written_file(target: &Path, backup: Option<&Path>) -> Result<(), String> {
@@ -1568,6 +1623,80 @@ impl ShipImpl {
         }
 
         Ok(rendered.join("\n"))
+    }
+
+    // r[mate.tool.run-command]
+    async fn mate_tool_run_command(
+        &self,
+        session_id: &SessionId,
+        command: String,
+        cwd: Option<String>,
+    ) -> Result<String, String> {
+        if Self::is_dangerous_command(&command) {
+            return Err(RUN_COMMAND_GUARDRAIL_TEMPLATE.replace("{command}", &command));
+        }
+
+        let relative_cwd = match cwd {
+            Some(cwd) => Some(Self::validate_worktree_path(&cwd)?.to_path_buf()),
+            None => None,
+        };
+        let worktree_path = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions
+                .get(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            Self::current_task_worktree_path(session)?.to_path_buf()
+        };
+
+        let resolved_cwd = tokio::task::spawn_blocking(move || {
+            let canonical_worktree = fs::canonicalize(&worktree_path).map_err(|error| {
+                format!(
+                    "Failed to resolve worktree path {}: {error}",
+                    worktree_path.display()
+                )
+            })?;
+
+            match relative_cwd {
+                Some(relative_cwd) => {
+                    Self::resolve_worktree_directory(&canonical_worktree, &relative_cwd)
+                }
+                None => Ok(canonical_worktree),
+            }
+        })
+        .await
+        .map_err(|error| format!("run_command path resolution failed: {error}"))??;
+
+        let shell_command = format!("exec 2>&1; {}", command);
+        let mut child = TokioCommand::new("/bin/sh");
+        child
+            .arg("-c")
+            .arg(&shell_command)
+            .current_dir(&resolved_cwd)
+            .kill_on_drop(true)
+            .stdout(std::process::Stdio::piped());
+        let child = child
+            .spawn()
+            .map_err(|error| format!("Failed to start command: {error}"))?;
+
+        let output = match tokio::time::timeout(RUN_COMMAND_TIMEOUT, child.wait_with_output()).await
+        {
+            Ok(Ok(output)) => output,
+            Ok(Err(error)) => return Err(format!("Command execution failed: {error}")),
+            Err(_) => return Err("Command timed out after 120 seconds.".to_owned()),
+        };
+
+        let combined_output = String::from_utf8_lossy(&output.stdout);
+        let truncated = Self::truncate_run_command_output(&combined_output);
+        let exit_code = output.status.code().map_or_else(
+            || "terminated by signal".to_owned(),
+            |code| code.to_string(),
+        );
+
+        if truncated.is_empty() {
+            Ok(format!("exit code: {exit_code}"))
+        } else {
+            Ok(format!("{truncated}\nexit code: {exit_code}"))
+        }
     }
 
     // r[mate.tool.read-file]
@@ -3730,6 +3859,15 @@ impl MateMcpSessionService {
 }
 
 impl MateMcp for MateMcpSessionService {
+    // r[mate.tool.run-command]
+    async fn run_command(&self, command: String, cwd: Option<String>) -> McpToolCallResponse {
+        Self::response(
+            self.ship
+                .mate_tool_run_command(&self.session_id, command, cwd)
+                .await,
+        )
+    }
+
     // r[mate.tool.read-file]
     async fn read_file(
         &self,
@@ -4660,6 +4798,83 @@ mod tests {
             .await
             .expect_err("missing fd should error");
         assert_eq!(error, "fd is not installed.");
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    // r[verify mate.tool.run-command]
+    #[tokio::test]
+    async fn mate_run_command_executes_reports_failures_guards_cwd_and_truncates() {
+        let _guard = lock_mate_tool_tests();
+        let (dir, ship, session_id) = create_session_for_workflow_test("mate-run-command").await;
+        let project_root = dir.join("project");
+        std::fs::create_dir_all(project_root.join("nested"))
+            .expect("nested directory should exist");
+        std::fs::write(project_root.join("nested/value.txt"), "from nested\n")
+            .expect("nested file should exist");
+
+        {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(&session_id).expect("session should exist");
+            session.worktree_path = Some(project_root.clone());
+        }
+
+        let simple = ship
+            .mate_tool_run_command(&session_id, "echo hello".to_owned(), None)
+            .await
+            .expect("simple command should succeed");
+        assert_eq!(simple, "hello\nexit code: 0");
+
+        let failed = ship
+            .mate_tool_run_command(&session_id, "false".to_owned(), None)
+            .await
+            .expect("failing command should still return output");
+        assert_eq!(failed, "exit code: 1");
+
+        let guarded = ship
+            .mate_tool_run_command(&session_id, "git checkout .".to_owned(), None)
+            .await
+            .expect_err("dangerous command should be redirected");
+        assert_eq!(
+            guarded,
+            "Commands like `git checkout .` can affect the worktree in ways that are hard to undo. Please explain what you're trying to accomplish by calling mate_ask_captain, and the captain will help you find the right approach."
+        );
+
+        let custom_cwd = ship
+            .mate_tool_run_command(
+                &session_id,
+                "cat value.txt".to_owned(),
+                Some("nested".to_owned()),
+            )
+            .await
+            .expect("command should run in provided cwd");
+        assert_eq!(custom_cwd, "from nested\nexit code: 0");
+
+        let invalid_cwd = ship
+            .mate_tool_run_command(&session_id, "pwd".to_owned(), Some("missing".to_owned()))
+            .await
+            .expect_err("missing cwd should fail");
+        assert_eq!(invalid_cwd, "Directory not found: missing");
+
+        let large_output = ship
+            .mate_tool_run_command(
+                &session_id,
+                "i=1; while [ \"$i\" -le 1005 ]; do echo line-$i; i=$((i+1)); done".to_owned(),
+                None,
+            )
+            .await
+            .expect("large command output should succeed");
+        assert!(
+            large_output.contains("line-1"),
+            "unexpected output: {large_output}"
+        );
+        assert!(
+            large_output
+                .contains("(output truncated - 1005 lines total, showing first 1000 lines.)"),
+            "unexpected truncation output: {large_output}"
+        );
+        assert!(large_output.ends_with("exit code: 0"));
+        assert_eq!(large_output.lines().count(), 1002);
 
         let _ = std::fs::remove_dir_all(dir);
     }

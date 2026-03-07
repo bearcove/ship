@@ -877,6 +877,14 @@ The mate MUST have access to a `list_files` tool that takes raw fd arguments
 as a string. The command runs in the worktree root. Output is truncated at
 1000 lines.
 
+r[mate.tool.run-command]
+The mate MUST have access to a `run_command` tool that takes a `command`
+argument (string) and optional `cwd` (relative to worktree). The command
+runs via `sh -c` in the worktree. Commands matching dangerous patterns per
+`r[mate.tool.guardrails]` are not executed; instead the mate is directed to
+explain the need to the captain via `mate_ask_captain`. Output is truncated
+at 1000 lines. Timeout is 120 seconds.
+
 r[mate.tool.send-update]
 The mate MUST have access to a `mate_send_update` tool that takes a `message`
 argument (string). The message is injected into the captain's context as a

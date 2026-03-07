@@ -88,6 +88,9 @@ pub trait CaptainMcp {
 // r[mate.tool.implementation]
 #[roam::service]
 pub trait MateMcp {
+    // r[mate.tool.run-command]
+    async fn run_command(&self, command: String, cwd: Option<String>) -> McpToolCallResponse;
+
     // r[mate.tool.read-file]
     async fn read_file(
         &self,
