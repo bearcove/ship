@@ -1,16 +1,13 @@
 # Bug Tracker
 
-This directory tracks coordinator-noted bugs locally in the repo.
+This directory tracks everything that needs doing — defects, features, improvements.
 
-Each bug file should capture:
-- symptom
-- expected behavior
-- owner
-- evidence
-- suspected root cause
-- spec impact
-- next action
+Each file captures: symptom, expected behavior, owner, and next action.
 
-Open bugs:
-- [024-session-list-empty-state-duplicates-primary-cta.md](bugs/024-session-list-empty-state-duplicates-primary-cta.md)
-- [025-session-list-filter-context-does-not-feel-persistent.md](bugs/025-session-list-filter-context-does-not-feel-persistent.md)
+Open items:
+- [032-multi-session-ui-vertical-tabs.md](032-multi-session-ui-vertical-tabs.md)
+- [033-no-file-mentions-in-composer.md](033-no-file-mentions-in-composer.md)
+- [034-no-image-drag-drop-upload.md](034-no-image-drag-drop-upload.md)
+- [035-session-not-persistent-across-server-restart.md](035-session-not-persistent-across-server-restart.md)
+- [036-captain-lacks-mate-context.md](036-captain-lacks-mate-context.md)
+- [037-mate-has-raw-filesystem-access.md](037-mate-has-raw-filesystem-access.md)
