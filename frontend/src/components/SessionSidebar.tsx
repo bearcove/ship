@@ -27,10 +27,11 @@ const STATUS_DOT_COLOR: Record<TaskStatus["tag"], string> = {
 interface Props {
   sessions: SessionSummary[];
   currentSessionId?: string;
+  currentProject?: string;
 }
 
 // r[ui.session-list.nav]
-export function SessionSidebar({ sessions, currentSessionId }: Props) {
+export function SessionSidebar({ sessions, currentSessionId, currentProject }: Props) {
   const [newSessionOpen, setNewSessionOpen] = useState(false);
 
   return (
@@ -79,7 +80,11 @@ export function SessionSidebar({ sessions, currentSessionId }: Props) {
         </IconButton>
       </Box>
 
-      <NewSessionDialog open={newSessionOpen} onOpenChange={setNewSessionOpen} />
+      <NewSessionDialog
+        open={newSessionOpen}
+        onOpenChange={setNewSessionOpen}
+        preselectedProject={currentProject}
+      />
     </Box>
   );
 }

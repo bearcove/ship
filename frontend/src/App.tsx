@@ -59,7 +59,11 @@ export function App() {
 
       <Flex style={{ flex: 1, overflow: "hidden", minHeight: 0 }}>
         {allSessions.length > 0 && (
-          <SessionSidebar sessions={allSessions} currentSessionId={currentSessionId} />
+          <SessionSidebar
+            sessions={allSessions}
+            currentSessionId={currentSessionId}
+            currentProject={allSessions.find((s) => s.id === currentSessionId)?.project}
+          />
         )}
         <Box
           style={{
