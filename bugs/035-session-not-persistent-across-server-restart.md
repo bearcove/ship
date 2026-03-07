@@ -1,6 +1,6 @@
 # 035: Sessions and agent context lost on server restart
 
-Status: open
+Status: closed
 Owner: backend
 
 ## Symptom

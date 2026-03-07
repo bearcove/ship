@@ -322,10 +322,16 @@ While the mate works, the backend MUST receive ACP notifications and stream
 progress to the frontend in real time.
 
 r[task.completion]
-When the mate finishes (`StopReason::EndTurn`), the task moves to
-`ReviewPending`. Mate output remains visible in the session event stream for
-the human and captain to review. Ship MUST NOT automatically prompt the
-captain as a built-in follow-up step just because the mate finished.
+When the mate calls `mate_submit(summary)`, the task moves to `ReviewPending`
+and the backend MUST automatically prompt the captain with the mate's summary
+for review. The captain then calls `captain_accept`, `captain_steer`, or
+`captain_cancel`.
+
+r[task.completion.enforce-submit]
+If the mate stops (`StopReason::EndTurn`) without having called `mate_submit`,
+the backend MUST re-prompt the mate with instructions to call `mate_submit`
+with a summary of completed work. The mate MUST NOT be allowed to finish
+without submitting.
 
 r[task.steer]
 The captain MUST be able to send `steer` to request more work from the mate.

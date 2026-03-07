@@ -21,8 +21,8 @@ use ship_types::{
     CloseSessionRequest, CloseSessionResponse, ContentBlock, CreateSessionRequest,
     CreateSessionResponse, CurrentTask, McpServerConfig, McpStdioServerConfig, McpToolCallResponse,
     PersistedSession, ProjectInfo, ProjectName, Role, SessionConfig, SessionDetail, SessionEvent,
-    SessionId, SessionStartupStage, SessionStartupState, SessionSummary, SetAgentModelResponse,
-    SubscribeMessage, TaskId, TaskRecord, TaskStatus,
+    SessionEventEnvelope, SessionId, SessionStartupStage, SessionStartupState, SessionSummary,
+    SetAgentModelResponse, SubscribeMessage, TaskId, TaskRecord, TaskStatus,
 };
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
@@ -1030,6 +1030,7 @@ impl ShipImpl {
         }
     }
 
+    // r[task.completion]
     async fn mate_tool_submit(
         &self,
         session_id: &SessionId,
@@ -1516,8 +1517,13 @@ impl ShipImpl {
                 let session = sessions
                     .get_mut(session_id)
                     .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-                transition_task(session, TaskStatus::ReviewPending)
-                    .map_err(|error| error.to_string())?;
+                // mate_submit may have already transitioned to ReviewPending; only transition
+                // if it hasn't (avoids double-transition error)
+                let status = current_task_status(session).map_err(|e| e.to_string())?;
+                if status != TaskStatus::ReviewPending {
+                    transition_task(session, TaskStatus::ReviewPending)
+                        .map_err(|error| error.to_string())?;
+                }
             }
             ship_core::StopReason::Cancelled => {
                 let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
@@ -1592,24 +1598,155 @@ impl ShipImpl {
         Ok(task_id)
     }
 
-    async fn prompt_mate_from_steer(&self, session_id: SessionId, message: String) {
-        let stop_reason = match self
-            .prompt_agent(
-                &session_id,
-                Role::Mate,
-                format!("Captain steer:\n{message}"),
-            )
-            .await
-        {
-            Ok(stop_reason) => stop_reason,
-            Err(error) => {
-                Self::log_error("prompt_mate_steer", &error);
-                return;
+    /// Extracts the last few mate text blocks from an event log to build a summary.
+    fn build_summary_from_event_log(event_log: &[SessionEventEnvelope]) -> String {
+        let mut texts: Vec<String> = Vec::new();
+        for envelope in event_log.iter().rev() {
+            if let SessionEvent::BlockAppend {
+                role: Role::Mate,
+                block: ContentBlock::Text { text, .. },
+                ..
+            } = &envelope.event
+            {
+                texts.push(text.clone());
+                if texts.len() >= 5 {
+                    break;
+                }
             }
+        }
+        texts.reverse();
+        if texts.is_empty() {
+            "No recent output available.".to_owned()
+        } else {
+            texts.join("\n\n")
+        }
+    }
+
+    /// Performs a forced mate submission when the mate stopped without calling `mate_submit`.
+    /// Sets up the review channel, transitions to ReviewPending, and prompts the captain.
+    async fn force_mate_submit(
+        &self,
+        session_id: &SessionId,
+        preamble: &str,
+    ) -> Result<(), String> {
+        let summary = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions
+                .get(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            let event_log = session
+                .current_task
+                .as_ref()
+                .map(|t| t.event_log.as_slice())
+                .unwrap_or(&[]);
+            Self::build_summary_from_event_log(event_log)
         };
 
-        if let Err(error) = self.handle_mate_stop_reason(&session_id, stop_reason).await {
-            Self::log_error("handle_mate_stop_reason_steer", &error);
+        // Set up review channel so captain_accept/steer/cancel can complete the review.
+        // We don't await rx — the mate is already done, so the tx is just a signal path.
+        {
+            let mut ops = self
+                .pending_mcp_ops
+                .lock()
+                .expect("pending_mcp_ops mutex poisoned");
+            let entry = ops
+                .entry(session_id.clone())
+                .or_insert_with(PendingMcpOps::new);
+            let (tx, _rx) = tokio::sync::oneshot::channel::<MateReviewOutcome>();
+            entry.mate_review = Some(tx);
+        }
+
+        {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            if let Some(active) = sessions.get_mut(session_id) {
+                let _ = transition_task(active, TaskStatus::ReviewPending);
+            }
+        }
+        self.persist_session(session_id).await?;
+
+        let injected = format!("{preamble}\n\n{summary}");
+        self.append_human_message(session_id, Role::Captain, injected.clone())
+            .await?;
+
+        let this = self.clone();
+        let session_id_clone = session_id.clone();
+        tokio::spawn(async move {
+            if let Err(error) = this
+                .prompt_agent(&session_id_clone, Role::Captain, injected)
+                .await
+            {
+                Self::log_error("force_mate_submit prompt_captain", &error);
+            }
+        });
+
+        Ok(())
+    }
+
+    async fn prompt_mate_from_steer(&self, session_id: SessionId, message: String) {
+        let mut prompt = format!("Captain steer:\n{message}");
+        let mut enforce_submit_attempts = 0u32;
+
+        loop {
+            let stop_reason = match self.prompt_agent(&session_id, Role::Mate, prompt).await {
+                Ok(stop_reason) => stop_reason,
+                Err(error) => {
+                    Self::log_error("prompt_mate_steer", &error);
+                    return;
+                }
+            };
+
+            match stop_reason {
+                // r[task.completion.enforce-submit]
+                ship_core::StopReason::EndTurn => {
+                    let already_submitted = {
+                        let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                        sessions
+                            .get(&session_id)
+                            .and_then(|s| s.current_task.as_ref())
+                            .map(|t| t.record.status == TaskStatus::ReviewPending)
+                            .unwrap_or(false)
+                    };
+
+                    if already_submitted {
+                        // mate_submit was called; captain already notified
+                        break;
+                    }
+
+                    enforce_submit_attempts += 1;
+                    if enforce_submit_attempts >= 2 {
+                        let preamble = "The mate stopped repeatedly without submitting. \
+                            Here is a reconstructed summary of recent work:";
+                        if let Err(e) = self.force_mate_submit(&session_id, preamble).await {
+                            Self::log_error("force_mate_submit", &e);
+                        }
+                        break;
+                    }
+
+                    prompt = "You stopped without submitting your work. \
+                        Call mate_submit with a summary of what you accomplished."
+                        .to_owned();
+                }
+                ship_core::StopReason::ContextExhausted => {
+                    {
+                        let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                        if let Some(session) = sessions.get_mut(&session_id) {
+                            set_agent_state(session, Role::Mate, AgentState::ContextExhausted);
+                        }
+                    }
+                    let preamble = "The mate ran out of context without submitting. \
+                        Here is a reconstructed summary of recent work:";
+                    if let Err(e) = self.force_mate_submit(&session_id, preamble).await {
+                        Self::log_error("force_mate_submit_context_exhausted", &e);
+                    }
+                    break;
+                }
+                other => {
+                    if let Err(error) = self.handle_mate_stop_reason(&session_id, other).await {
+                        Self::log_error("handle_mate_stop_reason_steer", &error);
+                    }
+                    break;
+                }
+            }
         }
     }
 }
