@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Box, Button, Callout, DropdownMenu, Flex, Progress, Text } from "@radix-ui/themes";
 import { ArrowsClockwise, Warning } from "@phosphor-icons/react";
 import type { AgentSnapshot } from "../generated/ship";
@@ -10,15 +11,44 @@ interface Props {
   agent: AgentSnapshot;
 }
 
+function parseModelId(modelId: string): { model: string; effort: string | null } {
+  const slashIndex = modelId.lastIndexOf("/");
+  if (slashIndex === -1) return { model: modelId, effort: null };
+  return { model: modelId.slice(0, slashIndex), effort: modelId.slice(slashIndex + 1) };
+}
+
+function buildModelId(model: string, effort: string | null): string {
+  return effort ? `${model}/${effort}` : model;
+}
+
 // r[ui.agent-header.layout]
 // r[view.agent-panel.state]
 export function AgentHeader({ sessionId, agent }: Props) {
   const contextPct = agent.context_remaining_percent;
   const contextLow = contextPct !== null && contextPct < 20;
 
+  const parsed = useMemo(() => {
+    const all = agent.available_models.map(parseModelId);
+    const models = [...new Set(all.map((m) => m.model))];
+    const efforts = [...new Set(all.filter((m) => m.effort !== null).map((m) => m.effort!))];
+    const current = agent.model_id ? parseModelId(agent.model_id) : null;
+    const hasSplit = efforts.length > 0 && models.length > 0;
+    return { models, efforts, current, hasSplit };
+  }, [agent.model_id, agent.available_models]);
+
   async function handleSelectModel(modelId: string) {
     const client = await getShipClient();
     await client.setAgentModel(sessionId, agent.role, modelId);
+  }
+
+  function handleSelectModelName(model: string) {
+    const effort = parsed.current?.effort ?? parsed.efforts[0] ?? null;
+    void handleSelectModel(buildModelId(model, effort));
+  }
+
+  function handleSelectEffort(effort: string) {
+    const model = parsed.current?.model ?? parsed.models[0];
+    void handleSelectModel(buildModelId(model, effort));
   }
 
   return (
@@ -28,7 +58,63 @@ export function AgentHeader({ sessionId, agent }: Props) {
         <Text size="2" weight="medium">
           {agent.role.tag}
         </Text>
-        {agent.model_id !== null && agent.available_models.length > 1 ? (
+        {agent.model_id !== null && agent.available_models.length > 1 && parsed.hasSplit ? (
+          <Flex gap="1" align="center">
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger>
+                <Text
+                  size="1"
+                  color="gray"
+                  style={{ cursor: "pointer", textDecoration: "underline dotted" }}
+                >
+                  {parsed.current?.model ?? agent.model_id}
+                </Text>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Content size="1">
+                {parsed.models.map((model) => (
+                  <DropdownMenu.Item
+                    key={model}
+                    onSelect={() => handleSelectModelName(model)}
+                    style={model === parsed.current?.model ? { fontWeight: "bold" } : undefined}
+                  >
+                    {model}
+                  </DropdownMenu.Item>
+                ))}
+              </DropdownMenu.Content>
+            </DropdownMenu.Root>
+            {parsed.current?.effort && (
+              <>
+                <Text size="1" color="gray">
+                  /
+                </Text>
+                <DropdownMenu.Root>
+                  <DropdownMenu.Trigger>
+                    <Text
+                      size="1"
+                      color="gray"
+                      style={{ cursor: "pointer", textDecoration: "underline dotted" }}
+                    >
+                      {parsed.current.effort}
+                    </Text>
+                  </DropdownMenu.Trigger>
+                  <DropdownMenu.Content size="1">
+                    {parsed.efforts.map((effort) => (
+                      <DropdownMenu.Item
+                        key={effort}
+                        onSelect={() => handleSelectEffort(effort)}
+                        style={
+                          effort === parsed.current?.effort ? { fontWeight: "bold" } : undefined
+                        }
+                      >
+                        {effort}
+                      </DropdownMenu.Item>
+                    ))}
+                  </DropdownMenu.Content>
+                </DropdownMenu.Root>
+              </>
+            )}
+          </Flex>
+        ) : agent.model_id !== null && agent.available_models.length > 1 ? (
           <DropdownMenu.Root>
             <DropdownMenu.Trigger>
               <Text
