@@ -6,6 +6,17 @@
     <title>Ship</title>
   </head>
   <body>
+    <script>
+      // Sync system color scheme to <html> class before first paint so Radix
+      // appearance="inherit" picks it up without a flash of wrong theme.
+      (function () {
+        var d = document.documentElement;
+        var mq = window.matchMedia("(prefers-color-scheme: dark)");
+        function apply(dark) { d.classList.toggle("dark", dark); d.classList.toggle("light", !dark); }
+        apply(mq.matches);
+        mq.addEventListener("change", function (e) { apply(e.matches); });
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
