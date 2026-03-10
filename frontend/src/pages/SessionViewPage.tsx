@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { Box, Flex, IconButton, Spinner, Switch, Tabs, Text } from "@radix-ui/themes";
+import { useParams } from "react-router-dom";
+import { Box, Flex, IconButton, Spinner, Tabs } from "@radix-ui/themes";
 import { Bug, SpeakerHigh, SpeakerSlash } from "@phosphor-icons/react";
 import { useSoundEnabled } from "../context/SoundContext";
 import { useSession } from "../hooks/useSession";
@@ -8,16 +8,9 @@ import { useSessionState } from "../hooks/useSessionState";
 import { AgentHeader } from "../components/AgentHeader";
 import { AgentPanel } from "../components/AgentPanel";
 import { SteerReview } from "../components/SteerReview";
-import { ConnectionBanner } from "../components/ConnectionBanner";
 import {
-  autonomyBadge,
-  autonomyControls,
-  sessionBreadcrumbButton,
-  sessionBreadcrumbs,
-  sessionBreadcrumbSeparator,
   sessionViewRoot,
   sessionTopBar,
-  sessionBranch,
   desktopGrid,
   panelColumn,
   mobileTabs,
@@ -52,19 +45,13 @@ function writeDebugPreference(enabled: boolean) {
 // r[proto.hydration-flow]
 export function SessionViewPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
-  const navigate = useNavigate();
   const { soundEnabled, setSoundEnabled } = useSoundEnabled();
   // r[event.client.hydration-sequence]: Step 1 — structural state
   const session = useSession(sessionId ?? "");
   // r[event.client.hydration-sequence]: Step 2/3 — event subscription + replay
   const eventState = useSessionState(sessionId ?? "", session);
-  const [autonomous, setAutonomous] = useState(false);
   const [mobileTab, setMobileTab] = useState<"captain" | "mate">("captain");
   const [debugMode, setDebugMode] = useState(readDebugPreference);
-
-  useEffect(() => {
-    if (session) setAutonomous(session.autonomy_mode.tag === "Autonomous");
-  }, [session]);
 
   useEffect(() => {
     writeDebugPreference(debugMode);
@@ -110,66 +97,26 @@ export function SessionViewPage() {
   return (
     <Flex className={sessionViewRoot}>
       <Flex className={sessionTopBar}>
-        <Flex className={sessionBreadcrumbs}>
-          <button type="button" className={sessionBreadcrumbButton} onClick={() => navigate("/")}>
-            ship
-          </button>
-          <Text className={sessionBreadcrumbSeparator}>::</Text>
-          <button
-            type="button"
-            className={sessionBreadcrumbButton}
-            onClick={() => navigate(`/?project=${encodeURIComponent(session.project)}`)}
-          >
-            {session.project}
-          </button>
-          <Text className={sessionBreadcrumbSeparator}>::</Text>
-          <Text className={sessionBranch}>{session.branch_name}</Text>
-        </Flex>
-        {/* r[ui.autonomy.toggle] */}
-        <Flex className={autonomyControls}>
-          <Text size="1" color="gray">
-            Ask for permission
-          </Text>
-          <Switch
+        <Flex style={{ marginLeft: "auto" }} align="center" gap="2">
+          <IconButton
+            variant={debugMode ? "solid" : "ghost"}
+            color={debugMode ? "amber" : "gray"}
             size="2"
-            checked={!autonomous}
-            onCheckedChange={(v) => setAutonomous(!v)}
-            aria-label={autonomous ? "Autonomous mode enabled" : "Human-in-the-loop mode enabled"}
-          />
-          <Box
-            className={autonomyBadge}
-            aria-hidden="true"
-            data-mode={autonomous ? "auto" : "hitl"}
-          />
+            onClick={() => setDebugMode((enabled) => !enabled)}
+            aria-label={debugMode ? "Disable debug mode" : "Enable debug mode"}
+          >
+            <Bug size={18} />
+          </IconButton>
+          <IconButton
+            variant="ghost"
+            size="2"
+            onClick={() => setSoundEnabled(!soundEnabled)}
+            aria-label={soundEnabled ? "Mute sounds" : "Unmute sounds"}
+          >
+            {soundEnabled ? <SpeakerHigh size={18} /> : <SpeakerSlash size={18} />}
+          </IconButton>
         </Flex>
-        <IconButton
-          variant={debugMode ? "solid" : "ghost"}
-          color={debugMode ? "amber" : "gray"}
-          size="2"
-          onClick={() => setDebugMode((enabled) => !enabled)}
-          aria-label={debugMode ? "Disable debug mode" : "Enable debug mode"}
-        >
-          <Bug size={18} />
-        </IconButton>
-        <IconButton
-          variant="ghost"
-          size="2"
-          onClick={() => setSoundEnabled(!soundEnabled)}
-          aria-label={soundEnabled ? "Mute sounds" : "Unmute sounds"}
-        >
-          {soundEnabled ? <SpeakerHigh size={18} /> : <SpeakerSlash size={18} />}
-        </IconButton>
       </Flex>
-
-      <ConnectionBanner
-        connected={eventState.connected}
-        phase={eventState.phase}
-        disconnectReason={eventState.disconnectReason}
-        replayEventCount={eventState.replayEventCount}
-        connectionAttempt={eventState.connectionAttempt}
-        lastSeq={eventState.lastSeq}
-        lastEventKind={eventState.lastEventKind}
-      />
 
       <Box className={mobileTabs} px="3" pt="2">
         <Tabs.Root value={mobileTab} onValueChange={(v) => setMobileTab(v as "captain" | "mate")}>

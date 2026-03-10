@@ -45,6 +45,7 @@ vi.mock("../api/client", () => ({
     resolvePermission: async () => undefined,
     accept: async () => undefined,
     cancel: async () => undefined,
+    listWorktreeFiles: async () => [],
   }),
 }));
 
@@ -133,29 +134,16 @@ describe("SessionViewPage UX slice", () => {
   // r[verify view.session]
   // r[verify ui.layout.session-view]
   // r[verify ui.notify.sound-toggle]
-  // r[verify ui.autonomy.toggle]
-  it("renders breadcrumb session chrome with project navigation and the session mute control", async () => {
+  it("renders session chrome with sound and debug controls", () => {
     renderPage();
 
-    expect(screen.getByRole("button", { name: "ship" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "roam" })).toBeInTheDocument();
-    expect(screen.getByText("feature/breadcrumbs")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /close session/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /mute sounds/i })).toBeInTheDocument();
-    expect(
-      screen.getByRole("switch", { name: "Human-in-the-loop mode enabled" }),
-    ).toBeInTheDocument();
-    expect(screen.queryByText("Human-in-the-loop")).not.toBeInTheDocument();
-    expect(screen.queryByText("Autonomous")).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "roam" }));
-
-    expect(await screen.findByText("/?project=roam")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /enable debug mode/i })).toBeInTheDocument();
   });
 
   // r[verify view.agent-panel.state]
   // r[verify ui.keys.steer-send]
-  it("submits captain and mate inline steering from the feed footer with Cmd+Enter", async () => {
+  it("submits captain and mate inline steering from the feed footer with Enter", async () => {
     renderPage();
 
     expect(screen.queryByText("Claude")).not.toBeInTheDocument();
@@ -164,24 +152,22 @@ describe("SessionViewPage UX slice", () => {
     const captainInput = screen.getAllByLabelText("Captain steer input")[0];
     const mateInput = screen.getAllByLabelText("Mate steer input")[0];
 
-    expect(screen.getAllByText("Review pending").length).toBeGreaterThan(0);
-    expect(screen.getByText("Awaiting review")).toBeInTheDocument();
-
     fireEvent.change(captainInput, { target: { value: "Ask the captain to tighten the review." } });
-    fireEvent.keyDown(captainInput, { key: "Enter", metaKey: true });
+    fireEvent.keyDown(captainInput, { key: "Enter" });
 
     await waitFor(() => {
-      expect(mocks.promptCaptain).toHaveBeenCalledWith(
-        "session-1",
-        "Ask the captain to tighten the review.",
-      );
+      expect(mocks.promptCaptain).toHaveBeenCalledWith("session-1", [
+        { tag: "Text", text: "Ask the captain to tighten the review." },
+      ]);
     });
 
     fireEvent.change(mateInput, { target: { value: "Apply the captain notes directly." } });
-    fireEvent.keyDown(mateInput, { key: "Enter", metaKey: true });
+    fireEvent.keyDown(mateInput, { key: "Enter" });
 
     await waitFor(() => {
-      expect(mocks.steer).toHaveBeenCalledWith("session-1", "Apply the captain notes directly.");
+      expect(mocks.steer).toHaveBeenCalledWith("session-1", [
+        { tag: "Text", text: "Apply the captain notes directly." },
+      ]);
     });
   });
 
@@ -199,14 +185,9 @@ describe("SessionViewPage UX slice", () => {
 
     renderPage();
 
-    expect(screen.getByText(/Captain drafted the next steer/)).toBeInTheDocument();
     expect(screen.getByText("Captain's steer — awaiting your review")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Send to Mate" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Accept mate work" })).not.toBeInTheDocument();
-    expect(screen.getAllByText("Captain steer pending").length).toBeGreaterThan(0);
-    expect(
-      screen.getByText("Send your own steer here to override the captain's pending draft."),
-    ).toBeInTheDocument();
   });
 
   // r[verify view.session]

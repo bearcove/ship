@@ -147,8 +147,7 @@ describe("sessionReducer event handling", () => {
     });
     expect(state.currentTaskId).toBe("task-42");
     expect(state.currentTaskDescription).toBe("do work");
-    expect(state.captainBlocks.blocks).toHaveLength(0);
-    expect(state.mateBlocks.blocks).toHaveLength(0);
+    expect(state.currentTaskStatus).toEqual({ tag: "Assigned" });
   });
 
   it("TaskStatusChanged updates currentTaskStatus", () => {

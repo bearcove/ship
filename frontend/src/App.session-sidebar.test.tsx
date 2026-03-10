@@ -24,6 +24,7 @@ vi.mock("./api/client", () => ({
   getShipClient: async () => ({
     createSession: mocks.createSession,
     listSessions: mocks.listSessions,
+    listWorktreeFiles: async () => [],
   }),
 }));
 

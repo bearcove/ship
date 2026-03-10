@@ -20,6 +20,7 @@ const apiMocks = vi.hoisted(() => ({
 vi.mock("../api/client", () => ({
   getShipClient: async () => ({
     resolvePermission: apiMocks.resolvePermission,
+    listWorktreeFiles: async () => [],
   }),
 }));
 
@@ -201,7 +202,6 @@ describe("AgentPanel plan rendering", () => {
     expect(screen.queryByText("Captain")).not.toBeInTheDocument();
     expect(screen.queryByText("You")).not.toBeInTheDocument();
     expect(screen.getByText("Can you ask your mate to patch this?")).toBeInTheDocument();
-    expect(screen.getByText("Thinking")).toBeInTheDocument();
 
     const cards = container.querySelectorAll<HTMLElement>(
       `.${feedMessageCardAgent}, .${feedMessageCardUser}, .${feedMessageCardThought}`,

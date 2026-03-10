@@ -178,7 +178,7 @@ export const feedMessageCard = style({
   display: "flex",
   flexDirection: "column",
   gap: "var(--space-1)",
-  padding: "var(--space-3)",
+  padding: "var(--space-2)",
   borderRadius: "var(--radius-3)",
   border: "1px solid var(--gray-a4)",
   background: "var(--gray-a2)",
@@ -437,8 +437,8 @@ export const diffContext = style({
 
 export const textBlockRoot = style({
   color: "var(--gray-12)",
-  fontSize: "var(--font-size-2)",
-  lineHeight: "var(--line-height-3)",
+  fontSize: "var(--font-size-1)",
+  lineHeight: "var(--line-height-2)",
 });
 
 globalStyle(`${textBlockRoot} :where(p, ul, ol, blockquote)`, {

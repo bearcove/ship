@@ -84,16 +84,16 @@ function getStatusCopy(
 
   if (agentStateTag === "AwaitingPermission") {
     return {
-      disableInput: true,
-      disableSubmit: true,
-      queueOnSubmit: false,
-      submitLabel: "Send",
+      disableInput: false,
+      disableSubmit: false,
+      queueOnSubmit: true,
+      submitLabel: "Queue",
     };
   }
 
   if (agentStateTag === "ContextExhausted") {
     return {
-      disableInput: true,
+      disableInput: false,
       disableSubmit: true,
       queueOnSubmit: false,
       submitLabel: "Send",
@@ -102,7 +102,7 @@ function getStatusCopy(
 
   if (agentStateTag === "Error") {
     return {
-      disableInput: true,
+      disableInput: false,
       disableSubmit: true,
       queueOnSubmit: false,
       submitLabel: "Send",
@@ -344,7 +344,7 @@ export function InlineAgentComposer({
       }
     }
 
-    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+    if (event.key === "Enter" && !event.shiftKey && !event.metaKey && !event.ctrlKey) {
       event.preventDefault();
       void handleSubmit();
     }
@@ -392,7 +392,6 @@ export function InlineAgentComposer({
           onChange={handleTextChange}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
-          disabled={status.disableInput || loading}
           aria-label={role.tag === "Captain" ? "Captain steer input" : "Mate steer input"}
         />
       </div>
@@ -441,7 +440,7 @@ export function InlineAgentComposer({
         >
           {status.submitLabel}{" "}
           <Box asChild style={{ opacity: 0.65, fontSize: "11px", fontFamily: "monospace" }}>
-            <kbd>⌘↵</kbd>
+            <kbd>↵</kbd>
           </Box>
         </Button>
       </Flex>

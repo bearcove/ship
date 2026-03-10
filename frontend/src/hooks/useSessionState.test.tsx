@@ -66,7 +66,8 @@ vi.mock("../api/client", () => ({
   getShipClient: async () =>
     ({
       subscribeEvents: apiMocks.subscribeEventsMock,
-    }) as Pick<ShipClient, "subscribeEvents">,
+      listWorktreeFiles: async () => [],
+    }) as Pick<ShipClient, "subscribeEvents" | "listWorktreeFiles">,
   invalidateShipClient: apiMocks.invalidateShipClientMock,
 }));
 

@@ -6,12 +6,14 @@ import { InlineAgentComposer } from "./InlineAgentComposer";
 const apiMocks = vi.hoisted(() => ({
   promptCaptain: vi.fn(async () => undefined),
   steer: vi.fn(async () => undefined),
+  listWorktreeFiles: vi.fn(async () => []),
 }));
 
 vi.mock("../api/client", () => ({
   getShipClient: async () => ({
     promptCaptain: apiMocks.promptCaptain,
     steer: apiMocks.steer,
+    listWorktreeFiles: apiMocks.listWorktreeFiles,
   }),
 }));
 
@@ -61,7 +63,9 @@ describe("InlineAgentComposer", () => {
     );
 
     await waitFor(() => {
-      expect(apiMocks.promptCaptain).toHaveBeenCalledWith("session-1", "Queue this for startup.");
+      expect(apiMocks.promptCaptain).toHaveBeenCalledWith("session-1", [
+        { tag: "Text", text: "Queue this for startup." },
+      ]);
     });
   });
 
@@ -86,10 +90,9 @@ describe("InlineAgentComposer", () => {
     fireEvent.click(screen.getByRole("button", { name: /Send/i }));
 
     await waitFor(() => {
-      expect(apiMocks.promptCaptain).toHaveBeenCalledWith(
-        "session-1",
-        "Say hi while mate startup continues.",
-      );
+      expect(apiMocks.promptCaptain).toHaveBeenCalledWith("session-1", [
+        { tag: "Text", text: "Say hi while mate startup continues." },
+      ]);
     });
   });
 
