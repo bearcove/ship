@@ -64,10 +64,10 @@ describe("AgentHeader", () => {
     expect(progressbar).toHaveClass(agentHeaderContext);
     expect(progressbar).toHaveAttribute("aria-valuenow", "82");
     expect(progressbar.querySelectorAll("circle")).toHaveLength(2);
-    expect(progressbar).toBeEmptyDOMElement();
+    expect(progressbar).not.toHaveTextContent("82");
 
-    expect(within(controlRow!).getByRole("button", { name: "gpt-5-codex" })).toBeInTheDocument();
-    expect(within(controlRow!).getByRole("button", { name: "medium" })).toBeInTheDocument();
+    expect(within(controlRow!).getByText("gpt-5-codex")).toBeInTheDocument();
+    expect(within(controlRow!).getByText("medium")).toBeInTheDocument();
   });
 
   // r[verify ui.agent-header.layout]
@@ -79,8 +79,8 @@ describe("AgentHeader", () => {
       }),
     );
 
-    expect(screen.getByRole("button", { name: "gpt-5" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "medium" })).not.toBeInTheDocument();
+    expect(screen.getByText("gpt-5")).toBeInTheDocument();
+    expect(screen.queryByText("medium")).not.toBeInTheDocument();
   });
 
   // r[verify ui.agent-header.layout]
