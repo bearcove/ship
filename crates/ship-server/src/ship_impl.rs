@@ -220,6 +220,7 @@ impl ShipImpl {
             let session_id = persisted.id.clone();
             let session = ActiveSession {
                 id: persisted.id,
+                created_at: persisted.created_at,
                 config: persisted.config,
                 worktree_path: None,
                 captain_handle: None,
@@ -279,6 +280,7 @@ impl ShipImpl {
                 .map(|task| task.record.description.clone()),
             task_status: session.current_task.as_ref().map(|task| task.record.status),
             autonomy_mode: session.config.autonomy_mode,
+            created_at: session.created_at.clone(),
         }
     }
 
@@ -297,6 +299,7 @@ impl ShipImpl {
             task_history: session.task_history.clone(),
             autonomy_mode: session.config.autonomy_mode,
             pending_steer: session.pending_steer.clone(),
+            created_at: session.created_at.clone(),
         }
     }
 
@@ -315,6 +318,7 @@ impl ShipImpl {
             task_history: Vec::new(),
             autonomy_mode: AutonomyMode::HumanInTheLoop,
             pending_steer: None,
+            created_at: String::new(),
         }
     }
 
@@ -2932,6 +2936,7 @@ impl ShipImpl {
 
             PersistedSession {
                 id: session.id.clone(),
+                created_at: session.created_at.clone(),
                 config: session.config.clone(),
                 captain: session.captain.clone(),
                 mate: session.mate.clone(),
@@ -3635,6 +3640,7 @@ impl Ship for ShipImpl {
         let (events_tx, _) = broadcast::channel(256);
         let session = ActiveSession {
             id: session_id.clone(),
+            created_at: chrono::Utc::now().to_rfc3339(),
             config: SessionConfig {
                 project: req.project,
                 base_branch: req.base_branch,

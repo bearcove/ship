@@ -37,6 +37,7 @@ fn make_temp_dir(test_name: &str) -> PathBuf {
 fn make_persisted_session(id: &str, description: &str) -> PersistedSession {
     PersistedSession {
         id: SessionId(id.to_owned()),
+        created_at: "2026-01-01T00:00:00Z".to_owned(),
         config: SessionConfig {
             project: ProjectName("ship-backend".to_owned()),
             base_branch: "main".to_owned(),

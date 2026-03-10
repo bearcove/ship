@@ -632,6 +632,7 @@ pub mod protocol {
         pub current_task_description: Option<String>,
         pub task_status: Option<TaskStatus>,
         pub autonomy_mode: AutonomyMode,
+        pub created_at: String,
     }
 
     // r[proto.get-session]
@@ -647,6 +648,7 @@ pub mod protocol {
         pub task_history: Vec<TaskRecord>,
         pub autonomy_mode: AutonomyMode,
         pub pending_steer: Option<String>,
+        pub created_at: String,
     }
 }
 
@@ -701,6 +703,8 @@ pub mod persistence {
     #[derive(Debug, Clone, facet::Facet)]
     pub struct PersistedSession {
         pub id: SessionId,
+        #[facet(default)]
+        pub created_at: String,
         pub config: SessionConfig,
         pub captain: AgentSnapshot,
         pub mate: AgentSnapshot,

@@ -68,6 +68,7 @@ function makeSession(overrides: Partial<SessionSummary> = {}): SessionSummary {
     current_task_description: "Polish the toolbar",
     task_status: { tag: "Working" },
     autonomy_mode: { tag: "HumanInTheLoop" },
+    created_at: "2026-01-01T00:00:00Z",
     ...overrides,
   };
 }

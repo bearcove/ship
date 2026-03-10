@@ -73,6 +73,7 @@ pub struct PendingEdit {
 #[derive(Debug, Clone)]
 pub struct ActiveSession {
     pub id: SessionId,
+    pub created_at: String,
     pub config: SessionConfig,
     pub worktree_path: Option<PathBuf>,
     pub captain_handle: Option<crate::AgentHandle>,
@@ -136,6 +137,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
 
         let session = ActiveSession {
             id: session_id.clone(),
+            created_at: chrono::Utc::now().to_rfc3339(),
             config: SessionConfig {
                 project: req.project,
                 base_branch: req.base_branch,
@@ -356,6 +358,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                     .map(|task| task.record.description.clone()),
                 task_status: session.current_task.as_ref().map(|task| task.record.status),
                 autonomy_mode: session.config.autonomy_mode,
+                created_at: session.created_at.clone(),
             })
             .collect()
     }
@@ -944,6 +947,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         // r[backend.persistence-contents]
         let persisted = PersistedSession {
             id: session.id.clone(),
+            created_at: session.created_at.clone(),
             config: session.config.clone(),
             captain: session.captain.clone(),
             mate: session.mate.clone(),

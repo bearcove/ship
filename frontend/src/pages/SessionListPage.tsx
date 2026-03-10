@@ -669,6 +669,14 @@ export function SessionListPage() {
                       Mate:
                     </Text>
                     <AgentKindLabel kind={session.mate.kind} />
+                    <Text size="1" color="gray" ml="auto">
+                      {new Date(session.created_at).toLocaleString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })}
+                    </Text>
                   </Flex>
                 </Flex>
               </Card>

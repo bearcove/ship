@@ -49,6 +49,7 @@ impl From<LegacyPersistedSession> for PersistedSession {
     fn from(value: LegacyPersistedSession) -> Self {
         Self {
             id: value.id,
+            created_at: String::new(),
             config: SessionConfig {
                 project: value.config.project,
                 base_branch: value.config.base_branch,
