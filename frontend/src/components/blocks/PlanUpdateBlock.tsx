@@ -66,15 +66,22 @@ export function PlanUpdateBlock({ block }: Props) {
       <ol
         style={{
           margin: 0,
-          padding: "0 0 0 var(--space-4)",
+          padding: 0,
+          paddingInlineStart: "var(--space-5)",
           display: "flex",
           flexDirection: "column",
           gap: "var(--space-1)",
         }}
       >
         {block.steps.map((step, i) => (
-          <li key={i}>
-            <Flex align="center" gap="2" justify="between">
+          <li
+            key={i}
+            style={{
+              fontSize: "var(--font-size-1)",
+              paddingInlineStart: "var(--space-1)",
+            }}
+          >
+            <Flex align="center" gap="2" justify="between" style={{ minWidth: 0, width: "100%" }}>
               <Flex align="center" gap="2" style={{ minWidth: 0 }}>
                 <Text
                   size="1"
