@@ -1,4 +1,4 @@
-import { globalStyle, style } from "@vanilla-extract/css";
+import { globalStyle, keyframes, style } from "@vanilla-extract/css";
 import { monoFontStack } from "./global.css";
 
 export const sessionViewRoot = style({
@@ -304,6 +304,19 @@ export const composerInput = style({
 
 export const composerActions = style({
   flexShrink: 0,
+});
+
+const composerPulse = keyframes({
+  "0%, 100%": { opacity: 1 },
+  "50%": { opacity: 0.3 },
+});
+
+export const composerActivityDot = style({
+  width: 8,
+  height: 8,
+  borderRadius: "50%",
+  background: "var(--accent-9)",
+  animation: `${composerPulse} 1.5s ease-in-out infinite`,
 });
 
 export const fileMentionPopup = style({

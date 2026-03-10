@@ -8,6 +8,7 @@ import {
   attachedImageThumbList,
   attachedImageThumbWrapper,
   composerActions,
+  composerActivityDot,
   composerDropIndicator,
   composerInput,
   composerInputWrapper,
@@ -136,6 +137,7 @@ function getAtMentionQuery(text: string, cursorPos: number): string | null {
 
 // r[ui.keys.steer-send]
 // r[ui.composer.image-attach]
+// r[view.agent-panel.activity]
 export function InlineAgentComposer({
   sessionId,
   role,
@@ -296,10 +298,10 @@ export function InlineAgentComposer({
     const textBefore = text.slice(0, cursorPos);
     const atIndex = textBefore.lastIndexOf("@");
     if (atIndex === -1) return;
-    const newText = text.slice(0, atIndex) + "@" + file + text.slice(cursorPos);
+    const newText = text.slice(0, atIndex) + "@" + file + " " + text.slice(cursorPos);
     setText(newText);
     setMentionQuery(null);
-    const newCursorPos = atIndex + 1 + file.length;
+    const newCursorPos = atIndex + 1 + file.length + 1;
     requestAnimationFrame(() => {
       textarea.setSelectionRange(newCursorPos, newCursorPos);
       textarea.focus();
@@ -347,6 +349,21 @@ export function InlineAgentComposer({
     if (event.key === "Enter" && !event.shiftKey && !event.metaKey && !event.ctrlKey) {
       event.preventDefault();
       void handleSubmit();
+      return;
+    }
+
+    if (event.key === "Escape" && agentStateTag === "Working") {
+      event.preventDefault();
+      void handleCancel();
+    }
+  }
+
+  async function handleCancel() {
+    try {
+      const client = await getShipClient();
+      await client.cancel(sessionId);
+    } catch (err) {
+      console.error("[ship/session] failed to cancel", { sessionId, error: err });
     }
   }
 
@@ -423,6 +440,17 @@ export function InlineAgentComposer({
         }}
       />
       <Flex className={composerActions} align="center" justify="end" gap="2">
+        {agentStateTag === "Working" && (
+          <Flex align="center" gap="1">
+            <div className={composerActivityDot} />
+            <Text size="1" color="gray">
+              Working
+            </Text>
+            <Box asChild style={{ opacity: 0.5, fontSize: "10px", fontFamily: "monospace" }}>
+              <kbd>esc</kbd>
+            </Box>
+          </Flex>
+        )}
         <Button
           size="1"
           variant="ghost"
