@@ -577,6 +577,14 @@ pub mod protocol {
     pub struct McpToolCallResponse {
         pub text: String,
         pub is_error: bool,
+        pub diffs: Vec<McpDiffContent>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct McpDiffContent {
+        pub path: String,
+        pub old_text: Option<String>,
+        pub new_text: String,
     }
 
     // r[proto.close-session]
@@ -729,9 +737,9 @@ pub use persistence::{CurrentTask, PersistedSession, SessionConfig, TaskContentR
 pub use prompt::PromptContentPart;
 pub use protocol::{
     AgentDiscovery, AutonomyMode, CloseSessionRequest, CloseSessionResponse, CreateSessionRequest,
-    CreateSessionResponse, McpEnvVar, McpHeader, McpHttpServerConfig, McpServerConfig,
-    McpSseServerConfig, McpStdioServerConfig, McpToolCallResponse, ProjectInfo, SessionDetail,
-    SessionSummary, SetAgentModelResponse,
+    CreateSessionResponse, McpDiffContent, McpEnvVar, McpHeader, McpHttpServerConfig,
+    McpServerConfig, McpSseServerConfig, McpStdioServerConfig, McpToolCallResponse, ProjectInfo,
+    SessionDetail, SessionSummary, SetAgentModelResponse,
 };
 pub use session::{SessionStartupStage, SessionStartupState};
 pub use structured::{

@@ -23,11 +23,12 @@ use ship_service::{CaptainMcp, CaptainMcpDispatcher, MateMcp, MateMcpDispatcher,
 use ship_types::{
     AgentDiscovery, AgentKind, AgentSnapshot, AgentState, AutonomyMode, BlockId,
     CloseSessionRequest, CloseSessionResponse, ContentBlock, CreateSessionRequest,
-    CreateSessionResponse, CurrentTask, McpServerConfig, McpStdioServerConfig, McpToolCallResponse,
-    PersistedSession, PlanStep, PlanStepPriority, PlanStepStatus, ProjectInfo, ProjectName,
-    PromptContentPart, Role, SessionConfig, SessionDetail, SessionEvent, SessionEventEnvelope,
-    SessionId, SessionStartupStage, SessionStartupState, SessionSummary, SetAgentModelResponse,
-    SubscribeMessage, TaskId, TaskRecord, TaskStatus, ToolCallKind, ToolTarget,
+    CreateSessionResponse, CurrentTask, McpDiffContent, McpServerConfig, McpStdioServerConfig,
+    McpToolCallResponse, PersistedSession, PlanStep, PlanStepPriority, PlanStepStatus, ProjectInfo,
+    ProjectName, PromptContentPart, Role, SessionConfig, SessionDetail, SessionEvent,
+    SessionEventEnvelope, SessionId, SessionStartupStage, SessionStartupState, SessionSummary,
+    SetAgentModelResponse, SubscribeMessage, TaskId, TaskRecord, TaskStatus, ToolCallKind,
+    ToolTarget,
 };
 use tokio::process::Command as TokioCommand;
 use tokio::sync::broadcast;
@@ -2009,95 +2010,157 @@ Here is your task:
         session_id: &SessionId,
         path: String,
         content: String,
-    ) -> Result<String, String> {
-        let relative_path = Self::validate_worktree_path(&path)?.to_path_buf();
+    ) -> McpToolCallResponse {
+        let relative_path = match Self::validate_worktree_path(&path) {
+            Ok(p) => p.to_path_buf(),
+            Err(e) => {
+                return McpToolCallResponse {
+                    text: e,
+                    is_error: true,
+                    diffs: vec![],
+                };
+            }
+        };
         let worktree_path = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
-            let session = sessions
-                .get(session_id)
-                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-            Self::require_mate_plan(session)?;
-            Self::current_task_worktree_path(session)?.to_path_buf()
-        };
-
-        tokio::task::spawn_blocking(move || {
-            let canonical_worktree = fs::canonicalize(&worktree_path).map_err(|error| {
-                format!(
-                    "Failed to resolve worktree path {}: {error}",
-                    worktree_path.display()
-                )
-            })?;
-            let target_path =
-                Self::resolve_worktree_file_path(&canonical_worktree, &relative_path)?;
-
-            if let Ok(metadata) = fs::metadata(&target_path) {
-                if metadata.is_dir() {
-                    return Err("Path is a directory, not a file.".to_owned());
-                }
-            }
-
-            let line_count = if relative_path.extension().and_then(|ext| ext.to_str()) == Some("rs")
-            {
-                let backup_path = if target_path.exists() {
-                    let backup_name = format!(
-                        "{}.ship-backup-{}",
-                        target_path
-                            .file_name()
-                            .and_then(|name| name.to_str())
-                            .ok_or_else(|| "Path must point to a file.".to_owned())?,
-                        std::process::id()
-                    );
-                    let backup = target_path.with_file_name(backup_name);
-                    fs::rename(&target_path, &backup).map_err(|error| {
-                        format!(
-                            "Failed to back up existing file {}: {error}",
-                            relative_path.display()
-                        )
-                    })?;
-                    Some(backup)
-                } else {
-                    None
-                };
-
-                let write_result = Self::write_text_file(&target_path, &content, &relative_path);
-                let line_count = match write_result {
-                    Ok(line_count) => line_count,
-                    Err(error) => {
-                        if let Some(backup) = backup_path.as_deref() {
-                            let _ = fs::rename(backup, &target_path);
-                        }
-                        return Err(error);
-                    }
-                };
-
-                if let Err(error) = Self::validate_rust_file(&target_path, &relative_path) {
-                    let restore_error =
-                        Self::restore_written_file(&target_path, backup_path.as_deref());
-                    return match restore_error {
-                        Ok(()) => Err(error),
-                        Err(restore_error) => Err(format!("{error}\n{restore_error}")),
+            let session = match sessions.get(session_id) {
+                Some(s) => s,
+                None => {
+                    return McpToolCallResponse {
+                        text: format!("session not found: {}", session_id.0),
+                        is_error: true,
+                        diffs: vec![],
                     };
                 }
+            };
+            match Self::require_mate_plan(session) {
+                Ok(()) => {}
+                Err(e) => {
+                    return McpToolCallResponse {
+                        text: e,
+                        is_error: true,
+                        diffs: vec![],
+                    };
+                }
+            }
+            match Self::current_task_worktree_path(session) {
+                Ok(p) => p.to_path_buf(),
+                Err(e) => {
+                    return McpToolCallResponse {
+                        text: e,
+                        is_error: true,
+                        diffs: vec![],
+                    };
+                }
+            }
+        };
 
-                if let Some(backup) = backup_path {
-                    fs::remove_file(&backup).map_err(|error| {
-                        format!("Failed to remove backup file {}: {error}", backup.display())
-                    })?;
+        let result = tokio::task::spawn_blocking({
+            let relative_path = relative_path.clone();
+            move || {
+                let canonical_worktree = fs::canonicalize(&worktree_path).map_err(|error| {
+                    format!(
+                        "Failed to resolve worktree path {}: {error}",
+                        worktree_path.display()
+                    )
+                })?;
+                let target_path =
+                    Self::resolve_worktree_file_path(&canonical_worktree, &relative_path)?;
+
+                if let Ok(metadata) = fs::metadata(&target_path) {
+                    if metadata.is_dir() {
+                        return Err("Path is a directory, not a file.".to_owned());
+                    }
                 }
 
-                line_count
-            } else {
-                Self::write_text_file(&target_path, &content, &relative_path)?
-            };
+                let old_text = fs::read_to_string(&target_path).ok();
 
-            Ok(format!(
-                "Wrote {} ({} lines)",
-                relative_path.display(),
-                line_count
-            ))
+                let line_count = if relative_path.extension().and_then(|ext| ext.to_str())
+                    == Some("rs")
+                {
+                    let backup_path = if target_path.exists() {
+                        let backup_name = format!(
+                            "{}.ship-backup-{}",
+                            target_path
+                                .file_name()
+                                .and_then(|name| name.to_str())
+                                .ok_or_else(|| "Path must point to a file.".to_owned())?,
+                            std::process::id()
+                        );
+                        let backup = target_path.with_file_name(backup_name);
+                        fs::rename(&target_path, &backup).map_err(|error| {
+                            format!(
+                                "Failed to back up existing file {}: {error}",
+                                relative_path.display()
+                            )
+                        })?;
+                        Some(backup)
+                    } else {
+                        None
+                    };
+
+                    let write_result =
+                        Self::write_text_file(&target_path, &content, &relative_path);
+                    let line_count = match write_result {
+                        Ok(line_count) => line_count,
+                        Err(error) => {
+                            if let Some(backup) = backup_path.as_deref() {
+                                let _ = fs::rename(backup, &target_path);
+                            }
+                            return Err(error);
+                        }
+                    };
+
+                    if let Err(error) = Self::validate_rust_file(&target_path, &relative_path) {
+                        let restore_error =
+                            Self::restore_written_file(&target_path, backup_path.as_deref());
+                        return match restore_error {
+                            Ok(()) => Err(error),
+                            Err(restore_error) => Err(format!("{error}\n{restore_error}")),
+                        };
+                    }
+
+                    if let Some(backup) = backup_path {
+                        fs::remove_file(&backup).map_err(|error| {
+                            format!("Failed to remove backup file {}: {error}", backup.display())
+                        })?;
+                    }
+
+                    line_count
+                } else {
+                    Self::write_text_file(&target_path, &content, &relative_path)?
+                };
+
+                let path_str = relative_path.display().to_string();
+                Ok((
+                    format!("Wrote {path_str} ({line_count} lines)"),
+                    McpDiffContent {
+                        path: path_str,
+                        old_text,
+                        new_text: content,
+                    },
+                ))
+            }
         })
-        .await
-        .map_err(|error| format!("write_file task failed: {error}"))?
+        .await;
+
+        match result {
+            Ok(Ok((text, diff))) => McpToolCallResponse {
+                text,
+                is_error: false,
+                diffs: vec![diff],
+            },
+            Ok(Err(text)) => McpToolCallResponse {
+                text,
+                is_error: true,
+                diffs: vec![],
+            },
+            Err(error) => McpToolCallResponse {
+                text: format!("write_file task failed: {error}"),
+                is_error: true,
+                diffs: vec![],
+            },
+        }
     }
 
     // r[mate.tool.edit-prepare]
@@ -2186,28 +2249,57 @@ Here is your task:
         &self,
         session_id: &SessionId,
         edit_id: String,
-    ) -> Result<String, String> {
+    ) -> McpToolCallResponse {
         let (worktree_path, pending_edit) = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
-            let session = sessions
-                .get(session_id)
-                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-            Self::require_mate_plan(session)?;
-            let pending_edit = session
-                .pending_edits
-                .get(&edit_id)
-                .cloned()
-                .ok_or_else(|| {
-                    "edit_id not found. It may have expired or been superseded.".to_owned()
-                })?;
-            (
-                Self::current_task_worktree_path(session)?.to_path_buf(),
-                pending_edit,
-            )
+            let session = match sessions.get(session_id) {
+                Some(s) => s,
+                None => {
+                    return McpToolCallResponse {
+                        text: format!("session not found: {}", session_id.0),
+                        is_error: true,
+                        diffs: vec![],
+                    };
+                }
+            };
+            match Self::require_mate_plan(session) {
+                Ok(()) => {}
+                Err(e) => {
+                    return McpToolCallResponse {
+                        text: e,
+                        is_error: true,
+                        diffs: vec![],
+                    };
+                }
+            }
+            let pending_edit = match session.pending_edits.get(&edit_id).cloned() {
+                Some(e) => e,
+                None => {
+                    return McpToolCallResponse {
+                        text: "edit_id not found. It may have expired or been superseded."
+                            .to_owned(),
+                        is_error: true,
+                        diffs: vec![],
+                    };
+                }
+            };
+            let worktree = match Self::current_task_worktree_path(session) {
+                Ok(p) => p.to_path_buf(),
+                Err(e) => {
+                    return McpToolCallResponse {
+                        text: e,
+                        is_error: true,
+                        diffs: vec![],
+                    };
+                }
+            };
+            (worktree, pending_edit)
         };
 
+        let old_content = pending_edit.old_content.clone();
+        let new_content = pending_edit.new_content.clone();
         let confirmed_path = pending_edit.path.clone();
-        let confirmed = tokio::task::spawn_blocking(move || {
+        let result = tokio::task::spawn_blocking(move || {
             let canonical_worktree = fs::canonicalize(&worktree_path).map_err(|error| {
                 format!(
                     "Failed to resolve worktree path {}: {error}",
@@ -2266,21 +2358,40 @@ Here is your task:
 
             Ok(())
         })
-        .await
-        .map_err(|error| format!("edit_confirm task failed: {error}"))?;
-        confirmed?;
+        .await;
 
-        {
-            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
-            let session = sessions
-                .get_mut(session_id)
-                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-            session
-                .pending_edits
-                .retain(|_, pending| pending.path != confirmed_path);
+        match result {
+            Ok(Ok(())) => {
+                {
+                    let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                    if let Some(session) = sessions.get_mut(session_id) {
+                        session
+                            .pending_edits
+                            .retain(|_, pending| pending.path != confirmed_path);
+                    }
+                }
+                let path_str = confirmed_path.display().to_string();
+                McpToolCallResponse {
+                    text: format!("Applied {edit_id} to {path_str}"),
+                    is_error: false,
+                    diffs: vec![McpDiffContent {
+                        path: path_str,
+                        old_text: Some(old_content),
+                        new_text: new_content,
+                    }],
+                }
+            }
+            Ok(Err(text)) => McpToolCallResponse {
+                text,
+                is_error: true,
+                diffs: vec![],
+            },
+            Err(error) => McpToolCallResponse {
+                text: format!("edit_confirm task failed: {error}"),
+                is_error: true,
+                diffs: vec![],
+            },
         }
-
-        Ok(format!("Applied {edit_id} to {}", confirmed_path.display()))
     }
 
     // r[mate.tool.search-files]
@@ -4170,10 +4281,12 @@ impl CaptainMcpSessionService {
             Ok(text) => McpToolCallResponse {
                 text,
                 is_error: false,
+                diffs: vec![],
             },
             Err(text) => McpToolCallResponse {
                 text,
                 is_error: true,
+                diffs: vec![],
             },
         }
     }
@@ -4238,10 +4351,12 @@ impl MateMcpSessionService {
             Ok(text) => McpToolCallResponse {
                 text,
                 is_error: false,
+                diffs: vec![],
             },
             Err(text) => McpToolCallResponse {
                 text,
                 is_error: true,
+                diffs: vec![],
             },
         }
     }
@@ -4273,11 +4388,9 @@ impl MateMcp for MateMcpSessionService {
 
     // r[mate.tool.write-file]
     async fn write_file(&self, path: String, content: String) -> McpToolCallResponse {
-        Self::response(
-            self.ship
-                .mate_tool_write_file(&self.session_id, path, content)
-                .await,
-        )
+        self.ship
+            .mate_tool_write_file(&self.session_id, path, content)
+            .await
     }
 
     // r[mate.tool.edit-prepare]
@@ -4297,11 +4410,9 @@ impl MateMcp for MateMcpSessionService {
 
     // r[mate.tool.edit-confirm]
     async fn edit_confirm(&self, edit_id: String) -> McpToolCallResponse {
-        Self::response(
-            self.ship
-                .mate_tool_edit_confirm(&self.session_id, edit_id)
-                .await,
-        )
+        self.ship
+            .mate_tool_edit_confirm(&self.session_id, edit_id)
+            .await
     }
 
     // r[mate.tool.search-files]
@@ -4342,6 +4453,7 @@ impl MateMcp for MateMcpSessionService {
             return McpToolCallResponse {
                 text: "step_index is too large".to_owned(),
                 is_error: true,
+                diffs: vec![],
             };
         };
         Self::response(
@@ -4955,11 +5067,12 @@ mod tests {
 
         let write_err = ship
             .mate_tool_write_file(&session_id, "test.txt".to_owned(), "content".to_owned())
-            .await
-            .expect_err("write_file without plan should fail");
+            .await;
+        assert!(write_err.is_error, "write_file without plan should fail");
         assert!(
-            write_err.contains("plan_create"),
-            "error should mention plan_create: {write_err}"
+            write_err.text.contains("plan_create"),
+            "error should mention plan_create: {}",
+            write_err.text
         );
 
         let edit_err = ship
@@ -4979,11 +5092,15 @@ mod tests {
 
         let confirm_err = ship
             .mate_tool_edit_confirm(&session_id, "edit-0".to_owned())
-            .await
-            .expect_err("edit_confirm without plan should fail");
+            .await;
         assert!(
-            confirm_err.contains("plan_create"),
-            "error should mention plan_create: {confirm_err}"
+            confirm_err.is_error,
+            "edit_confirm without plan should fail"
+        );
+        assert!(
+            confirm_err.text.contains("plan_create"),
+            "error should mention plan_create: {}",
+            confirm_err.text
         );
     }
 
@@ -5364,9 +5481,13 @@ and the captain will help you find the right approach."
                 "src/lib.rs".to_owned(),
                 "mod blah;\npub fn main( ) -> u32 {1}\n".to_owned(),
             )
-            .await
-            .expect("valid rust file should be written");
-        assert_eq!(result, "Wrote src/lib.rs (2 lines)");
+            .await;
+        assert!(
+            !result.is_error,
+            "valid rust file should be written: {}",
+            result.text
+        );
+        assert_eq!(result.text, "Wrote src/lib.rs (2 lines)");
         assert_eq!(
             std::fs::read_to_string(project_root.join("src/lib.rs"))
                 .expect("written rust file should exist"),
@@ -5379,9 +5500,13 @@ and the captain will help you find the right approach."
                 "notes/nested/file.txt".to_owned(),
                 "alpha\nbeta\n".to_owned(),
             )
-            .await
-            .expect("nested non-rust write should succeed");
-        assert_eq!(nested, "Wrote notes/nested/file.txt (2 lines)");
+            .await;
+        assert!(
+            !nested.is_error,
+            "nested non-rust write should succeed: {}",
+            nested.text
+        );
+        assert_eq!(nested.text, "Wrote notes/nested/file.txt (2 lines)");
         assert_eq!(
             std::fs::read_to_string(project_root.join("notes/nested/file.txt"))
                 .expect("nested file should exist"),
@@ -5410,9 +5535,9 @@ and the captain will help you find the right approach."
 
         let escaped = ship
             .mate_tool_write_file(&session_id, "../Cargo.toml".to_owned(), "nope".to_owned())
-            .await
-            .expect_err("path escape should be rejected");
-        assert_eq!(escaped, "Path resolves outside the worktree.");
+            .await;
+        assert!(escaped.is_error, "path escape should be rejected");
+        assert_eq!(escaped.text, "Path resolves outside the worktree.");
 
         let absolute = ship
             .mate_tool_write_file(
@@ -5420,9 +5545,9 @@ and the captain will help you find the right approach."
                 project_root.join("src/lib.rs").display().to_string(),
                 "nope".to_owned(),
             )
-            .await
-            .expect_err("absolute path should be rejected");
-        assert_eq!(absolute, "Absolute paths are not allowed.");
+            .await;
+        assert!(absolute.is_error, "absolute path should be rejected");
+        assert_eq!(absolute.text, "Absolute paths are not allowed.");
 
         let invalid = ship
             .mate_tool_write_file(
@@ -5430,11 +5555,12 @@ and the captain will help you find the right approach."
                 "src/lib.rs".to_owned(),
                 "pub fn broken( {\n".to_owned(),
             )
-            .await
-            .expect_err("invalid rust file should be rejected");
+            .await;
+        assert!(invalid.is_error, "invalid rust file should be rejected");
         assert!(
-            invalid.contains("Syntax error in src/lib.rs:"),
-            "unexpected error: {invalid}"
+            invalid.text.contains("Syntax error in src/lib.rs:"),
+            "unexpected error: {}",
+            invalid.text
         );
         assert_eq!(
             std::fs::read_to_string(project_root.join("src/lib.rs"))
@@ -5466,9 +5592,13 @@ and the captain will help you find the right approach."
                 "src/lib.rs".to_owned(),
                 "pub fn unformatted( ) -> u32 {1}\n".to_owned(),
             )
-            .await
-            .expect("write should succeed without rustfmt");
-        assert_eq!(result, "Wrote src/lib.rs (1 lines)");
+            .await;
+        assert!(
+            !result.is_error,
+            "write should succeed without rustfmt: {}",
+            result.text
+        );
+        assert_eq!(result.text, "Wrote src/lib.rs (1 lines)");
         assert_eq!(
             std::fs::read_to_string(project_root.join("src/lib.rs"))
                 .expect("file should still be written"),
@@ -5524,9 +5654,13 @@ and the captain will help you find the right approach."
 
         let confirmed = ship
             .mate_tool_edit_confirm(&session_id, edit_id.clone())
-            .await
-            .expect("edit_confirm should succeed");
-        assert_eq!(confirmed, format!("Applied {edit_id} to src/lib.rs"));
+            .await;
+        assert!(
+            !confirmed.is_error,
+            "edit_confirm should succeed: {}",
+            confirmed.text
+        );
+        assert_eq!(confirmed.text, format!("Applied {edit_id} to src/lib.rs"));
         assert_eq!(
             std::fs::read_to_string(project_root.join("src/lib.rs"))
                 .expect("edited file should exist"),
@@ -5636,18 +5770,19 @@ and the captain will help you find the right approach."
         );
         let second_id = parse_edit_id(&second);
 
-        let old_confirm = ship
-            .mate_tool_edit_confirm(&session_id, first_id)
-            .await
-            .expect_err("superseded edit should be removed");
+        let old_confirm = ship.mate_tool_edit_confirm(&session_id, first_id).await;
+        assert!(old_confirm.is_error, "superseded edit should be removed");
         assert_eq!(
-            old_confirm,
+            old_confirm.text,
             "edit_id not found. It may have expired or been superseded."
         );
 
-        ship.mate_tool_edit_confirm(&session_id, second_id)
-            .await
-            .expect("replace_all confirm should succeed");
+        let replace_all_confirm = ship.mate_tool_edit_confirm(&session_id, second_id).await;
+        assert!(
+            !replace_all_confirm.is_error,
+            "replace_all confirm should succeed: {}",
+            replace_all_confirm.text
+        );
         assert_eq!(
             std::fs::read_to_string(project_root.join("notes.txt"))
                 .expect("edited file should exist"),
@@ -5688,21 +5823,19 @@ and the captain will help you find the right approach."
         std::fs::write(project_root.join("notes.txt"), "alpha\nchanged\n")
             .expect("file mutation should succeed");
 
-        let stale = ship
-            .mate_tool_edit_confirm(&session_id, edit_id)
-            .await
-            .expect_err("stale edit should fail");
+        let stale = ship.mate_tool_edit_confirm(&session_id, edit_id).await;
+        assert!(stale.is_error, "stale edit should fail");
         assert_eq!(
-            stale,
+            stale.text,
             "File has been modified since edit was prepared. Run edit_prepare again."
         );
 
         let unknown = ship
             .mate_tool_edit_confirm(&session_id, "edit-does-not-exist".to_owned())
-            .await
-            .expect_err("unknown edit id should fail");
+            .await;
+        assert!(unknown.is_error, "unknown edit id should fail");
         assert_eq!(
-            unknown,
+            unknown.text,
             "edit_id not found. It may have expired or been superseded."
         );
 
@@ -5738,13 +5871,12 @@ and the captain will help you find the right approach."
             .expect("prepare should succeed");
         let edit_id = parse_edit_id(&prepared);
 
-        let invalid = ship
-            .mate_tool_edit_confirm(&session_id, edit_id)
-            .await
-            .expect_err("invalid rust edit should fail");
+        let invalid = ship.mate_tool_edit_confirm(&session_id, edit_id).await;
+        assert!(invalid.is_error, "invalid rust edit should fail");
         assert!(
-            invalid.contains("Syntax error in src/lib.rs:"),
-            "unexpected error: {invalid}"
+            invalid.text.contains("Syntax error in src/lib.rs:"),
+            "unexpected error: {}",
+            invalid.text
         );
         assert_eq!(
             std::fs::read_to_string(project_root.join("src/lib.rs"))

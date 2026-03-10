@@ -202,6 +202,36 @@ impl ShipAcpClient {
         let raw_input = tool_call.raw_input.as_ref().map(map_json_value);
         let raw_output = tool_call.raw_output.as_ref().map(map_json_value);
 
+        let mut content =
+            map_tool_call_contents(&self.worktree_path, &self.terminals, &tool_call.content);
+
+        // Extract diffs from raw_output (injected by mate MCP server via structured_content)
+        if let Some(raw) = &tool_call.raw_output {
+            if let Some(diffs) = raw.get("diffs").and_then(|v| v.as_array()) {
+                for diff in diffs {
+                    if diff.get("type").and_then(|t| t.as_str()) != Some("diff") {
+                        continue;
+                    }
+                    let Some(path) = diff.get("path").and_then(|p| p.as_str()) else {
+                        continue;
+                    };
+                    let Some(new_text) = diff.get("new_text").and_then(|t| t.as_str()) else {
+                        continue;
+                    };
+                    let old_text = diff
+                        .get("old_text")
+                        .and_then(|t| t.as_str())
+                        .map(String::from);
+                    content.push(ShipToolCallContent::Diff {
+                        path: path.to_owned(),
+                        display_path: display_path_for_string(&self.worktree_path, path),
+                        old_text,
+                        new_text: new_text.to_owned(),
+                    });
+                }
+            }
+        }
+
         ShipContentBlock::ToolCall {
             tool_call_id: Some(tool_call_id),
             tool_name: tool_call.title.clone(),
@@ -221,11 +251,7 @@ impl ShipAcpClient {
             raw_output,
             locations: map_tool_call_locations(&self.worktree_path, &tool_call.locations),
             status: map_tool_status(tool_call.status),
-            content: map_tool_call_contents(
-                &self.worktree_path,
-                &self.terminals,
-                &tool_call.content,
-            ),
+            content,
             error: map_tool_error(tool_call),
         }
     }

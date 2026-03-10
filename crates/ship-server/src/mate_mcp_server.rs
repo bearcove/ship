@@ -11,7 +11,7 @@ use rust_mcp_sdk::schema::{
 use rust_mcp_sdk::{McpServer, StdioTransport, ToMcpServerHandler, TransportOptions};
 use serde_json::{Value, json};
 use ship_service::MateMcpClient;
-use ship_types::SessionId;
+use ship_types::{McpToolCallResponse, SessionId};
 
 pub struct MateMcpServerArgs {
     pub session_id: SessionId,
@@ -229,7 +229,7 @@ impl ServerHandler for MateMcpHandler {
             other => return Err(CallToolError::unknown_tool(other.to_owned())),
         };
 
-        Ok(tool_result(&result.text, result.is_error))
+        Ok(mcp_tool_call_result(&result))
     }
 }
 
@@ -489,6 +489,38 @@ fn tool_result(text: &str, is_error: bool) -> CallToolResult {
         is_error: is_error.then_some(true),
         meta: None,
         structured_content: None,
+    }
+}
+
+fn mcp_tool_call_result(result: &McpToolCallResponse) -> CallToolResult {
+    let structured_content = if result.diffs.is_empty() {
+        None
+    } else {
+        let diffs: Vec<Value> = result
+            .diffs
+            .iter()
+            .map(|d| {
+                let mut obj = json!({
+                    "type": "diff",
+                    "path": d.path,
+                    "new_text": d.new_text,
+                });
+                if let Some(old) = &d.old_text {
+                    obj["old_text"] = json!(old);
+                }
+                obj
+            })
+            .collect();
+        let mut map = serde_json::Map::new();
+        map.insert("diffs".to_owned(), Value::Array(diffs));
+        Some(map)
+    };
+
+    CallToolResult {
+        content: vec![TextContent::from(result.text.clone()).into()],
+        is_error: result.is_error.then_some(true),
+        meta: None,
+        structured_content,
     }
 }
 
