@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use agent_client_protocol::{
@@ -29,17 +29,25 @@ type ReadyResult = Result<ModelInfo, String>;
 struct AcpHandle {
     command_tx: mpsc::UnboundedSender<DriverCommand>,
     notifications_rx: Arc<Mutex<mpsc::UnboundedReceiver<SessionEvent>>>,
-    prompt_in_flight: Arc<AtomicBool>,
+    /// Generation counter for prompt-in-flight tracking.
+    /// Odd = prompt in flight, even = idle.
+    /// A prompt sets it to the next odd value; completion restores it to
+    /// the next even value only if the generation hasn't changed (i.e.,
+    /// no cancel+new-prompt happened in between).
+    prompt_generation: Arc<AtomicU64>,
     worker_thread: Option<std::thread::JoinHandle<()>>,
 }
 
 enum DriverCommand {
     Prompt {
         parts: Vec<ship_types::PromptContentPart>,
-        prompt_in_flight: Arc<AtomicBool>,
+        prompt_generation: Arc<AtomicU64>,
+        /// The generation value when this prompt was started.
+        started_at_generation: u64,
         response: oneshot::Sender<Result<PromptResponse, AgentError>>,
     },
     Cancel {
+        prompt_generation: Arc<AtomicU64>,
         response: oneshot::Sender<Result<(), AgentError>>,
     },
     ResolvePermission {
@@ -113,7 +121,6 @@ impl AgentDriver for AcpAgentDriver {
 
         match ready_rx.await {
             Ok(Ok((model_id, available_models))) => {
-                let prompt_in_flight = Arc::new(AtomicBool::new(false));
                 self.handles
                     .lock()
                     .expect("acp handles mutex poisoned")
@@ -122,7 +129,7 @@ impl AgentDriver for AcpAgentDriver {
                         AcpHandle {
                             command_tx,
                             notifications_rx: Arc::new(Mutex::new(notifications_rx)),
-                            prompt_in_flight,
+                            prompt_generation: Arc::new(AtomicU64::new(0)),
                             worker_thread: Some(worker_thread),
                         },
                     );
@@ -140,15 +147,27 @@ impl AgentDriver for AcpAgentDriver {
         handle: &AgentHandle,
         parts: &[ship_types::PromptContentPart],
     ) -> Result<PromptResponse, AgentError> {
-        let (command_tx, prompt_in_flight) = {
+        let (command_tx, prompt_generation) = {
             let handles = self.handles.lock().expect("acp handles mutex poisoned");
             let acp = handles.get(handle).ok_or_else(|| AgentError {
                 message: "agent handle not found".to_owned(),
             })?;
-            (acp.command_tx.clone(), acp.prompt_in_flight.clone())
+            (acp.command_tx.clone(), acp.prompt_generation.clone())
         };
 
-        if prompt_in_flight.swap(true, Ordering::SeqCst) {
+        // Try to move from even (idle) to odd (in-flight).
+        // If the current value is already odd, a prompt is in flight.
+        let current = prompt_generation.load(Ordering::SeqCst);
+        if current % 2 != 0 {
+            return Err(AgentError {
+                message: "prompt already in flight".to_owned(),
+            });
+        }
+        let started_at = current + 1;
+        if prompt_generation
+            .compare_exchange(current, started_at, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
             return Err(AgentError {
                 message: "prompt already in flight".to_owned(),
             });
@@ -158,18 +177,30 @@ impl AgentDriver for AcpAgentDriver {
         command_tx
             .send(DriverCommand::Prompt {
                 parts: parts.to_owned(),
-                prompt_in_flight: prompt_in_flight.clone(),
+                prompt_generation: prompt_generation.clone(),
+                started_at_generation: started_at,
                 response: response_tx,
             })
             .map_err(|error| {
-                prompt_in_flight.store(false, Ordering::SeqCst);
+                // Restore to idle only if we're still the active prompt
+                let _ = prompt_generation.compare_exchange(
+                    started_at,
+                    started_at + 1,
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
+                );
                 AgentError {
                     message: format!("failed to send prompt command: {error}"),
                 }
             })?;
 
         response_rx.await.map_err(|error| {
-            prompt_in_flight.store(false, Ordering::SeqCst);
+            let _ = prompt_generation.compare_exchange(
+                started_at,
+                started_at + 1,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            );
             AgentError {
                 message: format!("prompt response channel closed: {error}"),
             }
@@ -177,20 +208,18 @@ impl AgentDriver for AcpAgentDriver {
     }
 
     async fn cancel(&self, handle: &AgentHandle) -> Result<(), AgentError> {
-        let command_tx = {
+        let (command_tx, prompt_generation) = {
             let handles = self.handles.lock().expect("acp handles mutex poisoned");
-            handles
-                .get(handle)
-                .ok_or_else(|| AgentError {
-                    message: "agent handle not found".to_owned(),
-                })?
-                .command_tx
-                .clone()
+            let acp = handles.get(handle).ok_or_else(|| AgentError {
+                message: "agent handle not found".to_owned(),
+            })?;
+            (acp.command_tx.clone(), acp.prompt_generation.clone())
         };
 
         let (response_tx, response_rx) = oneshot::channel();
         command_tx
             .send(DriverCommand::Cancel {
+                prompt_generation,
                 response: response_tx,
             })
             .map_err(|error| AgentError {
@@ -414,7 +443,8 @@ async fn run_acp_worker(
         match command {
             DriverCommand::Prompt {
                 parts,
-                prompt_in_flight,
+                prompt_generation,
+                started_at_generation,
                 response,
             } => {
                 client.begin_prompt_turn();
@@ -427,16 +457,35 @@ async fn run_acp_worker(
                         .await
                         .map(map_prompt_response)
                         .map_err(acp_error);
-                    prompt_in_flight.store(false, Ordering::SeqCst);
+                    // Only clear the in-flight state if no cancel+new-prompt
+                    // happened since we started. compare_exchange ensures a
+                    // newer prompt's generation is not clobbered.
+                    let _ = prompt_generation.compare_exchange(
+                        started_at_generation,
+                        started_at_generation + 1,
+                        Ordering::SeqCst,
+                        Ordering::SeqCst,
+                    );
                     let _ = response.send(result);
                 });
             }
-            DriverCommand::Cancel { response } => {
+            DriverCommand::Cancel {
+                prompt_generation,
+                response,
+            } => {
                 let result = connection
                     .cancel(CancelNotification::new(session_id.clone()))
                     .await
                     .map_err(acp_error)
                     .map(|_| ());
+                // Advance to the next even (idle) generation so a new
+                // prompt can start immediately. The old prompt's completion
+                // handler uses compare_exchange with the old generation,
+                // so it won't interfere with the new prompt.
+                let current = prompt_generation.load(Ordering::SeqCst);
+                if current % 2 != 0 {
+                    prompt_generation.store(current + 1, Ordering::SeqCst);
+                }
                 let _ = response.send(result);
             }
             DriverCommand::ResolvePermission {
@@ -557,7 +606,7 @@ fn acp_error(error: Error) -> AgentError {
 mod tests {
     use std::collections::HashMap;
     use std::path::{Path, PathBuf};
-    use std::sync::atomic::AtomicBool;
+    use std::sync::atomic::AtomicU64;
     use std::sync::{Arc, Mutex};
 
     use agent_client_protocol::{ClientCapabilities, McpServer};
@@ -720,7 +769,7 @@ mod tests {
                 AcpHandle {
                     command_tx,
                     notifications_rx: Arc::new(Mutex::new(notifications_rx)),
-                    prompt_in_flight: Arc::new(AtomicBool::new(true)),
+                    prompt_generation: Arc::new(AtomicU64::new(1)),
                     worker_thread: None,
                 },
             )])),

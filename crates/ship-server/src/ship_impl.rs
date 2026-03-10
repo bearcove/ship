@@ -2424,10 +2424,7 @@ Here is your task:
         let this = self.clone();
         let session_id = session_id.clone();
         tokio::spawn(async move {
-            if let Err(error) = this
-                .prompt_agent_text(&session_id, Role::Captain, message)
-                .await
-            {
+            if let Err(error) = this.interrupt_captain(&session_id, message).await {
                 Self::log_error("notify_captain_progress", &error);
             }
         });
@@ -2492,10 +2489,7 @@ Here is your task:
         let this = self.clone();
         let session_id = session_id.clone();
         tokio::spawn(async move {
-            if let Err(error) = this
-                .prompt_agent_text(&session_id, Role::Captain, injected)
-                .await
-            {
+            if let Err(error) = this.interrupt_captain(&session_id, injected).await {
                 Self::log_error("mate_send_update prompt_captain", &error);
             }
         });
@@ -2668,10 +2662,7 @@ Here is your task:
         let this = self.clone();
         let session_id_clone = session_id.clone();
         tokio::spawn(async move {
-            if let Err(error) = this
-                .prompt_agent_text(&session_id_clone, Role::Captain, injected)
-                .await
-            {
+            if let Err(error) = this.interrupt_captain(&session_id_clone, injected).await {
                 Self::log_error("mate_ask_captain prompt_captain", &error);
             }
         });
@@ -2736,10 +2727,7 @@ Here is your task:
         let this = self.clone();
         let session_id_clone = session_id.clone();
         tokio::spawn(async move {
-            if let Err(error) = this
-                .prompt_agent_text(&session_id_clone, Role::Captain, injected)
-                .await
-            {
+            if let Err(error) = this.interrupt_captain(&session_id_clone, injected).await {
                 Self::log_error("mate_submit prompt_captain", &error);
             }
         });
@@ -3230,6 +3218,43 @@ Here is your task:
             .await
     }
 
+    /// Interrupt the captain (cancel any in-flight prompt) and then send a
+    /// new prompt. This is the right thing to do when the mate submits,
+    /// asks a question, or sends an update — the captain needs to stop what
+    /// it's doing and deal with the new information.
+    async fn interrupt_captain(
+        &self,
+        session_id: &SessionId,
+        text: String,
+    ) -> Result<ship_core::StopReason, String> {
+        self.interrupt_captain_with_parts(session_id, vec![PromptContentPart::Text { text }])
+            .await
+    }
+
+    async fn interrupt_captain_with_parts(
+        &self,
+        session_id: &SessionId,
+        parts: Vec<PromptContentPart>,
+    ) -> Result<ship_core::StopReason, String> {
+        let handle = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions
+                .get(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            session
+                .captain_handle
+                .clone()
+                .ok_or_else(|| "captain agent not ready".to_owned())?
+        };
+
+        // Cancel any in-flight prompt — this makes the current prompt()
+        // call return with StopReason::Cancelled, which resets the
+        // prompt_in_flight flag.
+        let _ = self.agent_driver.cancel(&handle).await;
+
+        self.prompt_agent(session_id, Role::Captain, parts).await
+    }
+
     async fn prompt_agent(
         &self,
         session_id: &SessionId,
@@ -3488,10 +3513,7 @@ Here is your task:
         let this = self.clone();
         let session_id_clone = session_id.clone();
         tokio::spawn(async move {
-            if let Err(error) = this
-                .prompt_agent_text(&session_id_clone, Role::Captain, injected)
-                .await
-            {
+            if let Err(error) = this.interrupt_captain(&session_id_clone, injected).await {
                 Self::log_error("force_mate_submit prompt_captain", &error);
             }
         });
@@ -3810,7 +3832,7 @@ impl Ship for ShipImpl {
 
         let this = self.clone();
         tokio::spawn(async move {
-            if let Err(error) = this.prompt_agent(&session, Role::Captain, parts).await {
+            if let Err(error) = this.interrupt_captain_with_parts(&session, parts).await {
                 Self::log_error("prompt_captain", &error);
             }
         });
