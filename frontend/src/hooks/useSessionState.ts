@@ -449,7 +449,7 @@ export function destroySubscription(sessionId: string) {
 
 /** Tear down all subscriptions (e.g., for tests). */
 export function destroyAllSubscriptions() {
-  for (const sessionId of [...subscriptions.keys()]) {
+  for (const sessionId of subscriptions.keys()) {
     destroySubscription(sessionId);
   }
 }
