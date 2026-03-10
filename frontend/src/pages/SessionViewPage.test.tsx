@@ -4,10 +4,12 @@ import { describe, expect, it, beforeEach, vi } from "vitest";
 import type { SessionDetail } from "../generated/ship";
 import { SoundProvider } from "../context/SoundContext";
 import { renderWithTheme } from "../test/render";
+import { agentRail, sessionFeedColumn, unifiedFeedRoot } from "../styles/session-view.css";
 import { SessionViewPage } from "./SessionViewPage";
 
 const mocks = vi.hoisted(() => ({
   session: null as SessionDetail | null,
+  sessionError: null as string | null,
   eventState: {
     captain: null,
     mate: null,
@@ -15,13 +17,15 @@ const mocks = vi.hoisted(() => ({
     currentTaskTitle: null,
     currentTaskDescription: null,
     currentTaskStatus: null,
-    captainBlocks: { blocks: [] },
-    mateBlocks: { blocks: [] },
+    captainBlocks: { blocks: [], index: new Map() },
+    mateBlocks: { blocks: [], index: new Map() },
+    unifiedBlocks: { blocks: [], index: new Map() },
     startupState: null,
     phase: "live" as const,
     connected: true,
     disconnectReason: null,
     replayEventCount: 0,
+    eventCount: 0,
     connectionAttempt: 1,
     lastSeq: null,
     lastEventKind: null,
@@ -31,7 +35,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../hooks/useSession", () => ({
-  useSession: () => mocks.session,
+  useSession: () => ({ session: mocks.session, error: mocks.sessionError }),
 }));
 
 vi.mock("../hooks/useSessionState", () => ({
@@ -111,8 +115,38 @@ function renderPage() {
   );
 }
 
+async function getStylesSource(): Promise<string> {
+  const response = await fetch(new URL("../styles/session-view.css.ts?raw", import.meta.url));
+  if (!response.ok) {
+    throw new Error(`Unable to load session styles source: ${response.status}`);
+  }
+
+  const source = await response.text();
+  if (!source.startsWith("export default ")) {
+    return source;
+  }
+
+  const encodedSource = source.slice("export default ".length).replace(/;\s*$/, "");
+  return JSON.parse(encodedSource) as string;
+}
+
+function extractStyleBlock(source: string, start: string, end: string): string {
+  const startIndex = source.indexOf(start);
+  if (startIndex === -1) {
+    throw new Error(`Missing style block start: ${start}`);
+  }
+
+  const endIndex = source.indexOf(end, startIndex);
+  if (endIndex === -1) {
+    throw new Error(`Missing style block end: ${end}`);
+  }
+
+  return source.slice(startIndex, endIndex);
+}
+
 beforeEach(() => {
   mocks.session = makeSession();
+  mocks.sessionError = null;
   mocks.eventState = {
     captain: null,
     mate: null,
@@ -120,13 +154,15 @@ beforeEach(() => {
     currentTaskTitle: null,
     currentTaskDescription: null,
     currentTaskStatus: null,
-    captainBlocks: { blocks: [] },
-    mateBlocks: { blocks: [] },
+    captainBlocks: { blocks: [], index: new Map() },
+    mateBlocks: { blocks: [], index: new Map() },
+    unifiedBlocks: { blocks: [], index: new Map() },
     startupState: null,
     phase: "live",
     connected: true,
     disconnectReason: null,
     replayEventCount: 0,
+    eventCount: 0,
     connectionAttempt: 1,
     lastSeq: null,
     lastEventKind: null,
@@ -143,23 +179,57 @@ describe("SessionViewPage UX slice", () => {
   it("renders session view with agent panels", () => {
     renderPage();
 
-    expect(screen.getAllByLabelText("Captain steer input").length).toBeGreaterThan(0);
-    expect(screen.getAllByLabelText("Mate steer input").length).toBeGreaterThan(0);
+    expect(screen.getByLabelText("Steer input")).toBeInTheDocument();
+    expect(screen.getByText("Captain working")).toBeInTheDocument();
+    expect(screen.getByText("Mate")).toBeInTheDocument();
+  });
+
+  // r[verify ui.layout.session-view]
+  it("uses a single desktop divider between the feed column and the agent rail", async () => {
+    renderPage();
+
+    const stylesSource = await getStylesSource();
+    const sessionFeedColumnBlock = extractStyleBlock(
+      stylesSource,
+      "export const sessionFeedColumn = style({",
+      "// Three-column app layout",
+    );
+    const agentRailBlock = extractStyleBlock(
+      stylesSource,
+      "export const agentRail = style({",
+      "export const agentHeader = style({",
+    );
+    const unifiedFeedRootBlock = extractStyleBlock(
+      stylesSource,
+      "export const unifiedFeedRoot = style({",
+      "export const unifiedFeedScroll = style({",
+    );
+
+    expect(document.querySelector(`.${sessionFeedColumn}`)).toBeInTheDocument();
+    expect(document.querySelector(`.${agentRail}`)).toBeInTheDocument();
+    expect(document.querySelector(`.${unifiedFeedRoot}`)).toBeInTheDocument();
+    expect(sessionFeedColumnBlock).toContain('borderRight: "1px solid var(--gray-a5)"');
+    expect(agentRailBlock).not.toContain("borderLeft");
+    expect(unifiedFeedRootBlock).not.toContain("borderRight");
   });
 
   // r[verify view.agent-panel.state]
   // r[verify ui.keys.steer-send]
   it("submits captain and mate inline steering from the feed footer with Enter", async () => {
+    mocks.session = {
+      ...makeSession(),
+      captain: {
+        ...makeSession().captain,
+        state: { tag: "Idle" },
+      },
+    };
+
     renderPage();
 
-    expect(screen.queryByText("Claude")).not.toBeInTheDocument();
-    expect(screen.queryByText("Codex")).not.toBeInTheDocument();
+    const input = screen.getByLabelText("Steer input");
 
-    const captainInput = screen.getAllByLabelText("Captain steer input")[0];
-    const mateInput = screen.getAllByLabelText("Mate steer input")[0];
-
-    fireEvent.change(captainInput, { target: { value: "Ask the captain to tighten the review." } });
-    fireEvent.keyDown(captainInput, { key: "Enter" });
+    fireEvent.change(input, { target: { value: "Ask the captain to tighten the review." } });
+    fireEvent.keyDown(input, { key: "Enter" });
 
     await waitFor(() => {
       expect(mocks.promptCaptain).toHaveBeenCalledWith("session-1", [
@@ -167,8 +237,8 @@ describe("SessionViewPage UX slice", () => {
       ]);
     });
 
-    fireEvent.change(mateInput, { target: { value: "Apply the captain notes directly." } });
-    fireEvent.keyDown(mateInput, { key: "Enter" });
+    fireEvent.change(input, { target: { value: "@mate Apply the captain notes directly." } });
+    fireEvent.keyDown(input, { key: "Enter" });
 
     await waitFor(() => {
       expect(mocks.steer).toHaveBeenCalledWith("session-1", [
