@@ -19,6 +19,7 @@ import {
   agentHeaderPickerStatic,
   agentHeaderPickerText,
   agentHeaderPickerTextGrow,
+  agentHeaderPickerTrigger,
   agentHeaderRole,
   agentHeaderSlash,
   agentHeaderSummaryRow,
@@ -77,33 +78,33 @@ export function AgentHeader({ sessionId, agent, avatarSrc }: Props) {
   if (agent.model_id !== null && agent.available_models.length > 1 && parsed.hasSplit) {
     modelControls = (
       <Flex className={agentHeaderControlRow}>
-        <Box className={agentHeaderPickerTextGrow}>
-          <DropdownMenu.Root>
-            <DropdownMenu.Trigger>
-              <Text size="1" color="gray" className={agentHeaderPickerText}>
-                {parsed.current?.model ?? agent.model_id}
-              </Text>
-            </DropdownMenu.Trigger>
-            <DropdownMenu.Content size="1">
-              {parsed.models.map((model) => (
-                <DropdownMenu.Item
-                  key={model}
-                  onSelect={() => handleSelectModelName(model)}
-                  style={model === parsed.current?.model ? { fontWeight: "bold" } : undefined}
-                >
-                  {model}
-                </DropdownMenu.Item>
-              ))}
-            </DropdownMenu.Content>
-          </DropdownMenu.Root>
-        </Box>
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger
+            className={`${agentHeaderPickerTrigger} ${agentHeaderPickerTextGrow}`}
+          >
+            <Text size="1" color="gray" className={agentHeaderPickerText}>
+              {parsed.current?.model ?? agent.model_id}
+            </Text>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Content size="1">
+            {parsed.models.map((model) => (
+              <DropdownMenu.Item
+                key={model}
+                onSelect={() => handleSelectModelName(model)}
+                style={model === parsed.current?.model ? { fontWeight: "bold" } : undefined}
+              >
+                {model}
+              </DropdownMenu.Item>
+            ))}
+          </DropdownMenu.Content>
+        </DropdownMenu.Root>
         {parsed.current?.effort && (
           <>
             <Text size="1" color="gray" className={agentHeaderSlash}>
               /
             </Text>
             <DropdownMenu.Root>
-              <DropdownMenu.Trigger>
+              <DropdownMenu.Trigger className={agentHeaderPickerTrigger}>
                 <Text size="1" color="gray" className={agentHeaderPickerText}>
                   {parsed.current.effort}
                 </Text>
@@ -127,26 +128,26 @@ export function AgentHeader({ sessionId, agent, avatarSrc }: Props) {
   } else if (agent.model_id !== null && agent.available_models.length > 1) {
     modelControls = (
       <Flex className={agentHeaderControlRow}>
-        <Box className={agentHeaderPickerTextGrow}>
-          <DropdownMenu.Root>
-            <DropdownMenu.Trigger>
-              <Text size="1" color="gray" className={agentHeaderPickerText}>
-                {agent.model_id}
-              </Text>
-            </DropdownMenu.Trigger>
-            <DropdownMenu.Content size="1">
-              {agent.available_models.map((modelId) => (
-                <DropdownMenu.Item
-                  key={modelId}
-                  onSelect={() => handleSelectModel(modelId)}
-                  style={modelId === agent.model_id ? { fontWeight: "bold" } : undefined}
-                >
-                  {modelId}
-                </DropdownMenu.Item>
-              ))}
-            </DropdownMenu.Content>
-          </DropdownMenu.Root>
-        </Box>
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger
+            className={`${agentHeaderPickerTrigger} ${agentHeaderPickerTextGrow}`}
+          >
+            <Text size="1" color="gray" className={agentHeaderPickerText}>
+              {agent.model_id}
+            </Text>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Content size="1">
+            {agent.available_models.map((modelId) => (
+              <DropdownMenu.Item
+                key={modelId}
+                onSelect={() => handleSelectModel(modelId)}
+                style={modelId === agent.model_id ? { fontWeight: "bold" } : undefined}
+              >
+                {modelId}
+              </DropdownMenu.Item>
+            ))}
+          </DropdownMenu.Content>
+        </DropdownMenu.Root>
       </Flex>
     );
   } else if (agent.model_id !== null) {

@@ -404,6 +404,7 @@ export const agentHeaderSummaryRow = style({
   alignItems: "center",
   gap: "var(--space-2)",
   minWidth: 0,
+  overflow: "hidden",
 });
 
 export const agentHeaderRole = style({
@@ -419,11 +420,26 @@ export const agentHeaderControlRow = style({
   alignItems: "center",
   gap: "4px",
   minWidth: 0,
+  overflow: "hidden",
   whiteSpace: "nowrap",
+});
+
+export const agentHeaderPickerTrigger = style({
+  display: "block",
+  minWidth: 0,
+  maxWidth: "100%",
+  padding: 0,
+  border: "none",
+  background: "transparent",
+  color: "inherit",
+  font: "inherit",
+  textAlign: "left",
+  cursor: "pointer",
 });
 
 export const agentHeaderPickerText = style({
   display: "block",
+  width: "100%",
   minWidth: 0,
   overflow: "hidden",
   textOverflow: "ellipsis",
