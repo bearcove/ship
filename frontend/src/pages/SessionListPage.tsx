@@ -16,7 +16,7 @@ import {
 } from "@radix-ui/themes";
 import { CaretDown, Plus, WarningCircle } from "@phosphor-icons/react";
 import { useProjects } from "../hooks/useProjects";
-import { useSessionList } from "../hooks/useSessionList";
+import { refreshSessionList, useSessionList } from "../hooks/useSessionList";
 import { useAgentDiscovery } from "../hooks/useAgentDiscovery";
 import { useBranches } from "../hooks/useBranches";
 import {
@@ -344,6 +344,7 @@ export function NewSessionDialog({
         setCreateError(result.message);
         return;
       }
+      await refreshSessionList();
       onOpenChange(false);
       navigate(`/sessions/${result.session_id}`);
     } finally {

@@ -12,6 +12,7 @@ import { SessionListPage } from "./SessionListPage";
 
 const mocks = vi.hoisted(() => ({
   createSession: vi.fn<() => Promise<CreateSessionResponse>>(),
+  refreshSessionList: vi.fn<() => Promise<SessionSummary[]>>(),
   addProject: vi.fn(),
   projects: [] as ProjectInfo[],
   sessions: [] as SessionSummary[],
@@ -31,6 +32,7 @@ vi.mock("../hooks/useProjects", () => ({
 }));
 
 vi.mock("../hooks/useSessionList", () => ({
+  refreshSessionList: mocks.refreshSessionList,
   useSessionList: (projectFilter?: string) =>
     projectFilter
       ? mocks.sessions.filter((session) => session.project === projectFilter)
@@ -83,6 +85,7 @@ function renderPage(entry = "/") {
 
 beforeEach(() => {
   mocks.createSession.mockReset();
+  mocks.refreshSessionList.mockReset();
   mocks.addProject.mockReset();
   mocks.projects = [
     { name: "ship", path: "/tmp/ship", valid: true, invalid_reason: null },
@@ -94,6 +97,7 @@ beforeEach(() => {
     ship: ["main", "release/2026.03"],
     roam: ["main"],
   };
+  mocks.refreshSessionList.mockImplementation(async () => mocks.sessions);
   mocks.createSession.mockResolvedValue({
     tag: "Created",
     session_id: "session-created",
@@ -127,9 +131,7 @@ describe("SessionListPage UX slice", () => {
   it("renders one filtered empty-state message without overlapping copy", () => {
     renderPage("/?project=ship");
 
-    expect(
-      screen.getByText("No sessions in ship yet. Start one for this project."),
-    ).toBeInTheDocument();
+    expect(screen.getByText("No sessions in ship yet.")).toBeInTheDocument();
     expect(screen.queryByText(/No sessions yet\./)).not.toBeInTheDocument();
     expect(screen.queryByText("No sessions in ship.")).not.toBeInTheDocument();
   });
@@ -160,6 +162,10 @@ describe("SessionListPage UX slice", () => {
         base_branch: "release/2026.03",
         mcp_servers: null,
       });
+    });
+
+    await waitFor(() => {
+      expect(mocks.refreshSessionList).toHaveBeenCalledTimes(1);
     });
 
     await screen.findByText("Session view");

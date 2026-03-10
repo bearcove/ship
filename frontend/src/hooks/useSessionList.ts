@@ -2,25 +2,68 @@ import { useEffect, useState } from "react";
 import { getShipClient } from "../api/client";
 import type { SessionSummary } from "../generated/ship";
 
+type SessionListListener = (sessions: SessionSummary[]) => void;
+
+let cachedSessions: SessionSummary[] = [];
+let hasFetchedSessionList = false;
+let pendingRefresh: Promise<SessionSummary[]> | null = null;
+const sessionListListeners = new Set<SessionListListener>();
+
+function publishSessionList(list: SessionSummary[]) {
+  cachedSessions = list;
+  hasFetchedSessionList = true;
+
+  for (const listener of sessionListListeners) {
+    listener(list);
+  }
+}
+
+export async function refreshSessionList(): Promise<SessionSummary[]> {
+  if (pendingRefresh) {
+    return pendingRefresh;
+  }
+
+  pendingRefresh = (async () => {
+    const client = await getShipClient();
+    const list = await client.listSessions();
+    publishSessionList(list);
+    return list;
+  })().finally(() => {
+    pendingRefresh = null;
+  });
+
+  return pendingRefresh;
+}
+
 // r[proto.list-sessions]
 export function useSessionList(projectFilter?: string): SessionSummary[] {
-  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [sessions, setSessions] = useState<SessionSummary[]>(cachedSessions);
 
   useEffect(() => {
     let active = true;
 
-    async function fetchSessions() {
-      const client = await getShipClient();
-      const list = await client.listSessions();
-      if (active) setSessions(list);
+    function handleSessionList(list: SessionSummary[]) {
+      if (active) {
+        setSessions(list);
+      }
     }
 
-    fetchSessions();
+    sessionListListeners.add(handleSessionList);
+    handleSessionList(cachedSessions);
 
-    window.addEventListener("focus", fetchSessions);
+    if (!hasFetchedSessionList) {
+      void refreshSessionList();
+    }
+
+    function handleFocus() {
+      void refreshSessionList();
+    }
+
+    window.addEventListener("focus", handleFocus);
     return () => {
       active = false;
-      window.removeEventListener("focus", fetchSessions);
+      sessionListListeners.delete(handleSessionList);
+      window.removeEventListener("focus", handleFocus);
     };
   }, []);
 
