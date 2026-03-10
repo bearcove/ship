@@ -10,8 +10,8 @@ import { SteerReview } from "../components/SteerReview";
 import {
   agentRail,
   mobileNavBar,
+  sessionFeedColumn,
   sessionViewRoot,
-  unifiedFeedRoot,
 } from "../styles/session-view.css";
 import { AgentHeader } from "../components/AgentHeader";
 import captainAvatar from "../assets/avatars/captain.png";
@@ -120,7 +120,7 @@ export function SessionViewPage({
       </Box>
 
       <Flex style={{ flex: 1, overflow: "hidden", minHeight: 0 }}>
-        <Box className={unifiedFeedRoot} style={{ flex: 1 }}>
+        <Box className={sessionFeedColumn}>
           <UnifiedFeed
             sessionId={session.id}
             captain={captain}

@@ -8,7 +8,6 @@ export const unifiedFeedRoot = style({
   flexDirection: "column",
   height: "100%",
   overflow: "hidden",
-  borderRight: "1px solid var(--gray-a4)",
 });
 
 export const unifiedFeedScroll = style({
@@ -214,6 +213,16 @@ export const sessionViewRoot = style({
   overflow: "hidden",
 });
 
+export const sessionFeedColumn = style({
+  flex: 1,
+  minWidth: 0,
+  display: "flex",
+  flexDirection: "column",
+  height: "100%",
+  overflow: "hidden",
+  borderRight: "1px solid var(--gray-a5)",
+});
+
 // Three-column app layout: [left: sidebar floats right] [center: 720px] [right: empty]
 export const appColumns = style({
   display: "flex",
@@ -336,7 +345,6 @@ export const agentPanelScrollArea = style({
 export const agentRail = style({
   width: 220,
   flexShrink: 0,
-  borderLeft: "1px solid var(--gray-a4)",
   overflowY: "auto",
   display: "flex",
   flexDirection: "column",
