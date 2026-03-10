@@ -2880,54 +2880,41 @@ Here is your task:
         }
 
         let plan = Self::build_plan_steps(steps);
-        let (task_description, captain_message, commit_summary) = {
-            let (task_description, worktree_path) = {
-                let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
-                let session = sessions
-                    .get_mut(session_id)
-                    .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-                let task_description = {
-                    let task = session
-                        .current_task
-                        .as_mut()
-                        .ok_or_else(|| "session has no active task".to_owned())?;
-                    task.mate_plan = Some(plan.clone());
-                    task.pending_mate_guidance = None;
-                    task.record.description.clone()
-                };
-                set_agent_state(
-                    session,
-                    Role::Mate,
-                    AgentState::Working {
-                        plan: Some(plan.clone()),
-                        activity: Some("Ship plan created".to_owned()),
-                    },
-                );
-                (
-                    task_description,
-                    Self::current_task_worktree_path(session)?.to_path_buf(),
-                )
+        let (task_description, captain_message) = {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions
+                .get_mut(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            let task_description = {
+                let task = session
+                    .current_task
+                    .as_mut()
+                    .ok_or_else(|| "session has no active task".to_owned())?;
+                task.mate_plan = Some(plan.clone());
+                task.pending_mate_guidance = None;
+                task.record.description.clone()
             };
-
-            self.persist_session(session_id).await?;
-
-            let commit =
-                Self::auto_commit_worktree(&worktree_path, format!("plan: {}", task_description))
-                    .await?;
-            let commit_summary = Self::commit_summary(commit.as_ref());
+            set_agent_state(
+                session,
+                Role::Mate,
+                AgentState::Working {
+                    plan: Some(plan.clone()),
+                    activity: Some("Ship plan created".to_owned()),
+                },
+            );
             let captain_message = format!(
                 "The mate has created their plan.\n\n{}\n\nWe will keep you posted as they progress. You have nothing to do now.",
                 Self::format_plan_status(&plan),
             );
-            (task_description, captain_message, commit_summary)
+            (task_description, captain_message)
         };
+
+        self.persist_session(session_id).await?;
 
         self.notify_captain_progress(session_id, captain_message)
             .await?;
 
-        Ok(format!(
-            "Plan created for task '{task_description}'. {commit_summary}"
-        ))
+        Ok(format!("Plan created for task '{task_description}'."))
     }
 
     // r[mate.tool.plan-step-complete]

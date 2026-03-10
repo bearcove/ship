@@ -458,7 +458,7 @@ fn tool_definitions() -> Vec<ToolDefinition> {
         },
         ToolDefinition {
             name: "plan_create",
-            description: "Create the Ship-owned work plan before starting implementation. Auto-commits pending changes and notifies the captain asynchronously.",
+            description: "Create the Ship-owned work plan before starting implementation. Notifies the captain asynchronously. Call this once after reading the code and before writing anything.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -474,7 +474,7 @@ fn tool_definitions() -> Vec<ToolDefinition> {
         },
         ToolDefinition {
             name: "plan_step_complete",
-            description: "Mark a Ship-owned plan step complete. Auto-commits pending changes and notifies the captain asynchronously.",
+            description: "Mark the current plan step complete and commit its changes. Call this IMMEDIATELY after finishing each step — before starting the next one. All file changes for this step must already be written. This commits them as one focused commit. If called after starting the next step's changes, those changes will be bundled into the wrong commit.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
