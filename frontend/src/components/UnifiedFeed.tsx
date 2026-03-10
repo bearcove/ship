@@ -345,14 +345,14 @@ export function UnifiedFeed({
 
   const segments = buildSegments(blocks);
 
-  // Determine which segments show the avatar: only the last in a consecutive
+  // Determine which segments show the avatar: only the first in a consecutive
   // run from the same agent role.
   const showAvatarAt = new Set<number>();
   for (let i = 0; i < segments.length; i++) {
     const thisRole = segmentAgentRole(segments[i]);
     if (!thisRole) continue; // user message, no avatar
-    const nextRole = i + 1 < segments.length ? segmentAgentRole(segments[i + 1]) : null;
-    if (!nextRole || nextRole.tag !== thisRole.tag) {
+    const prevRole = i > 0 ? segmentAgentRole(segments[i - 1]) : null;
+    if (!prevRole || prevRole.tag !== thisRole.tag) {
       showAvatarAt.add(i);
     }
   }

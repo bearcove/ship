@@ -32,7 +32,7 @@ export const agentAvatar = style({
   flexShrink: 0,
   objectFit: "cover",
   maskImage: "radial-gradient(circle, black 72%, transparent 76%)",
-  alignSelf: "flex-end",
+  alignSelf: "flex-start",
 });
 
 export const agentAvatarSpacer = style({
@@ -43,7 +43,7 @@ export const agentAvatarSpacer = style({
 export const feedRowAgent = style({
   display: "flex",
   justifyContent: "flex-start",
-  alignItems: "flex-end",
+  alignItems: "flex-start",
   gap: "var(--space-2)",
 });
 
