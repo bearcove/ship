@@ -3,7 +3,6 @@ use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -156,7 +155,6 @@ pub struct ShipImpl {
     pending_mcp_ops: Arc<Mutex<HashMap<SessionId, PendingMcpOps>>>,
     server_ws_url: Arc<Mutex<String>>,
     startup_started_at: Arc<Mutex<HashMap<SessionId, Instant>>>,
-    next_edit_id: Arc<AtomicU64>,
     user_avatar_url: Arc<Mutex<Option<String>>>,
 }
 
@@ -176,7 +174,6 @@ impl ShipImpl {
             pending_mcp_ops: Arc::new(Mutex::new(HashMap::new())),
             server_ws_url: Arc::new(Mutex::new("ws://127.0.0.1:9/ws".to_owned())),
             startup_started_at: Arc::new(Mutex::new(HashMap::new())),
-            next_edit_id: Arc::new(AtomicU64::new(1)),
             user_avatar_url: Arc::new(Mutex::new(None)),
         }
     }
@@ -1654,11 +1651,36 @@ Here is your task:
             format!("{} {}", program.to_string_lossy(), args)
         };
 
+        let augmented_path = {
+            let base = std::env::var("PATH").unwrap_or_default();
+            let extra = [
+                "/Users/amos/.cargo/bin",
+                "/opt/homebrew/bin",
+                "/usr/local/bin",
+                "/usr/bin",
+                "/bin",
+            ];
+            let mut parts: Vec<&str> = base.split(':').collect();
+            for dir in extra {
+                if !parts.contains(&dir) {
+                    parts.push(dir);
+                }
+            }
+            parts.join(":")
+        };
+
+        let tmp_dir = worktree_path.join(".tmp");
+        let _ = tokio::fs::create_dir_all(&tmp_dir).await;
+
         let mut command = TokioCommand::new("/bin/sh");
         command
             .arg("-c")
             .arg(&command_text)
             .current_dir(&worktree_path)
+            .env("PATH", &augmented_path)
+            .env("TMPDIR", &tmp_dir)
+            .env("TMP", &tmp_dir)
+            .env("TEMP", &tmp_dir)
             .kill_on_drop(true)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
@@ -2527,15 +2549,12 @@ Here is your task:
         .await
         .map_err(|error| format!("edit_prepare task failed: {error}"))??;
 
-        let edit_id = format!("edit-{}", self.next_edit_id.fetch_add(1, Ordering::Relaxed));
+        let edit_id = format!("edit-{}", ulid::Ulid::new());
         {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let session = sessions
                 .get_mut(session_id)
                 .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-            session
-                .pending_edits
-                .retain(|_, pending| pending.path != prepared.pending.path);
             session
                 .pending_edits
                 .insert(edit_id.clone(), prepared.pending);

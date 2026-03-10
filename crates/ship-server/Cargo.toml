@@ -27,6 +27,7 @@ figue = { workspace = true }
 hyper-tungstenite = { workspace = true }
 futures-util = "0.3"
 reqwest = { workspace = true }
+ulid = { workspace = true }
 roam = { workspace = true }
 roam-websocket = { workspace = true }
 ship-core = { path = "../ship-core" }
