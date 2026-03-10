@@ -31,7 +31,7 @@ export const agentAvatar = style({
   borderRadius: "50%",
   flexShrink: 0,
   objectFit: "cover",
-  maskImage: "radial-gradient(circle, black 52%, transparent 55%)",
+  maskImage: "radial-gradient(circle, black 72%, transparent 76%)",
   alignSelf: "flex-end",
 });
 
