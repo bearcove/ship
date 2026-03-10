@@ -661,6 +661,7 @@ pub mod protocol {
         pub autonomy_mode: AutonomyMode,
         pub pending_steer: Option<String>,
         pub created_at: String,
+        pub user_avatar_url: Option<String>,
     }
 }
 

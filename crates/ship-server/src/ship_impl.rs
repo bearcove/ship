@@ -150,6 +150,7 @@ pub struct ShipImpl {
     server_ws_url: Arc<Mutex<String>>,
     startup_started_at: Arc<Mutex<HashMap<SessionId, Instant>>>,
     next_edit_id: Arc<AtomicU64>,
+    user_avatar_url: Arc<Mutex<Option<String>>>,
 }
 
 impl ShipImpl {
@@ -169,6 +170,38 @@ impl ShipImpl {
             server_ws_url: Arc::new(Mutex::new("ws://127.0.0.1:9/ws".to_owned())),
             startup_started_at: Arc::new(Mutex::new(HashMap::new())),
             next_edit_id: Arc::new(AtomicU64::new(1)),
+            user_avatar_url: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    pub async fn fetch_github_user_avatar(&self) {
+        let output = TokioCommand::new("gh")
+            .args(["api", "/user"])
+            .output()
+            .await;
+        let Ok(output) = output else {
+            return;
+        };
+        if !output.status.success() {
+            return;
+        }
+        let Ok(text) = std::str::from_utf8(&output.stdout) else {
+            return;
+        };
+        // Parse avatar_url from JSON without pulling in a full JSON library:
+        // look for "avatar_url":"<url>"
+        let avatar_url = text
+            .split("\"avatar_url\":")
+            .nth(1)
+            .and_then(|s| s.trim().strip_prefix('"'))
+            .and_then(|s| s.split('"').next())
+            .map(ToOwned::to_owned);
+        if let Some(url) = avatar_url {
+            tracing::info!(%url, "fetched github user avatar");
+            *self
+                .user_avatar_url
+                .lock()
+                .expect("user_avatar_url mutex poisoned") = Some(url);
         }
     }
 
@@ -302,7 +335,10 @@ impl ShipImpl {
         }
     }
 
-    fn to_session_detail(session: &ActiveSession) -> SessionDetail {
+    fn to_session_detail(
+        session: &ActiveSession,
+        user_avatar_url: Option<String>,
+    ) -> SessionDetail {
         SessionDetail {
             id: session.id.clone(),
             project: session.config.project.clone(),
@@ -318,10 +354,11 @@ impl ShipImpl {
             autonomy_mode: session.config.autonomy_mode,
             pending_steer: session.pending_steer.clone(),
             created_at: session.created_at.clone(),
+            user_avatar_url,
         }
     }
 
-    fn fallback_session_detail(id: SessionId) -> SessionDetail {
+    fn fallback_session_detail(id: SessionId, user_avatar_url: Option<String>) -> SessionDetail {
         SessionDetail {
             id,
             project: ProjectName("unknown".to_owned()),
@@ -337,6 +374,7 @@ impl ShipImpl {
             autonomy_mode: AutonomyMode::HumanInTheLoop,
             pending_steer: None,
             created_at: String::new(),
+            user_avatar_url,
         }
     }
 
@@ -3843,11 +3881,16 @@ impl Ship for ShipImpl {
     }
 
     async fn get_session(&self, id: SessionId) -> SessionDetail {
+        let user_avatar_url = self
+            .user_avatar_url
+            .lock()
+            .expect("user_avatar_url mutex poisoned")
+            .clone();
         let sessions = self.sessions.lock().expect("sessions mutex poisoned");
         sessions
             .get(&id)
-            .map(Self::to_session_detail)
-            .unwrap_or_else(|| Self::fallback_session_detail(id))
+            .map(|s| Self::to_session_detail(s, user_avatar_url.clone()))
+            .unwrap_or_else(|| Self::fallback_session_detail(id, user_avatar_url))
     }
 
     // r[session.create]

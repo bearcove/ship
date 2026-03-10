@@ -166,6 +166,7 @@ async fn run_serve(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
     let ship = ShipImpl::new(project_registry, sessions_dir, agent_discovery);
     // r[resilience.server-restart]
     ship.load_persisted_sessions().await;
+    ship.fetch_github_user_avatar().await;
     let state = AppState {
         ship: ship.clone(),
         http_client: reqwest::Client::new(),
