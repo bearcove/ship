@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Black rounded background -->
+  <rect width="32" height="32" rx="7" fill="black"/>
+
+  <!-- Outer ring of helm -->
+  <circle cx="16" cy="16" r="12.5" fill="none" stroke="white" stroke-width="2"/>
+
+  <!-- 8 spokes: hub radius=3.5, spoke end radius=10.5 -->
+  <!-- 0° -->
+  <line x1="19.5" y1="16" x2="26.5" y2="16" stroke="white" stroke-width="1.75" stroke-linecap="round"/>
+  <!-- 45° -->
+  <line x1="18.47" y1="18.47" x2="23.43" y2="23.43" stroke="white" stroke-width="1.75" stroke-linecap="round"/>
+  <!-- 90° -->
+  <line x1="16" y1="19.5" x2="16" y2="26.5" stroke="white" stroke-width="1.75" stroke-linecap="round"/>
+  <!-- 135° -->
+  <line x1="13.53" y1="18.47" x2="8.57" y2="23.43" stroke="white" stroke-width="1.75" stroke-linecap="round"/>
+  <!-- 180° -->
+  <line x1="12.5" y1="16" x2="5.5" y2="16" stroke="white" stroke-width="1.75" stroke-linecap="round"/>
+  <!-- 225° -->
+  <line x1="13.53" y1="13.53" x2="8.57" y2="8.57" stroke="white" stroke-width="1.75" stroke-linecap="round"/>
+  <!-- 270° -->
+  <line x1="16" y1="12.5" x2="16" y2="5.5" stroke="white" stroke-width="1.75" stroke-linecap="round"/>
+  <!-- 315° -->
+  <line x1="18.47" y1="13.53" x2="23.43" y2="8.57" stroke="white" stroke-width="1.75" stroke-linecap="round"/>
+
+  <!-- Hub -->
+  <circle cx="16" cy="16" r="3.5" fill="white"/>
+  <circle cx="16" cy="16" r="1.5" fill="black"/>
+
+  <!-- Knobs at spoke ends (on the outer ring) -->
+  <circle cx="28.5" cy="16"    r="1.2" fill="white"/>
+  <circle cx="24.7" cy="24.7"  r="1.2" fill="white"/>
+  <circle cx="16"   cy="28.5"  r="1.2" fill="white"/>
+  <circle cx="7.3"  cy="24.7"  r="1.2" fill="white"/>
+  <circle cx="3.5"  cy="16"    r="1.2" fill="white"/>
+  <circle cx="7.3"  cy="7.3"   r="1.2" fill="white"/>
+  <circle cx="16"   cy="3.5"   r="1.2" fill="white"/>
+  <circle cx="24.7" cy="7.3"   r="1.2" fill="white"/>
+</svg>

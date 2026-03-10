@@ -647,9 +647,31 @@ export const diffContext = style({
 });
 
 export const textBlockRoot = style({
+  position: "relative",
   color: "var(--gray-12)",
   fontSize: "var(--font-size-1)",
   lineHeight: "var(--line-height-2)",
+});
+
+export const bubbleContent = style({});
+
+export const bubbleContentCollapsed = style({
+  maxHeight: 400,
+  overflow: "hidden",
+  maskImage: "linear-gradient(to bottom, black 300px, transparent 400px)",
+  WebkitMaskImage: "linear-gradient(to bottom, black 300px, transparent 400px)",
+});
+
+export const bubbleCopyBtn = style({
+  position: "absolute",
+  top: 0,
+  right: 0,
+  opacity: 0,
+  transition: "opacity 0.15s",
+});
+
+globalStyle(`${textBlockRoot}:hover ${bubbleCopyBtn}`, {
+  opacity: 1,
 });
 
 globalStyle(`${textBlockRoot} :where(p, ul, ol, blockquote)`, {
