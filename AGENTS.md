@@ -83,6 +83,52 @@ Stay within the scope of the assigned task. If a frontend task depends on a back
 - Then run `cargo xtask codegen` and commit the regenerated artifacts.
 - If generated output looks wrong, fix the schema/codegen/runtime input that produced it rather than patching the output directly.
 
+## Architecture: key files and layers
+
+### Agent MCP tools
+
+The captain and mate each get their own MCP server with a distinct set of tools.
+
+**Captain** (`crates/ship-server/src/captain_mcp_server.rs`):
+- `captain_assign` — assign a task to the mate (title + description)
+- `captain_steer` — send direction to the mate on the current task
+- `captain_accept` — accept the mate's submitted work
+- `captain_cancel` — cancel the current task
+- `captain_notify_human` — ask the human for guidance (blocks until response)
+
+The captain has NO file, terminal, or code access. It reviews and delegates.
+
+**Mate** (`crates/ship-server/src/mate_mcp_server.rs`):
+- `run_command` — shell command via `sh -c` in the worktree
+- `read_file` — read a file with line numbers, optional offset/limit
+- `write_file` — write a file (Rust files get rustfmt validation)
+- `edit_prepare` — prepare a search-and-replace edit (returns diff preview)
+- `edit_confirm` — apply a previously prepared edit
+- `search_files` — ripgrep search in the worktree
+- `list_files` — fd file listing in the worktree
+- `mate_send_update` — send a progress update to the captain
+- `plan_create` — create the work plan before implementation
+- `plan_step_complete` — mark a plan step as done, commits changes
+
+### ACP built-in tool blocking
+
+Both agents have ACP built-in tools (Bash, Read, Write, Edit) disabled:
+- `crates/ship-core/src/acp_client.rs` — `create_terminal`, `read_text_file`, `write_text_file` return errors directing the agent to use MCP tools
+- Permission requests for built-in tools are auto-rejected in `blocked_permission_option_id`
+- `crates/ship-core/src/acp_driver.rs` — `ClientCapabilities` set `terminal: false` and `fs.read/write: false`
+
+### Key crate responsibilities
+
+- `ship-types` (`crates/ship-types/src/lib.rs`) — shared types: SessionEvent, TaskRecord, AgentState, ContentBlock, etc.
+- `ship-service` (`crates/ship-service/src/lib.rs`) — RPC service trait definitions (roam)
+- `ship-core` (`crates/ship-core/`) — session manager, ACP client/driver, git worktree ops
+- `ship-server` (`crates/ship-server/`) — RPC server impl, captain/mate MCP servers, startup probe
+- `frontend/` — React + Radix Themes UI, generated TypeScript bindings in `frontend/src/generated/`
+
+### Generated code flow
+
+`cargo xtask codegen` reads the roam service trait in `ship-service` and generates TypeScript client bindings at `frontend/src/generated/ship.ts`.
+
 ## Coordinator git safety
 
 - Coordinator git operations that mutate repository state MUST be run sequentially, never in parallel

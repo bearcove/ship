@@ -436,85 +436,35 @@ impl Client for ShipAcpClient {
     }
 
     // r[acp.client.fs-write]
+    // r[captain.capabilities]
+    // r[mate.capabilities]
+    // Both agents must use Ship's MCP tools exclusively. ACP built-in file
+    // and terminal operations are disabled.
     async fn write_text_file(
         &self,
-        args: WriteTextFileRequest,
+        _args: WriteTextFileRequest,
     ) -> AcpResult<WriteTextFileResponse> {
-        let path = resolve_relative_to_worktree(&self.worktree_path, &args.path);
-        tokio::fs::write(path, args.content)
-            .await
-            .map_err(|_| Error::internal_error())?;
-        Ok(WriteTextFileResponse::new())
+        Err(Error::invalid_params().data(match self.role {
+            Role::Captain => "Built-in file writing is disabled. You do not have direct file access. Delegate work to the mate using captain_assign.",
+            Role::Mate => "Built-in file writing is disabled. Use the write_file MCP tool instead.",
+        }))
     }
 
-    // r[acp.client.fs-read]
-    async fn read_text_file(&self, args: ReadTextFileRequest) -> AcpResult<ReadTextFileResponse> {
-        let path = resolve_relative_to_worktree(&self.worktree_path, &args.path);
-        let content = tokio::fs::read_to_string(path)
-            .await
-            .map_err(|_| Error::internal_error())?;
-        Ok(ReadTextFileResponse::new(content))
+    async fn read_text_file(&self, _args: ReadTextFileRequest) -> AcpResult<ReadTextFileResponse> {
+        Err(Error::invalid_params().data(match self.role {
+            Role::Captain => "Built-in file reading is disabled. You do not have direct file access. Delegate work to the mate using captain_assign.",
+            Role::Mate => "Built-in file reading is disabled. Use the read_file MCP tool instead.",
+        }))
     }
 
-    // r[acp.client.terminal-create]
     async fn create_terminal(
         &self,
-        args: CreateTerminalRequest,
+        _args: CreateTerminalRequest,
     ) -> AcpResult<CreateTerminalResponse> {
-        let terminal_id = ulid::Ulid::new().to_string();
-        let mut command = Command::new(&args.command);
-        command
-            .args(args.args)
-            .current_dir(&self.worktree_path)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .kill_on_drop(true);
-        for env_var in args.env {
-            command.env(env_var.name, env_var.value);
-        }
-
-        let mut child = command.spawn().map_err(|_| Error::internal_error())?;
-        let stdout = child.stdout.take();
-        let stderr = child.stderr.take();
-
-        let output = Rc::new(RefCell::new(String::new()));
-        let exit_status = Rc::new(RefCell::new(None));
-        let (exit_status_tx, exit_status_rx) = watch::channel(None::<TerminalExitStatus>);
-        let child = Rc::new(RefCell::new(child));
-
-        if let Some(stdout) = stdout {
-            let output_ref = output.clone();
-            tokio::task::spawn_local(async move {
-                read_terminal_stream(stdout, output_ref).await;
-            });
-        }
-        if let Some(stderr) = stderr {
-            let output_ref = output.clone();
-            tokio::task::spawn_local(async move {
-                read_terminal_stream(stderr, output_ref).await;
-            });
-        }
-
-        {
-            let child_ref = child.clone();
-            let exit_status_ref = exit_status.clone();
-            tokio::task::spawn_local(async move {
-                watch_terminal_exit(child_ref, exit_status_ref, exit_status_tx).await;
-            });
-        }
-
-        self.terminals.borrow_mut().insert(
-            terminal_id.clone(),
-            TerminalState {
-                child,
-                output,
-                exit_status,
-                exit_status_rx,
-            },
-        );
-
-        Ok(CreateTerminalResponse::new(TerminalId::new(terminal_id)))
+        Err(Error::invalid_params().data(match self.role {
+            Role::Captain => "Built-in terminal is disabled. You do not have direct command access. Delegate work to the mate using captain_assign.",
+            Role::Mate => "Built-in terminal is disabled. Use the run_command MCP tool instead.",
+        }))
     }
 
     // r[acp.client.terminal-output]
