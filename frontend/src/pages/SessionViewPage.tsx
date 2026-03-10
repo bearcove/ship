@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
-import { Box, Flex, Spinner, Tabs } from "@radix-ui/themes";
+import { useParams, useNavigate, Link } from "react-router-dom";
+import { Box, Callout, Flex, SegmentedControl, Spinner, Text } from "@radix-ui/themes";
+import { ArrowLeft, Warning } from "@phosphor-icons/react";
 import { useSession } from "../hooks/useSession";
 import { useSessionState } from "../hooks/useSessionState";
 import { AgentHeader } from "../components/AgentHeader";
@@ -10,7 +11,7 @@ import {
   sessionViewRoot,
   desktopGrid,
   panelColumn,
-  mobileTabs,
+  mobileNavBar,
   mobilePanel,
 } from "../styles/session-view.css";
 import type { TaskRecord } from "../generated/ship";
@@ -20,8 +21,9 @@ import type { TaskRecord } from "../generated/ship";
 // r[proto.hydration-flow]
 export function SessionViewPage({ debugMode }: { debugMode: boolean }) {
   const { sessionId } = useParams<{ sessionId: string }>();
+  const navigate = useNavigate();
   // r[event.client.hydration-sequence]: Step 1 — structural state
-  const session = useSession(sessionId ?? "");
+  const { session, error } = useSession(sessionId ?? "");
   // r[event.client.hydration-sequence]: Step 2/3 — event subscription + replay
   const eventState = useSessionState(sessionId ?? "", session);
   const [mobileTab, setMobileTab] = useState<"captain" | "mate">("captain");
@@ -36,6 +38,31 @@ export function SessionViewPage({ debugMode }: { debugMode: boolean }) {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, []);
+
+  if (error) {
+    return (
+      <Flex className={sessionViewRoot} align="center" justify="center" p="4">
+        <Flex direction="column" gap="3" align="center" style={{ maxWidth: 400 }}>
+          <Callout.Root color="red" size="2">
+            <Callout.Icon>
+              <Warning size={16} />
+            </Callout.Icon>
+            <Callout.Text>
+              Session not found — it may have been created with an older format.
+            </Callout.Text>
+          </Callout.Root>
+          <Text
+            size="2"
+            color="blue"
+            style={{ cursor: "pointer", textDecoration: "underline" }}
+            onClick={() => navigate("/")}
+          >
+            Back to sessions
+          </Text>
+        </Flex>
+      </Flex>
+    );
+  }
 
   if (!session) {
     return (
@@ -69,13 +96,20 @@ export function SessionViewPage({ debugMode }: { debugMode: boolean }) {
 
   return (
     <Flex className={sessionViewRoot}>
-      <Box className={mobileTabs} px="3" pt="2">
-        <Tabs.Root value={mobileTab} onValueChange={(v) => setMobileTab(v as "captain" | "mate")}>
-          <Tabs.List>
-            <Tabs.Trigger value="captain">Captain</Tabs.Trigger>
-            <Tabs.Trigger value="mate">Mate</Tabs.Trigger>
-          </Tabs.List>
-        </Tabs.Root>
+      <Box className={mobileNavBar}>
+        <Flex align="center" gap="3" px="3" py="2">
+          <Link to="/" style={{ color: "var(--gray-11)", display: "flex", alignItems: "center" }}>
+            <ArrowLeft size={18} />
+          </Link>
+          <SegmentedControl.Root
+            size="1"
+            value={mobileTab}
+            onValueChange={(v) => setMobileTab(v as "captain" | "mate")}
+          >
+            <SegmentedControl.Item value="captain">Captain</SegmentedControl.Item>
+            <SegmentedControl.Item value="mate">Mate</SegmentedControl.Item>
+          </SegmentedControl.Root>
+        </Flex>
       </Box>
 
       <Box style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>

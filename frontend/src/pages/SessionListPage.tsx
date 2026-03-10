@@ -433,7 +433,7 @@ export function NewSessionDialog({
 }
 
 // r[ui.add-project.dialog]
-function AddProjectDialog({
+export function AddProjectDialog({
   open,
   onOpenChange,
 }: {

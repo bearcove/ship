@@ -20,11 +20,13 @@ export const panelColumn = style({
   },
 });
 
-export const mobileTabs = style({
+export const mobileNavBar = style({
   display: "none",
+  flexShrink: 0,
+  borderBottom: "1px solid var(--gray-a5)",
   "@media": {
     "(max-width: 1023px)": {
-      display: "flex",
+      display: "block",
     },
   },
 });

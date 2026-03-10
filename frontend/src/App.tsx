@@ -9,6 +9,7 @@ import { NotificationPrompt } from "./components/NotificationPrompt";
 import { SessionSidebar } from "./components/SessionSidebar";
 import { useSoundEnabled } from "./context/SoundContext";
 import { useSessionList } from "./hooks/useSessionList";
+import { useProjects } from "./hooks/useProjects";
 
 function readDebugPreference(): boolean {
   try {
@@ -33,6 +34,7 @@ export function App() {
   const inSessionView = !!sessionMatch;
   const { soundEnabled, setSoundEnabled } = useSoundEnabled();
   const allSessions = useSessionList();
+  const allProjects = useProjects();
   const [debugMode, setDebugMode] = useState(readDebugPreference);
 
   useEffect(() => {
@@ -82,15 +84,13 @@ export function App() {
       <NotificationPrompt />
 
       <Flex style={{ flex: 1, overflow: "hidden", minHeight: 0 }}>
-        {allSessions.length > 0 && (
-          <SessionSidebar
-            sessions={allSessions}
-            currentSessionId={currentSessionId}
-            currentProject={allSessions.find((s) => s.id === currentSessionId)?.project}
-            debugMode={debugMode}
-            onToggleDebug={toggleDebug}
-          />
-        )}
+        <SessionSidebar
+          projects={allProjects}
+          sessions={allSessions}
+          currentSessionId={currentSessionId}
+          debugMode={debugMode}
+          onToggleDebug={toggleDebug}
+        />
         <Box
           style={{
             flex: 1,
