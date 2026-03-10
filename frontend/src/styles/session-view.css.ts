@@ -333,6 +333,20 @@ export const agentPanelScrollArea = style({
   flexDirection: "column",
 });
 
+export const agentRail = style({
+  width: 220,
+  flexShrink: 0,
+  borderLeft: "1px solid var(--gray-a4)",
+  overflowY: "auto",
+  display: "flex",
+  flexDirection: "column",
+  "@media": {
+    "(max-width: 768px)": {
+      display: "none",
+    },
+  },
+});
+
 export const agentHeader = style({
   display: "flex",
   flexDirection: "column",

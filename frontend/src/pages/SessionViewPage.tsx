@@ -7,7 +7,15 @@ import { useSessionState } from "../hooks/useSessionState";
 import { UnifiedFeed } from "../components/UnifiedFeed";
 import { UnifiedComposer } from "../components/UnifiedComposer";
 import { SteerReview } from "../components/SteerReview";
-import { mobileNavBar, sessionViewRoot, unifiedFeedRoot } from "../styles/session-view.css";
+import {
+  agentRail,
+  mobileNavBar,
+  sessionViewRoot,
+  unifiedFeedRoot,
+} from "../styles/session-view.css";
+import { AgentHeader } from "../components/AgentHeader";
+import captainAvatar from "../assets/avatars/captain.png";
+import mateAvatar from "../assets/avatars/mate.png";
 import type { TaskRecord } from "../generated/ship";
 
 // r[view.session]
@@ -111,27 +119,37 @@ export function SessionViewPage({
         </Flex>
       </Box>
 
-      <Box className={unifiedFeedRoot} style={{ flex: 1 }}>
-        <UnifiedFeed
-          sessionId={session.id}
-          captain={captain}
-          mate={mate}
-          blocks={eventState.unifiedBlocks.blocks}
-          startupState={startupState}
-          taskStatus={liveTask?.status ?? null}
-          userAvatarUrl={session.user_avatar_url}
-          loading={isReplaying}
-          loadingLabel={replayLabel}
-          debugMode={debugMode}
-        />
-        <UnifiedComposer
-          sessionId={session.id}
-          captain={captain}
-          mate={mate}
-          startupState={startupState}
-          taskStatus={liveTask?.status ?? null}
-        />
-      </Box>
+      <Flex style={{ flex: 1, overflow: "hidden", minHeight: 0 }}>
+        <Box className={unifiedFeedRoot} style={{ flex: 1 }}>
+          <UnifiedFeed
+            sessionId={session.id}
+            captain={captain}
+            mate={mate}
+            blocks={eventState.unifiedBlocks.blocks}
+            startupState={startupState}
+            taskStatus={liveTask?.status ?? null}
+            userAvatarUrl={session.user_avatar_url}
+            loading={isReplaying}
+            loadingLabel={replayLabel}
+            debugMode={debugMode}
+          />
+          <UnifiedComposer
+            sessionId={session.id}
+            captain={captain}
+            mate={mate}
+            startupState={startupState}
+            taskStatus={liveTask?.status ?? null}
+          />
+        </Box>
+        {(captain ?? mate) && (
+          <Box className={agentRail}>
+            {captain && (
+              <AgentHeader sessionId={session.id} agent={captain} avatarSrc={captainAvatar} />
+            )}
+            {mate && <AgentHeader sessionId={session.id} agent={mate} avatarSrc={mateAvatar} />}
+          </Box>
+        )}
+      </Flex>
 
       {session.pending_steer && (
         <SteerReview

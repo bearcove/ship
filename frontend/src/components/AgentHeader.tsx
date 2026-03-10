@@ -9,6 +9,7 @@ import { agentHeader, agentHeaderRow } from "../styles/session-view.css";
 interface Props {
   sessionId: string;
   agent: AgentSnapshot;
+  avatarSrc?: string;
 }
 
 function parseModelId(modelId: string): { model: string; effort: string | null } {
@@ -23,7 +24,7 @@ function buildModelId(model: string, effort: string | null): string {
 
 // r[ui.agent-header.layout]
 // r[view.agent-panel.state]
-export function AgentHeader({ sessionId, agent }: Props) {
+export function AgentHeader({ sessionId, agent, avatarSrc }: Props) {
   const contextPct = agent.context_remaining_percent;
   const contextLow = contextPct !== null && contextPct < 20;
 
@@ -54,7 +55,22 @@ export function AgentHeader({ sessionId, agent }: Props) {
   return (
     <Box className={agentHeader}>
       <Flex className={agentHeaderRow}>
-        <AgentKindIcon kind={agent.kind} />
+        {avatarSrc ? (
+          <img
+            src={avatarSrc}
+            alt={agent.role.tag}
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: "50%",
+              flexShrink: 0,
+              objectFit: "cover",
+              maskImage: "radial-gradient(circle, black 64%, transparent 64%)",
+            }}
+          />
+        ) : (
+          <AgentKindIcon kind={agent.kind} />
+        )}
         <Text size="2" weight="medium">
           {agent.role.tag}
         </Text>
