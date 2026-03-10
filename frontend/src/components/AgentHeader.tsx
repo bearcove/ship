@@ -169,7 +169,7 @@ export function AgentHeader({ sessionId, agent, avatarSrc }: Props) {
         )}
         <Flex className={agentHeaderBody}>
           <Flex className={agentHeaderSummaryRow}>
-            <Text size="1" weight="medium" className={agentHeaderRole}>
+            <Text size="2" weight="medium" className={agentHeaderRole}>
               {agent.role.tag}
             </Text>
             {/* r[ui.agent-header.context-bar] */}

@@ -242,7 +242,7 @@ export function SessionSidebar({
     <>
       {isOpen && <div className={sidebarBackdrop} onClick={onClose} />}
       <Box className={sidebarRoot} data-open={isOpen ? "true" : undefined}>
-        <Flex direction="column" gap="3" pt="6" pb="4" px="3">
+        <Flex direction="column" gap="3" pt="3" pb="3" px="3">
           <AgentKindSelect
             label="Captain"
             value={captainKind}

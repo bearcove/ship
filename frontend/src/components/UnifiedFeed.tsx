@@ -23,7 +23,6 @@ import {
   feedBubbleCol,
   feedBubbleColUser,
   feedBubbleMate,
-  feedBubbleThought,
   feedBubbleUser,
   feedTimestamp,
   feedRowAgent,
@@ -167,6 +166,43 @@ function ToolGroup({
   );
 }
 
+// ─── Thought block ────────────────────────────────────────────────────────────
+
+function ThoughtBlock({
+  block,
+  role,
+  showAvatar,
+}: {
+  block: TextBlockType;
+  role: Role;
+  showAvatar: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <Box className={feedRowAgent}>
+      <Avatar role={role} show={showAvatar} />
+      <Box className={feedToolGroup}>
+        <div
+          className={`${feedToolGroupHeader}${expanded ? ` ${feedToolGroupHeaderExpanded}` : ""}`}
+          onClick={() => setExpanded((v) => !v)}
+          role="button"
+          aria-expanded={expanded}
+        >
+          {expanded ? <CaretDown size={11} /> : <CaretRight size={11} />}
+          <Text size="1" color="gray">
+            Thought
+          </Text>
+        </div>
+        {expanded && (
+          <Box className={feedToolGroupBody}>
+            <TextBlock block={block} />
+          </Box>
+        )}
+      </Box>
+    </Box>
+  );
+}
+
 // ─── Single block ─────────────────────────────────────────────────────────────
 
 function SingleBlock({
@@ -191,6 +227,8 @@ function SingleBlock({
 
   switch (block.tag) {
     case "Text": {
+      if (block.text.trim() === "") return null;
+
       const isHuman = block.source.tag === "Human";
       const isThought = block.source.tag === "AgentThought";
 
@@ -220,18 +258,17 @@ function SingleBlock({
         );
       }
 
-      // Agent message — left side with avatar
-      const bubbleClass = isThought
-        ? `${feedBubble} ${feedBubbleThought}`
-        : isCaptain
-          ? feedBubble
-          : `${feedBubble} ${feedBubbleMate}`;
+      // Thought block — collapsible, no bubble
+      if (isThought) {
+        return <ThoughtBlock block={block as TextBlockType} role={role} showAvatar={showAvatar} />;
+      }
 
+      // Agent message — left side with avatar
       return (
         <Box className={feedRowAgent}>
           <Avatar role={role} show={showAvatar} />
           <Box className={feedBubbleCol}>
-            <Box className={bubbleClass}>
+            <Box className={`${feedBubble}${isCaptain ? "" : ` ${feedBubbleMate}`}`}>
               <TextBlock block={block as TextBlockType} />
             </Box>
             {isLast && entry.timestamp && (

@@ -89,13 +89,6 @@ export const feedBubbleUser = style({
   borderColor: "color-mix(in srgb, var(--accent-9) 28%, var(--gray-a4))",
 });
 
-export const feedBubbleThought = style({
-  background: "var(--gray-a1)",
-  borderStyle: "dashed",
-  color: "var(--gray-11)",
-  fontStyle: "italic",
-});
-
 export const feedToolGroup = style({
   maxWidth: "80%",
 });
@@ -349,6 +342,7 @@ export const agentRail = style({
   overflowY: "auto",
   display: "flex",
   flexDirection: "column",
+  borderLeft: "1px solid var(--gray-a5)",
   "@media": {
     "(max-width: 768px)": {
       display: "none",
@@ -449,7 +443,6 @@ export const agentHeaderPickerText = style({
   cursor: "pointer",
   textDecoration: "underline dotted",
   textUnderlineOffset: "2px",
-  fontSize: "11px",
 });
 
 export const agentHeaderPickerTextGrow = style({
@@ -463,7 +456,6 @@ export const agentHeaderPickerStatic = style({
   overflow: "hidden",
   textOverflow: "ellipsis",
   whiteSpace: "nowrap",
-  fontSize: "11px",
 });
 
 export const agentHeaderSlash = style({
