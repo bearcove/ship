@@ -271,6 +271,7 @@ pub mod task {
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub struct TaskRecord {
         pub id: TaskId,
+        pub title: String,
         pub description: String,
         pub status: TaskStatus,
     }
@@ -471,6 +472,7 @@ pub mod events {
         // r[event.task-started]
         TaskStarted {
             task_id: TaskId,
+            title: String,
             description: String,
         },
         AgentModelChanged {
@@ -638,6 +640,7 @@ pub mod protocol {
         pub captain: AgentSnapshot,
         pub mate: AgentSnapshot,
         pub startup_state: SessionStartupState,
+        pub current_task_title: Option<String>,
         pub current_task_description: Option<String>,
         pub task_status: Option<TaskStatus>,
         pub autonomy_mode: AutonomyMode,

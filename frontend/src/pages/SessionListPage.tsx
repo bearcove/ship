@@ -645,14 +645,12 @@ export function SessionListPage() {
                     </Flex>
                   </Flex>
 
-                  {session.current_task_description && (
+                  {session.current_task_title && (
                     <Text size="3" weight="medium" style={{ lineHeight: 1.4 }}>
-                      {session.current_task_description.length > 100
-                        ? `${session.current_task_description.slice(0, 97)}…`
-                        : session.current_task_description}
+                      {session.current_task_title}
                     </Text>
                   )}
-                  {!session.current_task_description && session.startup_state.tag !== "Ready" && (
+                  {!session.current_task_title && session.startup_state.tag !== "Ready" && (
                     <Text size="2" color="gray">
                       {session.startup_state.tag === "Pending"
                         ? "Session startup is queued."

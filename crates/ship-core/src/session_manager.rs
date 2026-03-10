@@ -352,6 +352,10 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                 captain: session.captain.clone(),
                 mate: session.mate.clone(),
                 startup_state: session.startup_state.clone(),
+                current_task_title: session
+                    .current_task
+                    .as_ref()
+                    .map(|task| task.record.title.clone()),
                 current_task_description: session
                     .current_task
                     .as_ref()
@@ -452,6 +456,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
     pub async fn assign(
         &mut self,
         session_id: &SessionId,
+        title: String,
         description: String,
     ) -> Result<TaskId, SessionManagerError> {
         {
@@ -477,6 +482,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             session.current_task = Some(CurrentTask {
                 record: TaskRecord {
                     id: task_id.clone(),
+                    title: title.clone(),
                     description: description.clone(),
                     status: TaskStatus::Assigned,
                 },
@@ -490,6 +496,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                 session,
                 SessionEvent::TaskStarted {
                     task_id: task_id.clone(),
+                    title: title.clone(),
                     description: description.clone(),
                 },
             );
@@ -1139,10 +1146,12 @@ pub fn apply_event_to_materialized_state(session: &mut ActiveSession, event: &Se
         }
         SessionEvent::TaskStarted {
             task_id,
+            title,
             description,
         } => {
             if let Some(task) = session.current_task.as_mut() {
                 task.record.id = task_id.clone();
+                task.record.title = title.clone();
                 task.record.description = description.clone();
             }
         }

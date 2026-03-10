@@ -123,6 +123,7 @@ function taskStarted(seq: bigint, description: string): SessionEventEnvelope {
     event: {
       tag: "TaskStarted",
       task_id: `task-${seq}`,
+      title: description,
       description,
     },
   };

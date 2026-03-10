@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
     captain: null,
     mate: null,
     currentTaskId: null,
+    currentTaskTitle: null,
     currentTaskDescription: null,
     currentTaskStatus: null,
     captainBlocks: { blocks: [] },
@@ -81,6 +82,7 @@ function makeSession(): SessionDetail {
     },
     current_task: {
       id: "task-1",
+      title: "Tighten session chrome",
       description: "Tighten the session chrome",
       status: { tag: "ReviewPending" },
     },
@@ -98,7 +100,7 @@ function renderPage() {
       <SoundProvider>
         <Routes>
           <Route path="/" element={<LocationEcho />} />
-          <Route path="/sessions/:sessionId" element={<SessionViewPage />} />
+          <Route path="/sessions/:sessionId" element={<SessionViewPage debugMode={false} />} />
         </Routes>
       </SoundProvider>
     </MemoryRouter>,
@@ -111,6 +113,7 @@ beforeEach(() => {
     captain: null,
     mate: null,
     currentTaskId: null,
+    currentTaskTitle: null,
     currentTaskDescription: null,
     currentTaskStatus: null,
     captainBlocks: { blocks: [] },
@@ -133,12 +136,11 @@ beforeEach(() => {
 describe("SessionViewPage UX slice", () => {
   // r[verify view.session]
   // r[verify ui.layout.session-view]
-  // r[verify ui.notify.sound-toggle]
-  it("renders session chrome with sound and debug controls", () => {
+  it("renders session view with agent panels", () => {
     renderPage();
 
-    expect(screen.getByRole("button", { name: /mute sounds/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /enable debug mode/i })).toBeInTheDocument();
+    expect(screen.getAllByLabelText("Captain steer input").length).toBeGreaterThan(0);
+    expect(screen.getAllByLabelText("Mate steer input").length).toBeGreaterThan(0);
   });
 
   // r[verify view.agent-panel.state]
@@ -177,6 +179,7 @@ describe("SessionViewPage UX slice", () => {
       ...makeSession(),
       current_task: {
         id: "task-1",
+        title: "Ship captain workflow",
         description: "Ship the captain-led workflow",
         status: { tag: "SteerPending" },
       },

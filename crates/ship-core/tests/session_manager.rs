@@ -36,7 +36,7 @@ async fn create_session_with_task(
         .await
         .expect("session startup should succeed");
     let task_id = manager
-        .assign(&session_id, description.to_owned())
+        .assign(&session_id, description.to_owned(), description.to_owned())
         .await
         .expect("assign should succeed");
     (session_id, task_id)
@@ -167,7 +167,7 @@ async fn test_assign_requires_startup_to_finish() {
         .expect("create session should succeed");
 
     let error = manager
-        .assign(&session_id, "Do work".to_owned())
+        .assign(&session_id, "Do work".to_owned(), "Do work".to_owned())
         .await
         .expect_err("assign should fail before startup is ready");
 
@@ -699,6 +699,7 @@ async fn replay_is_sent_only_to_the_new_subscriber() {
         if replay_event.event
             == (SessionEvent::TaskStarted {
                 task_id: task_id.clone(),
+                title: "Replay isolation".to_owned(),
                 description: "Replay isolation".to_owned(),
             })
         {

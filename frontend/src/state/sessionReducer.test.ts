@@ -84,6 +84,7 @@ describe("sessionReducer event handling", () => {
         startup_state: { tag: "Ready" },
         current_task: {
           id: "task-1",
+          title: "Investigate replay",
           description: "Investigate replay",
           status: { tag: "Working" },
         },
@@ -144,6 +145,7 @@ describe("sessionReducer event handling", () => {
         event: {
           tag: "TaskStarted",
           task_id: "task-42",
+          title: "do work",
           description: "do work",
         },
       },

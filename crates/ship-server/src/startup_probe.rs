@@ -425,9 +425,13 @@ fn log_message(started_at: Instant, message: &SubscribeMessage) {
                 }
                 SessionEvent::TaskStarted {
                     task_id,
+                    title,
                     description,
                 } => {
-                    format!("task started id={} description={description:?}", task_id.0)
+                    format!(
+                        "task started id={} title={title:?} description={description:?}",
+                        task_id.0
+                    )
                 }
                 SessionEvent::TaskStatusChanged { task_id, status } => {
                     format!("task status id={} status={status:?}", task_id.0)

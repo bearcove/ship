@@ -24,6 +24,7 @@ export interface SessionViewState {
   mateBlocks: BlockStore;
   startupState: SessionStartupState | null;
   currentTaskId: string | null;
+  currentTaskTitle: string | null;
   currentTaskDescription: string | null;
   currentTaskStatus: TaskStatus | null;
   connected: boolean;
@@ -44,6 +45,7 @@ export function initialSessionViewState(): SessionViewState {
     mateBlocks: createBlockStore(),
     startupState: null,
     currentTaskId: null,
+    currentTaskTitle: null,
     currentTaskDescription: null,
     currentTaskStatus: null,
     connected: true,
@@ -76,6 +78,7 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         mate: action.session.mate,
         startupState: action.session.startup_state,
         currentTaskId: action.session.current_task?.id ?? null,
+        currentTaskTitle: action.session.current_task?.title ?? null,
         currentTaskDescription: action.session.current_task?.description ?? null,
         currentTaskStatus: action.session.current_task?.status ?? null,
       };
@@ -126,6 +129,7 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         mate,
         startupState,
         currentTaskId,
+        currentTaskTitle,
         currentTaskDescription,
         currentTaskStatus,
       } = state;
@@ -167,6 +171,7 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
           }
           case "TaskStarted":
             currentTaskId = ev.task_id;
+            currentTaskTitle = ev.title;
             currentTaskDescription = ev.description;
             currentTaskStatus = { tag: "Assigned" };
             break;
@@ -198,6 +203,7 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         mateBlocks,
         startupState,
         currentTaskId,
+        currentTaskTitle,
         currentTaskDescription,
         currentTaskStatus,
         lastSeq: Number(lastEnvelope.seq),
@@ -299,6 +305,7 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
           return {
             ...nextState,
             currentTaskId: ev.task_id,
+            currentTaskTitle: ev.title,
             currentTaskDescription: ev.description,
             currentTaskStatus: { tag: "Assigned" },
           };

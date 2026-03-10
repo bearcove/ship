@@ -74,6 +74,7 @@ function makeSession(overrides: Partial<SessionSummary> = {}): SessionSummary {
       available_models: [],
     },
     startup_state: { tag: "Ready" },
+    current_task_title: "Polish toolbar",
     current_task_description: "Polish the toolbar",
     task_status: null,
     autonomy_mode: { tag: "HumanInTheLoop" },

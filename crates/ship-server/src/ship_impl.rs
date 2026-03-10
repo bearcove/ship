@@ -288,6 +288,10 @@ impl ShipImpl {
             captain: session.captain.clone(),
             mate: session.mate.clone(),
             startup_state: session.startup_state.clone(),
+            current_task_title: session
+                .current_task
+                .as_ref()
+                .map(|task| task.record.title.clone()),
             current_task_description: session
                 .current_task
                 .as_ref()
@@ -982,10 +986,13 @@ Here is your task:
     async fn captain_tool_assign(
         &self,
         session_id: &SessionId,
+        title: String,
         description: String,
         keep: bool,
     ) -> Result<String, String> {
-        let task_id = self.start_task(session_id, description.clone()).await?;
+        let task_id = self
+            .start_task(session_id, title.clone(), description.clone())
+            .await?;
 
         if !keep {
             self.restart_mate(session_id).await?;
@@ -2523,11 +2530,12 @@ Here is your task:
         session_id: &SessionId,
         message: String,
     ) -> Result<(), String> {
+        let wrapped = format!("<system-notification>\n{message}\n</system-notification>");
         self.append_human_message(
             session_id,
             Role::Captain,
             &[PromptContentPart::Text {
-                text: message.clone(),
+                text: wrapped.clone(),
             }],
         )
         .await?;
@@ -2535,7 +2543,7 @@ Here is your task:
         let this = self.clone();
         let session_id = session_id.clone();
         tokio::spawn(async move {
-            if let Err(error) = this.interrupt_captain(&session_id, message).await {
+            if let Err(error) = this.interrupt_captain(&session_id, wrapped).await {
                 Self::log_error("notify_captain_progress", &error);
             }
         });
@@ -2656,9 +2664,8 @@ Here is your task:
                     .await?;
             let commit_summary = Self::commit_summary(commit.as_ref());
             let captain_message = format!(
-                "Task: {task_description}\n\nMate plan update:\n{}\n\n{}",
+                "The mate has created their plan.\n\n{}\n\nWe will keep you posted as they progress. You have nothing to do now.",
                 Self::format_plan_status(&plan),
-                commit_summary
             );
             (task_description, captain_message, commit_summary)
         };
@@ -2679,12 +2686,12 @@ Here is your task:
         step_index: usize,
         summary: String,
     ) -> Result<String, String> {
-        let (task_description, updated_plan, step_description, worktree_path) = {
+        let (step_description, worktree_path) = {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let session = sessions
                 .get_mut(session_id)
                 .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-            let (task_description, updated_plan, step_description) = {
+            let (updated_plan, step_description) = {
                 let task = session
                     .current_task
                     .as_mut()
@@ -2699,23 +2706,17 @@ Here is your task:
                 step.status = PlanStepStatus::Completed;
                 let step_description = step.description.clone();
                 let updated_plan = plan.clone();
-                (
-                    task.record.description.clone(),
-                    updated_plan,
-                    step_description,
-                )
+                (updated_plan, step_description)
             };
             set_agent_state(
                 session,
                 Role::Mate,
                 AgentState::Working {
-                    plan: Some(updated_plan.clone()),
+                    plan: Some(updated_plan),
                     activity: Some(format!("Completed step: {step_description}")),
                 },
             );
             (
-                task_description,
-                updated_plan,
                 step_description,
                 Self::current_task_worktree_path(session)?.to_path_buf(),
             )
@@ -2728,9 +2729,7 @@ Here is your task:
                 .await?;
         let commit_summary = Self::commit_summary(commit.as_ref());
         let captain_message = format!(
-            "Task: {task_description}\n\nMate plan update:\n{}\n\n{}",
-            Self::format_plan_status(&updated_plan),
-            commit_summary
+            "The mate completed a step from their plan.\n\nCompleted: {step_description}\n\n{commit_summary}\n\nWe will notify you when they are done and need your review.",
         );
 
         self.notify_captain_progress(session_id, captain_message)
@@ -3495,6 +3494,7 @@ Here is your task:
     async fn start_task(
         &self,
         session_id: &SessionId,
+        title: String,
         description: String,
     ) -> Result<TaskId, String> {
         let task_id = TaskId::new();
@@ -3515,6 +3515,7 @@ Here is your task:
             session.current_task = Some(CurrentTask {
                 record: TaskRecord {
                     id: task_id.clone(),
+                    title: title.clone(),
                     description: description.clone(),
                     status: TaskStatus::Assigned,
                 },
@@ -3528,6 +3529,7 @@ Here is your task:
                 session,
                 SessionEvent::TaskStarted {
                     task_id: task_id.clone(),
+                    title: title.clone(),
                     description: description.clone(),
                 },
             );
@@ -4294,10 +4296,15 @@ impl CaptainMcpSessionService {
 
 impl CaptainMcp for CaptainMcpSessionService {
     // r[captain.tool.assign]
-    async fn captain_assign(&self, description: String, keep: bool) -> McpToolCallResponse {
+    async fn captain_assign(
+        &self,
+        title: String,
+        description: String,
+        keep: bool,
+    ) -> McpToolCallResponse {
         Self::response(
             self.ship
-                .captain_tool_assign(&self.session_id, description, keep)
+                .captain_tool_assign(&self.session_id, title, description, keep)
                 .await,
         )
     }
@@ -4647,6 +4654,7 @@ mod tests {
             session.current_task = Some(CurrentTask {
                 record: TaskRecord {
                     id: TaskId::new(),
+                    title: "Investigate workflow".to_owned(),
                     description: "Investigate workflow".to_owned(),
                     status: TaskStatus::Assigned,
                 },
@@ -4905,6 +4913,7 @@ mod tests {
             timestamp: "2026-01-01T00:00:00Z".to_owned(),
             event: SessionEvent::TaskStarted {
                 task_id: task_id.clone(),
+                title: "Replay task".to_owned(),
                 description: "Replay task".to_owned(),
             },
         }];
@@ -4934,6 +4943,7 @@ mod tests {
                 timestamp: "2026-01-01T00:00:00Z".to_owned(),
                 event: SessionEvent::TaskStarted {
                     task_id: task_id.clone(),
+                    title: "Replay task".to_owned(),
                     description: "Replay task".to_owned(),
                 },
             })
@@ -4951,6 +4961,7 @@ mod tests {
                 timestamp: "2026-01-01T00:00:00Z".to_owned(),
                 event: SessionEvent::TaskStarted {
                     task_id: live_task_id.clone(),
+                    title: "Live task".to_owned(),
                     description: "Live task".to_owned(),
                 },
             })
@@ -4967,6 +4978,7 @@ mod tests {
                 timestamp: "2026-01-01T00:00:00Z".to_owned(),
                 event: SessionEvent::TaskStarted {
                     task_id: live_task_id,
+                    title: "Live task".to_owned(),
                     description: "Live task".to_owned(),
                 },
             })
@@ -5143,7 +5155,7 @@ mod tests {
             assert_eq!(plan.len(), 2);
             assert!(task.content_history.iter().any(|entry| matches!(
                 &entry.block,
-                ContentBlock::Text { text, .. } if text.contains("Mate plan update:")
+                ContentBlock::Text { text, .. } if text.contains("<system-notification>") && text.contains("The mate has created their plan.")
             )));
         }
 

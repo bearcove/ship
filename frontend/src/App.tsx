@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useState } from "react";
 import { Routes, Route, Link, useMatch } from "react-router-dom";
 import { Flex, Box, Text, IconButton } from "@radix-ui/themes";
 import { SpeakerHigh, SpeakerSlash } from "@phosphor-icons/react";
@@ -9,6 +10,22 @@ import { SessionSidebar } from "./components/SessionSidebar";
 import { useSoundEnabled } from "./context/SoundContext";
 import { useSessionList } from "./hooks/useSessionList";
 
+function readDebugPreference(): boolean {
+  try {
+    return window.localStorage?.getItem("ship.debug") === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeDebugPreference(enabled: boolean) {
+  try {
+    window.localStorage?.setItem("ship.debug", enabled ? "1" : "0");
+  } catch {
+    // ignore
+  }
+}
+
 // r[ui.layout.shell]
 export function App() {
   const sessionMatch = useMatch("/sessions/:sessionId");
@@ -16,6 +33,13 @@ export function App() {
   const inSessionView = !!sessionMatch;
   const { soundEnabled, setSoundEnabled } = useSoundEnabled();
   const allSessions = useSessionList();
+  const [debugMode, setDebugMode] = useState(readDebugPreference);
+
+  useEffect(() => {
+    writeDebugPreference(debugMode);
+  }, [debugMode]);
+
+  const toggleDebug = useCallback(() => setDebugMode((v) => !v), []);
 
   return (
     <Flex direction="column" style={{ height: "100vh" }}>
@@ -63,6 +87,8 @@ export function App() {
             sessions={allSessions}
             currentSessionId={currentSessionId}
             currentProject={allSessions.find((s) => s.id === currentSessionId)?.project}
+            debugMode={debugMode}
+            onToggleDebug={toggleDebug}
           />
         )}
         <Box
@@ -75,7 +101,10 @@ export function App() {
         >
           <Routes>
             <Route path="/" element={<SessionListPage />} />
-            <Route path="/sessions/:sessionId" element={<SessionViewPage />} />
+            <Route
+              path="/sessions/:sessionId"
+              element={<SessionViewPage debugMode={debugMode} />}
+            />
           </Routes>
         </Box>
       </Flex>

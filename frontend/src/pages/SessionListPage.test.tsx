@@ -65,6 +65,7 @@ function makeSession(overrides: Partial<SessionSummary> = {}): SessionSummary {
       context_remaining_percent: null,
     },
     startup_state: { tag: "Ready" },
+    current_task_title: "Polish toolbar",
     current_task_description: "Polish the toolbar",
     task_status: { tag: "Working" },
     autonomy_mode: { tag: "HumanInTheLoop" },

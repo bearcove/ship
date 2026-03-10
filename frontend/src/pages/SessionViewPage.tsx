@@ -1,8 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { Box, Flex, IconButton, Spinner, Tabs } from "@radix-ui/themes";
-import { Bug, SpeakerHigh, SpeakerSlash } from "@phosphor-icons/react";
-import { useSoundEnabled } from "../context/SoundContext";
+import { Box, Flex, Spinner, Tabs } from "@radix-ui/themes";
 import { useSession } from "../hooks/useSession";
 import { useSessionState } from "../hooks/useSessionState";
 import { AgentHeader } from "../components/AgentHeader";
@@ -10,7 +8,6 @@ import { AgentPanel } from "../components/AgentPanel";
 import { SteerReview } from "../components/SteerReview";
 import {
   sessionViewRoot,
-  sessionTopBar,
   desktopGrid,
   panelColumn,
   mobileTabs,
@@ -18,44 +15,16 @@ import {
 } from "../styles/session-view.css";
 import type { TaskRecord } from "../generated/ship";
 
-function readDebugPreference(): boolean {
-  if (
-    typeof window === "undefined" ||
-    !("localStorage" in window) ||
-    typeof window.localStorage?.getItem !== "function"
-  ) {
-    return false;
-  }
-  return window.localStorage.getItem("ship.debug") === "1";
-}
-
-function writeDebugPreference(enabled: boolean) {
-  if (
-    typeof window === "undefined" ||
-    !("localStorage" in window) ||
-    typeof window.localStorage?.setItem !== "function"
-  ) {
-    return;
-  }
-  window.localStorage.setItem("ship.debug", enabled ? "1" : "0");
-}
-
 // r[view.session]
 // r[ui.layout.session-view]
 // r[proto.hydration-flow]
-export function SessionViewPage() {
+export function SessionViewPage({ debugMode }: { debugMode: boolean }) {
   const { sessionId } = useParams<{ sessionId: string }>();
-  const { soundEnabled, setSoundEnabled } = useSoundEnabled();
   // r[event.client.hydration-sequence]: Step 1 — structural state
   const session = useSession(sessionId ?? "");
   // r[event.client.hydration-sequence]: Step 2/3 — event subscription + replay
   const eventState = useSessionState(sessionId ?? "", session);
   const [mobileTab, setMobileTab] = useState<"captain" | "mate">("captain");
-  const [debugMode, setDebugMode] = useState(readDebugPreference);
-
-  useEffect(() => {
-    writeDebugPreference(debugMode);
-  }, [debugMode]);
 
   // r[ui.keys.nav]
   useEffect(() => {
@@ -86,9 +55,13 @@ export function SessionViewPage() {
       : "Connected — waiting for replay…"
     : "Waiting for reconnect…";
   const liveTask: TaskRecord | null =
-    eventState.currentTaskId && eventState.currentTaskDescription && eventState.currentTaskStatus
+    eventState.currentTaskId &&
+    eventState.currentTaskTitle &&
+    eventState.currentTaskDescription &&
+    eventState.currentTaskStatus
       ? {
           id: eventState.currentTaskId,
+          title: eventState.currentTaskTitle,
           description: eventState.currentTaskDescription,
           status: eventState.currentTaskStatus,
         }
@@ -96,28 +69,6 @@ export function SessionViewPage() {
 
   return (
     <Flex className={sessionViewRoot}>
-      <Flex className={sessionTopBar}>
-        <Flex style={{ marginLeft: "auto" }} align="center" gap="2">
-          <IconButton
-            variant={debugMode ? "solid" : "ghost"}
-            color={debugMode ? "amber" : "gray"}
-            size="2"
-            onClick={() => setDebugMode((enabled) => !enabled)}
-            aria-label={debugMode ? "Disable debug mode" : "Enable debug mode"}
-          >
-            <Bug size={18} />
-          </IconButton>
-          <IconButton
-            variant="ghost"
-            size="2"
-            onClick={() => setSoundEnabled(!soundEnabled)}
-            aria-label={soundEnabled ? "Mute sounds" : "Unmute sounds"}
-          >
-            {soundEnabled ? <SpeakerHigh size={18} /> : <SpeakerSlash size={18} />}
-          </IconButton>
-        </Flex>
-      </Flex>
-
       <Box className={mobileTabs} px="3" pt="2">
         <Tabs.Root value={mobileTab} onValueChange={(v) => setMobileTab(v as "captain" | "mate")}>
           <Tabs.List>

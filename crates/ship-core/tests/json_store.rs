@@ -76,6 +76,7 @@ fn make_persisted_session(id: &str, description: &str) -> PersistedSession {
         current_task: Some(CurrentTask {
             record: TaskRecord {
                 id: TaskId::new(),
+                title: description.to_owned(),
                 description: description.to_owned(),
                 status: TaskStatus::Working,
             },
@@ -94,6 +95,7 @@ fn make_persisted_session(id: &str, description: &str) -> PersistedSession {
                 timestamp: "2026-01-01T00:00:00Z".to_owned(),
                 event: SessionEvent::TaskStarted {
                     task_id: TaskId::new(),
+                    title: description.to_owned(),
                     description: description.to_owned(),
                 },
             }],

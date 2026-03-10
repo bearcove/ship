@@ -54,6 +54,9 @@ impl ServerHandler for CaptainMcpHandler {
         let result = match params.name.as_str() {
             // r[captain.tool.assign]
             "captain_assign" => {
+                let Some(title) = arguments.get("title").and_then(Value::as_str) else {
+                    return Ok(tool_result("missing required argument: title", true));
+                };
                 let Some(description) = arguments.get("description").and_then(Value::as_str) else {
                     return Ok(tool_result("missing required argument: description", true));
                 };
@@ -62,7 +65,7 @@ impl ServerHandler for CaptainMcpHandler {
                     .and_then(Value::as_bool)
                     .unwrap_or(false);
                 self.client
-                    .captain_assign(description.to_owned(), keep)
+                    .captain_assign(title.to_owned(), description.to_owned(), keep)
                     .await
                     .map_err(call_tool_rpc_error)?
             }
@@ -197,10 +200,11 @@ fn tool_definitions() -> Vec<ToolDefinition> {
             input_schema: json!({
                 "type": "object",
                 "properties": {
-                    "description": { "type": "string" },
+                    "title": { "type": "string", "description": "Short title for the task (under 60 chars). Shown in the UI sidebar and headers." },
+                    "description": { "type": "string", "description": "Full task description with all details the mate needs." },
                     "keep": { "type": "boolean" }
                 },
-                "required": ["description"],
+                "required": ["title", "description"],
                 "additionalProperties": false,
             }),
         },
