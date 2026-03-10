@@ -344,7 +344,7 @@ export const agentPanelScrollArea = style({
 });
 
 export const agentRail = style({
-  width: 220,
+  width: 260,
   flexShrink: 0,
   overflowY: "auto",
   display: "flex",
@@ -442,7 +442,6 @@ export const agentHeaderPickerTrigger = style({
 
 export const agentHeaderPickerText = style({
   display: "block",
-  width: "100%",
   minWidth: 0,
   overflow: "hidden",
   textOverflow: "ellipsis",
@@ -450,6 +449,7 @@ export const agentHeaderPickerText = style({
   cursor: "pointer",
   textDecoration: "underline dotted",
   textUnderlineOffset: "2px",
+  fontSize: "11px",
 });
 
 export const agentHeaderPickerTextGrow = style({
@@ -463,6 +463,7 @@ export const agentHeaderPickerStatic = style({
   overflow: "hidden",
   textOverflow: "ellipsis",
   whiteSpace: "nowrap",
+  fontSize: "11px",
 });
 
 export const agentHeaderSlash = style({

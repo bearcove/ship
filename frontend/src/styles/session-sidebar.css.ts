@@ -1,7 +1,7 @@
 import { style } from "@vanilla-extract/css";
 
 export const sidebarRoot = style({
-  width: 220,
+  width: 260,
   flexShrink: 0,
   display: "flex",
   flexDirection: "column",

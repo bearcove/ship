@@ -78,9 +78,7 @@ export function AgentHeader({ sessionId, agent, avatarSrc }: Props) {
     modelControls = (
       <Flex className={agentHeaderControlRow}>
         <DropdownMenu.Root>
-          <DropdownMenu.Trigger
-            className={`${agentHeaderPickerTrigger} ${agentHeaderPickerTextGrow}`}
-          >
+          <DropdownMenu.Trigger className={agentHeaderPickerTrigger}>
             <Text size="1" color="gray" className={agentHeaderPickerText}>
               {parsed.current?.model ?? agent.model_id}
             </Text>
@@ -171,7 +169,7 @@ export function AgentHeader({ sessionId, agent, avatarSrc }: Props) {
         )}
         <Flex className={agentHeaderBody}>
           <Flex className={agentHeaderSummaryRow}>
-            <Text size="2" weight="medium" className={agentHeaderRole}>
+            <Text size="1" weight="medium" className={agentHeaderRole}>
               {agent.role.tag}
             </Text>
             {/* r[ui.agent-header.context-bar] */}
