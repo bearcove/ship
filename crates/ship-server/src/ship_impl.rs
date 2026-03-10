@@ -60,8 +60,8 @@ const MAX_WORKTREE_FILES: usize = 5000;
 
 const PLAN_REQUIRED_MESSAGE: &str = "\
 Before you can write files, run commands, or make edits, you need to lay out \
-a plan using plan_create. Read the relevant code, understand the problem, then \
-call plan_create with the steps you intend to take. Once your plan is in place, \
+a plan using set_plan. Read the relevant code, understand the problem, then \
+call set_plan with the steps you intend to take. Once your plan is in place, \
 you can start working.";
 
 const BLOCKED_COMMAND_MESSAGE: &str = "\
@@ -125,6 +125,12 @@ struct PendingMcpOps {
     captain_reply: Option<tokio::sync::oneshot::Sender<String>>,
     /// Sender to unblock `mate_submit` when the captain accepts/steers/cancels.
     mate_review: Option<tokio::sync::oneshot::Sender<MateReviewOutcome>>,
+    /// Sender to unblock a mid-task `set_plan` call when the captain approves or rejects.
+    /// Carries the old plan so it can be restored on rejection.
+    plan_change_reply: Option<(
+        Vec<PlanStep>,
+        tokio::sync::oneshot::Sender<Result<(), String>>,
+    )>,
 }
 
 impl PendingMcpOps {
@@ -133,6 +139,7 @@ impl PendingMcpOps {
             human_reply: None,
             captain_reply: None,
             mate_review: None,
+            plan_change_reply: None,
         }
     }
 }
@@ -999,7 +1006,7 @@ assigned you a task. Your job is to write code, run tests, and get things done.
 Here's how you work:
 
 1. Read the relevant files and understand the problem.
-2. Call plan_create with a list of steps you intend to take. You cannot write \
+2. Call set_plan with a list of steps you intend to take. You cannot write \
    files, run commands, or make edits until you've done this.
 3. Work ONE step at a time: complete the step fully, then immediately call \
    plan_step_complete before starting the next step. Never work ahead. \
@@ -1069,6 +1076,28 @@ Here is your task:
         session_id: &SessionId,
         message: String,
     ) -> Result<String, String> {
+        // If the mate is blocked on a mid-task plan change, reject it and redirect.
+        let pending_plan_change = self
+            .pending_mcp_ops
+            .lock()
+            .expect("pending_mcp_ops mutex poisoned")
+            .get_mut(session_id)
+            .and_then(|ops| ops.plan_change_reply.take());
+
+        if let Some((old_plan, tx)) = pending_plan_change {
+            {
+                let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                if let Some(session) = sessions.get_mut(session_id) {
+                    if let Some(task) = session.current_task.as_mut() {
+                        task.mate_plan = Some(old_plan);
+                    }
+                }
+            }
+            self.persist_session(session_id).await?;
+            let _ = tx.send(Err(message));
+            return Ok("Plan change rejected; mate redirected.".to_owned());
+        }
+
         // If the mate is blocked waiting for a reply (mate_ask_captain or mate_submit feedback),
         // resolve that first. Otherwise inject directly into the mate's stream.
         let pending_reply = self
@@ -1112,6 +1141,19 @@ Here is your task:
         session_id: &SessionId,
         summary: Option<String>,
     ) -> Result<String, String> {
+        // If the mate is blocked on a mid-task plan change, approve it.
+        let pending_plan_change = self
+            .pending_mcp_ops
+            .lock()
+            .expect("pending_mcp_ops mutex poisoned")
+            .get_mut(session_id)
+            .and_then(|ops| ops.plan_change_reply.take());
+
+        if let Some((_, tx)) = pending_plan_change {
+            let _ = tx.send(Ok(()));
+            return Ok("Plan change accepted; mate unblocked.".to_owned());
+        }
+
         let pending_review = self
             .pending_mcp_ops
             .lock()
@@ -2873,51 +2915,118 @@ Here is your task:
 
     // r[mate.tool.plan-create]
     // r[task.progress]
-    async fn mate_tool_plan_create(
+    async fn mate_tool_set_plan(
         &self,
         session_id: &SessionId,
         steps: Vec<String>,
     ) -> Result<String, String> {
         if steps.is_empty() {
-            return Err("plan_create requires at least one step".to_owned());
+            return Err("set_plan requires at least one step".to_owned());
         }
 
-        let plan = Self::build_plan_steps(steps);
-        let (task_description, captain_message) = {
-            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+        let new_plan = Self::build_plan_steps(steps);
+
+        // Determine if this is the first plan or a mid-task change.
+        let (task_description, old_plan) = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let session = sessions
-                .get_mut(session_id)
+                .get(session_id)
                 .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-            let task_description = {
+            let task = session
+                .current_task
+                .as_ref()
+                .ok_or_else(|| "session has no active task".to_owned())?;
+            (task.record.description.clone(), task.mate_plan.clone())
+        };
+
+        if old_plan.is_none() {
+            // First time — set plan and notify captain non-blocking.
+            {
+                let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                let session = sessions
+                    .get_mut(session_id)
+                    .ok_or_else(|| format!("session not found: {}", session_id.0))?;
                 let task = session
                     .current_task
                     .as_mut()
                     .ok_or_else(|| "session has no active task".to_owned())?;
-                task.mate_plan = Some(plan.clone());
+                task.mate_plan = Some(new_plan.clone());
                 task.pending_mate_guidance = None;
-                task.record.description.clone()
-            };
-            set_agent_state(
-                session,
-                Role::Mate,
-                AgentState::Working {
-                    plan: Some(plan.clone()),
-                    activity: Some("Ship plan created".to_owned()),
-                },
-            );
+                set_agent_state(
+                    session,
+                    Role::Mate,
+                    AgentState::Working {
+                        plan: Some(new_plan.clone()),
+                        activity: Some("Plan set".to_owned()),
+                    },
+                );
+            }
+            self.persist_session(session_id).await?;
             let captain_message = format!(
-                "The mate has created their plan.\n\n{}\n\nWe will keep you posted as they progress. You have nothing to do now.",
-                Self::format_plan_status(&plan),
+                "The mate has set their plan.\n\n{}\n\nWe will keep you posted as they progress. You have nothing to do now.",
+                Self::format_plan_status(&new_plan),
             );
-            (task_description, captain_message)
-        };
+            self.notify_captain_progress(session_id, captain_message)
+                .await?;
+            Ok(format!("Plan set for task '{task_description}'."))
+        } else {
+            // Mid-task plan change — tentatively set new plan and block for captain review.
+            let old_plan = old_plan.unwrap();
+            {
+                let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                let session = sessions
+                    .get_mut(session_id)
+                    .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+                let task = session
+                    .current_task
+                    .as_mut()
+                    .ok_or_else(|| "session has no active task".to_owned())?;
+                task.mate_plan = Some(new_plan.clone());
+                task.pending_mate_guidance = None;
+                set_agent_state(
+                    session,
+                    Role::Mate,
+                    AgentState::Working {
+                        plan: Some(new_plan.clone()),
+                        activity: Some("Awaiting captain review of plan change".to_owned()),
+                    },
+                );
+            }
+            self.persist_session(session_id).await?;
 
-        self.persist_session(session_id).await?;
+            let (tx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
+            {
+                let mut ops = self
+                    .pending_mcp_ops
+                    .lock()
+                    .expect("pending_mcp_ops mutex poisoned");
+                let entry = ops
+                    .entry(session_id.clone())
+                    .or_insert_with(PendingMcpOps::new);
+                entry.plan_change_reply = Some((old_plan.clone(), tx));
+            }
 
-        self.notify_captain_progress(session_id, captain_message)
-            .await?;
+            let captain_message = format!(
+                "The mate is changing their plan mid-task. Something important may have come up.\n\n\
+                Previous plan:\n{}\n\nProposed new plan:\n{}\n\n\
+                Call `captain_accept` to approve the new plan and unblock the mate, \
+                or `captain_steer` to reject it and redirect them (the old plan will be restored).",
+                Self::format_plan_status(&old_plan),
+                Self::format_plan_status(&new_plan),
+            );
+            self.interrupt_captain(session_id, captain_message).await?;
 
-        Ok(format!("Plan created for task '{task_description}'."))
+            match rx.await {
+                Ok(Ok(())) => Ok(
+                    "Plan change accepted by the captain. Continue with your new plan.".to_owned(),
+                ),
+                Ok(Err(message)) => Err(format!(
+                    "Plan change rejected by the captain: {message}. \
+                    Your previous plan has been restored. Adjust your approach accordingly."
+                )),
+                Err(_) => Err("Captain disconnected before responding to plan change.".to_owned()),
+            }
+        }
     }
 
     // r[mate.tool.plan-step-complete]
@@ -4734,12 +4843,8 @@ impl MateMcp for MateMcpSessionService {
     }
 
     // r[mate.tool.plan-create]
-    async fn plan_create(&self, steps: Vec<String>) -> McpToolCallResponse {
-        Self::response(
-            self.ship
-                .mate_tool_plan_create(&self.session_id, steps)
-                .await,
-        )
+    async fn set_plan(&self, steps: Vec<String>) -> McpToolCallResponse {
+        Self::response(self.ship.mate_tool_set_plan(&self.session_id, steps).await)
     }
 
     // r[mate.tool.plan-step-complete]
@@ -5393,8 +5498,8 @@ mod tests {
             .await
             .expect_err("run_command without plan should fail");
         assert!(
-            run_err.contains("plan_create"),
-            "error should mention plan_create: {run_err}"
+            run_err.contains("set_plan"),
+            "error should mention set_plan: {run_err}"
         );
 
         let write_err = ship
@@ -5402,8 +5507,8 @@ mod tests {
             .await;
         assert!(write_err.is_error, "write_file without plan should fail");
         assert!(
-            write_err.text.contains("plan_create"),
-            "error should mention plan_create: {}",
+            write_err.text.contains("set_plan"),
+            "error should mention set_plan: {}",
             write_err.text
         );
 
@@ -5418,8 +5523,8 @@ mod tests {
             .await
             .expect_err("edit_prepare without plan should fail");
         assert!(
-            edit_err.contains("plan_create"),
-            "error should mention plan_create: {edit_err}"
+            edit_err.contains("set_plan"),
+            "error should mention set_plan: {edit_err}"
         );
 
         let confirm_err = ship
@@ -5430,8 +5535,8 @@ mod tests {
             "edit_confirm without plan should fail"
         );
         assert!(
-            confirm_err.text.contains("plan_create"),
-            "error should mention plan_create: {}",
+            confirm_err.text.contains("set_plan"),
+            "error should mention set_plan: {}",
             confirm_err.text
         );
     }
@@ -5448,15 +5553,17 @@ mod tests {
             let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
             let session = sessions.get_mut(&session_id).expect("session should exist");
             session.worktree_path = Some(project_root.clone());
+            // Clear the plan the test helper pre-sets so set_plan takes the first-call path.
+            session.current_task.as_mut().unwrap().mate_plan = None;
         }
 
-        // plan_create no longer auto-commits — it just stores the plan and notifies the captain.
-        ship.mate_tool_plan_create(
+        // set_plan stores the plan and notifies the captain non-blocking on first call.
+        ship.mate_tool_set_plan(
             &session_id,
             vec!["Set up types".to_owned(), "Implement handler".to_owned()],
         )
         .await
-        .expect("plan_create should succeed");
+        .expect("set_plan should succeed");
 
         {
             let sessions = ship.sessions.lock().expect("sessions mutex poisoned");
@@ -5466,7 +5573,7 @@ mod tests {
             assert_eq!(plan.len(), 2);
             assert!(task.content_history.iter().any(|entry| matches!(
                 &entry.block,
-                ContentBlock::Text { text, .. } if text.contains("<system-notification>") && text.contains("The mate has created their plan.")
+                ContentBlock::Text { text, .. } if text.contains("<system-notification>") && text.contains("The mate has set their plan.")
             )));
         }
 

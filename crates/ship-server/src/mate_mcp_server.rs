@@ -179,7 +179,7 @@ impl ServerHandler for MateMcpHandler {
                     .map_err(call_tool_rpc_error)?
             }
             // r[mate.tool.plan-create]
-            "plan_create" => {
+            "set_plan" => {
                 let Some(steps) = arguments.get("steps").and_then(Value::as_array) else {
                     return Ok(tool_result("missing required argument: steps", true));
                 };
@@ -189,7 +189,7 @@ impl ServerHandler for MateMcpHandler {
                     .collect::<Option<Vec<_>>>()
                     .ok_or_else(|| call_tool_rpc_error("steps must be strings"))?;
                 self.client
-                    .plan_create(steps)
+                    .set_plan(steps)
                     .await
                     .map_err(call_tool_rpc_error)?
             }
@@ -457,8 +457,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
             }),
         },
         ToolDefinition {
-            name: "plan_create",
-            description: "Create the Ship-owned work plan before starting implementation. Notifies the captain asynchronously. Call this once after reading the code and before writing anything.",
+            name: "set_plan",
+            description: "Set (or change) the work plan. First call sets the plan and notifies the captain non-blocking. Subsequent calls mid-task are a blocking request: the captain must approve or reject the change before the mate can continue. Use this if you discover the scope has changed.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
