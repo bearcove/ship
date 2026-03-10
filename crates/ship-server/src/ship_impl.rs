@@ -964,6 +964,8 @@ Here's how you work:
 3. Work through your plan step by step. After completing each step, call \
    plan_step_complete with a brief summary of what you did.
 4. When you're done, call mate_submit with a summary of all your changes.
+5. After calling mate_submit, do not send any further messages. The tool \
+   call is the final action — the submission itself carries the summary.
 
 If you get stuck or need a decision, call mate_ask_captain — it will block \
 until the captain responds, so use it when you genuinely need direction.
@@ -2551,6 +2553,23 @@ Here is your task:
         Ok(())
     }
 
+    /// Append a progress message to the captain's feed without interrupting.
+    /// Use this when the mate wants the captain to see progress but the captain
+    /// should NOT be prompted to respond yet (e.g. plan step completions).
+    async fn append_captain_feed(
+        &self,
+        session_id: &SessionId,
+        message: String,
+    ) -> Result<(), String> {
+        let wrapped = format!("<system-notification>\n{message}\n</system-notification>");
+        self.append_human_message(
+            session_id,
+            Role::Captain,
+            &[PromptContentPart::Text { text: wrapped }],
+        )
+        .await
+    }
+
     fn commit_summary(result: Option<&AutoCommitResult>) -> String {
         match result {
             Some(result) if result.diff_stat.is_empty() => {
@@ -2732,7 +2751,7 @@ Here is your task:
             "The mate completed a step from their plan.\n\nCompleted: {step_description}\n\n{commit_summary}\n\nWe will notify you when they are done and need your review.",
         );
 
-        self.notify_captain_progress(session_id, captain_message)
+        self.append_captain_feed(session_id, captain_message)
             .await?;
 
         Ok(format!(
@@ -3708,12 +3727,15 @@ Here is your task:
                         sessions
                             .get(&session_id)
                             .and_then(|s| s.current_task.as_ref())
-                            .map(|t| t.record.status == TaskStatus::ReviewPending)
+                            .map(|t| {
+                                t.record.status == TaskStatus::ReviewPending
+                                    || t.record.status.is_terminal()
+                            })
                             .unwrap_or(false)
                     };
 
                     if already_submitted {
-                        // mate_submit was called; captain already notified
+                        // mate_submit was called or task already in terminal state; captain already notified
                         break;
                     }
 

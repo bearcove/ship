@@ -56,9 +56,7 @@ function formatTime(iso: string): string {
 
 function isSystemInjection(block: Extract<ContentBlock, { tag: "Text" }>): boolean {
   if (block.source.tag !== "Human") return false;
-  // Heuristic: injected messages are very long (> 400 chars) and don't look
-  // like short user steering messages.
-  return block.text.length > 400;
+  return block.text.includes("<system-notification>");
 }
 
 function systemInjectionLabel(role: Role): string {
