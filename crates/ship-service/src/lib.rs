@@ -91,6 +91,20 @@ pub trait CaptainMcp {
 
     // r[captain.tool.notify-human]
     async fn captain_notify_human(&self, message: String) -> McpToolCallResponse;
+
+    // r[captain.tool.read-only]
+    async fn captain_read_file(
+        &self,
+        path: String,
+        offset: Option<u64>,
+        limit: Option<u64>,
+    ) -> McpToolCallResponse;
+
+    // r[captain.tool.read-only]
+    async fn captain_search_files(&self, args: String) -> McpToolCallResponse;
+
+    // r[captain.tool.read-only]
+    async fn captain_list_files(&self, args: String) -> McpToolCallResponse;
 }
 
 // r[mate.tool.implementation]
@@ -136,6 +150,18 @@ pub trait MateMcp {
 
     // r[mate.tool.plan-step-complete]
     async fn plan_step_complete(&self, step_index: u64, summary: String) -> McpToolCallResponse;
+
+    // r[mate.tool.cargo-check]
+    async fn cargo_check(&self, args: Option<String>) -> McpToolCallResponse;
+
+    // r[mate.tool.cargo-clippy]
+    async fn cargo_clippy(&self, args: Option<String>) -> McpToolCallResponse;
+
+    // r[mate.tool.cargo-test]
+    async fn cargo_test(&self, args: Option<String>) -> McpToolCallResponse;
+
+    // r[mate.tool.pnpm-install]
+    async fn pnpm_install(&self, args: Option<String>) -> McpToolCallResponse;
 
     // r[mate.tool.ask-captain]
     async fn mate_ask_captain(&self, question: String) -> McpToolCallResponse;

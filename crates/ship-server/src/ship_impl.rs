@@ -832,7 +832,9 @@ the human briefly and wait for them to describe what they'd like to work on."
                     },
                 },
             );
-            transition_task(active, TaskStatus::Working).map_err(|error| error.to_string())?;
+            if status != TaskStatus::Working {
+                transition_task(active, TaskStatus::Working).map_err(|error| error.to_string())?;
+            }
             active.pending_steer = None;
         }
 
@@ -1169,6 +1171,142 @@ Here is your task:
         }
     }
 
+    // r[captain.tool.read-only]
+    async fn captain_tool_read_file(
+        &self,
+        session_id: &SessionId,
+        path: String,
+        offset: Option<u64>,
+        limit: Option<u64>,
+    ) -> Result<String, String> {
+        self.mate_tool_read_file(session_id, path, offset, limit)
+            .await
+    }
+
+    // r[captain.tool.read-only]
+    async fn captain_tool_search_files(
+        &self,
+        session_id: &SessionId,
+        args: String,
+    ) -> Result<String, String> {
+        self.mate_tool_search_files(session_id, args).await
+    }
+
+    // r[captain.tool.read-only]
+    async fn captain_tool_list_files(
+        &self,
+        session_id: &SessionId,
+        args: String,
+    ) -> Result<String, String> {
+        self.mate_tool_list_files(session_id, args).await
+    }
+
+    async fn mate_tool_networked_cargo(
+        &self,
+        session_id: &SessionId,
+        subcommand: &str,
+        extra_args: Option<String>,
+    ) -> Result<String, String> {
+        let worktree_path = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions
+                .get(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            Self::current_task_worktree_path(session)?.to_path_buf()
+        };
+        let args = match extra_args {
+            Some(a) if !a.trim().is_empty() => format!("{subcommand} {a}"),
+            _ => subcommand.to_owned(),
+        };
+        let shell_command = format!("exec 2>&1; cargo {args}");
+        let child = Self::networked_sandboxed_sh(&worktree_path, &shell_command)?;
+        let output = match tokio::time::timeout(RUN_COMMAND_TIMEOUT, child.wait_with_output()).await
+        {
+            Ok(Ok(output)) => output,
+            Ok(Err(error)) => return Err(format!("Command failed: {error}")),
+            Err(_) => return Err("Command timed out after 120 seconds.".to_owned()),
+        };
+        let combined = String::from_utf8_lossy(&output.stdout);
+        let truncated = Self::truncate_run_command_output(&combined);
+        let exit_code = output
+            .status
+            .code()
+            .map_or_else(|| "signal".to_owned(), |c| c.to_string());
+        if truncated.is_empty() {
+            Ok(format!("exit code: {exit_code}"))
+        } else {
+            Ok(format!("{truncated}\nexit code: {exit_code}"))
+        }
+    }
+
+    // r[mate.tool.cargo-check]
+    async fn mate_tool_cargo_check(
+        &self,
+        session_id: &SessionId,
+        args: Option<String>,
+    ) -> Result<String, String> {
+        self.mate_tool_networked_cargo(session_id, "check", args)
+            .await
+    }
+
+    // r[mate.tool.cargo-clippy]
+    async fn mate_tool_cargo_clippy(
+        &self,
+        session_id: &SessionId,
+        args: Option<String>,
+    ) -> Result<String, String> {
+        self.mate_tool_networked_cargo(session_id, "clippy", args)
+            .await
+    }
+
+    // r[mate.tool.cargo-test]
+    async fn mate_tool_cargo_test(
+        &self,
+        session_id: &SessionId,
+        args: Option<String>,
+    ) -> Result<String, String> {
+        self.mate_tool_networked_cargo(session_id, "nextest run", args)
+            .await
+    }
+
+    // r[mate.tool.pnpm-install]
+    async fn mate_tool_pnpm_install(
+        &self,
+        session_id: &SessionId,
+        args: Option<String>,
+    ) -> Result<String, String> {
+        let worktree_path = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions
+                .get(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            Self::current_task_worktree_path(session)?.to_path_buf()
+        };
+        let cmd_str = match args {
+            Some(a) if !a.trim().is_empty() => format!("pnpm install {a}"),
+            _ => "pnpm install".to_owned(),
+        };
+        let shell_command = format!("exec 2>&1; {cmd_str}");
+        let child = Self::networked_sandboxed_sh(&worktree_path, &shell_command)?;
+        let output = match tokio::time::timeout(RUN_COMMAND_TIMEOUT, child.wait_with_output()).await
+        {
+            Ok(Ok(output)) => output,
+            Ok(Err(error)) => return Err(format!("Command failed: {error}")),
+            Err(_) => return Err("Command timed out after 120 seconds.".to_owned()),
+        };
+        let combined = String::from_utf8_lossy(&output.stdout);
+        let truncated = Self::truncate_run_command_output(&combined);
+        let exit_code = output
+            .status
+            .code()
+            .map_or_else(|| "signal".to_owned(), |c| c.to_string());
+        if truncated.is_empty() {
+            Ok(format!("exit code: {exit_code}"))
+        } else {
+            Ok(format!("{truncated}\nexit code: {exit_code}"))
+        }
+    }
+
     fn format_plan_status(steps: &[PlanStep]) -> String {
         steps
             .iter()
@@ -1377,6 +1515,72 @@ Here is your task:
             MAX_TOOL_OUTPUT_LINES
         ));
         rendered
+    }
+
+    // r[mate.tool.sandbox]
+    fn sandboxed_sh(cwd: &Path, shell_command: &str) -> Result<tokio::process::Child, String> {
+        Self::spawn_sh(cwd, shell_command, false)
+    }
+
+    // r[mate.tool.networked-sandbox]
+    fn networked_sandboxed_sh(
+        cwd: &Path,
+        shell_command: &str,
+    ) -> Result<tokio::process::Child, String> {
+        Self::spawn_sh(cwd, shell_command, true)
+    }
+
+    fn spawn_sh(
+        cwd: &Path,
+        shell_command: &str,
+        allow_network: bool,
+    ) -> Result<tokio::process::Child, String> {
+        #[cfg(target_os = "macos")]
+        {
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/nonexistent".to_owned());
+            let worktree = cwd.to_string_lossy();
+            let extra_rules = if allow_network {
+                format!(
+                    "\n(allow file-write* (subpath \"{home}/.cargo\"))\
+                    \n(allow file-write* (subpath \"{home}/.rustup\"))"
+                )
+            } else {
+                "\n(deny network*)".to_owned()
+            };
+            let profile = format!(
+                "(version 1)\
+                \n(allow default)\
+                \n(deny file-write* (subpath \"/\"))\
+                \n(allow file-write* (subpath \"{worktree}\"))\
+                \n(allow file-write* (subpath \"/private/tmp\"))\
+                \n(allow file-write* (subpath \"/tmp\"))\
+                \n(allow file-write* (literal \"/dev/null\"))\
+                {extra_rules}"
+            );
+            let mut cmd = TokioCommand::new("/usr/bin/sandbox-exec");
+            cmd.arg("-p")
+                .arg(profile)
+                .arg("/bin/sh")
+                .arg("-c")
+                .arg(shell_command)
+                .current_dir(cwd)
+                .kill_on_drop(true)
+                .stdout(std::process::Stdio::piped());
+            cmd.spawn()
+                .map_err(|error| format!("Failed to start sandboxed command: {error}"))
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = allow_network;
+            let mut cmd = TokioCommand::new("/bin/sh");
+            cmd.arg("-c")
+                .arg(shell_command)
+                .current_dir(cwd)
+                .kill_on_drop(true)
+                .stdout(std::process::Stdio::piped());
+            cmd.spawn()
+                .map_err(|error| format!("Failed to start command: {error}"))
+        }
     }
 
     async fn run_worktree_shell_command(
@@ -1819,16 +2023,7 @@ Here is your task:
         .map_err(|error| format!("run_command path resolution failed: {error}"))??;
 
         let shell_command = format!("exec 2>&1; {}", command);
-        let mut child = TokioCommand::new("/bin/sh");
-        child
-            .arg("-c")
-            .arg(&shell_command)
-            .current_dir(&resolved_cwd)
-            .kill_on_drop(true)
-            .stdout(std::process::Stdio::piped());
-        let child = child
-            .spawn()
-            .map_err(|error| format!("Failed to start command: {error}"))?;
+        let mut child = Self::sandboxed_sh(&resolved_cwd, &shell_command)?;
 
         let output = match tokio::time::timeout(RUN_COMMAND_TIMEOUT, child.wait_with_output()).await
         {
@@ -4409,6 +4604,38 @@ impl CaptainMcp for CaptainMcpSessionService {
                 .await,
         )
     }
+
+    // r[captain.tool.read-only]
+    async fn captain_read_file(
+        &self,
+        path: String,
+        offset: Option<u64>,
+        limit: Option<u64>,
+    ) -> McpToolCallResponse {
+        Self::response(
+            self.ship
+                .captain_tool_read_file(&self.session_id, path, offset, limit)
+                .await,
+        )
+    }
+
+    // r[captain.tool.read-only]
+    async fn captain_search_files(&self, args: String) -> McpToolCallResponse {
+        Self::response(
+            self.ship
+                .captain_tool_search_files(&self.session_id, args)
+                .await,
+        )
+    }
+
+    // r[captain.tool.read-only]
+    async fn captain_list_files(&self, args: String) -> McpToolCallResponse {
+        Self::response(
+            self.ship
+                .captain_tool_list_files(&self.session_id, args)
+                .await,
+        )
+    }
 }
 
 #[derive(Clone)]
@@ -4531,6 +4758,38 @@ impl MateMcp for MateMcpSessionService {
         Self::response(
             self.ship
                 .mate_tool_plan_step_complete(&self.session_id, step_index, summary)
+                .await,
+        )
+    }
+
+    // r[mate.tool.cargo-check]
+    async fn cargo_check(&self, args: Option<String>) -> McpToolCallResponse {
+        Self::response(
+            self.ship
+                .mate_tool_cargo_check(&self.session_id, args)
+                .await,
+        )
+    }
+
+    // r[mate.tool.cargo-clippy]
+    async fn cargo_clippy(&self, args: Option<String>) -> McpToolCallResponse {
+        Self::response(
+            self.ship
+                .mate_tool_cargo_clippy(&self.session_id, args)
+                .await,
+        )
+    }
+
+    // r[mate.tool.cargo-test]
+    async fn cargo_test(&self, args: Option<String>) -> McpToolCallResponse {
+        Self::response(self.ship.mate_tool_cargo_test(&self.session_id, args).await)
+    }
+
+    // r[mate.tool.pnpm-install]
+    async fn pnpm_install(&self, args: Option<String>) -> McpToolCallResponse {
+        Self::response(
+            self.ship
+                .mate_tool_pnpm_install(&self.session_id, args)
                 .await,
         )
     }

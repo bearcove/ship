@@ -839,6 +839,13 @@ The captain MUST have access to a `captain_notify_human` tool that takes a
 `message` argument (string). This blocks until the human responds via the UI,
 then returns the human's reply text to the captain.
 
+r[captain.tool.read-only]
+The captain MUST have access to read-only file tools: `read_file`,
+`search_files`, and `list_files`. These operate on the session worktree with
+the same semantics as the mate equivalents (see r[mate.tool.read-file],
+r[mate.tool.search-files], r[mate.tool.list-files]). The captain MUST NOT
+have access to write, edit, or run-command tools.
+
 ### Mate Tools
 
 r[mate.tool.implementation]
@@ -889,10 +896,45 @@ as a string. The command runs in the worktree root. Output is truncated at
 r[mate.tool.run-command]
 The mate MUST have access to a `run_command` tool that takes a `command`
 argument (string) and optional `cwd` (relative to worktree). The command
-runs via `sh -c` in the worktree. Commands matching dangerous patterns per
-`r[mate.tool.guardrails]` are not executed; instead the mate is directed to
-explain the need to the captain via `mate_ask_captain`. Output is truncated
-at 1000 lines. Timeout is 120 seconds.
+runs via `sh -c` in the worktree per `r[mate.tool.sandbox]`. Commands
+matching dangerous patterns per `r[mate.tool.guardrails]` are not executed;
+instead the mate is directed to explain the need to the captain via
+`mate_ask_captain`. Output is truncated at 1000 lines. Timeout is 120
+seconds.
+
+r[mate.tool.sandbox]
+On macOS, Ship MUST execute mate `run_command` calls under `sandbox-exec`
+with a Seatbelt profile that:
+- Allows all filesystem reads
+- Denies all filesystem writes outside the session worktree and `/tmp`
+- Denies all network access (including outbound TCP/UDP)
+On other platforms, sandboxing is not yet implemented.
+
+r[mate.tool.networked-sandbox]
+Certain mate tools require network access (e.g. to fetch packages). These
+tools run under a separate `sandbox-exec` profile identical to
+`r[mate.tool.sandbox]` except network access is permitted. Tools covered:
+`cargo_check`, `cargo_clippy`, `cargo_test`, `pnpm_install`.
+
+r[mate.tool.cargo-check]
+The mate MUST have access to a `cargo_check` tool that runs `cargo check`
+in the session worktree under the networked sandbox (`r[mate.tool.networked-sandbox]`).
+Takes an optional `args` string appended to the command.
+
+r[mate.tool.cargo-clippy]
+The mate MUST have access to a `cargo_clippy` tool that runs `cargo clippy`
+in the session worktree under the networked sandbox. Takes an optional
+`args` string appended to the command.
+
+r[mate.tool.cargo-test]
+The mate MUST have access to a `cargo_test` tool that runs `cargo nextest run`
+in the session worktree under the networked sandbox. Takes an optional
+`args` string appended to the command.
+
+r[mate.tool.pnpm-install]
+The mate MUST have access to a `pnpm_install` tool that runs `pnpm install`
+in the session worktree under the networked sandbox. Takes an optional
+`args` string appended to the command.
 
 r[mate.tool.send-update]
 The mate MUST have access to a `mate_send_update` tool that takes a `message`

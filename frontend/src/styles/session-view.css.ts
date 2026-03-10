@@ -146,7 +146,7 @@ const bubblePulse = keyframes({
 
 export const liveBubblesRow = style({
   display: "flex",
-  justifyContent: "space-between",
+  flexDirection: "column",
   padding: "0 var(--space-3) var(--space-2)",
   gap: "var(--space-2)",
   flexShrink: 0,
@@ -397,6 +397,8 @@ export const feedMessageTimestamp = style({
   color: "var(--gray-9)",
   lineHeight: 1,
   whiteSpace: "nowrap",
+  float: "right",
+  marginTop: "6px",
 });
 
 export const feedMessageMeta = style({

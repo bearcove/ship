@@ -111,6 +111,38 @@ impl ServerHandler for CaptainMcpHandler {
                     .await
                     .map_err(call_tool_rpc_error)?
             }
+            // r[captain.tool.read-only]
+            "read_file" => {
+                let Some(path) = arguments.get("path").and_then(Value::as_str) else {
+                    return Ok(tool_result("missing required argument: path", true));
+                };
+                let offset = arguments.get("offset").and_then(Value::as_u64);
+                let limit = arguments.get("limit").and_then(Value::as_u64);
+                self.client
+                    .captain_read_file(path.to_owned(), offset, limit)
+                    .await
+                    .map_err(call_tool_rpc_error)?
+            }
+            // r[captain.tool.read-only]
+            "search_files" => {
+                let Some(args) = arguments.get("args").and_then(Value::as_str) else {
+                    return Ok(tool_result("missing required argument: args", true));
+                };
+                self.client
+                    .captain_search_files(args.to_owned())
+                    .await
+                    .map_err(call_tool_rpc_error)?
+            }
+            // r[captain.tool.read-only]
+            "list_files" => {
+                let Some(args) = arguments.get("args").and_then(Value::as_str) else {
+                    return Ok(tool_result("missing required argument: args", true));
+                };
+                self.client
+                    .captain_list_files(args.to_owned())
+                    .await
+                    .map_err(call_tool_rpc_error)?
+            }
             other => return Err(CallToolError::unknown_tool(other.to_owned())),
         };
 
@@ -251,6 +283,44 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "message": { "type": "string" }
                 },
                 "required": ["message"],
+                "additionalProperties": false,
+            }),
+        },
+        ToolDefinition {
+            name: "read_file",
+            description: "Read a file in the session worktree. Returns numbered lines. Use offset/limit to page through large files.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string", "description": "Worktree-relative path." },
+                    "offset": { "type": "integer", "description": "1-based line to start from." },
+                    "limit": { "type": "integer", "description": "Maximum number of lines to return." }
+                },
+                "required": ["path"],
+                "additionalProperties": false,
+            }),
+        },
+        ToolDefinition {
+            name: "search_files",
+            description: "Search files in the session worktree using ripgrep (rg). Pass rg arguments as a string.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "args": { "type": "string", "description": "ripgrep arguments, e.g. \"TODO --type rust\"" }
+                },
+                "required": ["args"],
+                "additionalProperties": false,
+            }),
+        },
+        ToolDefinition {
+            name: "list_files",
+            description: "List files in the session worktree using fd. Pass fd arguments as a string.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "args": { "type": "string", "description": "fd arguments, e.g. \"--extension rs\"" }
+                },
+                "required": ["args"],
                 "additionalProperties": false,
             }),
         },
