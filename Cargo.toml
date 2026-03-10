@@ -29,5 +29,5 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 axum = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 hyper-tungstenite = "0.17"

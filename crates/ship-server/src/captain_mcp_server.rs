@@ -29,6 +29,8 @@ struct ToolDefinition {
 struct CaptainMcpHandler {
     client: CaptainMcpClient,
     tools: Arc<Vec<ToolDefinition>>,
+    kagi_api_key: Option<String>,
+    http_client: reqwest::Client,
 }
 
 #[async_trait]
@@ -143,6 +145,15 @@ impl ServerHandler for CaptainMcpHandler {
                     .await
                     .map_err(call_tool_rpc_error)?
             }
+            "web_search" => {
+                let Some(query) = arguments.get("query").and_then(Value::as_str) else {
+                    return Ok(tool_result("missing required argument: query", true));
+                };
+                let Some(ref api_key) = self.kagi_api_key else {
+                    return Ok(tool_result("KAGI_API_KEY is not configured", true));
+                };
+                return Ok(kagi_web_search(&self.http_client, api_key, query).await);
+            }
             other => return Err(CallToolError::unknown_tool(other.to_owned())),
         };
 
@@ -151,6 +162,14 @@ impl ServerHandler for CaptainMcpHandler {
 }
 
 pub async fn run_stdio_server(args: CaptainMcpServerArgs) -> Result<(), String> {
+    let kagi_api_key = match std::env::var("KAGI_API_KEY") {
+        Ok(key) => Some(key),
+        Err(_) => {
+            tracing::warn!("KAGI_API_KEY is not set; web_search tool will be unavailable");
+            None
+        }
+    };
+
     let ws_stream = tokio_tungstenite::connect_async(&args.server_ws_url)
         .await
         .map_err(|error| format!("failed to connect to ship server websocket: {error}"))?
@@ -189,6 +208,8 @@ pub async fn run_stdio_server(args: CaptainMcpServerArgs) -> Result<(), String> 
         handler: CaptainMcpHandler {
             client,
             tools: Arc::new(tool_definitions()),
+            kagi_api_key,
+            http_client: reqwest::Client::new(),
         }
         .to_mcp_server_handler(),
         task_store: None,
@@ -324,6 +345,18 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                 "additionalProperties": false,
             }),
         },
+        ToolDefinition {
+            name: "web_search",
+            description: "Search the web using Kagi FastGPT. Returns an AI-synthesized answer and a list of references.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string" }
+                },
+                "required": ["query"],
+                "additionalProperties": false,
+            }),
+        },
     ]
 }
 
@@ -369,4 +402,70 @@ fn metadata_string_owned(key: &'static str, value: String) -> MetadataEntry<'sta
         value: MetadataValue::String(Box::leak(value.into_boxed_str())),
         flags: MetadataFlags::NONE,
     }
+}
+
+async fn kagi_web_search(
+    http_client: &reqwest::Client,
+    api_key: &str,
+    query: &str,
+) -> CallToolResult {
+    let response = match http_client
+        .post("https://kagi.com/api/v0/fastgpt")
+        .header("Authorization", format!("Bot {api_key}"))
+        .json(&json!({ "query": query }))
+        .send()
+        .await
+    {
+        Ok(r) => r,
+        Err(error) => return tool_result(&format!("web_search request failed: {error}"), true),
+    };
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return tool_result(
+            &format!("web_search request failed with status {status}: {body}"),
+            true,
+        );
+    }
+
+    let body: Value = match response.json().await {
+        Ok(v) => v,
+        Err(error) => {
+            return tool_result(
+                &format!("failed to parse web_search response: {error}"),
+                true,
+            );
+        }
+    };
+
+    let output = body
+        .get("data")
+        .and_then(|d| d.get("output"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+
+    let mut text = output.to_owned();
+
+    if let Some(refs) = body
+        .get("data")
+        .and_then(|d| d.get("references"))
+        .and_then(Value::as_array)
+    {
+        if !refs.is_empty() {
+            text.push_str("\n\n## References\n");
+            for r in refs {
+                let title = r.get("title").and_then(Value::as_str).unwrap_or("Untitled");
+                let url = r.get("url").and_then(Value::as_str).unwrap_or("");
+                let snippet = r.get("snippet").and_then(Value::as_str).unwrap_or("");
+                if snippet.is_empty() {
+                    text.push_str(&format!("- [{title}]({url})\n"));
+                } else {
+                    text.push_str(&format!("- [{title}]({url}): {snippet}\n"));
+                }
+            }
+        }
+    }
+
+    tool_result(&text, false)
 }
