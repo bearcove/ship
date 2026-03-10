@@ -439,11 +439,7 @@ export function UnifiedFeed({
 
         <Box className={liveBubblesRow}>
           {captainWorking && <LiveBubble role={{ tag: "Captain" }} />}
-          {mateWorking && (
-            <Box style={{ marginLeft: "auto" }}>
-              <LiveBubble role={{ tag: "Mate" }} />
-            </Box>
-          )}
+          {mateWorking && <LiveBubble role={{ tag: "Mate" }} />}
         </Box>
       </Box>
     </Box>
