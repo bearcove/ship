@@ -57,9 +57,22 @@ fn parts_to_log_text(parts: &[PromptContentPart]) -> String {
 const FILE_MENTION_LINE_LIMIT: usize = 200;
 const MAX_WORKTREE_FILES: usize = 5000;
 
-const PLAN_REQUIRED_MESSAGE: &str = "You must create a plan with plan_create before starting work.";
-const BLOCKED_COMMAND_MESSAGE: &str = "This command is blocked. Stop current work and explain the situation to the captain using mate_ask_captain.";
-const RUN_COMMAND_GUARDRAIL_TEMPLATE: &str = "Commands like `{command}` can affect the worktree in ways that are hard to undo. Please explain what you're trying to accomplish by calling mate_ask_captain, and the captain will help you find the right approach.";
+const PLAN_REQUIRED_MESSAGE: &str = "\
+Before you can write files, run commands, or make edits, you need to lay out \
+a plan using plan_create. Read the relevant code, understand the problem, then \
+call plan_create with the steps you intend to take. Once your plan is in place, \
+you can start working.";
+
+const BLOCKED_COMMAND_MESSAGE: &str = "\
+That command has been blocked because it could damage the worktree in ways \
+that are hard to undo. Stop what you're doing and use mate_ask_captain to \
+explain what you were trying to accomplish — the captain can help you find \
+a safe approach.";
+
+const RUN_COMMAND_GUARDRAIL_TEMPLATE: &str = "\
+The command `{command}` has been blocked because it could affect the worktree \
+in ways that are hard to undo. Use mate_ask_captain to explain what you need, \
+and the captain will help you find the right approach.";
 const DEFAULT_READ_FILE_LIMIT: usize = 2000;
 const MAX_READ_FILE_LINE_LENGTH: usize = 2000;
 const BINARY_DETECTION_BYTES: usize = 8 * 1024;
@@ -631,15 +644,30 @@ impl ShipImpl {
 
     // r[captain.system-prompt]
     fn captain_bootstrap_prompt() -> String {
-        [
-            "You are the Ship captain for this session.",
-            "Act as a senior engineer who scopes work, reviews changes, and delegates to the mate.",
-            "Do not write code directly and do not assume there is already a task.",
-            "A new session has just been created and there is no active task yet.",
-            "Greet the user briefly, explain that you are ready to help plan or review work, then wait.",
-            "Do not delegate to the mate yet.",
-        ]
-        .join("\n")
+        "\
+You are the captain — a senior engineer who plans, reviews, and steers, but \
+never writes code directly.
+
+A human will describe what they want built or fixed. Your job is to understand \
+the request, ask clarifying questions if anything is unclear, and then delegate \
+the actual implementation to the mate by calling captain_assign with a clear \
+task description.
+
+Here's how a typical cycle works:
+
+1. The human describes a goal.
+2. You discuss it with the human until the scope is clear.
+3. You call captain_assign to hand the work to the mate.
+4. The mate creates a plan, implements it, and calls mate_submit when done.
+5. You review the mate's work and either accept it (captain_accept), give \
+   feedback (captain_steer), or cancel it (captain_cancel).
+
+You can also steer the mate mid-flight with captain_steer if you see it going \
+off track, or notify the human with captain_notify_human if you need their input.
+
+Right now, a new session has just started and there is no active task. Greet \
+the human briefly and wait for them to describe what they'd like to work on."
+            .to_owned()
     }
 
     // r[captain.tool.transport]
@@ -916,6 +944,38 @@ impl ShipImpl {
         Ok(())
     }
 
+    // r[mate.system-prompt]
+    fn mate_task_preamble(description: &str) -> String {
+        format!(
+            "\
+You are the mate — an implementation-focused engineer. The captain has just \
+assigned you a task. Your job is to write code, run tests, and get things done.
+
+Here's how you work:
+
+1. Read the relevant files and understand the problem.
+2. Call plan_create with a list of steps you intend to take. You cannot write \
+   files, run commands, or make edits until you've done this.
+3. Work through your plan step by step. After completing each step, call \
+   plan_step_complete with a brief summary of what you did.
+4. When you're done, call mate_submit with a summary of all your changes.
+
+If you get stuck or need a decision, call mate_ask_captain — it will block \
+until the captain responds, so use it when you genuinely need direction.
+
+You can also send non-blocking progress updates with mate_send_update if you \
+want to keep the captain informed without waiting for a reply.
+
+All your file operations go through Ship's tools (read_file, write_file, \
+edit_prepare/edit_confirm, search_files, list_files, run_command). Do not try \
+to use any other file or terminal tools.
+
+Here is your task:
+
+{description}"
+        )
+    }
+
     // r[task.assign]
     // r[captain.tool.assign]
     async fn captain_tool_assign(
@@ -930,13 +990,15 @@ impl ShipImpl {
             self.restart_mate(session_id).await?;
         }
 
+        let mate_prompt = Self::mate_task_preamble(&description);
+
         let this = self.clone();
         let session_id = session_id.clone();
         tokio::spawn(async move {
             if let Err(error) = this
                 .dispatch_steer_to_mate(
                     &session_id,
-                    vec![PromptContentPart::Text { text: description }],
+                    vec![PromptContentPart::Text { text: mate_prompt }],
                 )
                 .await
             {
@@ -1686,6 +1748,7 @@ impl ShipImpl {
             let session = sessions
                 .get(session_id)
                 .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            Self::require_mate_plan(session)?;
             Self::current_task_worktree_path(session)?.to_path_buf()
         };
 
@@ -1953,6 +2016,7 @@ impl ShipImpl {
             let session = sessions
                 .get(session_id)
                 .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            Self::require_mate_plan(session)?;
             Self::current_task_worktree_path(session)?.to_path_buf()
         };
 
@@ -2051,6 +2115,7 @@ impl ShipImpl {
             let session = sessions
                 .get(session_id)
                 .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            Self::require_mate_plan(session)?;
             Self::current_task_worktree_path(session)?.to_path_buf()
         };
 
@@ -2127,6 +2192,7 @@ impl ShipImpl {
             let session = sessions
                 .get(session_id)
                 .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            Self::require_mate_plan(session)?;
             let pending_edit = session
                 .pending_edits
                 .get(&edit_id)
@@ -2376,6 +2442,21 @@ impl ShipImpl {
             }
             Some(result) => format!("Commit: {}\nDiff: {}", result.commit_hash, result.diff_stat),
             None => "Commit: skipped (worktree clean)".to_owned(),
+        }
+    }
+
+    // r[mate.tool.plan-create]
+    // Checks that the mate has created a plan before allowing substantive work.
+    // Returns Ok(()) if a plan exists, Err with a human-readable message otherwise.
+    fn require_mate_plan(session: &ActiveSession) -> Result<(), String> {
+        let has_plan = session
+            .current_task
+            .as_ref()
+            .is_some_and(|task| task.mate_plan.is_some());
+        if has_plan {
+            Ok(())
+        } else {
+            Err(PLAN_REQUIRED_MESSAGE.to_owned())
         }
     }
 
@@ -4299,9 +4380,9 @@ mod tests {
     use ship_service::Ship;
     use ship_types::{
         AgentDiscovery, AgentKind, ContentBlock, CreateSessionRequest, CreateSessionResponse,
-        CurrentTask, McpServerConfig, McpStdioServerConfig, PlanStepStatus, ProjectName,
-        PromptContentPart, SessionEvent, SessionEventEnvelope, SessionId, SessionStartupState,
-        SubscribeMessage, TaskId, TaskRecord, TaskStatus,
+        CurrentTask, McpServerConfig, McpStdioServerConfig, PlanStep, PlanStepPriority,
+        PlanStepStatus, ProjectName, PromptContentPart, SessionEvent, SessionEventEnvelope,
+        SessionId, SessionStartupState, SubscribeMessage, TaskId, TaskRecord, TaskStatus,
     };
     use tokio::sync::{broadcast, mpsc};
     use tokio::time::timeout;
@@ -4435,7 +4516,11 @@ mod tests {
                     description: "Investigate workflow".to_owned(),
                     status: TaskStatus::Assigned,
                 },
-                mate_plan: None,
+                mate_plan: Some(vec![PlanStep {
+                    description: "Test step".to_owned(),
+                    priority: PlanStepPriority::Medium,
+                    status: PlanStepStatus::Pending,
+                }]),
                 pending_mate_guidance: None,
                 content_history: Vec::new(),
                 event_log: Vec::new(),
@@ -4823,6 +4908,64 @@ mod tests {
     }
 
     // r[verify mate.tool.plan-create]
+    #[tokio::test]
+    async fn mate_tools_require_plan_before_substantive_work() {
+        let _guard = lock_mate_tool_tests();
+        let (dir, ship, session_id) = create_session_for_workflow_test("mate-plan-gate").await;
+        let project_root = dir.join("project");
+
+        {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(&session_id).expect("session should exist");
+            session.worktree_path = Some(project_root.clone());
+            // Clear the plan that the test helper sets up
+            session.current_task.as_mut().unwrap().mate_plan = None;
+        }
+
+        let run_err = ship
+            .mate_tool_run_command(&session_id, "echo hello".to_owned(), None)
+            .await
+            .expect_err("run_command without plan should fail");
+        assert!(
+            run_err.contains("plan_create"),
+            "error should mention plan_create: {run_err}"
+        );
+
+        let write_err = ship
+            .mate_tool_write_file(&session_id, "test.txt".to_owned(), "content".to_owned())
+            .await
+            .expect_err("write_file without plan should fail");
+        assert!(
+            write_err.contains("plan_create"),
+            "error should mention plan_create: {write_err}"
+        );
+
+        let edit_err = ship
+            .mate_tool_edit_prepare(
+                &session_id,
+                "test.txt".to_owned(),
+                "old".to_owned(),
+                "new".to_owned(),
+                None,
+            )
+            .await
+            .expect_err("edit_prepare without plan should fail");
+        assert!(
+            edit_err.contains("plan_create"),
+            "error should mention plan_create: {edit_err}"
+        );
+
+        let confirm_err = ship
+            .mate_tool_edit_confirm(&session_id, "edit-0".to_owned())
+            .await
+            .expect_err("edit_confirm without plan should fail");
+        assert!(
+            confirm_err.contains("plan_create"),
+            "error should mention plan_create: {confirm_err}"
+        );
+    }
+
+    // r[verify mate.tool.plan-create]
     // r[verify mate.tool.plan-step-complete]
     #[tokio::test]
     async fn mate_plan_tools_persist_plan_commit_worktree_and_notify_captain() {
@@ -5132,7 +5275,9 @@ mod tests {
             .expect_err("dangerous command should be redirected");
         assert_eq!(
             guarded,
-            "Commands like `git checkout .` can affect the worktree in ways that are hard to undo. Please explain what you're trying to accomplish by calling mate_ask_captain, and the captain will help you find the right approach."
+            "The command `git checkout .` has been blocked because it could affect the worktree \
+in ways that are hard to undo. Use mate_ask_captain to explain what you need, \
+and the captain will help you find the right approach."
         );
 
         let custom_cwd = ship

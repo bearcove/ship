@@ -87,32 +87,12 @@ impl ShipAcpClient {
         *self.active_text_block.borrow_mut() = None;
     }
 
+    // r[mate.capabilities]
+    // The mate must only use Ship's MCP tools. Any ACP built-in tool usage
+    // (Read, Write, Edit, Bash, etc.) is denied outright — we find a reject
+    // option in the permission request and select it automatically.
     fn blocked_permission_option_id(&self, request: &RequestPermissionRequest) -> Option<String> {
         if self.role != Role::Mate {
-            return None;
-        }
-
-        let tool_kind = request.tool_call.fields.kind?;
-        let raw_input = request.tool_call.fields.raw_input.as_ref();
-        let command =
-            map_command_target(&self.worktree_path, raw_input).map(|target| match target {
-                ShipToolTarget::Command { command, .. } => command,
-                _ => unreachable!("map_command_target only returns command targets"),
-            });
-
-        let is_dangerous = match tool_kind {
-            ToolKind::Execute => command
-                .as_deref()
-                .map(is_dangerous_command)
-                .unwrap_or(false),
-            ToolKind::Delete => command
-                .as_deref()
-                .map(is_broad_recursive_delete)
-                .unwrap_or(false),
-            _ => false,
-        };
-
-        if !is_dangerous {
             return None;
         }
 
@@ -391,7 +371,7 @@ impl Client for ShipAcpClient {
                 role: self.role,
                 state: AgentState::Working {
                     plan: None,
-                    activity: Some("Blocked dangerous command".to_owned()),
+                    activity: Some("Blocked built-in tool (use MCP tools)".to_owned()),
                 },
             });
             return Ok(RequestPermissionResponse::new(
@@ -1400,8 +1380,9 @@ mod tests {
         local
             .run_until(async {
                 let (tx, mut rx) = mpsc::unbounded_channel();
+                // Use Captain role — the mate auto-rejects all ACP permissions
                 let client = Rc::new(ShipAcpClient::new(
-                    Role::Mate,
+                    Role::Captain,
                     PathBuf::from("/tmp/worktree"),
                     tx,
                 ));
@@ -1508,9 +1489,9 @@ mod tests {
             .await;
     }
 
-    // r[verify mate.tool.guardrails]
+    // r[verify mate.capabilities]
     #[tokio::test(flavor = "current_thread")]
-    async fn dangerous_mate_commands_are_rejected_automatically() {
+    async fn mate_builtin_tool_requests_are_rejected_automatically() {
         let local = tokio::task::LocalSet::new();
         local
             .run_until(async {
@@ -1567,7 +1548,77 @@ mod tests {
                 let AgentState::Working { activity, .. } = state else {
                     panic!("unexpected state: {state:?}");
                 };
-                assert_eq!(activity.as_deref(), Some("Blocked dangerous command"));
+                assert_eq!(
+                    activity.as_deref(),
+                    Some("Blocked built-in tool (use MCP tools)")
+                );
+            })
+            .await;
+    }
+
+    // r[verify mate.capabilities]
+    #[tokio::test(flavor = "current_thread")]
+    async fn mate_read_builtin_is_also_rejected() {
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async {
+                let (tx, mut rx) = mpsc::unbounded_channel();
+                let client = Rc::new(ShipAcpClient::new(
+                    Role::Mate,
+                    PathBuf::from("/tmp/worktree"),
+                    tx,
+                ));
+
+                let request = RequestPermissionRequest::new(
+                    "session-1",
+                    ToolCallUpdate::new(
+                        "toolu_read",
+                        ToolCallUpdateFields::new()
+                            .title("Read File".to_owned())
+                            .kind(ToolKind::Read)
+                            .raw_input(serde_json::json!({
+                                "path": "/tmp/worktree/src/lib.rs",
+                            })),
+                    ),
+                    vec![
+                        AcpPermissionOption::new(
+                            "allow-once",
+                            "Allow once",
+                            PermissionOptionKind::AllowOnce,
+                        ),
+                        AcpPermissionOption::new(
+                            "reject-once",
+                            "Reject once",
+                            PermissionOptionKind::RejectOnce,
+                        ),
+                    ],
+                );
+
+                let response = client
+                    .request_permission(request)
+                    .await
+                    .expect("permission request should succeed");
+
+                assert_eq!(
+                    response.outcome,
+                    RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
+                        "reject-once",
+                    ))
+                );
+
+                let _ = rx.recv().await.expect("permission block event");
+                let _ = rx.recv().await.expect("awaiting permission state event");
+                let working = rx.recv().await.expect("working state event");
+                let SessionEvent::AgentStateChanged { state, .. } = working else {
+                    panic!("unexpected event: {working:?}");
+                };
+                let AgentState::Working { activity, .. } = state else {
+                    panic!("unexpected state: {state:?}");
+                };
+                assert_eq!(
+                    activity.as_deref(),
+                    Some("Blocked built-in tool (use MCP tools)")
+                );
             })
             .await;
     }
