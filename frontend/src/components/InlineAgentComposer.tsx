@@ -378,6 +378,22 @@ export function InlineAgentComposer({
       onDrop={handleDrop}
       data-drag-over={isDragOver}
     >
+      {attachedImages.length > 0 && (
+        <div className={attachedImageThumbList}>
+          {attachedImages.map((img) => (
+            <div key={img.id} className={attachedImageThumbWrapper}>
+              <img src={img.objectUrl} alt={img.name} className={attachedImageThumb} />
+              <button
+                className={attachedImageRemove}
+                onClick={() => removeImage(img.id)}
+                aria-label={`Remove ${img.name}`}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <div className={composerInputWrapper}>
         {isDragOver && <div className={composerDropIndicator}>Drop image here</div>}
         {mentionQuery !== null && filteredFiles.length > 0 && (
@@ -412,22 +428,6 @@ export function InlineAgentComposer({
           aria-label={role.tag === "Captain" ? "Captain steer input" : "Mate steer input"}
         />
       </div>
-      {attachedImages.length > 0 && (
-        <div className={attachedImageThumbList}>
-          {attachedImages.map((img) => (
-            <div key={img.id} className={attachedImageThumbWrapper}>
-              <img src={img.objectUrl} alt={img.name} className={attachedImageThumb} />
-              <button
-                className={attachedImageRemove}
-                onClick={() => removeImage(img.id)}
-                aria-label={`Remove ${img.name}`}
-              >
-                ×
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
       <input
         ref={fileInputRef}
         type="file"
