@@ -5,7 +5,14 @@ import type {
   SessionStartupState,
   TaskStatus,
 } from "../generated/ship";
-import { type BlockStore, createBlockStore, appendBlock, patchBlock } from "./blockStore";
+import {
+  type BlockStore,
+  createBlockStore,
+  appendBlock,
+  patchBlock,
+  appendBlockMut,
+  patchBlockMut,
+} from "./blockStore";
 
 // r[event.client.view-state]
 // r[session.agent.captain]
@@ -53,6 +60,7 @@ export function initialSessionViewState(): SessionViewState {
 export type SessionAction =
   | { type: "hydrate"; session: SessionDetail }
   | { type: "event"; envelope: SessionEventEnvelope }
+  | { type: "replay-batch"; envelopes: SessionEventEnvelope[] }
   | { type: "replay-complete" }
   | { type: "connected"; attempt: number }
   | { type: "disconnected"; reason: string };
@@ -97,6 +105,107 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         disconnectReason: action.reason,
         connectionAttempt: state.connectionAttempt,
       };
+
+    // r[event.replay-batch]
+    case "replay-batch": {
+      const { envelopes } = action;
+      if (envelopes.length === 0) return state;
+
+      // Work with mutable block stores during batch, then freeze at the end
+      const captainBlocks: BlockStore = {
+        blocks: [...state.captainBlocks.blocks],
+        index: new Map(state.captainBlocks.index),
+      };
+      const mateBlocks: BlockStore = {
+        blocks: [...state.mateBlocks.blocks],
+        index: new Map(state.mateBlocks.index),
+      };
+
+      let {
+        captain,
+        mate,
+        startupState,
+        currentTaskId,
+        currentTaskDescription,
+        currentTaskStatus,
+      } = state;
+
+      for (const envelope of envelopes) {
+        const ev = envelope.event;
+        switch (ev.tag) {
+          case "BlockAppend": {
+            const store = ev.role.tag === "Captain" ? captainBlocks : mateBlocks;
+            appendBlockMut(store, ev.block_id, ev.role, ev.block, envelope.timestamp);
+            break;
+          }
+          case "BlockPatch": {
+            const store = ev.role.tag === "Captain" ? captainBlocks : mateBlocks;
+            patchBlockMut(store, ev.block_id, ev.patch);
+            break;
+          }
+          case "AgentStateChanged": {
+            if (ev.role.tag === "Captain" && captain) {
+              captain = { ...captain, state: ev.state };
+            } else if (ev.role.tag !== "Captain" && mate) {
+              mate = { ...mate, state: ev.state };
+            }
+            break;
+          }
+          case "SessionStartupChanged":
+            startupState = ev.state;
+            break;
+          case "TaskStatusChanged":
+            currentTaskStatus = ev.status;
+            break;
+          case "ContextUpdated": {
+            if (ev.role.tag === "Captain" && captain) {
+              captain = { ...captain, context_remaining_percent: ev.remaining_percent };
+            } else if (ev.role.tag !== "Captain" && mate) {
+              mate = { ...mate, context_remaining_percent: ev.remaining_percent };
+            }
+            break;
+          }
+          case "TaskStarted":
+            currentTaskId = ev.task_id;
+            currentTaskDescription = ev.description;
+            currentTaskStatus = { tag: "Assigned" };
+            break;
+          case "AgentModelChanged": {
+            if (ev.role.tag === "Captain" && captain) {
+              captain = {
+                ...captain,
+                model_id: ev.model_id,
+                ...(ev.available_models.length > 0 && { available_models: ev.available_models }),
+              };
+            } else if (ev.role.tag !== "Captain" && mate) {
+              mate = {
+                ...mate,
+                model_id: ev.model_id,
+                ...(ev.available_models.length > 0 && { available_models: ev.available_models }),
+              };
+            }
+            break;
+          }
+        }
+      }
+
+      const lastEnvelope = envelopes[envelopes.length - 1];
+      return {
+        ...state,
+        captain,
+        mate,
+        captainBlocks,
+        mateBlocks,
+        startupState,
+        currentTaskId,
+        currentTaskDescription,
+        currentTaskStatus,
+        lastSeq: Number(lastEnvelope.seq),
+        lastEventKind: lastEnvelope.event.tag,
+        eventCount: state.eventCount + envelopes.length,
+        replayEventCount: state.replayEventCount + envelopes.length,
+      };
+    }
 
     case "event": {
       const { envelope } = action;

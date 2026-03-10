@@ -555,6 +555,14 @@ show a loading indicator until `ReplayComplete` is received. Since
 `ReplayComplete` is not a `SessionEvent`, it does not appear in the event
 log and is not broadcast to other subscribers.
 
+r[event.replay-batch]
+The frontend MUST buffer all events received during replay and apply them
+in a single batch dispatch when `ReplayComplete` arrives. This avoids
+per-event React render cycles during replay, reducing session switch cost
+from O(N) renders to O(1). The batch reducer MUST use mutable block store
+operations internally to avoid O(N²) array copies, then produce a single
+immutable state at the end.
+
 r[event.replay.snapshot-optimization]
 As a post-v1 optimization, the backend MAY replace event-by-event replay
 with a single `Snapshot` control message containing the full materialized

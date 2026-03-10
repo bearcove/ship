@@ -264,6 +264,8 @@ export function useSessionState(
 
       let stopReason: string | null = null;
       let lastSeenSeq = stateRef.current.lastSeq;
+      let replayBuffer: SessionEventEnvelope[] = [];
+      let replaying = true;
 
       while (true) {
         const next = await Promise.race([
@@ -296,7 +298,7 @@ export function useSessionState(
               envelope: next.msg.value,
             },
           ];
-          if (next.msg.value.event.tag === "BlockPatch") {
+          if (!replaying && next.msg.value.event.tag === "BlockPatch") {
             const store =
               next.msg.value.event.role.tag === "Captain"
                 ? stateRef.current.captainBlocks
@@ -324,7 +326,7 @@ export function useSessionState(
             sessionId,
             seq: nextSeq,
             eventKind: next.msg.value.event.tag,
-            phase: stateRef.current.phase,
+            phase: replaying ? "replaying" : "live",
           });
           const gap = detectSequenceGap(lastSeenSeq, nextSeq);
           if (gap) {
@@ -339,8 +341,22 @@ export function useSessionState(
             continue;
           }
           lastSeenSeq = nextSeq;
-          dispatch({ type: "event", envelope: next.msg.value });
+          if (replaying) {
+            replayBuffer.push(next.msg.value);
+          } else {
+            dispatch({ type: "event", envelope: next.msg.value });
+          }
         } else if (next.msg.tag === "ReplayComplete") {
+          // Flush all buffered replay events in a single dispatch
+          if (replayBuffer.length > 0) {
+            log("info", "applying replay batch", {
+              sessionId,
+              eventCount: replayBuffer.length,
+            });
+            dispatch({ type: "replay-batch", envelopes: replayBuffer });
+            replayBuffer = [];
+          }
+          replaying = false;
           debugMessagesRef.current = [
             ...debugMessagesRef.current.slice(-199),
             {

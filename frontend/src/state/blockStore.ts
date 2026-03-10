@@ -51,6 +51,30 @@ export function patchBlock(
   return { blocks, index: store.index };
 }
 
+// Mutable versions for batch replay — avoid O(N²) array copies
+export function appendBlockMut(
+  store: BlockStore,
+  blockId: string,
+  role: Role,
+  block: ContentBlock,
+  timestamp: string | null,
+): void {
+  const entry: BlockEntry = { blockId, role, block, timestamp };
+  store.index.set(blockId, store.blocks.length);
+  store.blocks.push(entry);
+}
+
+export function patchBlockMut(store: BlockStore, blockId: string, patch: BlockPatch): void {
+  const pos = store.index.get(blockId);
+  if (pos === undefined) return;
+
+  const entry = store.blocks[pos];
+  const patched = applyPatch(entry.block, patch);
+  if (patched === null) return;
+
+  store.blocks[pos] = { ...entry, block: patched };
+}
+
 function applyPatch(block: ContentBlock, patch: BlockPatch): ContentBlock | null {
   switch (patch.tag) {
     // r[event.patch.text-append]
