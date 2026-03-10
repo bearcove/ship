@@ -367,7 +367,7 @@ export const agentHeader = style({
 
 export const agentHeaderMain = style({
   display: "flex",
-  alignItems: "flex-start",
+  alignItems: "center",
   gap: "var(--space-2)",
   minWidth: 0,
 });
@@ -403,6 +403,7 @@ export const agentHeaderSummaryRow = style({
   display: "flex",
   alignItems: "center",
   gap: "var(--space-2)",
+  width: "100%",
   minWidth: 0,
   overflow: "hidden",
 });
@@ -419,9 +420,11 @@ export const agentHeaderControlRow = style({
   display: "flex",
   alignItems: "center",
   gap: "4px",
+  width: "100%",
   minWidth: 0,
   overflow: "hidden",
   whiteSpace: "nowrap",
+  flexWrap: "nowrap",
 });
 
 export const agentHeaderPickerTrigger = style({
@@ -467,12 +470,12 @@ export const agentHeaderSlash = style({
 });
 
 export const agentHeaderContext = style({
-  position: "relative",
-  width: 32,
-  height: 32,
+  width: 18,
+  height: 18,
   flexShrink: 0,
   display: "grid",
   placeItems: "center",
+  marginLeft: "auto",
   color: "var(--accent-10)",
   selectors: {
     '&[data-tone="low"]': {
@@ -491,31 +494,15 @@ export const agentHeaderContextSvg = style({
 export const agentHeaderContextTrack = style({
   fill: "none",
   stroke: "var(--gray-a4)",
-  strokeWidth: 3,
+  strokeWidth: 2.5,
 });
 
 export const agentHeaderContextArc = style({
   fill: "none",
   stroke: "currentColor",
-  strokeWidth: 3,
+  strokeWidth: 2.5,
   strokeLinecap: "round",
   transition: "stroke-dashoffset 160ms ease",
-});
-
-export const agentHeaderContextLabel = style({
-  position: "absolute",
-  inset: 0,
-  display: "grid",
-  placeItems: "center",
-  fontSize: "8px",
-  lineHeight: 1,
-  fontWeight: "var(--font-weight-bold)",
-  color: "var(--gray-11)",
-  selectors: {
-    [`${agentHeaderContext}[data-tone="low"] &`]: {
-      color: "var(--red-11)",
-    },
-  },
 });
 
 export const stickyPlan = style({

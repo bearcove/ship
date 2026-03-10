@@ -11,7 +11,6 @@ import {
   agentHeaderBody,
   agentHeaderContext,
   agentHeaderContextArc,
-  agentHeaderContextLabel,
   agentHeaderContextSvg,
   agentHeaderContextTrack,
   agentHeaderControlRow,
@@ -203,7 +202,6 @@ export function AgentHeader({ sessionId, agent, avatarSrc }: Props) {
                     className={agentHeaderContextArc}
                   />
                 </svg>
-                <span className={agentHeaderContextLabel}>{normalizedContextPct}</span>
               </Box>
             )}
           </Flex>
