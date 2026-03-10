@@ -2561,13 +2561,73 @@ Here is your task:
 
                 let old_content = fs::read_to_string(&canonical_file)
                     .map_err(|error| format!("Failed to read file: {error}"))?;
-                Self::build_prepared_edit(
+                let mut prepared = Self::build_prepared_edit(
                     &relative_path,
-                    old_content,
+                    old_content.clone(),
                     old_string,
                     new_string,
                     replace_all.unwrap_or(false),
-                )
+                )?;
+
+                // Write speculatively, run rustfmt, then restore — this
+                // validates that the edit produces syntactically valid code
+                // before the agent is asked to confirm it.
+                if canonical_file.extension().and_then(|e| e.to_str()) == Some("rs") {
+                    Self::write_text_file(
+                        &canonical_file,
+                        &prepared.pending.new_content,
+                        &relative_path,
+                    )
+                    .map_err(|e| format!("edit_prepare speculative write failed: {e}"))?;
+
+                    let rustfmt_result =
+                        Self::run_rustfmt(&Self::rustfmt_program(), &canonical_file);
+
+                    match rustfmt_result {
+                        Ok(RustfmtOutcome::Failure(details)) => {
+                            let _ = Self::restore_file_from_content(
+                                &canonical_file,
+                                &relative_path,
+                                &old_content,
+                            );
+                            return Err(format!(
+                                "Edit would produce invalid Rust in {}:\n{details}",
+                                relative_path.display()
+                            ));
+                        }
+                        Ok(RustfmtOutcome::Success) => {
+                            // Read the rustfmt-formatted content BEFORE restoring,
+                            // so edit_confirm applies the formatted version.
+                            let formatted = fs::read_to_string(&canonical_file)
+                                .map_err(|e| format!("Failed to read formatted file: {e}"))?;
+                            Self::restore_file_from_content(
+                                &canonical_file,
+                                &relative_path,
+                                &old_content,
+                            )
+                            .map_err(|e| format!("edit_prepare restore failed: {e}"))?;
+                            prepared.pending.new_content = formatted;
+                        }
+                        Ok(RustfmtOutcome::NotFound) => {
+                            Self::restore_file_from_content(
+                                &canonical_file,
+                                &relative_path,
+                                &old_content,
+                            )
+                            .map_err(|e| format!("edit_prepare restore failed: {e}"))?;
+                        }
+                        Err(e) => {
+                            let _ = Self::restore_file_from_content(
+                                &canonical_file,
+                                &relative_path,
+                                &old_content,
+                            );
+                            return Err(format!("edit_prepare rustfmt failed: {e}"));
+                        }
+                    }
+                }
+
+                Ok(prepared)
             }
         })
         .await
@@ -6296,7 +6356,7 @@ and the captain will help you find the right approach."
     // r[verify mate.tool.edit-prepare]
     // r[verify mate.tool.edit-confirm]
     #[tokio::test]
-    async fn mate_edit_prepare_replace_all_supersedes_older_edit_for_same_file() {
+    async fn mate_edit_multiple_edits_same_file_confirmed_in_sequence() {
         let _guard = lock_mate_tool_tests();
         let (dir, ship, session_id) =
             create_session_for_workflow_test("mate-edit-prepare-replace-all").await;
@@ -6310,6 +6370,7 @@ and the captain will help you find the right approach."
             session.worktree_path = Some(project_root.clone());
         }
 
+        // Prepare two edits for the same file: both coexist in pending_edits.
         let first = ship
             .mate_tool_edit_prepare(
                 &session_id,
@@ -6340,23 +6401,26 @@ and the captain will help you find the right approach."
         );
         let second_id = parse_edit_id(&second);
 
-        let old_confirm = ship.mate_tool_edit_confirm(&session_id, first_id).await;
-        assert!(old_confirm.is_error, "superseded edit should be removed");
-        assert_eq!(
-            old_confirm.text,
-            "edit_id not found. It may have expired or been superseded."
+        // Confirm first edit (middle → center). File becomes foo\ncenter\nfoo\n.
+        let first_confirm = ship.mate_tool_edit_confirm(&session_id, first_id).await;
+        assert!(
+            !first_confirm.is_error,
+            "first confirm should succeed: {}",
+            first_confirm.text
         );
 
-        let replace_all_confirm = ship.mate_tool_edit_confirm(&session_id, second_id).await;
+        // Confirm second edit (replace_all foo → bar). File changed since prepare
+        // but old_string "foo" is still uniquely re-applicable → re-apply succeeds.
+        let second_confirm = ship.mate_tool_edit_confirm(&session_id, second_id).await;
         assert!(
-            !replace_all_confirm.is_error,
-            "replace_all confirm should succeed: {}",
-            replace_all_confirm.text
+            !second_confirm.is_error,
+            "replace_all confirm should succeed after re-apply: {}",
+            second_confirm.text
         );
         assert_eq!(
             std::fs::read_to_string(project_root.join("notes.txt"))
                 .expect("edited file should exist"),
-            "bar\nmiddle\nbar\n"
+            "bar\ncenter\nbar\n"
         );
 
         let _ = std::fs::remove_dir_all(dir);
@@ -6390,14 +6454,20 @@ and the captain will help you find the right approach."
             .expect("prepare should succeed");
         let edit_id = parse_edit_id(&prepared);
 
+        // Overwrite the file so "beta" (the old_string) is gone.
         std::fs::write(project_root.join("notes.txt"), "alpha\nchanged\n")
             .expect("file mutation should succeed");
 
+        // Re-apply is attempted but old_string "beta" is no longer in the file.
         let stale = ship.mate_tool_edit_confirm(&session_id, edit_id).await;
-        assert!(stale.is_error, "stale edit should fail");
-        assert_eq!(
-            stale.text,
-            "File has been modified since edit was prepared. Run edit_prepare again."
+        assert!(
+            stale.is_error,
+            "stale edit should fail when old_string is gone"
+        );
+        assert!(
+            stale.text.contains("re-apply failed"),
+            "expected re-apply failure message, got: {}",
+            stale.text
         );
 
         let unknown = ship
@@ -6412,12 +6482,12 @@ and the captain will help you find the right approach."
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    // r[verify mate.tool.edit-confirm]
+    // r[verify mate.tool.edit-prepare]
     #[tokio::test]
-    async fn mate_edit_confirm_restores_file_when_rust_validation_fails() {
+    async fn mate_edit_prepare_rejects_invalid_rust_and_leaves_file_intact() {
         let _guard = lock_mate_tool_tests();
         let (dir, ship, session_id) =
-            create_session_for_workflow_test("mate-edit-confirm-invalid-rust").await;
+            create_session_for_workflow_test("mate-edit-prepare-invalid-rust").await;
         let project_root = dir.join("project");
         std::fs::create_dir_all(project_root.join("src")).expect("src directory should be created");
         std::fs::write(project_root.join("src/lib.rs"), "pub fn intact() {}\n")
@@ -6429,7 +6499,9 @@ and the captain will help you find the right approach."
             session.worktree_path = Some(project_root.clone());
         }
 
-        let prepared = ship
+        // edit_prepare validates Rust syntax speculatively; broken edits are
+        // rejected before the agent is asked to confirm.
+        let err = ship
             .mate_tool_edit_prepare(
                 &session_id,
                 "src/lib.rs".to_owned(),
@@ -6438,19 +6510,15 @@ and the captain will help you find the right approach."
                 None,
             )
             .await
-            .expect("prepare should succeed");
-        let edit_id = parse_edit_id(&prepared);
-
-        let invalid = ship.mate_tool_edit_confirm(&session_id, edit_id).await;
-        assert!(invalid.is_error, "invalid rust edit should fail");
+            .expect_err("prepare should fail for invalid Rust");
         assert!(
-            invalid.text.contains("Syntax error in src/lib.rs:"),
-            "unexpected error: {}",
-            invalid.text
+            err.contains("Edit would produce invalid Rust in src/lib.rs"),
+            "unexpected error: {err}"
         );
+        // Original file must be intact after the rejected prepare.
         assert_eq!(
             std::fs::read_to_string(project_root.join("src/lib.rs"))
-                .expect("original file should be restored"),
+                .expect("original file should be intact"),
             "pub fn intact() {}\n"
         );
 

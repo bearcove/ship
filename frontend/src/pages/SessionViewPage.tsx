@@ -155,20 +155,22 @@ export function SessionViewPage({
 }
 
 export function SessionAgentRail({ sessionId }: { sessionId: string }) {
-  const { session, error } = useSession(sessionId);
-  const eventState = useSessionState(sessionId, session);
+  // Don't call useSession here — SessionViewPage already hydrates the shared
+  // subscription for this sessionId. A second independent useSession call
+  // produces a different object reference for the same data, which makes
+  // useSessionState's `session !== sub.lastHydratedSession` check ping-pong
+  // infinitely between the two objects.
+  const eventState = useSessionState(sessionId, null);
 
-  if (error || !session) return null;
-
-  const captain = eventState.captain ?? session.captain;
-  const mate = eventState.mate ?? session.mate;
+  const captain = eventState.captain;
+  const mate = eventState.mate;
 
   if (!(captain ?? mate)) return null;
 
   return (
     <Box className={agentRail}>
-      {captain && <AgentHeader sessionId={session.id} agent={captain} avatarSrc={captainAvatar} />}
-      {mate && <AgentHeader sessionId={session.id} agent={mate} avatarSrc={mateAvatar} />}
+      {captain && <AgentHeader sessionId={sessionId} agent={captain} avatarSrc={captainAvatar} />}
+      {mate && <AgentHeader sessionId={sessionId} agent={mate} avatarSrc={mateAvatar} />}
     </Box>
   );
 }
