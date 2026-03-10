@@ -1,10 +1,28 @@
-import { useMemo } from "react";
-import { Box, Button, Callout, DropdownMenu, Flex, Progress, Text } from "@radix-ui/themes";
+import { useMemo, type ReactNode } from "react";
+import { Box, Button, Callout, DropdownMenu, Flex, Text } from "@radix-ui/themes";
 import { ArrowsClockwise, Warning } from "@phosphor-icons/react";
 import type { AgentSnapshot } from "../generated/ship";
 import { AgentKindIcon } from "./AgentKindIcon";
 import { getShipClient } from "../api/client";
-import { agentHeader, agentHeaderRow } from "../styles/session-view.css";
+import {
+  agentHeader,
+  agentHeaderAvatar,
+  agentHeaderAvatarFallback,
+  agentHeaderBody,
+  agentHeaderContext,
+  agentHeaderContextArc,
+  agentHeaderContextLabel,
+  agentHeaderContextSvg,
+  agentHeaderContextTrack,
+  agentHeaderControlRow,
+  agentHeaderMain,
+  agentHeaderPickerStatic,
+  agentHeaderPickerText,
+  agentHeaderPickerTextGrow,
+  agentHeaderRole,
+  agentHeaderSlash,
+  agentHeaderSummaryRow,
+} from "../styles/session-view.css";
 
 interface Props {
   sessionId: string;
@@ -26,7 +44,10 @@ function buildModelId(model: string, effort: string | null): string {
 // r[view.agent-panel.state]
 export function AgentHeader({ sessionId, agent, avatarSrc }: Props) {
   const contextPct = agent.context_remaining_percent;
-  const contextLow = contextPct !== null && contextPct < 20;
+  const normalizedContextPct = contextPct === null ? null : Math.max(0, Math.min(contextPct, 100));
+  const contextLow = normalizedContextPct !== null && normalizedContextPct < 20;
+  const showContextIndicator =
+    normalizedContextPct !== null && agent.state.tag !== "ContextExhausted";
 
   const parsed = useMemo(() => {
     const all = agent.available_models.map(parseModelId);
@@ -52,92 +73,64 @@ export function AgentHeader({ sessionId, agent, avatarSrc }: Props) {
     void handleSelectModel(buildModelId(model, effort));
   }
 
-  return (
-    <Box className={agentHeader}>
-      <Flex className={agentHeaderRow}>
-        {avatarSrc ? (
-          <img
-            src={avatarSrc}
-            alt={agent.role.tag}
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: "50%",
-              flexShrink: 0,
-              objectFit: "cover",
-              maskImage: "radial-gradient(circle, black 64%, transparent 64%)",
-            }}
-          />
-        ) : (
-          <AgentKindIcon kind={agent.kind} />
-        )}
-        <Text size="2" weight="medium">
-          {agent.role.tag}
-        </Text>
-        {agent.model_id !== null && agent.available_models.length > 1 && parsed.hasSplit ? (
-          <Flex gap="1" align="center">
+  let modelControls: ReactNode = null;
+  if (agent.model_id !== null && agent.available_models.length > 1 && parsed.hasSplit) {
+    modelControls = (
+      <Flex className={agentHeaderControlRow}>
+        <Box className={agentHeaderPickerTextGrow}>
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger>
+              <Text size="1" color="gray" className={agentHeaderPickerText}>
+                {parsed.current?.model ?? agent.model_id}
+              </Text>
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Content size="1">
+              {parsed.models.map((model) => (
+                <DropdownMenu.Item
+                  key={model}
+                  onSelect={() => handleSelectModelName(model)}
+                  style={model === parsed.current?.model ? { fontWeight: "bold" } : undefined}
+                >
+                  {model}
+                </DropdownMenu.Item>
+              ))}
+            </DropdownMenu.Content>
+          </DropdownMenu.Root>
+        </Box>
+        {parsed.current?.effort && (
+          <>
+            <Text size="1" color="gray" className={agentHeaderSlash}>
+              /
+            </Text>
             <DropdownMenu.Root>
               <DropdownMenu.Trigger>
-                <Text
-                  size="1"
-                  color="gray"
-                  style={{ cursor: "pointer", textDecoration: "underline dotted" }}
-                >
-                  {parsed.current?.model ?? agent.model_id}
+                <Text size="1" color="gray" className={agentHeaderPickerText}>
+                  {parsed.current.effort}
                 </Text>
               </DropdownMenu.Trigger>
               <DropdownMenu.Content size="1">
-                {parsed.models.map((model) => (
+                {parsed.efforts.map((effort) => (
                   <DropdownMenu.Item
-                    key={model}
-                    onSelect={() => handleSelectModelName(model)}
-                    style={model === parsed.current?.model ? { fontWeight: "bold" } : undefined}
+                    key={effort}
+                    onSelect={() => handleSelectEffort(effort)}
+                    style={effort === parsed.current?.effort ? { fontWeight: "bold" } : undefined}
                   >
-                    {model}
+                    {effort}
                   </DropdownMenu.Item>
                 ))}
               </DropdownMenu.Content>
             </DropdownMenu.Root>
-            {parsed.current?.effort && (
-              <>
-                <Text size="1" color="gray">
-                  /
-                </Text>
-                <DropdownMenu.Root>
-                  <DropdownMenu.Trigger>
-                    <Text
-                      size="1"
-                      color="gray"
-                      style={{ cursor: "pointer", textDecoration: "underline dotted" }}
-                    >
-                      {parsed.current.effort}
-                    </Text>
-                  </DropdownMenu.Trigger>
-                  <DropdownMenu.Content size="1">
-                    {parsed.efforts.map((effort) => (
-                      <DropdownMenu.Item
-                        key={effort}
-                        onSelect={() => handleSelectEffort(effort)}
-                        style={
-                          effort === parsed.current?.effort ? { fontWeight: "bold" } : undefined
-                        }
-                      >
-                        {effort}
-                      </DropdownMenu.Item>
-                    ))}
-                  </DropdownMenu.Content>
-                </DropdownMenu.Root>
-              </>
-            )}
-          </Flex>
-        ) : agent.model_id !== null && agent.available_models.length > 1 ? (
+          </>
+        )}
+      </Flex>
+    );
+  } else if (agent.model_id !== null && agent.available_models.length > 1) {
+    modelControls = (
+      <Flex className={agentHeaderControlRow}>
+        <Box className={agentHeaderPickerTextGrow}>
           <DropdownMenu.Root>
             <DropdownMenu.Trigger>
-              <Text
-                size="1"
-                color="gray"
-                style={{ cursor: "pointer", textDecoration: "underline dotted" }}
-              >
+              <Text size="1" color="gray" className={agentHeaderPickerText}>
                 {agent.model_id}
               </Text>
             </DropdownMenu.Trigger>
@@ -153,17 +146,68 @@ export function AgentHeader({ sessionId, agent, avatarSrc }: Props) {
               ))}
             </DropdownMenu.Content>
           </DropdownMenu.Root>
-        ) : agent.model_id !== null ? (
-          <Text size="1" color="gray">
-            {agent.model_id}
-          </Text>
-        ) : null}
-        {/* r[ui.agent-header.context-bar] */}
-        {contextPct !== null && agent.state.tag !== "ContextExhausted" && (
-          <Box style={{ width: 56, flexShrink: 0, marginLeft: "auto" }}>
-            <Progress value={contextPct} color={contextLow ? "red" : undefined} size="1" />
+        </Box>
+      </Flex>
+    );
+  } else if (agent.model_id !== null) {
+    modelControls = (
+      <Flex className={agentHeaderControlRow}>
+        <Text size="1" color="gray" className={agentHeaderPickerStatic}>
+          {agent.model_id}
+        </Text>
+      </Flex>
+    );
+  }
+
+  return (
+    <Box className={agentHeader}>
+      <Flex className={agentHeaderMain}>
+        {avatarSrc ? (
+          <img src={avatarSrc} alt={agent.role.tag} className={agentHeaderAvatar} />
+        ) : (
+          <Box className={agentHeaderAvatarFallback}>
+            <AgentKindIcon kind={agent.kind} />
           </Box>
         )}
+        <Flex className={agentHeaderBody}>
+          <Flex className={agentHeaderSummaryRow}>
+            <Text size="2" weight="medium" className={agentHeaderRole}>
+              {agent.role.tag}
+            </Text>
+            {/* r[ui.agent-header.context-bar] */}
+            {showContextIndicator && normalizedContextPct !== null && (
+              <Box
+                className={agentHeaderContext}
+                data-tone={contextLow ? "low" : "normal"}
+                role="progressbar"
+                aria-label={`${agent.role.tag} context remaining`}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={normalizedContextPct}
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  className={agentHeaderContextSvg}
+                  aria-hidden="true"
+                  focusable="false"
+                >
+                  <circle cx="12" cy="12" r="9" className={agentHeaderContextTrack} />
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r="9"
+                    pathLength="100"
+                    strokeDasharray="100"
+                    strokeDashoffset={100 - normalizedContextPct}
+                    className={agentHeaderContextArc}
+                  />
+                </svg>
+                <span className={agentHeaderContextLabel}>{normalizedContextPct}</span>
+              </Box>
+            )}
+          </Flex>
+          {modelControls}
+        </Flex>
       </Flex>
 
       {/* r[context.warning] */}

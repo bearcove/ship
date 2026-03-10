@@ -365,10 +365,141 @@ export const agentHeader = style({
   flexShrink: 0,
 });
 
-export const agentHeaderRow = style({
+export const agentHeaderMain = style({
+  display: "flex",
+  alignItems: "flex-start",
+  gap: "var(--space-2)",
+  minWidth: 0,
+});
+
+export const agentHeaderAvatar = style({
+  width: 32,
+  height: 32,
+  borderRadius: "50%",
+  flexShrink: 0,
+  objectFit: "cover",
+  maskImage: "radial-gradient(circle, black 64%, transparent 64%)",
+});
+
+export const agentHeaderAvatarFallback = style({
+  width: 32,
+  height: 32,
+  borderRadius: "50%",
+  flexShrink: 0,
+  display: "grid",
+  placeItems: "center",
+  background: "var(--gray-a3)",
+});
+
+export const agentHeaderBody = style({
+  display: "flex",
+  flexDirection: "column",
+  gap: "4px",
+  flex: 1,
+  minWidth: 0,
+});
+
+export const agentHeaderSummaryRow = style({
   display: "flex",
   alignItems: "center",
   gap: "var(--space-2)",
+  minWidth: 0,
+});
+
+export const agentHeaderRole = style({
+  flex: "1 1 auto",
+  minWidth: 0,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+});
+
+export const agentHeaderControlRow = style({
+  display: "flex",
+  alignItems: "center",
+  gap: "4px",
+  minWidth: 0,
+  whiteSpace: "nowrap",
+});
+
+export const agentHeaderPickerText = style({
+  display: "block",
+  minWidth: 0,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+  cursor: "pointer",
+  textDecoration: "underline dotted",
+  textUnderlineOffset: "2px",
+});
+
+export const agentHeaderPickerTextGrow = style({
+  flex: "1 1 auto",
+  minWidth: 0,
+});
+
+export const agentHeaderPickerStatic = style({
+  display: "block",
+  minWidth: 0,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+});
+
+export const agentHeaderSlash = style({
+  flexShrink: 0,
+});
+
+export const agentHeaderContext = style({
+  position: "relative",
+  width: 32,
+  height: 32,
+  flexShrink: 0,
+  display: "grid",
+  placeItems: "center",
+  color: "var(--accent-10)",
+  selectors: {
+    '&[data-tone="low"]': {
+      color: "var(--red-10)",
+    },
+  },
+});
+
+export const agentHeaderContextSvg = style({
+  width: "100%",
+  height: "100%",
+  transform: "rotate(-90deg)",
+  overflow: "visible",
+});
+
+export const agentHeaderContextTrack = style({
+  fill: "none",
+  stroke: "var(--gray-a4)",
+  strokeWidth: 3,
+});
+
+export const agentHeaderContextArc = style({
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 3,
+  strokeLinecap: "round",
+  transition: "stroke-dashoffset 160ms ease",
+});
+
+export const agentHeaderContextLabel = style({
+  position: "absolute",
+  inset: 0,
+  display: "grid",
+  placeItems: "center",
+  fontSize: "8px",
+  lineHeight: 1,
+  fontWeight: "var(--font-weight-bold)",
+  color: "var(--gray-11)",
+  selectors: {
+    [`${agentHeaderContext}[data-tone="low"] &`]: {
+      color: "var(--red-11)",
+    },
+  },
 });
 
 export const stickyPlan = style({
