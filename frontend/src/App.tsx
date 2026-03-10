@@ -3,7 +3,7 @@ import { Routes, Route, Link, useMatch } from "react-router-dom";
 import { Flex, Box, Text, IconButton } from "@radix-ui/themes";
 import { SpeakerHigh, SpeakerSlash } from "@phosphor-icons/react";
 import { SessionListPage } from "./pages/SessionListPage";
-import { SessionViewPage } from "./pages/SessionViewPage";
+import { SessionAgentRail, SessionViewPage } from "./pages/SessionViewPage";
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { NotificationPrompt } from "./components/NotificationPrompt";
 import { SessionSidebar } from "./components/SessionSidebar";
@@ -108,7 +108,12 @@ export function App() {
             />
           </Routes>
         </Box>
-        <Box className={appColRight} />
+        <Box
+          className={appColRight}
+          style={{ borderLeft: currentSessionId ? "1px solid var(--gray-a5)" : undefined }}
+        >
+          {currentSessionId ? <SessionAgentRail sessionId={currentSessionId} /> : null}
+        </Box>
       </Box>
     </Flex>
   );

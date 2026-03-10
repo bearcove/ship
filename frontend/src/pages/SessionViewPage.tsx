@@ -141,14 +141,6 @@ export function SessionViewPage({
             taskStatus={liveTask?.status ?? null}
           />
         </Box>
-        {(captain ?? mate) && (
-          <Box className={agentRail}>
-            {captain && (
-              <AgentHeader sessionId={session.id} agent={captain} avatarSrc={captainAvatar} />
-            )}
-            {mate && <AgentHeader sessionId={session.id} agent={mate} avatarSrc={mateAvatar} />}
-          </Box>
-        )}
       </Flex>
 
       {session.pending_steer && (
@@ -159,5 +151,24 @@ export function SessionViewPage({
         />
       )}
     </Flex>
+  );
+}
+
+export function SessionAgentRail({ sessionId }: { sessionId: string }) {
+  const { session, error } = useSession(sessionId);
+  const eventState = useSessionState(sessionId, session);
+
+  if (error || !session) return null;
+
+  const captain = eventState.captain ?? session.captain;
+  const mate = eventState.mate ?? session.mate;
+
+  if (!(captain ?? mate)) return null;
+
+  return (
+    <Box className={agentRail}>
+      {captain && <AgentHeader sessionId={session.id} agent={captain} avatarSrc={captainAvatar} />}
+      {mate && <AgentHeader sessionId={session.id} agent={mate} avatarSrc={mateAvatar} />}
+    </Box>
   );
 }

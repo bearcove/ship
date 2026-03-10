@@ -220,7 +220,6 @@ export const sessionFeedColumn = style({
   flexDirection: "column",
   height: "100%",
   overflow: "hidden",
-  borderRight: "1px solid var(--gray-a5)",
 });
 
 // Three-column app layout: [left: sidebar floats right] [center: 720px] [right: empty]
@@ -261,8 +260,10 @@ export const appColCenter = style({
 export const appColRight = style({
   flex: 1,
   minWidth: 0,
+  display: "flex",
+  overflow: "hidden",
   "@media": {
-    "(max-width: 500px)": {
+    "(max-width: 768px)": {
       display: "none",
     },
   },
