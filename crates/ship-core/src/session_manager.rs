@@ -1350,6 +1350,10 @@ pub fn archive_terminal_task(session: &mut ActiveSession) {
     }
 
     if let Some(task) = session.current_task.take() {
+        // Merge the task's event log into the session log so that replay
+        // chains (session_event_log + current_task.event_log) stay gapless
+        // across task boundaries.
+        session.session_event_log.extend(task.event_log);
         session.task_history.push(task.record);
     }
 
