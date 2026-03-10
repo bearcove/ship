@@ -6,7 +6,7 @@ import type {
   ShipClient,
   SubscribeMessage,
 } from "../generated/ship";
-import { useSessionState } from "./useSessionState";
+import { useSessionState, destroyAllSubscriptions } from "./useSessionState";
 
 type TestTx<T> = {
   send(value: T): Promise<void>;
@@ -137,6 +137,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  destroyAllSubscriptions();
   vi.restoreAllMocks();
 });
 
