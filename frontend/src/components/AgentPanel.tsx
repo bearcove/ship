@@ -1,4 +1,4 @@
-import { Fragment, useRef, useEffect, useMemo } from "react";
+import { Fragment, useRef, useEffect } from "react";
 import { Box, Flex, Spinner, Text } from "@radix-ui/themes";
 import type {
   AgentSnapshot,
