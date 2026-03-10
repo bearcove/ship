@@ -538,21 +538,25 @@ fn build_initialize_request(role: Role) -> InitializeRequest {
 }
 
 // r[captain.capabilities]
+// r[mate.capabilities]
+// We claim support for terminal and filesystem so that the agent routes
+// these requests through our Client implementation, where we reject them
+// with helpful error messages. Setting these to false would cause the
+// agent to fall back to its own built-in tools, bypassing us entirely.
 fn captain_client_capabilities() -> ClientCapabilities {
     ClientCapabilities::new()
-        .terminal(false)
+        .terminal(true)
         .fs(FileSystemCapability::new()
-            .read_text_file(false)
-            .write_text_file(false))
+            .read_text_file(true)
+            .write_text_file(true))
 }
 
-// r[mate.capabilities]
 fn mate_client_capabilities() -> ClientCapabilities {
     ClientCapabilities::new()
-        .terminal(false)
+        .terminal(true)
         .fs(FileSystemCapability::new()
-            .read_text_file(false)
-            .write_text_file(false))
+            .read_text_file(true)
+            .write_text_file(true))
 }
 
 fn command_for_launcher(launcher: crate::AgentLauncher) -> Command {
@@ -785,33 +789,19 @@ mod tests {
 
     // r[verify captain.capabilities]
     #[test]
-    fn captain_initialize_request_disables_filesystem_and_terminal_capabilities() {
+    fn captain_claims_terminal_and_fs_so_builtins_route_through_us() {
         let request = build_initialize_request(Role::Captain);
-        assert!(!request.client_capabilities.terminal);
-        assert!(!request.client_capabilities.fs.read_text_file);
-        assert!(!request.client_capabilities.fs.write_text_file);
+        assert!(request.client_capabilities.terminal);
+        assert!(request.client_capabilities.fs.read_text_file);
+        assert!(request.client_capabilities.fs.write_text_file);
     }
 
     // r[verify mate.capabilities]
     #[test]
-    fn mate_initialize_request_disables_filesystem_and_terminal_capabilities() {
+    fn mate_claims_terminal_and_fs_so_builtins_route_through_us() {
         let request = build_initialize_request(Role::Mate);
-        assert!(!request.client_capabilities.terminal);
-        assert!(!request.client_capabilities.fs.read_text_file);
-        assert!(!request.client_capabilities.fs.write_text_file);
-    }
-
-    // r[verify captain.capabilities]
-    #[test]
-    fn captain_capability_builder_returns_mcp_only_access() {
-        let capabilities = captain_client_capabilities();
-        assert_eq!(capabilities, ClientCapabilities::new());
-    }
-
-    // r[verify mate.capabilities]
-    #[test]
-    fn mate_capability_builder_returns_mcp_only_access() {
-        let capabilities = mate_client_capabilities();
-        assert_eq!(capabilities, ClientCapabilities::new());
+        assert!(request.client_capabilities.terminal);
+        assert!(request.client_capabilities.fs.read_text_file);
+        assert!(request.client_capabilities.fs.write_text_file);
     }
 }
