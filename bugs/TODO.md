@@ -13,13 +13,13 @@
 - [x] 014 — Remove replay top banner
 - [x] 001 — Chat message padding + font size too big
 - [x] 019 — Inline code smaller than regular text
-- [ ] 013 — Model switcher: separate model/effort
+- [x] 013 — Model switcher: separate model/effort
 - [x] 006 — @-completion no trailing space
 - [ ] 010 — Markdown file links not rich
-- [ ] 023 — No timestamps on messages
-- [ ] 020 — Sidebar collapse/expand
+- [x] 023 — No timestamps on messages
+- [x] 020 — Sidebar collapse/expand
 - [x] 007 — Remove 'Ask for permission' checkbox
-- [ ] 003 — Image preview below composer instead of above
+- [x] 003 — Image preview below composer instead of above
 - [ ] 011 — Edit ops should show diff
 
 ## P3 — Real stuff
