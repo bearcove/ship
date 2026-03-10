@@ -18,7 +18,6 @@ import { refreshSessionList } from "../hooks/useSessionList";
 import { AddProjectDialog } from "../pages/SessionListPage";
 import { getShipClient } from "../api/client";
 import {
-  agentKindRow,
   projectActions,
   projectName,
   projectRow,
@@ -26,8 +25,6 @@ import {
   sessionRowEmpty,
   sessionRowTitle,
   sidebarBackdrop,
-  sidebarFooter,
-  sidebarHeader,
   sidebarRoot,
   sidebarScrollArea,
   sidebarStatusDot,
@@ -88,10 +85,12 @@ function AgentKindSelect({
   codexAvailable: boolean;
 }) {
   return (
-    <Flex className={agentKindRow} align="center">
-      <Text size="1" color="gray" style={{ width: 52, flexShrink: 0 }}>
-        {label}
-      </Text>
+    <Flex align="center" gap="2">
+      <Box width="7" flexShrink="0">
+        <Text size="1" color="gray">
+          {label}
+        </Text>
+      </Box>
       <Select.Root
         size="1"
         value={value.tag}
@@ -243,7 +242,7 @@ export function SessionSidebar({
     <>
       {isOpen && <div className={sidebarBackdrop} onClick={onClose} />}
       <Box className={sidebarRoot} data-open={isOpen ? "true" : undefined}>
-        <Box className={sidebarHeader}>
+        <Flex direction="column" gap="3" pt="6" pb="4" px="3">
           <AgentKindSelect
             label="Captain"
             value={captainKind}
@@ -258,7 +257,7 @@ export function SessionSidebar({
             claudeAvailable={discovery.claude}
             codexAvailable={discovery.codex}
           />
-        </Box>
+        </Flex>
 
         <Box className={sidebarScrollArea}>
           {validProjects.map((project) => (
@@ -273,7 +272,7 @@ export function SessionSidebar({
           ))}
         </Box>
 
-        <Flex className={sidebarFooter} align="center" gap="1">
+        <Flex align="center" gap="3" pt="3" pb="5" px="2" style={{ flexShrink: 0 }}>
           <Tooltip content="Add project">
             <IconButton
               variant="ghost"
@@ -286,9 +285,9 @@ export function SessionSidebar({
             </IconButton>
           </Tooltip>
           <IconButton
-            variant={debugMode ? "solid" : "ghost"}
-            color={debugMode ? "amber" : "gray"}
+            variant="ghost"
             size="2"
+            color={debugMode ? "amber" : "gray"}
             onClick={onToggleDebug}
             aria-label={debugMode ? "Disable debug mode" : "Enable debug mode"}
           >

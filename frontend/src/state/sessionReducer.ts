@@ -22,6 +22,7 @@ export interface SessionViewState {
   mate: AgentSnapshot | null;
   captainBlocks: BlockStore;
   mateBlocks: BlockStore;
+  unifiedBlocks: BlockStore;
   startupState: SessionStartupState | null;
   currentTaskId: string | null;
   currentTaskTitle: string | null;
@@ -43,6 +44,7 @@ export function initialSessionViewState(): SessionViewState {
     mate: null,
     captainBlocks: createBlockStore(),
     mateBlocks: createBlockStore(),
+    unifiedBlocks: createBlockStore(),
     startupState: null,
     currentTaskId: null,
     currentTaskTitle: null,
@@ -123,6 +125,10 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         blocks: [...state.mateBlocks.blocks],
         index: new Map(state.mateBlocks.index),
       };
+      const unifiedBlocks: BlockStore = {
+        blocks: [...state.unifiedBlocks.blocks],
+        index: new Map(state.unifiedBlocks.index),
+      };
 
       let {
         captain,
@@ -140,11 +146,13 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
           case "BlockAppend": {
             const store = ev.role.tag === "Captain" ? captainBlocks : mateBlocks;
             appendBlockMut(store, ev.block_id, ev.role, ev.block, envelope.timestamp);
+            appendBlockMut(unifiedBlocks, ev.block_id, ev.role, ev.block, envelope.timestamp);
             break;
           }
           case "BlockPatch": {
             const store = ev.role.tag === "Captain" ? captainBlocks : mateBlocks;
             patchBlockMut(store, ev.block_id, ev.patch);
+            patchBlockMut(unifiedBlocks, ev.block_id, ev.patch);
             break;
           }
           case "AgentStateChanged": {
@@ -201,6 +209,7 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         mate,
         captainBlocks,
         mateBlocks,
+        unifiedBlocks,
         startupState,
         currentTaskId,
         currentTaskTitle,
@@ -232,6 +241,7 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         case "BlockAppend": {
           const isCaptain = ev.role.tag === "Captain";
           const ts = envelope.timestamp;
+          const unified = appendBlock(nextState.unifiedBlocks, ev.block_id, ev.role, ev.block, ts);
           if (isCaptain) {
             return {
               ...nextState,
@@ -242,25 +252,36 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
                 ev.block,
                 ts,
               ),
+              unifiedBlocks: unified,
             };
           }
           return {
             ...nextState,
             mateBlocks: appendBlock(nextState.mateBlocks, ev.block_id, ev.role, ev.block, ts),
+            unifiedBlocks: unified,
           };
         }
 
         // r[event.patch]
         case "BlockPatch": {
           const isCaptain = ev.role.tag === "Captain";
+          const unifiedPatched = patchBlock(nextState.unifiedBlocks, ev.block_id, ev.patch);
           if (isCaptain) {
             const patched = patchBlock(nextState.captainBlocks, ev.block_id, ev.patch);
             if (patched === null) return nextState;
-            return { ...nextState, captainBlocks: patched };
+            return {
+              ...nextState,
+              captainBlocks: patched,
+              unifiedBlocks: unifiedPatched ?? nextState.unifiedBlocks,
+            };
           }
           const patched = patchBlock(nextState.mateBlocks, ev.block_id, ev.patch);
           if (patched === null) return nextState;
-          return { ...nextState, mateBlocks: patched };
+          return {
+            ...nextState,
+            mateBlocks: patched,
+            unifiedBlocks: unifiedPatched ?? nextState.unifiedBlocks,
+          };
         }
 
         // r[event.agent-state-changed]

@@ -10,6 +10,7 @@ import { SessionSidebar } from "./components/SessionSidebar";
 import { useSoundEnabled } from "./context/SoundContext";
 import { useSessionList } from "./hooks/useSessionList";
 import { useProjects } from "./hooks/useProjects";
+import { appColumns, appColLeft, appColCenter, appColRight } from "./styles/session-view.css";
 
 function readDebugPreference(): boolean {
   try {
@@ -84,24 +85,19 @@ export function App() {
       />
       <NotificationPrompt />
 
-      <Flex style={{ flex: 1, overflow: "hidden", minHeight: 0 }}>
-        <SessionSidebar
-          projects={allProjects}
-          sessions={allSessions}
-          currentSessionId={currentSessionId}
-          debugMode={debugMode}
-          onToggleDebug={toggleDebug}
-          isOpen={sidebarOpen}
-          onClose={() => setSidebarOpen(false)}
-        />
-        <Box
-          style={{
-            flex: 1,
-            overflow: inSessionView ? "hidden" : "auto",
-            display: "flex",
-            flexDirection: "column",
-          }}
-        >
+      <Box className={appColumns}>
+        <Box className={appColLeft}>
+          <SessionSidebar
+            projects={allProjects}
+            sessions={allSessions}
+            currentSessionId={currentSessionId}
+            debugMode={debugMode}
+            onToggleDebug={toggleDebug}
+            isOpen={sidebarOpen}
+            onClose={() => setSidebarOpen(false)}
+          />
+        </Box>
+        <Box className={appColCenter} style={{ overflow: inSessionView ? "hidden" : "auto" }}>
           <Routes>
             <Route path="/" element={<SessionListPage />} />
             <Route
@@ -112,7 +108,8 @@ export function App() {
             />
           </Routes>
         </Box>
-      </Flex>
+        <Box className={appColRight} />
+      </Box>
     </Flex>
   );
 }

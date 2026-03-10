@@ -4,17 +4,10 @@ import { Box, Callout, Flex, IconButton, Spinner, Text } from "@radix-ui/themes"
 import { ArrowLeft, List, Warning } from "@phosphor-icons/react";
 import { useSession } from "../hooks/useSession";
 import { useSessionState } from "../hooks/useSessionState";
-import { AgentHeader } from "../components/AgentHeader";
-import { AgentPanel } from "../components/AgentPanel";
+import { UnifiedFeed } from "../components/UnifiedFeed";
+import { UnifiedComposer } from "../components/UnifiedComposer";
 import { SteerReview } from "../components/SteerReview";
-import {
-  sessionViewRoot,
-  desktopGrid,
-  panelColumn,
-  mobileNavBar,
-  mobileStack,
-  mobileStackPanel,
-} from "../styles/session-view.css";
+import { mobileNavBar, sessionViewRoot, unifiedFeedRoot } from "../styles/session-view.css";
 import type { TaskRecord } from "../generated/ship";
 
 // r[view.session]
@@ -118,64 +111,25 @@ export function SessionViewPage({
         </Flex>
       </Box>
 
-      <Box style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-        <Box className={desktopGrid} style={{ flex: 1 }}>
-          <Box className={panelColumn}>
-            <AgentHeader sessionId={session.id} agent={captain} />
-            <AgentPanel
-              sessionId={session.id}
-              agent={captain}
-              blocks={eventState.captainBlocks.blocks}
-              debugMode={debugMode}
-              loading={isReplaying}
-              loadingLabel={replayLabel}
-              startupState={startupState}
-              taskStatus={liveTask?.status ?? null}
-            />
-          </Box>
-          <Box className={panelColumn}>
-            <AgentHeader sessionId={session.id} agent={mate} />
-            <AgentPanel
-              sessionId={session.id}
-              agent={mate}
-              blocks={eventState.mateBlocks.blocks}
-              debugMode={debugMode}
-              loading={isReplaying}
-              loadingLabel={replayLabel}
-              startupState={startupState}
-              taskStatus={liveTask?.status ?? null}
-            />
-          </Box>
-        </Box>
-
-        <Box className={mobileStack}>
-          <Box className={mobileStackPanel}>
-            <AgentHeader sessionId={session.id} agent={captain} />
-            <AgentPanel
-              sessionId={session.id}
-              agent={captain}
-              blocks={eventState.captainBlocks.blocks}
-              debugMode={debugMode}
-              loading={isReplaying}
-              loadingLabel={replayLabel}
-              startupState={startupState}
-              taskStatus={liveTask?.status ?? null}
-            />
-          </Box>
-          <Box className={mobileStackPanel}>
-            <AgentHeader sessionId={session.id} agent={mate} />
-            <AgentPanel
-              sessionId={session.id}
-              agent={mate}
-              blocks={eventState.mateBlocks.blocks}
-              debugMode={debugMode}
-              loading={isReplaying}
-              loadingLabel={replayLabel}
-              startupState={startupState}
-              taskStatus={liveTask?.status ?? null}
-            />
-          </Box>
-        </Box>
+      <Box className={unifiedFeedRoot} style={{ flex: 1 }}>
+        <UnifiedFeed
+          sessionId={session.id}
+          captain={captain}
+          mate={mate}
+          blocks={eventState.unifiedBlocks.blocks}
+          startupState={startupState}
+          taskStatus={liveTask?.status ?? null}
+          loading={isReplaying}
+          loadingLabel={replayLabel}
+          debugMode={debugMode}
+        />
+        <UnifiedComposer
+          sessionId={session.id}
+          captain={captain}
+          mate={mate}
+          startupState={startupState}
+          taskStatus={liveTask?.status ?? null}
+        />
       </Box>
 
       {session.pending_steer && (

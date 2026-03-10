@@ -42,25 +42,12 @@ export const sidebarBackdrop = style({
   },
 });
 
-export const sidebarHeader = style({
-  padding: "var(--space-2) var(--space-3)",
-  borderBottom: "1px solid var(--gray-a5)",
-  flexShrink: 0,
-  display: "flex",
-  flexDirection: "column",
-  gap: "var(--space-1)",
-});
-
-export const agentKindRow = style({
-  display: "flex",
-  alignItems: "center",
-  gap: "var(--space-2)",
-});
-
 export const sidebarScrollArea = style({
   flex: 1,
   overflowY: "auto",
   overflowX: "hidden",
+  paddingTop: "var(--space-3)",
+  paddingBottom: "var(--space-5)",
 });
 
 export const projectRow = style({
@@ -139,12 +126,6 @@ export const sessionRowEmpty = style({
   fontSize: "var(--font-size-1)",
   color: "var(--gray-9)",
   fontStyle: "italic",
-});
-
-export const sidebarFooter = style({
-  flexShrink: 0,
-  padding: "var(--space-2) var(--space-3)",
-  borderTop: "1px solid var(--gray-a5)",
 });
 
 export const sidebarStatusDot = style({

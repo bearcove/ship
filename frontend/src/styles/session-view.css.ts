@@ -1,11 +1,236 @@
 import { globalStyle, keyframes, style } from "@vanilla-extract/css";
 import { monoFontStack } from "./global.css";
 
+// ─── Unified feed ────────────────────────────────────────────────────────────
+
+export const unifiedFeedRoot = style({
+  display: "flex",
+  flexDirection: "column",
+  height: "100%",
+  overflow: "hidden",
+});
+
+export const unifiedFeedScroll = style({
+  flex: 1,
+  overflowY: "auto",
+  display: "flex",
+  flexDirection: "column",
+});
+
+export const unifiedFeedStream = style({
+  display: "flex",
+  flexDirection: "column",
+  gap: "var(--space-2)",
+  padding: "var(--space-3)",
+  paddingBottom: "var(--space-2)",
+});
+
+export const agentAvatar = style({
+  width: 64,
+  height: 64,
+  borderRadius: "50%",
+  flexShrink: 0,
+  objectFit: "cover",
+  maskImage: "radial-gradient(circle, black 52%, transparent 55%)",
+  alignSelf: "flex-end",
+});
+
+export const agentAvatarSpacer = style({
+  width: 64,
+  flexShrink: 0,
+});
+
+export const feedRowAgent = style({
+  display: "flex",
+  justifyContent: "flex-start",
+  alignItems: "flex-end",
+  gap: "var(--space-2)",
+});
+
+export const feedRowUser = style({
+  display: "flex",
+  justifyContent: "flex-end",
+});
+
+export const feedBubble = style({
+  maxWidth: "72%",
+  padding: "var(--space-2) var(--space-3)",
+  borderRadius: "var(--radius-3)",
+  border: "1px solid var(--gray-a4)",
+  background: "var(--gray-a2)",
+  fontSize: "var(--font-size-2)",
+  lineHeight: "var(--line-height-2)",
+});
+
+export const feedBubbleMate = style({
+  background: "color-mix(in srgb, var(--indigo-a3) 60%, var(--gray-a2))",
+  borderColor: "var(--indigo-a4)",
+});
+
+export const feedBubbleUser = style({
+  background: "color-mix(in srgb, var(--accent-9) 12%, var(--gray-a2))",
+  borderColor: "color-mix(in srgb, var(--accent-9) 28%, var(--gray-a4))",
+  maxWidth: "66%",
+});
+
+export const feedBubbleThought = style({
+  background: "var(--gray-a1)",
+  borderStyle: "dashed",
+  color: "var(--gray-11)",
+  fontStyle: "italic",
+});
+
+export const feedToolGroup = style({
+  maxWidth: "80%",
+});
+
+export const feedSystemMessage = style({
+  display: "flex",
+  justifyContent: "center",
+  padding: "var(--space-1) var(--space-3)",
+});
+
+export const feedSystemMessageText = style({
+  fontSize: "var(--font-size-1)",
+  color: "var(--gray-9)",
+  fontStyle: "italic",
+});
+
+export const feedToolGroupHeader = style({
+  display: "flex",
+  alignItems: "center",
+  gap: "var(--space-1)",
+  padding: "var(--space-1) var(--space-2)",
+  borderRadius: "var(--radius-2)",
+  border: "1px solid var(--gray-a4)",
+  background: "var(--gray-a2)",
+  cursor: "pointer",
+  fontSize: "var(--font-size-1)",
+  color: "var(--gray-10)",
+  userSelect: "none",
+  selectors: {
+    "&:hover": {
+      background: "var(--gray-a3)",
+    },
+  },
+});
+
+export const feedToolGroupBody = style({
+  marginTop: "var(--space-1)",
+  display: "flex",
+  flexDirection: "column",
+  gap: "var(--space-1)",
+});
+
+const bubblePulse = keyframes({
+  "0%, 100%": { opacity: 0.35 },
+  "50%": { opacity: 1 },
+});
+
+export const liveBubblesRow = style({
+  display: "flex",
+  justifyContent: "space-between",
+  padding: "0 var(--space-3) var(--space-2)",
+  gap: "var(--space-2)",
+  flexShrink: 0,
+});
+
+export const liveBubble = style({
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 5,
+  padding: "6px var(--space-3)",
+  borderRadius: "var(--radius-3)",
+  border: "1px solid var(--gray-a4)",
+  background: "var(--gray-a2)",
+});
+
+export const liveBubbleDot = style({
+  width: 6,
+  height: 6,
+  borderRadius: "50%",
+  background: "var(--gray-9)",
+  animation: `${bubblePulse} 2s ease-in-out infinite`,
+  selectors: {
+    "&:nth-child(2)": { animationDelay: "0.4s" },
+    "&:nth-child(3)": { animationDelay: "0.8s" },
+  },
+});
+
+export const agentStateChip = style({
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "var(--space-1)",
+  fontSize: "var(--font-size-1)",
+  color: "var(--gray-10)",
+  padding: "2px var(--space-2)",
+  borderRadius: "var(--radius-2)",
+  border: "1px solid var(--gray-a4)",
+  background: "var(--gray-a2)",
+  selectors: {
+    '&[data-tone="error"]': {
+      color: "var(--red-11)",
+      borderColor: "var(--red-a5)",
+      background: "var(--red-a2)",
+    },
+    '&[data-tone="warn"]': {
+      color: "var(--amber-11)",
+      borderColor: "var(--amber-a5)",
+      background: "var(--amber-a2)",
+    },
+  },
+});
+
 export const sessionViewRoot = style({
   display: "flex",
   flexDirection: "column",
   height: "100%",
   overflow: "hidden",
+});
+
+// Three-column app layout: [left: sidebar floats right] [center: 720px] [right: empty]
+export const appColumns = style({
+  display: "flex",
+  flex: 1,
+  overflow: "hidden",
+  minHeight: 0,
+});
+
+export const appColLeft = style({
+  flex: 1,
+  minWidth: 220,
+  display: "flex",
+  justifyContent: "flex-end",
+  overflow: "hidden",
+  "@media": {
+    "(max-width: 500px)": {
+      display: "none",
+    },
+  },
+});
+
+export const appColCenter = style({
+  width: 720,
+  flexShrink: 0,
+  display: "flex",
+  flexDirection: "column",
+  overflow: "hidden",
+  "@media": {
+    "(max-width: 500px)": {
+      width: "100%",
+      flex: 1,
+    },
+  },
+});
+
+export const appColRight = style({
+  flex: 1,
+  minWidth: 0,
+  "@media": {
+    "(max-width: 500px)": {
+      display: "none",
+    },
+  },
 });
 
 export const panelColumn = style({
