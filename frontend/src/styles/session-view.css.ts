@@ -31,7 +31,7 @@ export const agentAvatar = style({
   borderRadius: "50%",
   flexShrink: 0,
   objectFit: "cover",
-  maskImage: "radial-gradient(circle, black 72%, transparent 76%)",
+  maskImage: "radial-gradient(circle, black 64%, transparent 64%)",
   alignSelf: "flex-start",
 });
 
@@ -60,7 +60,7 @@ export const userAvatar = style({
   borderRadius: "50%",
   flexShrink: 0,
   objectFit: "cover",
-  maskImage: "radial-gradient(circle, black 72%, transparent 76%)",
+  maskImage: "radial-gradient(circle, black 64%, transparent 64%)",
   alignSelf: "flex-start",
 });
 
