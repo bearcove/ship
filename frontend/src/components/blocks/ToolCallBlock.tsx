@@ -20,8 +20,10 @@ import {
   toolCallLabel,
   toolCallValue,
   toolCallBlock,
+  toolCallBlockExpanded,
   toolCallBody,
   toolCallHeader,
+  toolCallHeaderCollapsed,
 } from "../../styles/session-view.css";
 import { displayTargetPath, diffStats, jsonValueToString, summarizeTarget } from "./toolPayload";
 
@@ -451,9 +453,9 @@ export function ToolCallBlock({ block }: Props) {
         : ("gray" as const);
 
   return (
-    <Box className={toolCallBlock}>
+    <Box className={`${toolCallBlock}${expanded ? ` ${toolCallBlockExpanded}` : ""}`}>
       <Flex
-        className={toolCallHeader}
+        className={`${toolCallHeader}${!expanded ? ` ${toolCallHeaderCollapsed}` : ""}`}
         align="center"
         gap="2"
         onClick={() => setExpanded((open) => !open)}

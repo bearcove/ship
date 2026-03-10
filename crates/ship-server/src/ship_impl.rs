@@ -399,6 +399,7 @@ impl ShipImpl {
             SessionEvent::ContextUpdated { .. } => "ContextUpdated",
             SessionEvent::TaskStarted { .. } => "TaskStarted",
             SessionEvent::AgentModelChanged { .. } => "AgentModelChanged",
+            SessionEvent::MateGuidanceQueued { .. } => "MateGuidanceQueued",
         }
     }
 
@@ -411,7 +412,8 @@ impl ShipImpl {
             | SessionEvent::AgentModelChanged { role, .. } => Some(*role),
             SessionEvent::SessionStartupChanged { .. }
             | SessionEvent::TaskStatusChanged { .. }
-            | SessionEvent::TaskStarted { .. } => None,
+            | SessionEvent::TaskStarted { .. }
+            | SessionEvent::MateGuidanceQueued { .. } => None,
         }
     }
 
@@ -424,7 +426,8 @@ impl ShipImpl {
             | SessionEvent::TaskStatusChanged { .. }
             | SessionEvent::ContextUpdated { .. }
             | SessionEvent::TaskStarted { .. }
-            | SessionEvent::AgentModelChanged { .. } => None,
+            | SessionEvent::AgentModelChanged { .. }
+            | SessionEvent::MateGuidanceQueued { .. } => None,
         }
     }
 
@@ -437,7 +440,8 @@ impl ShipImpl {
             | SessionEvent::AgentStateChanged { .. }
             | SessionEvent::SessionStartupChanged { .. }
             | SessionEvent::ContextUpdated { .. }
-            | SessionEvent::AgentModelChanged { .. } => None,
+            | SessionEvent::AgentModelChanged { .. }
+            | SessionEvent::MateGuidanceQueued { .. } => None,
         }
     }
 
@@ -714,6 +718,12 @@ Here's how a typical cycle works:
 
 You can also steer the mate mid-flight with captain_steer if you see it going \
 off track, or notify the human with captain_notify_human if you need their input.
+
+Your available tools are your Ship MCP tools: captain_assign, captain_steer, \
+captain_accept, captain_cancel, captain_notify_human, read_file, search_files, \
+list_files, and web_search. Built-in tools (Bash, Read, Write, Edit) are \
+disabled in this environment. If you try one and it fails or is rejected, do \
+not stop — use your MCP tools instead and continue.
 
 Right now, a new session has just started and there is no active task. Greet \
 the human briefly and wait for them to describe what they'd like to work on."
@@ -1023,9 +1033,11 @@ until the captain responds, so use it when you genuinely need direction.
 You can also send non-blocking progress updates with mate_send_update if you \
 want to keep the captain informed without waiting for a reply.
 
-All your file operations go through Ship's tools (read_file, write_file, \
-edit_prepare/edit_confirm, search_files, list_files, run_command). Do not try \
-to use any other file or terminal tools.
+All your file operations go through Ship's MCP tools: run_command (shell \
+commands), read_file, write_file, edit_prepare/edit_confirm, search_files, \
+list_files. Built-in tools (Bash, Read, Write, Edit) are disabled — if you \
+try one and see an error or a rejection, do not stop. Just use the MCP \
+equivalent and continue your task.
 
 Here is your task:
 
@@ -3623,6 +3635,30 @@ Here is your task:
                 task_id = Self::event_task_id(&event),
                 "applying agent notification"
             );
+            // MateGuidanceQueued is an internal signal from the ACP client —
+            // inject the guidance into the appropriate agent's feed.
+            if let SessionEvent::MateGuidanceQueued { role, message } = &event {
+                match role {
+                    Role::Mate => {
+                        let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                        if let Some(session) = sessions.get_mut(session_id) {
+                            Self::queue_mate_guidance(session, message);
+                        }
+                    }
+                    Role::Captain => {
+                        let this = self.clone();
+                        let session_id = session_id.clone();
+                        let message = message.clone();
+                        tokio::spawn(async move {
+                            if let Err(error) = this.interrupt_captain(&session_id, message).await {
+                                Self::log_error("builtin_tool_blocked_interrupt_captain", &error);
+                            }
+                        });
+                    }
+                }
+                continue;
+            }
+
             let captain_notification = {
                 let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
                 let Some(session) = sessions.get_mut(session_id) else {

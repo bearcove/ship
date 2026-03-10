@@ -359,6 +359,9 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
           }
           return nextState;
         }
+        case "MateGuidanceQueued": {
+          return nextState;
+        }
       }
     }
   }

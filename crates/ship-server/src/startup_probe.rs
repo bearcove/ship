@@ -451,6 +451,7 @@ fn log_message(started_at: Instant, message: &SubscribeMessage) {
                         "model changed role={role:?} model_id={model_id:?} available={available_models:?}"
                     )
                 }
+                SessionEvent::MateGuidanceQueued { .. } => "mate guidance queued".to_owned(),
             };
             println!(
                 "[probe +{:>5}ms] seq={} {}",

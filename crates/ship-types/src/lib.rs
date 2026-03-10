@@ -480,6 +480,13 @@ pub mod events {
             model_id: Option<String>,
             available_models: Vec<String>,
         },
+        /// A built-in tool was blocked; the session manager should inject this
+        /// message into the agent's next prompt turn so it knows to use MCP
+        /// tools instead. Role indicates which agent triggered it.
+        MateGuidanceQueued {
+            role: Role,
+            message: String,
+        },
     }
 
     // r[event.envelope]

@@ -1176,6 +1176,9 @@ pub fn apply_event_to_materialized_state(session: &mut ActiveSession, event: &Se
                 session.mate.available_models = available_models.clone();
             }
         },
+        // Handled by the session manager before apply_event is called;
+        // should never reach here.
+        SessionEvent::MateGuidanceQueued { .. } => {}
     }
 }
 

@@ -551,10 +551,13 @@ export const fileMentionItem = style({
 });
 
 export const toolCallBlock = style({
+  fontSize: "var(--font-size-1)",
+});
+
+export const toolCallBlockExpanded = style({
   borderRadius: "var(--radius-2)",
   border: "1px solid var(--gray-a4)",
   overflow: "hidden",
-  fontSize: "var(--font-size-1)",
 });
 
 export const toolCallHeader = style({
@@ -567,6 +570,10 @@ export const toolCallHeader = style({
   ":hover": {
     background: "var(--gray-a2)",
   },
+});
+
+export const toolCallHeaderCollapsed = style({
+  borderRadius: "var(--radius-1)",
 });
 
 export const toolCallBody = style({

@@ -28,6 +28,12 @@ use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::{Child, Command};
 use tokio::sync::{mpsc, oneshot, watch};
 
+const BUILTIN_TOOL_BLOCKED_GUIDANCE: &str = "\
+A built-in tool (Bash, Read, Write, or Edit) was blocked — those are disabled \
+in Ship. Use your MCP tools instead: run_command to run shell commands, \
+read_file to read files, write_file to write files, search_files to search, \
+list_files to list. Do not stop — continue your task using these tools.";
+
 pub struct ShipAcpClient {
     role: Role,
     worktree_path: PathBuf,
@@ -90,8 +96,9 @@ impl ShipAcpClient {
     // r[captain.capabilities]
     // r[mate.capabilities]
     // Both agents must only use Ship's MCP tools. Any ACP built-in tool usage
-    // (Read, Write, Edit, Bash, etc.) is denied outright — we find a reject
-    // option in the permission request and select it automatically.
+    // (Read, Write, Edit, Bash, etc.) is rejected outright. We select a Reject
+    // option and, for the mate, also emit MateGuidanceQueued so the session
+    // manager can inject a correction before the mate's next prompt turn.
     fn blocked_permission_option_id(&self, request: &RequestPermissionRequest) -> Option<String> {
         request.options.iter().find_map(|option| {
             matches!(
@@ -331,8 +338,16 @@ impl Client for ShipAcpClient {
         self.reset_text_block();
 
         // Auto-reject built-in tool permissions before emitting any UI events.
+        // For the mate, also emit MateGuidanceQueued so the session manager can
+        // inject a correction into the mate's next prompt turn.
         if let Some(option_id) = self.blocked_permission_option_id(&args) {
             tracing::warn!(role = ?self.role, "auto-rejected ACP built-in tool permission request");
+            let _ = self
+                .notifications_tx
+                .send(SessionEvent::MateGuidanceQueued {
+                    role: self.role,
+                    message: BUILTIN_TOOL_BLOCKED_GUIDANCE.to_owned(),
+                });
             return Ok(RequestPermissionResponse::new(
                 RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(option_id)),
             ));
