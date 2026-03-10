@@ -25,6 +25,7 @@ import {
   sessionRow,
   sessionRowEmpty,
   sessionRowTitle,
+  sidebarBackdrop,
   sidebarFooter,
   sidebarHeader,
   sidebarRoot,
@@ -217,6 +218,8 @@ interface Props {
   currentSessionId?: string;
   debugMode: boolean;
   onToggleDebug: () => void;
+  isOpen?: boolean;
+  onClose?: () => void;
 }
 
 // r[ui.session-list.nav]
@@ -226,6 +229,8 @@ export function SessionSidebar({
   currentSessionId,
   debugMode,
   onToggleDebug,
+  isOpen,
+  onClose,
 }: Props) {
   const [addProjectOpen, setAddProjectOpen] = useState(false);
   const { soundEnabled, setSoundEnabled } = useSoundEnabled();
@@ -235,70 +240,73 @@ export function SessionSidebar({
   const validProjects = projects.filter((p) => p.valid);
 
   return (
-    <Box className={sidebarRoot}>
-      <Box className={sidebarHeader}>
-        <AgentKindSelect
-          label="Captain"
-          value={captainKind}
-          onChange={setCaptainKind}
-          claudeAvailable={discovery.claude}
-          codexAvailable={discovery.codex}
-        />
-        <AgentKindSelect
-          label="Mate"
-          value={mateKind}
-          onChange={setMateKind}
-          claudeAvailable={discovery.claude}
-          codexAvailable={discovery.codex}
-        />
-      </Box>
-
-      <Box className={sidebarScrollArea}>
-        {validProjects.map((project) => (
-          <ProjectGroup
-            key={project.name}
-            project={project}
-            sessions={sessions.filter((s) => s.project === project.name)}
-            currentSessionId={currentSessionId}
-            captainKind={captainKind}
-            mateKind={mateKind}
+    <>
+      {isOpen && <div className={sidebarBackdrop} onClick={onClose} />}
+      <Box className={sidebarRoot} data-open={isOpen ? "true" : undefined}>
+        <Box className={sidebarHeader}>
+          <AgentKindSelect
+            label="Captain"
+            value={captainKind}
+            onChange={setCaptainKind}
+            claudeAvailable={discovery.claude}
+            codexAvailable={discovery.codex}
           />
-        ))}
-      </Box>
+          <AgentKindSelect
+            label="Mate"
+            value={mateKind}
+            onChange={setMateKind}
+            claudeAvailable={discovery.claude}
+            codexAvailable={discovery.codex}
+          />
+        </Box>
 
-      <Flex className={sidebarFooter} align="center" gap="1">
-        <Tooltip content="Add project">
+        <Box className={sidebarScrollArea}>
+          {validProjects.map((project) => (
+            <ProjectGroup
+              key={project.name}
+              project={project}
+              sessions={sessions.filter((s) => s.project === project.name)}
+              currentSessionId={currentSessionId}
+              captainKind={captainKind}
+              mateKind={mateKind}
+            />
+          ))}
+        </Box>
+
+        <Flex className={sidebarFooter} align="center" gap="1">
+          <Tooltip content="Add project">
+            <IconButton
+              variant="ghost"
+              size="2"
+              color="gray"
+              aria-label="Add project"
+              onClick={() => setAddProjectOpen(true)}
+            >
+              <FolderSimplePlus size={16} />
+            </IconButton>
+          </Tooltip>
+          <IconButton
+            variant={debugMode ? "solid" : "ghost"}
+            color={debugMode ? "amber" : "gray"}
+            size="2"
+            onClick={onToggleDebug}
+            aria-label={debugMode ? "Disable debug mode" : "Enable debug mode"}
+          >
+            <Bug size={16} />
+          </IconButton>
           <IconButton
             variant="ghost"
             size="2"
             color="gray"
-            aria-label="Add project"
-            onClick={() => setAddProjectOpen(true)}
+            onClick={() => setSoundEnabled(!soundEnabled)}
+            aria-label={soundEnabled ? "Mute sounds" : "Unmute sounds"}
           >
-            <FolderSimplePlus size={16} />
+            {soundEnabled ? <SpeakerHigh size={16} /> : <SpeakerSlash size={16} />}
           </IconButton>
-        </Tooltip>
-        <IconButton
-          variant={debugMode ? "solid" : "ghost"}
-          color={debugMode ? "amber" : "gray"}
-          size="2"
-          onClick={onToggleDebug}
-          aria-label={debugMode ? "Disable debug mode" : "Enable debug mode"}
-        >
-          <Bug size={16} />
-        </IconButton>
-        <IconButton
-          variant="ghost"
-          size="2"
-          color="gray"
-          onClick={() => setSoundEnabled(!soundEnabled)}
-          aria-label={soundEnabled ? "Mute sounds" : "Unmute sounds"}
-        >
-          {soundEnabled ? <SpeakerHigh size={16} /> : <SpeakerSlash size={16} />}
-        </IconButton>
-      </Flex>
+        </Flex>
 
-      <AddProjectDialog open={addProjectOpen} onOpenChange={setAddProjectOpen} />
-    </Box>
+        <AddProjectDialog open={addProjectOpen} onOpenChange={setAddProjectOpen} />
+      </Box>
+    </>
   );
 }

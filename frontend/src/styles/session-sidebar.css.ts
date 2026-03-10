@@ -8,13 +8,36 @@ export const sidebarRoot = style({
   borderRight: "1px solid var(--gray-a5)",
   overflow: "hidden",
   "@media": {
-    "(max-width: 1023px)": {
-      display: "none",
+    "(max-width: 500px)": {
+      position: "fixed",
+      left: 0,
+      top: 0,
+      bottom: 0,
+      width: 260,
+      zIndex: 200,
+      background: "var(--color-background)",
+      transform: "translateX(-100%)",
+      transition: "transform 0.2s ease",
+      borderRight: "1px solid var(--gray-a6)",
+      boxShadow: "4px 0 16px rgba(0,0,0,0.2)",
     },
   },
   selectors: {
-    '&[data-collapsed="true"]': {
-      width: 44,
+    '&[data-open="true"]': {
+      transform: "translateX(0)",
+    },
+  },
+});
+
+export const sidebarBackdrop = style({
+  display: "none",
+  "@media": {
+    "(max-width: 500px)": {
+      display: "block",
+      position: "fixed",
+      inset: 0,
+      zIndex: 199,
+      background: "rgba(0,0,0,0.4)",
     },
   },
 });
@@ -50,9 +73,6 @@ export const projectRow = style({
   selectors: {
     "&:hover": {
       background: "var(--gray-a2)",
-    },
-    "&:hover .projectActions": {
-      opacity: 1,
     },
   },
 });

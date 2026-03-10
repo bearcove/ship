@@ -100,7 +100,10 @@ function renderPage() {
       <SoundProvider>
         <Routes>
           <Route path="/" element={<LocationEcho />} />
-          <Route path="/sessions/:sessionId" element={<SessionViewPage debugMode={false} />} />
+          <Route
+            path="/sessions/:sessionId"
+            element={<SessionViewPage debugMode={false} onOpenSidebar={() => {}} />}
+          />
         </Routes>
       </SoundProvider>
     </MemoryRouter>,

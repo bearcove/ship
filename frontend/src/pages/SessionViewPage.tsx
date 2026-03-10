@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { Box, Callout, Flex, SegmentedControl, Spinner, Text } from "@radix-ui/themes";
-import { ArrowLeft, Warning } from "@phosphor-icons/react";
+import { Box, Callout, Flex, IconButton, Spinner, Text } from "@radix-ui/themes";
+import { ArrowLeft, List, Warning } from "@phosphor-icons/react";
 import { useSession } from "../hooks/useSession";
 import { useSessionState } from "../hooks/useSessionState";
 import { AgentHeader } from "../components/AgentHeader";
@@ -12,32 +12,37 @@ import {
   desktopGrid,
   panelColumn,
   mobileNavBar,
-  mobilePanel,
+  mobileStack,
+  mobileStackPanel,
 } from "../styles/session-view.css";
 import type { TaskRecord } from "../generated/ship";
 
 // r[view.session]
 // r[ui.layout.session-view]
 // r[proto.hydration-flow]
-export function SessionViewPage({ debugMode }: { debugMode: boolean }) {
+export function SessionViewPage({
+  debugMode,
+  onOpenSidebar,
+}: {
+  debugMode: boolean;
+  onOpenSidebar: () => void;
+}) {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
   // r[event.client.hydration-sequence]: Step 1 — structural state
   const { session, error } = useSession(sessionId ?? "");
   // r[event.client.hydration-sequence]: Step 2/3 — event subscription + replay
   const eventState = useSessionState(sessionId ?? "", session);
-  const [mobileTab, setMobileTab] = useState<"captain" | "mate">("captain");
 
   // r[ui.keys.nav]
   useEffect(() => {
     function handler(e: KeyboardEvent) {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (e.key === "1") setMobileTab("captain");
-      if (e.key === "2") setMobileTab("mate");
+      if (e.key === "Escape") onOpenSidebar();
     }
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, []);
+  }, [onOpenSidebar]);
 
   if (error) {
     return (
@@ -97,18 +102,19 @@ export function SessionViewPage({ debugMode }: { debugMode: boolean }) {
   return (
     <Flex className={sessionViewRoot}>
       <Box className={mobileNavBar}>
-        <Flex align="center" gap="3" px="3" py="2">
+        <Flex align="center" gap="2" px="2" py="2">
+          <IconButton
+            variant="ghost"
+            color="gray"
+            size="2"
+            onClick={onOpenSidebar}
+            aria-label="Open sidebar"
+          >
+            <List size={18} />
+          </IconButton>
           <Link to="/" style={{ color: "var(--gray-11)", display: "flex", alignItems: "center" }}>
             <ArrowLeft size={18} />
           </Link>
-          <SegmentedControl.Root
-            size="1"
-            value={mobileTab}
-            onValueChange={(v) => setMobileTab(v as "captain" | "mate")}
-          >
-            <SegmentedControl.Item value="captain">Captain</SegmentedControl.Item>
-            <SegmentedControl.Item value="mate">Mate</SegmentedControl.Item>
-          </SegmentedControl.Root>
         </Flex>
       </Box>
 
@@ -142,36 +148,33 @@ export function SessionViewPage({ debugMode }: { debugMode: boolean }) {
           </Box>
         </Box>
 
-        <Box className={mobilePanel}>
-          {mobileTab === "captain" ? (
-            <>
-              <AgentHeader sessionId={session.id} agent={captain} />
-              <AgentPanel
-                sessionId={session.id}
-                agent={captain}
-                blocks={eventState.captainBlocks.blocks}
-                debugMode={debugMode}
-                loading={isReplaying}
-                loadingLabel={replayLabel}
-                startupState={startupState}
-                taskStatus={liveTask?.status ?? null}
-              />
-            </>
-          ) : (
-            <>
-              <AgentHeader sessionId={session.id} agent={mate} />
-              <AgentPanel
-                sessionId={session.id}
-                agent={mate}
-                blocks={eventState.mateBlocks.blocks}
-                debugMode={debugMode}
-                loading={isReplaying}
-                loadingLabel={replayLabel}
-                startupState={startupState}
-                taskStatus={liveTask?.status ?? null}
-              />
-            </>
-          )}
+        <Box className={mobileStack}>
+          <Box className={mobileStackPanel}>
+            <AgentHeader sessionId={session.id} agent={captain} />
+            <AgentPanel
+              sessionId={session.id}
+              agent={captain}
+              blocks={eventState.captainBlocks.blocks}
+              debugMode={debugMode}
+              loading={isReplaying}
+              loadingLabel={replayLabel}
+              startupState={startupState}
+              taskStatus={liveTask?.status ?? null}
+            />
+          </Box>
+          <Box className={mobileStackPanel}>
+            <AgentHeader sessionId={session.id} agent={mate} />
+            <AgentPanel
+              sessionId={session.id}
+              agent={mate}
+              blocks={eventState.mateBlocks.blocks}
+              debugMode={debugMode}
+              loading={isReplaying}
+              loadingLabel={replayLabel}
+              startupState={startupState}
+              taskStatus={liveTask?.status ?? null}
+            />
+          </Box>
         </Box>
       </Box>
 

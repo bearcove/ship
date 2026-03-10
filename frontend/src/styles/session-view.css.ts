@@ -25,7 +25,7 @@ export const mobileNavBar = style({
   flexShrink: 0,
   borderBottom: "1px solid var(--gray-a5)",
   "@media": {
-    "(max-width: 1023px)": {
+    "(max-width: 500px)": {
       display: "block",
     },
   },
@@ -37,20 +37,33 @@ export const desktopGrid = style({
   flex: 1,
   overflow: "hidden",
   "@media": {
-    "(max-width: 1023px)": {
+    "(max-width: 500px)": {
       display: "none",
     },
   },
 });
 
-export const mobilePanel = style({
+export const mobileStack = style({
   display: "none",
-  flex: 1,
-  overflow: "hidden",
   "@media": {
-    "(max-width: 1023px)": {
+    "(max-width: 500px)": {
       display: "flex",
+      flex: 1,
       flexDirection: "column",
+      overflow: "hidden",
+    },
+  },
+});
+
+export const mobileStackPanel = style({
+  flex: 1,
+  minHeight: 0,
+  overflow: "hidden",
+  display: "flex",
+  flexDirection: "column",
+  selectors: {
+    "&:first-child": {
+      borderBottom: "1px solid var(--gray-a5)",
     },
   },
 });

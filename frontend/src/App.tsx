@@ -36,6 +36,7 @@ export function App() {
   const allSessions = useSessionList();
   const allProjects = useProjects();
   const [debugMode, setDebugMode] = useState(readDebugPreference);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     writeDebugPreference(debugMode);
@@ -90,6 +91,8 @@ export function App() {
           currentSessionId={currentSessionId}
           debugMode={debugMode}
           onToggleDebug={toggleDebug}
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
         />
         <Box
           style={{
@@ -103,7 +106,9 @@ export function App() {
             <Route path="/" element={<SessionListPage />} />
             <Route
               path="/sessions/:sessionId"
-              element={<SessionViewPage debugMode={debugMode} />}
+              element={
+                <SessionViewPage debugMode={debugMode} onOpenSidebar={() => setSidebarOpen(true)} />
+              }
             />
           </Routes>
         </Box>
