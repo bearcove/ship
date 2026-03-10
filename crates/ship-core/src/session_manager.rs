@@ -68,6 +68,11 @@ pub struct PendingEdit {
     pub path: PathBuf,
     pub old_content: String,
     pub new_content: String,
+    /// Original transformation parameters, kept so edit_confirm can re-apply
+    /// the edit if the file was modified by a prior confirm in the same batch.
+    pub old_string: String,
+    pub new_string: String,
+    pub replace_all: bool,
 }
 
 #[derive(Debug, Clone)]

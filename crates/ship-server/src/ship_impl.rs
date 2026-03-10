@@ -1941,6 +1941,9 @@ Here is your task:
                 path: relative_path.to_path_buf(),
                 old_content,
                 new_content,
+                old_string,
+                new_string,
+                replace_all,
             },
             diff,
         })
@@ -2636,8 +2639,6 @@ Here is your task:
             (worktree, pending_edit)
         };
 
-        let old_content = pending_edit.old_content.clone();
-        let new_content = pending_edit.new_content.clone();
         let confirmed_path = pending_edit.path.clone();
         let result = tokio::task::spawn_blocking(move || {
             let canonical_worktree = fs::canonicalize(&worktree_path).map_err(|error| {
@@ -2670,24 +2671,35 @@ Here is your task:
 
             let current_content = fs::read_to_string(&canonical_file)
                 .map_err(|error| format!("Failed to read file: {error}"))?;
-            if current_content != pending_edit.old_content {
-                return Err(
-                    "File has been modified since edit was prepared. Run edit_prepare again."
-                        .to_owned(),
-                );
-            }
+            let (old_before_write, new_content) = if current_content == pending_edit.old_content {
+                (
+                    pending_edit.old_content.clone(),
+                    pending_edit.new_content.clone(),
+                )
+            } else {
+                // File changed since prepare (likely another edit in the same
+                // batch was confirmed first). Re-apply the transformation to
+                // the current content rather than failing.
+                let reapplied = Self::build_prepared_edit(
+                    &pending_edit.path,
+                    current_content.clone(),
+                    pending_edit.old_string.clone(),
+                    pending_edit.new_string.clone(),
+                    pending_edit.replace_all,
+                )
+                .map_err(|error| {
+                    format!("File changed since edit was prepared and re-apply failed: {error}")
+                })?;
+                (current_content, reapplied.pending.new_content)
+            };
 
-            Self::write_text_file(
-                &canonical_file,
-                &pending_edit.new_content,
-                &pending_edit.path,
-            )?;
+            Self::write_text_file(&canonical_file, &new_content, &pending_edit.path)?;
             if pending_edit.path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
                 if let Err(error) = Self::validate_rust_file(&canonical_file, &pending_edit.path) {
                     let restore_error = Self::restore_file_from_content(
                         &canonical_file,
                         &pending_edit.path,
-                        &pending_edit.old_content,
+                        &old_before_write,
                     );
                     return match restore_error {
                         Ok(()) => Err(error),
@@ -2696,18 +2708,16 @@ Here is your task:
                 }
             }
 
-            Ok(())
+            Ok((old_before_write, new_content))
         })
         .await;
 
         match result {
-            Ok(Ok(())) => {
+            Ok(Ok((old_content, new_content))) => {
                 {
                     let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
                     if let Some(session) = sessions.get_mut(session_id) {
-                        session
-                            .pending_edits
-                            .retain(|_, pending| pending.path != confirmed_path);
+                        session.pending_edits.remove(&edit_id);
                     }
                 }
                 let path_str = confirmed_path.display().to_string();
