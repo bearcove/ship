@@ -329,6 +329,15 @@ impl Client for ShipAcpClient {
         args: RequestPermissionRequest,
     ) -> AcpResult<RequestPermissionResponse> {
         self.reset_text_block();
+
+        // Auto-reject built-in tool permissions before emitting any UI events.
+        if let Some(option_id) = self.blocked_permission_option_id(&args) {
+            tracing::warn!(role = ?self.role, "auto-rejected ACP built-in tool permission request");
+            return Ok(RequestPermissionResponse::new(
+                RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(option_id)),
+            ));
+        }
+
         let permission_id = args.tool_call.tool_call_id.0.to_string();
         let tool_call_id = args.tool_call.tool_call_id.0.to_string();
         let tool_name = args
@@ -389,19 +398,6 @@ impl Client for ShipAcpClient {
             },
         });
 
-        if let Some(option_id) = self.blocked_permission_option_id(&args) {
-            self.send_event(SessionEvent::AgentStateChanged {
-                role: self.role,
-                state: AgentState::Working {
-                    plan: None,
-                    activity: Some("Blocked built-in tool (use MCP tools)".to_owned()),
-                },
-            });
-            return Ok(RequestPermissionResponse::new(
-                RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(option_id)),
-            ));
-        }
-
         let (resolution_tx, resolution_rx) = oneshot::channel();
         self.pending_permissions
             .borrow_mut()
@@ -444,6 +440,7 @@ impl Client for ShipAcpClient {
         &self,
         _args: WriteTextFileRequest,
     ) -> AcpResult<WriteTextFileResponse> {
+        tracing::warn!(role = ?self.role, "rejected ACP built-in write_text_file");
         Err(Error::invalid_params().data(match self.role {
             Role::Captain => "Built-in file writing is disabled. You do not have direct file access. Delegate work to the mate using captain_assign.",
             Role::Mate => "Built-in file writing is disabled. Use the write_file MCP tool instead.",
@@ -451,6 +448,7 @@ impl Client for ShipAcpClient {
     }
 
     async fn read_text_file(&self, _args: ReadTextFileRequest) -> AcpResult<ReadTextFileResponse> {
+        tracing::warn!(role = ?self.role, "rejected ACP built-in read_text_file");
         Err(Error::invalid_params().data(match self.role {
             Role::Captain => "Built-in file reading is disabled. You do not have direct file access. Delegate work to the mate using captain_assign.",
             Role::Mate => "Built-in file reading is disabled. Use the read_file MCP tool instead.",
@@ -461,6 +459,7 @@ impl Client for ShipAcpClient {
         &self,
         _args: CreateTerminalRequest,
     ) -> AcpResult<CreateTerminalResponse> {
+        tracing::warn!(role = ?self.role, "rejected ACP built-in create_terminal");
         Err(Error::invalid_params().data(match self.role {
             Role::Captain => "Built-in terminal is disabled. You do not have direct command access. Delegate work to the mate using captain_assign.",
             Role::Mate => "Built-in terminal is disabled. Use the run_command MCP tool instead.",
@@ -1348,11 +1347,11 @@ mod tests {
 
     // r[verify captain.capabilities]
     #[tokio::test(flavor = "current_thread")]
-    async fn captain_builtin_tool_requests_are_also_rejected_automatically() {
+    async fn captain_builtin_tool_requests_are_silently_rejected() {
         let local = tokio::task::LocalSet::new();
         local
             .run_until(async {
-                let (tx, mut rx) = mpsc::unbounded_channel();
+                let (tx, rx) = mpsc::unbounded_channel();
                 let client = Rc::new(ShipAcpClient::new(
                     Role::Captain,
                     PathBuf::from("/tmp/worktree"),
@@ -1396,30 +1395,19 @@ mod tests {
                     ))
                 );
 
-                let _ = rx.recv().await.expect("permission block event");
-                let _ = rx.recv().await.expect("awaiting permission state event");
-                let working = rx.recv().await.expect("working state event");
-                let SessionEvent::AgentStateChanged { state, .. } = working else {
-                    panic!("unexpected event: {working:?}");
-                };
-                let AgentState::Working { activity, .. } = state else {
-                    panic!("unexpected state: {state:?}");
-                };
-                assert_eq!(
-                    activity.as_deref(),
-                    Some("Blocked built-in tool (use MCP tools)")
-                );
+                // No events should be emitted for auto-rejected permissions.
+                assert!(rx.is_empty());
             })
             .await;
     }
 
     // r[verify mate.capabilities]
     #[tokio::test(flavor = "current_thread")]
-    async fn mate_builtin_tool_requests_are_rejected_automatically() {
+    async fn mate_builtin_tool_requests_are_silently_rejected() {
         let local = tokio::task::LocalSet::new();
         local
             .run_until(async {
-                let (tx, mut rx) = mpsc::unbounded_channel();
+                let (tx, rx) = mpsc::unbounded_channel();
                 let client = Rc::new(ShipAcpClient::new(
                     Role::Mate,
                     PathBuf::from("/tmp/worktree"),
@@ -1463,30 +1451,18 @@ mod tests {
                     ))
                 );
 
-                let _ = rx.recv().await.expect("permission block event");
-                let _ = rx.recv().await.expect("awaiting permission state event");
-                let working = rx.recv().await.expect("working state event");
-                let SessionEvent::AgentStateChanged { state, .. } = working else {
-                    panic!("unexpected event: {working:?}");
-                };
-                let AgentState::Working { activity, .. } = state else {
-                    panic!("unexpected state: {state:?}");
-                };
-                assert_eq!(
-                    activity.as_deref(),
-                    Some("Blocked built-in tool (use MCP tools)")
-                );
+                assert!(rx.is_empty());
             })
             .await;
     }
 
     // r[verify mate.capabilities]
     #[tokio::test(flavor = "current_thread")]
-    async fn mate_read_builtin_is_also_rejected() {
+    async fn mate_read_builtin_is_also_silently_rejected() {
         let local = tokio::task::LocalSet::new();
         local
             .run_until(async {
-                let (tx, mut rx) = mpsc::unbounded_channel();
+                let (tx, rx) = mpsc::unbounded_channel();
                 let client = Rc::new(ShipAcpClient::new(
                     Role::Mate,
                     PathBuf::from("/tmp/worktree"),
@@ -1530,19 +1506,7 @@ mod tests {
                     ))
                 );
 
-                let _ = rx.recv().await.expect("permission block event");
-                let _ = rx.recv().await.expect("awaiting permission state event");
-                let working = rx.recv().await.expect("working state event");
-                let SessionEvent::AgentStateChanged { state, .. } = working else {
-                    panic!("unexpected event: {working:?}");
-                };
-                let AgentState::Working { activity, .. } = state else {
-                    panic!("unexpected state: {state:?}");
-                };
-                assert_eq!(
-                    activity.as_deref(),
-                    Some("Blocked built-in tool (use MCP tools)")
-                );
+                assert!(rx.is_empty());
             })
             .await;
     }
