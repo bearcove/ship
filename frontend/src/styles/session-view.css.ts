@@ -203,6 +203,14 @@ export const feedMessageCardUser = style({
   borderColor: "color-mix(in srgb, var(--accent-9) 28%, var(--gray-a4))",
 });
 
+export const feedMessageTimestamp = style({
+  alignSelf: "flex-end",
+  fontSize: "10px",
+  color: "var(--gray-9)",
+  lineHeight: 1,
+  whiteSpace: "nowrap",
+});
+
 export const feedMessageMeta = style({
   fontSize: "var(--font-size-1)",
   fontWeight: "var(--font-weight-medium)",

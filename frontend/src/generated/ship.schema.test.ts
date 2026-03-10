@@ -24,6 +24,7 @@ describe("generated ship schema", () => {
       tag: "Event",
       value: {
         seq: 40n,
+        timestamp: "2026-01-01T00:00:00Z",
         event: {
           tag: "BlockAppend",
           block_id: "block-40",

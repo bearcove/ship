@@ -4683,6 +4683,7 @@ mod tests {
         let (messages_tx, mut messages_rx) = mpsc::unbounded_channel();
         let replay = vec![SessionEventEnvelope {
             seq: 7,
+            timestamp: "2026-01-01T00:00:00Z".to_owned(),
             event: SessionEvent::TaskStarted {
                 task_id: task_id.clone(),
                 description: "Replay task".to_owned(),
@@ -4711,6 +4712,7 @@ mod tests {
             replayed,
             SubscribeMessage::Event(SessionEventEnvelope {
                 seq: 7,
+                timestamp: "2026-01-01T00:00:00Z".to_owned(),
                 event: SessionEvent::TaskStarted {
                     task_id: task_id.clone(),
                     description: "Replay task".to_owned(),
@@ -4727,6 +4729,7 @@ mod tests {
         live_tx
             .send(SessionEventEnvelope {
                 seq: 8,
+                timestamp: "2026-01-01T00:00:00Z".to_owned(),
                 event: SessionEvent::TaskStarted {
                     task_id: live_task_id.clone(),
                     description: "Live task".to_owned(),
@@ -4742,6 +4745,7 @@ mod tests {
             live,
             SubscribeMessage::Event(SessionEventEnvelope {
                 seq: 8,
+                timestamp: "2026-01-01T00:00:00Z".to_owned(),
                 event: SessionEvent::TaskStarted {
                     task_id: live_task_id,
                     description: "Live task".to_owned(),

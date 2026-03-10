@@ -1,4 +1,4 @@
-import { Fragment, useRef, useEffect } from "react";
+import { Fragment, useRef, useEffect, useMemo } from "react";
 import { Box, Flex, Spinner, Text } from "@radix-ui/themes";
 import type {
   AgentSnapshot,
@@ -24,6 +24,7 @@ import {
   feedMessageCardUser,
   feedMessageMeta,
   feedMessageRow,
+  feedMessageTimestamp,
   stickyPlan,
   startupFeedBody,
   startupFeedItem,
@@ -42,6 +43,12 @@ interface Props {
 
 type PlanUpdateBlock = Extract<ContentBlock, { tag: "PlanUpdate" }>;
 type TextBlockType = Extract<ContentBlock, { tag: "Text" }>;
+
+function formatTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}
 
 function latestPlan(entries: BlockEntry[]): PlanUpdateBlock | undefined {
   let last: PlanUpdateBlock | undefined;
@@ -126,6 +133,11 @@ export function AgentPanel({
           <Box className={feedMessageRow}>
             <Box className={`${feedMessageCard} ${cardClassName}`}>
               <TextBlock block={block as TextBlockType} />
+              {entry.timestamp && (
+                <Text size="1" color="gray" className={feedMessageTimestamp}>
+                  {formatTime(entry.timestamp)}
+                </Text>
+              )}
             </Box>
           </Box>
         );

@@ -116,15 +116,22 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         // r[event.append]
         case "BlockAppend": {
           const isCaptain = ev.role.tag === "Captain";
+          const ts = envelope.timestamp;
           if (isCaptain) {
             return {
               ...nextState,
-              captainBlocks: appendBlock(nextState.captainBlocks, ev.block_id, ev.role, ev.block),
+              captainBlocks: appendBlock(
+                nextState.captainBlocks,
+                ev.block_id,
+                ev.role,
+                ev.block,
+                ts,
+              ),
             };
           }
           return {
             ...nextState,
-            mateBlocks: appendBlock(nextState.mateBlocks, ev.block_id, ev.role, ev.block),
+            mateBlocks: appendBlock(nextState.mateBlocks, ev.block_id, ev.role, ev.block, ts),
           };
         }
 

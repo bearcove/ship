@@ -91,6 +91,7 @@ fn make_persisted_session(id: &str, description: &str) -> PersistedSession {
             }],
             event_log: vec![SessionEventEnvelope {
                 seq: 0,
+                timestamp: "2026-01-01T00:00:00Z".to_owned(),
                 event: SessionEvent::TaskStarted {
                     task_id: TaskId::new(),
                     description: description.to_owned(),

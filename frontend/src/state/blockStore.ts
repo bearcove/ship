@@ -4,6 +4,7 @@ export interface BlockEntry {
   blockId: string;
   role: Role;
   block: ContentBlock;
+  timestamp?: string | null;
 }
 
 // r[event.store.immutable-updates]
@@ -23,8 +24,9 @@ export function appendBlock(
   blockId: string,
   role: Role,
   block: ContentBlock,
+  timestamp: string | null,
 ): BlockStore {
-  const entry: BlockEntry = { blockId, role, block };
+  const entry: BlockEntry = { blockId, role, block, timestamp };
   const blocks = [...store.blocks, entry];
   const index = new Map(store.index);
   index.set(blockId, blocks.length - 1);

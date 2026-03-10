@@ -981,6 +981,7 @@ pub fn apply_event(session: &mut ActiveSession, event: SessionEvent) {
 
     let envelope = SessionEventEnvelope {
         seq: session.next_event_seq,
+        timestamp: chrono::Utc::now().to_rfc3339(),
         event,
     };
     session.next_event_seq = session.next_event_seq.saturating_add(1);

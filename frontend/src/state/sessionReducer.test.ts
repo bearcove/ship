@@ -106,6 +106,7 @@ describe("sessionReducer event handling", () => {
       type: "event",
       envelope: {
         seq: 1n,
+        timestamp: "2026-01-01T00:00:00Z",
         event: {
           tag: "AgentStateChanged",
           role: { tag: "Captain" },
@@ -124,6 +125,7 @@ describe("sessionReducer event handling", () => {
       type: "event",
       envelope: {
         seq: 1n,
+        timestamp: "2026-01-01T00:00:00Z",
         event: {
           tag: "BlockAppend",
           block_id: "b1",
@@ -138,6 +140,7 @@ describe("sessionReducer event handling", () => {
       type: "event",
       envelope: {
         seq: 2n,
+        timestamp: "2026-01-01T00:00:00Z",
         event: {
           tag: "TaskStarted",
           task_id: "task-42",
@@ -155,6 +158,7 @@ describe("sessionReducer event handling", () => {
       type: "event",
       envelope: {
         seq: 1n,
+        timestamp: "2026-01-01T00:00:00Z",
         event: {
           tag: "TaskStatusChanged",
           task_id: "t1",
@@ -170,6 +174,7 @@ describe("sessionReducer event handling", () => {
       type: "event",
       envelope: {
         seq: 999n,
+        timestamp: "2026-01-01T00:00:00Z",
         event: { tag: "TaskStatusChanged", task_id: "t", status: { tag: "Accepted" } },
       },
     });

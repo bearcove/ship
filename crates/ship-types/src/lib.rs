@@ -484,6 +484,7 @@ pub mod events {
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub struct SessionEventEnvelope {
         pub seq: u64,
+        pub timestamp: String,
         pub event: SessionEvent,
     }
 
