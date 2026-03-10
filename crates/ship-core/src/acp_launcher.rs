@@ -4,7 +4,7 @@ use std::path::Path;
 
 use ship_types::{AgentDiscovery, AgentKind};
 
-const NPX_BINARY: &str = "npx";
+const NPX_BINARY: &str = "pnpx";
 const CLAUDE_AGENT_BINARY: &str = "claude-agent-acp";
 const CODEX_AGENT_BINARY: &str = "codex-acp";
 const CLAUDE_AGENT_NPX_PACKAGE: &str = "@zed-industries/claude-agent-acp";
@@ -144,7 +144,7 @@ mod tests {
     struct FakeProbe {
         claude: bool,
         codex: bool,
-        npx: bool,
+        pnpx: bool,
     }
 
     impl BinaryPathProbe for FakeProbe {
@@ -152,7 +152,7 @@ mod tests {
             match binary {
                 CLAUDE_AGENT_BINARY => self.claude,
                 CODEX_AGENT_BINARY => self.codex,
-                NPX_BINARY => self.npx,
+                NPX_BINARY => self.pnpx,
                 other => panic!("unexpected binary lookup: {other}"),
             }
         }
@@ -184,7 +184,7 @@ mod tests {
         let discovery = discover_agents(&FakeProbe {
             claude: true,
             codex: false,
-            npx: false,
+            pnpx: false,
         });
 
         assert_eq!(
@@ -198,11 +198,11 @@ mod tests {
 
     // r[verify server.agent-discovery]
     #[test]
-    fn discovery_reports_agent_available_when_npx_fallback_exists() {
+    fn discovery_reports_agent_available_when_pnpx_fallback_exists() {
         let discovery = discover_agents(&FakeProbe {
             claude: false,
             codex: true,
-            npx: true,
+            pnpx: true,
         });
 
         assert_eq!(
@@ -216,14 +216,14 @@ mod tests {
 
     // r[verify acp.binary.claude]
     #[test]
-    fn claude_launcher_resolution_supports_direct_binary_and_npx_fallback() {
+    fn claude_launcher_resolution_supports_direct_binary_and_pnpx_fallback() {
         assert_eq!(
             resolve_agent_launcher(
                 AgentKind::Claude,
                 &FakeProbe {
                     claude: true,
                     codex: false,
-                    npx: true,
+                    pnpx: true,
                 }
             ),
             Some(AgentLauncher::new(CLAUDE_AGENT_BINARY, &[]))
@@ -234,7 +234,7 @@ mod tests {
                 &FakeProbe {
                     claude: false,
                     codex: false,
-                    npx: true,
+                    pnpx: true,
                 }
             ),
             Some(AgentLauncher::new(
@@ -246,14 +246,14 @@ mod tests {
 
     // r[verify acp.binary.codex]
     #[test]
-    fn codex_launcher_resolution_supports_direct_binary_and_npx_fallback() {
+    fn codex_launcher_resolution_supports_direct_binary_and_pnpx_fallback() {
         assert_eq!(
             resolve_agent_launcher(
                 AgentKind::Codex,
                 &FakeProbe {
                     claude: false,
                     codex: true,
-                    npx: true,
+                    pnpx: true,
                 }
             ),
             Some(AgentLauncher::new(CODEX_AGENT_BINARY, &[]))
@@ -264,7 +264,7 @@ mod tests {
                 &FakeProbe {
                     claude: false,
                     codex: false,
-                    npx: true,
+                    pnpx: true,
                 }
             ),
             Some(AgentLauncher::new(
@@ -281,27 +281,27 @@ mod tests {
             FakeProbe {
                 claude: false,
                 codex: false,
-                npx: false,
+                pnpx: false,
             },
             FakeProbe {
                 claude: true,
                 codex: false,
-                npx: false,
+                pnpx: false,
             },
             FakeProbe {
                 claude: false,
                 codex: true,
-                npx: false,
+                pnpx: false,
             },
             FakeProbe {
                 claude: false,
                 codex: false,
-                npx: true,
+                pnpx: true,
             },
             FakeProbe {
                 claude: true,
                 codex: true,
-                npx: true,
+                pnpx: true,
             },
         ];
 

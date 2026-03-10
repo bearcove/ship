@@ -580,7 +580,7 @@ mod tests {
     struct FakeProbe {
         claude: bool,
         codex: bool,
-        npx: bool,
+        pnpx: bool,
     }
 
     impl BinaryPathProbe for FakeProbe {
@@ -588,7 +588,7 @@ mod tests {
             match binary {
                 "claude-agent-acp" => self.claude,
                 "codex-acp" => self.codex,
-                "npx" => self.npx,
+                "pnpx" => self.pnpx,
                 other => panic!("unexpected binary lookup: {other}"),
             }
         }
@@ -602,14 +602,14 @@ mod tests {
             &FakeProbe {
                 claude: false,
                 codex: false,
-                npx: true,
+                pnpx: true,
             },
         )
         .expect("claude launcher should resolve");
 
         let command = command_for_launcher(launcher);
 
-        assert_eq!(command.as_std().get_program(), "npx");
+        assert_eq!(command.as_std().get_program(), "pnpx");
         assert_eq!(
             command.as_std().get_args().collect::<Vec<_>>(),
             vec!["@zed-industries/claude-agent-acp"]
@@ -624,7 +624,7 @@ mod tests {
             &FakeProbe {
                 claude: false,
                 codex: true,
-                npx: true,
+                pnpx: true,
             },
         )
         .expect("codex launcher should resolve");
@@ -637,9 +637,9 @@ mod tests {
 
     #[test]
     fn command_builder_preserves_launcher_program_and_args() {
-        let command = command_for_launcher(AgentLauncher::new("npx", &["pkg", "--flag"]));
+        let command = command_for_launcher(AgentLauncher::new("pnpx", &["pkg", "--flag"]));
 
-        assert_eq!(command.as_std().get_program(), "npx");
+        assert_eq!(command.as_std().get_program(), "pnpx");
         assert_eq!(
             command.as_std().get_args().collect::<Vec<_>>(),
             vec!["pkg", "--flag"]
