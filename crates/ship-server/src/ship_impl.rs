@@ -5434,8 +5434,6 @@ mod tests {
         let (dir, ship, session_id) = create_session_for_workflow_test("mate-plan-tools").await;
         let project_root = dir.join("project");
         init_git_repo(&project_root);
-        std::fs::write(project_root.join("notes.txt"), "first draft\n")
-            .expect("test file should be written");
 
         {
             let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
@@ -5443,20 +5441,13 @@ mod tests {
             session.worktree_path = Some(project_root.clone());
         }
 
+        // plan_create no longer auto-commits — it just stores the plan and notifies the captain.
         ship.mate_tool_plan_create(
             &session_id,
             vec!["Set up types".to_owned(), "Implement handler".to_owned()],
         )
         .await
         .expect("plan_create should succeed");
-
-        let create_head = std::process::Command::new("git")
-            .arg("-C")
-            .arg(&project_root)
-            .args(["rev-list", "--count", "HEAD"])
-            .output()
-            .expect("git rev-list should run");
-        assert_eq!(String::from_utf8_lossy(&create_head.stdout).trim(), "1");
 
         {
             let sessions = ship.sessions.lock().expect("sessions mutex poisoned");
@@ -5470,11 +5461,9 @@ mod tests {
             )));
         }
 
-        std::fs::write(
-            project_root.join("notes.txt"),
-            "first draft\nsecond draft\n",
-        )
-        .expect("updated test file should be written");
+        // Mate writes step 1's changes, then immediately calls plan_step_complete.
+        std::fs::write(project_root.join("notes.txt"), "first draft\n")
+            .expect("test file should be written");
         ship.mate_tool_plan_step_complete(&session_id, 0, "added initial notes".to_owned())
             .await
             .expect("plan_step_complete should succeed");
@@ -5485,7 +5474,7 @@ mod tests {
             .args(["rev-list", "--count", "HEAD"])
             .output()
             .expect("git rev-list should run");
-        assert_eq!(String::from_utf8_lossy(&step_head.stdout).trim(), "2");
+        assert_eq!(String::from_utf8_lossy(&step_head.stdout).trim(), "1");
 
         {
             let sessions = ship.sessions.lock().expect("sessions mutex poisoned");
