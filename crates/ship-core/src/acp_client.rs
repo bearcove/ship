@@ -87,15 +87,12 @@ impl ShipAcpClient {
         *self.active_text_block.borrow_mut() = None;
     }
 
+    // r[captain.capabilities]
     // r[mate.capabilities]
-    // The mate must only use Ship's MCP tools. Any ACP built-in tool usage
+    // Both agents must only use Ship's MCP tools. Any ACP built-in tool usage
     // (Read, Write, Edit, Bash, etc.) is denied outright — we find a reject
     // option in the permission request and select it automatically.
     fn blocked_permission_option_id(&self, request: &RequestPermissionRequest) -> Option<String> {
-        if self.role != Role::Mate {
-            return None;
-        }
-
         request.options.iter().find_map(|option| {
             matches!(
                 option.kind,
@@ -1399,14 +1396,13 @@ mod tests {
         );
     }
 
-    // r[verify acp.permissions]
+    // r[verify captain.capabilities]
     #[tokio::test(flavor = "current_thread")]
-    async fn permission_requests_surface_structured_options_and_selected_option_ids() {
+    async fn captain_builtin_tool_requests_are_also_rejected_automatically() {
         let local = tokio::task::LocalSet::new();
         local
             .run_until(async {
                 let (tx, mut rx) = mpsc::unbounded_channel();
-                // Use Captain role — the mate auto-rejects all ACP permissions
                 let client = Rc::new(ShipAcpClient::new(
                     Role::Captain,
                     PathBuf::from("/tmp/worktree"),
@@ -1438,78 +1434,30 @@ mod tests {
                     ],
                 );
 
-                let client_task = client.clone();
-                let response = tokio::task::spawn_local(async move {
-                    client_task
-                        .request_permission(request)
-                        .await
-                        .expect("permission request should succeed")
-                });
+                let response = client
+                    .request_permission(request)
+                    .await
+                    .expect("permission request should succeed");
 
-                let block_event = rx.recv().await.expect("permission block event");
-                let state_event = rx.recv().await.expect("awaiting permission state event");
-
-                let SessionEvent::BlockAppend { block, .. } = block_event else {
-                    panic!("unexpected block event: {block_event:?}");
-                };
-                let ShipContentBlock::Permission {
-                    permission_id,
-                    tool_call_id,
-                    kind,
-                    target,
-                    options,
-                    ..
-                } = block
-                else {
-                    panic!("unexpected permission block: {block:?}");
-                };
-
-                assert_eq!(permission_id.as_deref(), Some("toolu_perm"));
-                assert_eq!(tool_call_id.as_deref(), Some("toolu_perm"));
-                assert_eq!(kind, Some(ShipToolCallKind::Edit));
-                assert_eq!(
-                    target,
-                    Some(ShipToolTarget::File {
-                        path: "/tmp/worktree/src/lib.rs".to_owned(),
-                        display_path: Some("src/lib.rs".to_owned()),
-                        line: None,
-                    })
-                );
-                assert_eq!(
-                    options,
-                    Some(vec![
-                        PermissionOption {
-                            option_id: "allow-always".to_owned(),
-                            label: "Allow always".to_owned(),
-                            kind: ShipPermissionOptionKind::AllowAlways,
-                        },
-                        PermissionOption {
-                            option_id: "reject-once".to_owned(),
-                            label: "Reject once".to_owned(),
-                            kind: ShipPermissionOptionKind::RejectOnce,
-                        },
-                    ])
-                );
-
-                let SessionEvent::AgentStateChanged { state, .. } = state_event else {
-                    panic!("unexpected state event: {state_event:?}");
-                };
-                let AgentState::AwaitingPermission { request } = state else {
-                    panic!("unexpected agent state: {state:?}");
-                };
-                assert_eq!(request.permission_id, "toolu_perm");
-                assert_eq!(request.tool_call_id.as_deref(), Some("toolu_perm"));
-
-                client
-                    .resolve_permission("toolu_perm", "allow-always")
-                    .expect("permission resolution should send selected option");
-
-                let response = response.await.expect("permission task should join");
                 assert_eq!(
                     response.outcome,
                     RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
-                        "allow-always",
+                        "reject-once",
                     ))
+                );
+
+                let _ = rx.recv().await.expect("permission block event");
+                let _ = rx.recv().await.expect("awaiting permission state event");
+                let working = rx.recv().await.expect("working state event");
+                let SessionEvent::AgentStateChanged { state, .. } = working else {
+                    panic!("unexpected event: {working:?}");
+                };
+                let AgentState::Working { activity, .. } = state else {
+                    panic!("unexpected state: {state:?}");
+                };
+                assert_eq!(
+                    activity.as_deref(),
+                    Some("Blocked built-in tool (use MCP tools)")
                 );
             })
             .await;
