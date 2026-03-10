@@ -1252,7 +1252,7 @@ Here is your task:
 
     fn run_rustfmt(program: &std::ffi::OsString, path: &Path) -> Result<RustfmtOutcome, String> {
         let mut command = Command::new(program);
-        let output = match command.arg(path).output() {
+        let output = match command.arg("--edition").arg("2024").arg(path).output() {
             Ok(output) => output,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 return Ok(RustfmtOutcome::NotFound);
