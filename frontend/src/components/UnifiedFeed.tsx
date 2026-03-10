@@ -40,6 +40,8 @@ import {
   unifiedFeedRoot,
   unifiedFeedScroll,
   unifiedFeedStream,
+  userAvatar,
+  userAvatarSpacer,
 } from "../styles/session-view.css";
 
 type TextBlockType = Extract<ContentBlock, { tag: "Text" }>;
@@ -115,6 +117,11 @@ function Avatar({ role, show }: { role: Role; show: boolean }) {
   return <img src={src} className={agentAvatar} alt={label} />;
 }
 
+function UserAvatar({ url }: { url: string | null }) {
+  if (!url) return <div className={userAvatarSpacer} />;
+  return <img src={url} className={userAvatar} alt="You" />;
+}
+
 // ─── Tool group ───────────────────────────────────────────────────────────────
 
 function ToolGroup({
@@ -162,12 +169,14 @@ function SingleBlock({
   lastUnresolvedPermBlockId,
   agentForBlock,
   showAvatar,
+  userAvatarUrl,
 }: {
   entry: BlockEntry;
   sessionId: string;
   lastUnresolvedPermBlockId: string | undefined;
   agentForBlock: AgentSnapshot | null;
   showAvatar: boolean;
+  userAvatarUrl: string | null;
 }) {
   const { block, blockId, role } = entry;
   const isCaptain = role.tag === "Captain";
@@ -186,7 +195,7 @@ function SingleBlock({
         );
       }
 
-      // Real user message — right side, no avatar
+      // Real user message — right side with avatar
       if (isHuman) {
         return (
           <Box className={feedRowUser}>
@@ -198,6 +207,7 @@ function SingleBlock({
                 </Text>
               )}
             </Box>
+            <UserAvatar url={userAvatarUrl} />
           </Box>
         );
       }
@@ -300,6 +310,7 @@ interface Props {
   blocks: BlockEntry[];
   startupState: SessionStartupState | null;
   taskStatus: TaskStatus | null;
+  userAvatarUrl?: string | null;
   loading?: boolean;
   loadingLabel?: string;
   debugMode?: boolean;
@@ -313,6 +324,7 @@ export function UnifiedFeed({
   mate,
   blocks,
   startupState,
+  userAvatarUrl = null,
   loading,
   loadingLabel,
   debugMode = false,
@@ -395,6 +407,7 @@ export function UnifiedFeed({
                   lastUnresolvedPermBlockId={lastUnresolvedPermBlockId}
                   agentForBlock={agentForBlock}
                   showAvatar={showAvatar}
+                  userAvatarUrl={userAvatarUrl}
                 />
                 {debugMode && (
                   <Box

@@ -50,6 +50,23 @@ export const feedRowAgent = style({
 export const feedRowUser = style({
   display: "flex",
   justifyContent: "flex-end",
+  alignItems: "flex-start",
+  gap: "var(--space-2)",
+});
+
+export const userAvatar = style({
+  width: 64,
+  height: 64,
+  borderRadius: "50%",
+  flexShrink: 0,
+  objectFit: "cover",
+  maskImage: "radial-gradient(circle, black 72%, transparent 76%)",
+  alignSelf: "flex-start",
+});
+
+export const userAvatarSpacer = style({
+  width: 64,
+  flexShrink: 0,
 });
 
 export const feedBubble = style({

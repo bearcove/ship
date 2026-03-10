@@ -119,6 +119,7 @@ export function SessionViewPage({
           blocks={eventState.unifiedBlocks.blocks}
           startupState={startupState}
           taskStatus={liveTask?.status ?? null}
+          userAvatarUrl={session.user_avatar_url}
           loading={isReplaying}
           loadingLabel={replayLabel}
           debugMode={debugMode}
