@@ -20,10 +20,12 @@ import {
   agentAvatar,
   agentAvatarSpacer,
   feedBubble,
+  feedBubbleCol,
+  feedBubbleColUser,
   feedBubbleMate,
   feedBubbleThought,
   feedBubbleUser,
-  feedMessageTimestamp,
+  feedTimestamp,
   feedRowAgent,
   feedRowUser,
   feedSystemMessage,
@@ -31,6 +33,7 @@ import {
   feedToolGroup,
   feedToolGroupBody,
   feedToolGroupHeader,
+  feedToolGroupHeaderExpanded,
   liveBubble,
   liveBubbleDot,
   liveBubblesRow,
@@ -140,7 +143,10 @@ function ToolGroup({
     <Box className={feedRowAgent}>
       <Avatar role={role} show={showAvatar} />
       <Box className={feedToolGroup}>
-        <div className={feedToolGroupHeader} onClick={() => setExpanded((v) => !v)}>
+        <div
+          className={`${feedToolGroupHeader}${expanded ? ` ${feedToolGroupHeaderExpanded}` : ""}`}
+          onClick={() => setExpanded((v) => !v)}
+        >
           {expanded ? <CaretDown size={11} /> : <CaretRight size={11} />}
           <Text size="1" color="gray">
             {count} tool call{count !== 1 ? "s" : ""}
@@ -170,6 +176,7 @@ function SingleBlock({
   agentForBlock,
   showAvatar,
   userAvatarUrl,
+  isLast,
 }: {
   entry: BlockEntry;
   sessionId: string;
@@ -177,6 +184,7 @@ function SingleBlock({
   agentForBlock: AgentSnapshot | null;
   showAvatar: boolean;
   userAvatarUrl: string | null;
+  isLast: boolean;
 }) {
   const { block, blockId, role } = entry;
   const isCaptain = role.tag === "Captain";
@@ -199,12 +207,12 @@ function SingleBlock({
       if (isHuman) {
         return (
           <Box className={feedRowUser}>
-            <Box className={`${feedBubble} ${feedBubbleUser}`}>
-              <TextBlock block={block as TextBlockType} />
-              {entry.timestamp && (
-                <Text size="1" color="gray" className={feedMessageTimestamp}>
-                  {formatTime(entry.timestamp)}
-                </Text>
+            <Box className={`${feedBubbleCol} ${feedBubbleColUser}`}>
+              <Box className={`${feedBubble} ${feedBubbleUser}`}>
+                <TextBlock block={block as TextBlockType} />
+              </Box>
+              {isLast && entry.timestamp && (
+                <Text className={feedTimestamp}>{formatTime(entry.timestamp)}</Text>
               )}
             </Box>
             <UserAvatar url={userAvatarUrl} />
@@ -222,12 +230,12 @@ function SingleBlock({
       return (
         <Box className={feedRowAgent}>
           <Avatar role={role} show={showAvatar} />
-          <Box className={bubbleClass}>
-            <TextBlock block={block as TextBlockType} />
-            {entry.timestamp && (
-              <Text size="1" color="gray" className={feedMessageTimestamp}>
-                {formatTime(entry.timestamp)}
-              </Text>
+          <Box className={feedBubbleCol}>
+            <Box className={bubbleClass}>
+              <TextBlock block={block as TextBlockType} />
+            </Box>
+            {isLast && entry.timestamp && (
+              <Text className={feedTimestamp}>{formatTime(entry.timestamp)}</Text>
             )}
           </Box>
         </Box>
@@ -408,6 +416,7 @@ export function UnifiedFeed({
                   agentForBlock={agentForBlock}
                   showAvatar={showAvatar}
                   userAvatarUrl={userAvatarUrl}
+                  isLast={idx === segments.length - 1}
                 />
                 {debugMode && (
                   <Box

@@ -28,7 +28,7 @@ export const monoFontStack =
   "'Maple Mono NF', 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Menlo', 'Consolas', monospace";
 
 export const sansFontStack =
-  "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
+  "'Cabin', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
 
 globalStyle("html, body, #root", {
   height: "100%",
@@ -38,10 +38,10 @@ globalStyle("html, body, #root", {
 
 globalStyle(".radix-themes", {
   vars: {
-    "--default-font-family": monoFontStack,
-    "--heading-font-family": monoFontStack,
+    "--default-font-family": sansFontStack,
+    "--heading-font-family": sansFontStack,
     "--code-font-family": monoFontStack,
-    "--strong-font-family": monoFontStack,
+    "--strong-font-family": sansFontStack,
   },
 });
 

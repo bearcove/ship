@@ -8,6 +8,7 @@ export const unifiedFeedRoot = style({
   flexDirection: "column",
   height: "100%",
   overflow: "hidden",
+  borderRight: "1px solid var(--gray-a4)",
 });
 
 export const unifiedFeedScroll = style({
@@ -26,8 +27,8 @@ export const unifiedFeedStream = style({
 });
 
 export const agentAvatar = style({
-  width: 64,
-  height: 64,
+  width: 40,
+  height: 40,
   borderRadius: "50%",
   flexShrink: 0,
   objectFit: "cover",
@@ -36,7 +37,7 @@ export const agentAvatar = style({
 });
 
 export const agentAvatarSpacer = style({
-  width: 64,
+  width: 40,
   flexShrink: 0,
 });
 
@@ -55,28 +56,28 @@ export const feedRowUser = style({
 });
 
 export const userAvatar = style({
-  width: 64,
-  height: 64,
+  width: 40,
+  height: 40,
   borderRadius: "50%",
   flexShrink: 0,
   objectFit: "cover",
-  maskImage: "radial-gradient(circle, black 64%, transparent 64%)",
   alignSelf: "flex-start",
 });
 
 export const userAvatarSpacer = style({
-  width: 64,
+  width: 40,
   flexShrink: 0,
 });
 
 export const feedBubble = style({
-  maxWidth: "72%",
   padding: "var(--space-2) var(--space-3)",
-  borderRadius: "var(--radius-3)",
+  borderRadius: "20px",
+  // @ts-ignore — new CSS property, not yet in types
+  cornerShape: "squircle",
   border: "1px solid var(--gray-a4)",
   background: "var(--gray-a2)",
-  fontSize: "var(--font-size-2)",
-  lineHeight: "var(--line-height-2)",
+  fontSize: "var(--font-size-3)",
+  lineHeight: "var(--line-height-3)",
 });
 
 export const feedBubbleMate = style({
@@ -87,7 +88,6 @@ export const feedBubbleMate = style({
 export const feedBubbleUser = style({
   background: "color-mix(in srgb, var(--accent-9) 12%, var(--gray-a2))",
   borderColor: "color-mix(in srgb, var(--accent-9) 28%, var(--gray-a4))",
-  maxWidth: "66%",
 });
 
 export const feedBubbleThought = style({
@@ -118,13 +118,22 @@ export const feedToolGroupHeader = style({
   alignItems: "center",
   gap: "var(--space-1)",
   padding: "var(--space-1) var(--space-2)",
-  borderRadius: "var(--radius-2)",
-  border: "1px solid var(--gray-a4)",
-  background: "var(--gray-a2)",
+  borderRadius: "var(--radius-1)",
   cursor: "pointer",
   fontSize: "var(--font-size-1)",
   color: "var(--gray-10)",
   userSelect: "none",
+  selectors: {
+    "&:hover": {
+      background: "var(--gray-a2)",
+    },
+  },
+});
+
+export const feedToolGroupHeaderExpanded = style({
+  borderRadius: "var(--radius-2)",
+  border: "1px solid var(--gray-a4)",
+  background: "var(--gray-a2)",
   selectors: {
     "&:hover": {
       background: "var(--gray-a3)",
@@ -389,6 +398,26 @@ export const feedMessageCardUser = style({
   marginLeft: "auto",
   background: "color-mix(in srgb, var(--accent-9) 12%, var(--gray-a2))",
   borderColor: "color-mix(in srgb, var(--accent-9) 28%, var(--gray-a4))",
+});
+
+export const feedTimestamp = style({
+  textAlign: "right",
+  fontSize: "var(--font-size-1)",
+  color: "var(--gray-9)",
+  lineHeight: 1,
+  whiteSpace: "nowrap",
+  marginTop: "var(--space-2)",
+  paddingBottom: "var(--space-2)",
+});
+
+export const feedBubbleCol = style({
+  display: "inline-flex",
+  flexDirection: "column",
+  maxWidth: "72%",
+});
+
+export const feedBubbleColUser = style({
+  maxWidth: "66%",
 });
 
 export const feedMessageTimestamp = style({
@@ -656,8 +685,8 @@ export const diffContext = style({
 export const textBlockRoot = style({
   position: "relative",
   color: "var(--gray-12)",
-  fontSize: "var(--font-size-1)",
-  lineHeight: "var(--line-height-2)",
+  fontSize: "var(--font-size-3)",
+  lineHeight: "var(--line-height-3)",
 });
 
 export const bubbleContent = style({});
@@ -698,6 +727,13 @@ globalStyle(`${textBlockRoot} :where(ul, ol)`, {
 
 globalStyle(`${textBlockRoot} :where(pre)`, {
   margin: 0,
+});
+
+globalStyle(`${textBlockRoot} a`, {
+  color: "var(--gray-12)",
+  textDecoration: "underline",
+  textDecorationColor: "var(--gray-a7)",
+  textUnderlineOffset: "2px",
 });
 
 export const textBlockCodeBlock = style({

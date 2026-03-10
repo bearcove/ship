@@ -1009,7 +1009,7 @@ the human briefly and wait for them to describe what they'd like to work on."
     // r[mate.system-prompt]
     fn mate_task_preamble(description: &str) -> String {
         format!(
-            "\
+            "<system-notification>\
 You are the mate — an implementation-focused engineer. The captain has just \
 assigned you a task. Your job is to write code, run tests, and get things done.
 
@@ -1041,7 +1041,8 @@ equivalent and continue your task.
 
 Here is your task:
 
-{description}"
+{description}\
+</system-notification>"
         )
     }
 
@@ -4100,10 +4101,13 @@ Here is your task:
                         let sessions = self.sessions.lock().expect("sessions mutex poisoned");
                         sessions
                             .get(&session_id)
-                            .and_then(|s| s.current_task.as_ref())
-                            .map(|t| {
-                                t.record.status == TaskStatus::ReviewPending
-                                    || t.record.status.is_terminal()
+                            .map(|s| {
+                                // No current task means it was archived (accepted/cancelled).
+                                let Some(task) = s.current_task.as_ref() else {
+                                    return true;
+                                };
+                                task.record.status == TaskStatus::ReviewPending
+                                    || task.record.status.is_terminal()
                             })
                             .unwrap_or(false)
                     };
@@ -4124,8 +4128,9 @@ Here is your task:
                     }
 
                     current_parts = Some(vec![PromptContentPart::Text {
-                        text: "You stopped without submitting your work. \
-                            Call mate_submit with a summary of what you accomplished."
+                        text: "<system-notification>You stopped without submitting your work. \
+                            Call mate_submit with a summary of what you accomplished.\
+                            </system-notification>"
                             .to_owned(),
                     }]);
                 }

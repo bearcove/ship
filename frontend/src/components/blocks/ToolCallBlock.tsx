@@ -417,6 +417,20 @@ function ToolError({ block }: { block: ToolCallBlockType }) {
   );
 }
 
+function prettifyToolName(rawName: string): string {
+  let name = rawName;
+  // mcp__ship__list_files → list_files
+  if (name.includes("__")) {
+    name = name.split("__").pop() ?? name;
+  }
+  // ship/list_files → list_files
+  if (name.includes("/")) {
+    name = name.split("/").pop() ?? name;
+  }
+  name = name.replace(/_/g, " ");
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
 function commandFromTarget(target: ToolTarget | null): string | undefined {
   return target?.tag === "Command" ? target.command : undefined;
 }
@@ -467,7 +481,7 @@ export function ToolCallBlock({ block }: Props) {
         ) : (
           <CaretRight size={12} style={{ color: "var(--gray-9)", flexShrink: 0 }} />
         )}
-        <Code size="1">{block.tool_name}</Code>
+        <Code size="1">{prettifyToolName(block.tool_name)}</Code>
         {summary && (
           <Text
             size="1"
