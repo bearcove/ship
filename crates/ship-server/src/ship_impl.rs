@@ -819,7 +819,7 @@ the human briefly and wait for them to describe what they'd like to work on."
         session_id: &SessionId,
         parts: Vec<PromptContentPart>,
     ) -> Result<(), String> {
-        {
+        let already_working = {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let active = sessions
                 .get_mut(session_id)
@@ -841,18 +841,38 @@ the human briefly and wait for them to describe what they'd like to work on."
                     block_id: BlockId::new(),
                     role: Role::Mate,
                     block: ContentBlock::Text {
-                        text: log_text,
+                        text: log_text.clone(),
                         source: ship_types::TextSource::Human,
                     },
                 },
             );
-            if status != TaskStatus::Working {
+
+            let already_working = status == TaskStatus::Working;
+            if already_working {
+                // Inject as pending guidance for the running loop to pick up
+                // at the end of the current turn. Prefix matches what
+                // prompt_mate_from_steer prepends to initial parts.
+                let guidance = format!("Captain steer:\n{log_text}");
+                if let Some(task) = active.current_task.as_mut() {
+                    task.pending_mate_guidance = Some(guidance);
+                }
+            } else {
                 transition_task(active, TaskStatus::Working).map_err(|error| error.to_string())?;
             }
             active.pending_steer = None;
-        }
+
+            already_working
+        };
 
         self.persist_session(session_id).await?;
+
+        if already_working {
+            // Guidance is queued; the running loop will deliver it after the
+            // current turn. No cancel needed — cancelling risks a race where
+            // the cancel arrives after the loop has already started a new
+            // turn from the guidance, archiving the task incorrectly.
+            return Ok(());
+        }
 
         let this = self.clone();
         let session_id = session_id.clone();
@@ -1671,6 +1691,7 @@ Here is your task:
 
         let tmp_dir = worktree_path.join(".tmp");
         let _ = tokio::fs::create_dir_all(&tmp_dir).await;
+        let _ = tokio::fs::write(tmp_dir.join(".gitignore"), "*\n").await;
 
         let mut command = TokioCommand::new("/bin/sh");
         command
@@ -4477,7 +4498,58 @@ impl Ship for ShipImpl {
         }
     }
 
-    async fn retry_agent(&self, _session: SessionId, _role: Role) {}
+    async fn retry_agent(&self, session: SessionId, role: Role) {
+        match role {
+            Role::Mate => {
+                // Restart the mate process and re-dispatch to the active task if one exists.
+                if let Err(error) = self.restart_mate(&session).await {
+                    Self::log_error("retry_agent restart_mate", &error);
+                    return;
+                }
+
+                let task_description = {
+                    let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                    sessions.get(&session).and_then(|s| {
+                        s.current_task.as_ref().and_then(|t| {
+                            if !t.record.status.is_terminal() {
+                                Some(t.record.description.clone())
+                            } else {
+                                None
+                            }
+                        })
+                    })
+                };
+
+                if let Some(description) = task_description {
+                    let this = self.clone();
+                    tokio::spawn(async move {
+                        let parts = vec![PromptContentPart::Text {
+                            text: Self::mate_task_preamble(&description),
+                        }];
+                        if let Err(error) = this.dispatch_steer_to_mate(&session, parts).await {
+                            Self::log_error("retry_agent dispatch_steer_to_mate", &error);
+                        }
+                    });
+                }
+            }
+            Role::Captain => {
+                // Captain retry: just re-run the bootstrap prompt.
+                let this = self.clone();
+                tokio::spawn(async move {
+                    if let Err(error) = this
+                        .prompt_agent_text(
+                            &session,
+                            Role::Captain,
+                            Self::captain_bootstrap_prompt(),
+                        )
+                        .await
+                    {
+                        Self::log_error("retry_agent captain", &error);
+                    }
+                });
+            }
+        }
+    }
 
     async fn set_agent_model(
         &self,
