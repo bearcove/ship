@@ -7,9 +7,15 @@ export const sidebarRoot = style({
   flexDirection: "column",
   borderRight: "1px solid var(--gray-a5)",
   overflow: "hidden",
+  transition: "width 0.15s ease",
   "@media": {
     "(max-width: 1023px)": {
       display: "none",
+    },
+  },
+  selectors: {
+    '&[data-collapsed="true"]': {
+      width: 44,
     },
   },
 });
