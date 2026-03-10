@@ -1001,8 +1001,12 @@ Here's how you work:
 1. Read the relevant files and understand the problem.
 2. Call plan_create with a list of steps you intend to take. You cannot write \
    files, run commands, or make edits until you've done this.
-3. Work through your plan step by step. After completing each step, call \
-   plan_step_complete with a brief summary of what you did.
+3. Work ONE step at a time: implement the step fully, then immediately call \
+   plan_step_complete before touching anything for the next step. \
+   Never work on step N+1 before calling plan_step_complete(N). \
+   Each step becomes one git commit — if you batch steps together, \
+   plan_step_complete will fail with an error because the worktree will be \
+   clean by the time you try to commit later steps.
 4. When you're done, call mate_submit with a summary of all your changes.
 5. After calling mate_submit, do not send any further messages. The tool \
    call is the final action — the submission itself carries the summary.
@@ -2966,7 +2970,16 @@ Here is your task:
         let commit =
             Self::auto_commit_worktree(&worktree_path, format!("{step_description}: {summary}"))
                 .await?;
-        let commit_summary = Self::commit_summary(commit.as_ref());
+        let Some(commit) = commit else {
+            return Err(
+                "No changes to commit for this step. You have not implemented it yet. \
+                Work on this step's changes first, then call plan_step_complete. \
+                Never call plan_step_complete for multiple steps in a row — \
+                each step must be implemented and committed one at a time."
+                    .to_owned(),
+            );
+        };
+        let commit_summary = Self::commit_summary(Some(&commit));
         let captain_message = format!(
             "The mate completed a step from their plan.\n\nCompleted: {step_description}\n\n{commit_summary}\n\nWe will notify you when they are done and need your review.",
         );
