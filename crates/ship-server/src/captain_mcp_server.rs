@@ -1,9 +1,6 @@
 use std::sync::Arc;
 
-use super::worktree_tools::{
-    ToolDefinition, list_files_tool, parse_list_files_args, parse_search_files_args,
-    search_files_tool, to_sdk_tool,
-};
+use super::worktree_tools::{ToolDefinition, to_sdk_tool};
 use async_trait::async_trait;
 use roam::{ConnectionSettings, MetadataEntry, MetadataFlags, MetadataValue, NoopCaller, Parity};
 use rust_mcp_sdk::mcp_server::{McpServerOptions, ServerHandler, server_runtime};
@@ -119,24 +116,6 @@ impl ServerHandler for CaptainMcpHandler {
                 let limit = arguments.get("limit").and_then(Value::as_u64);
                 self.client
                     .captain_read_file(path.to_owned(), offset, limit)
-                    .await
-                    .map_err(call_tool_rpc_error)?
-            }
-            // r[captain.tool.read-only]
-            "search_files" => {
-                let Some((pattern, path)) = parse_search_files_args(&arguments) else {
-                    return Ok(tool_result("missing required argument: pattern", true));
-                };
-                self.client
-                    .captain_search_files(pattern, path)
-                    .await
-                    .map_err(call_tool_rpc_error)?
-            }
-            // r[captain.tool.read-only]
-            "list_files" => {
-                let (path, pattern, extension) = parse_list_files_args(&arguments);
-                self.client
-                    .captain_list_files(path, pattern, extension)
                     .await
                     .map_err(call_tool_rpc_error)?
             }
@@ -316,8 +295,6 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                 "additionalProperties": false,
             }),
         },
-        search_files_tool(),
-        list_files_tool(),
         ToolDefinition {
             name: "web_search",
             description: "Search the web using Kagi FastGPT. Returns an AI-synthesized answer and a list of references.",

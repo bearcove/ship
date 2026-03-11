@@ -112,21 +112,6 @@ pub trait CaptainMcp {
         offset: Option<u64>,
         limit: Option<u64>,
     ) -> McpToolCallResponse;
-
-    // r[captain.tool.read-only]
-    async fn captain_search_files(
-        &self,
-        pattern: String,
-        path: Option<String>,
-    ) -> McpToolCallResponse;
-
-    // r[captain.tool.read-only]
-    async fn captain_list_files(
-        &self,
-        path: Option<String>,
-        pattern: Option<String>,
-        extension: Option<String>,
-    ) -> McpToolCallResponse;
 }
 
 // r[mate.tool.implementation]
@@ -158,17 +143,6 @@ pub trait MateMcp {
     // r[mate.tool.edit-confirm]
     async fn edit_confirm(&self, edit_id: String) -> McpToolCallResponse;
 
-    // r[mate.tool.search-files]
-    async fn search_files(&self, pattern: String, path: Option<String>) -> McpToolCallResponse;
-
-    // r[mate.tool.list-files]
-    async fn list_files(
-        &self,
-        path: Option<String>,
-        pattern: Option<String>,
-        extension: Option<String>,
-    ) -> McpToolCallResponse;
-
     // r[mate.tool.send-update]
     async fn mate_send_update(&self, message: String) -> McpToolCallResponse;
 
@@ -177,15 +151,6 @@ pub trait MateMcp {
 
     // r[mate.tool.plan-step-complete]
     async fn plan_step_complete(&self, step_index: u64, summary: String) -> McpToolCallResponse;
-
-    // r[mate.tool.cargo-check]
-    async fn cargo_check(&self, args: Option<String>) -> McpToolCallResponse;
-
-    // r[mate.tool.cargo-clippy]
-    async fn cargo_clippy(&self, args: Option<String>) -> McpToolCallResponse;
-
-    // r[mate.tool.cargo-test]
-    async fn cargo_test(&self, args: Option<String>) -> McpToolCallResponse;
 
     // r[mate.tool.pnpm-install]
     async fn pnpm_install(&self, args: Option<String>) -> McpToolCallResponse;
