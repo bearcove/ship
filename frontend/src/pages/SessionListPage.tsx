@@ -714,86 +714,79 @@ export function SessionListPage() {
 
           <Flex direction="column" gap="3">
             {sessions.map((session) => (
-              <Box key={session.id} style={{ position: "relative" }}>
-                <Link
-                  to={`/sessions/${session.slug}`}
-                  style={{ textDecoration: "none", color: "inherit" }}
-                >
-                  <Card className={sessionCard}>
-                    <Flex direction="column" gap="2">
-                      <Flex align="center" gap="2" wrap="wrap">
-                        <Badge color="gray" variant="outline" size="1">
-                          {session.project}
-                        </Badge>
-                        <Text size="2" style={{ fontFamily: "monospace", color: "var(--gray-11)" }}>
-                          {session.branch_name}
-                        </Text>
-                        <Flex gap="1" ml="auto" align="center">
-                          {session.task_status && (
-                            <Badge color={STATUS_COLOR[session.task_status.tag]} size="1">
-                              {session.task_status.tag}
-                            </Badge>
-                          )}
-                        </Flex>
-                      </Flex>
-
-                      {session.current_task_title && (
-                        <Text size="3" weight="medium" style={{ lineHeight: 1.4 }}>
-                          {session.current_task_title}
-                        </Text>
-                      )}
-                      {!session.current_task_title && session.startup_state.tag !== "Ready" && (
-                        <Text size="2" color="gray">
-                          {session.startup_state.tag === "Pending"
-                            ? "Session startup is queued."
-                            : session.startup_state.message}
-                        </Text>
-                      )}
-
-                      <Flex align="center" gap="2">
-                        <Text size="1" color="gray">
-                          Captain:
-                        </Text>
-                        <AgentKindLabel kind={session.captain.kind} />
-                        <Text size="1" color="gray">
-                          Mate:
-                        </Text>
-                        <AgentKindLabel kind={session.mate.kind} />
-                        <Text size="1" color="gray" ml="auto">
-                          {new Date(session.created_at).toLocaleString(undefined, {
-                            month: "short",
-                            day: "numeric",
-                            hour: "numeric",
-                            minute: "2-digit",
-                          })}
-                        </Text>
+              <Link
+                key={session.id}
+                to={`/sessions/${session.slug}`}
+                style={{ textDecoration: "none", color: "inherit" }}
+              >
+                <Card className={sessionCard}>
+                  <Flex direction="column" gap="2">
+                    <Flex align="center" gap="2" wrap="wrap">
+                      <Badge color="gray" variant="outline" size="1">
+                        {session.project}
+                      </Badge>
+                      <Text size="2" style={{ fontFamily: "monospace", color: "var(--gray-11)" }}>
+                        {session.branch_name}
+                      </Text>
+                      <Flex gap="1" ml="auto" align="center">
+                        {session.task_status && (
+                          <Badge color={STATUS_COLOR[session.task_status.tag]} size="1">
+                            {session.task_status.tag}
+                          </Badge>
+                        )}
                       </Flex>
                     </Flex>
-                  </Card>
-                </Link>
-                {/* r[proto.archive-session] */}
-                <Tooltip content="Archive session">
-                  <IconButton
-                    size="1"
-                    variant="ghost"
-                    color="gray"
-                    loading={archivingId === session.id}
-                    style={{
-                      position: "absolute",
-                      top: 8,
-                      right: 8,
-                      zIndex: 1,
-                    }}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      handleArchive(session, false);
-                    }}
-                  >
-                    <Archive size={14} />
-                  </IconButton>
-                </Tooltip>
-              </Box>
+
+                    {session.current_task_title && (
+                      <Text size="3" weight="medium" style={{ lineHeight: 1.4 }}>
+                        {session.current_task_title}
+                      </Text>
+                    )}
+                    {!session.current_task_title && session.startup_state.tag !== "Ready" && (
+                      <Text size="2" color="gray">
+                        {session.startup_state.tag === "Pending"
+                          ? "Session startup is queued."
+                          : session.startup_state.message}
+                      </Text>
+                    )}
+
+                    <Flex align="center" gap="2">
+                      <Text size="1" color="gray">
+                        Captain:
+                      </Text>
+                      <AgentKindLabel kind={session.captain.kind} />
+                      <Text size="1" color="gray">
+                        Mate:
+                      </Text>
+                      <AgentKindLabel kind={session.mate.kind} />
+                      <Text size="1" color="gray" ml="auto">
+                        {new Date(session.created_at).toLocaleString(undefined, {
+                          month: "short",
+                          day: "numeric",
+                          hour: "numeric",
+                          minute: "2-digit",
+                        })}
+                      </Text>
+                      {/* r[proto.archive-session] */}
+                      <Tooltip content="Archive session">
+                        <IconButton
+                          size="1"
+                          variant="ghost"
+                          color="gray"
+                          loading={archivingId === session.id}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleArchive(session, false);
+                          }}
+                        >
+                          <Archive size={14} />
+                        </IconButton>
+                      </Tooltip>
+                    </Flex>
+                  </Flex>
+                </Card>
+              </Link>
             ))}
           </Flex>
         </>
