@@ -131,11 +131,4 @@ export const sidebarStatusDot = style({
 
 export const sessionRowArchiveBtn = style({
   flexShrink: 0,
-  opacity: 0,
-  transition: "opacity 0.1s",
-  selectors: {
-    [`${sessionRow}:hover &`]: {
-      opacity: 1,
-    },
-  },
 });
