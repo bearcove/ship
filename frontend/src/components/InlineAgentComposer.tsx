@@ -18,6 +18,7 @@ import {
 } from "../styles/session-view.css";
 import { useWorktreeFiles } from "../hooks/useWorktreeFiles";
 import { useDocumentDrop } from "../hooks/useDocumentDrop";
+import { PaperclipIcon } from "@phosphor-icons/react";
 
 interface AttachedImage {
   id: string;
@@ -434,7 +435,7 @@ export function InlineAgentComposer({
           disabled={status.disableInput || loading}
           title="Attach image"
         >
-          ⌗
+          <PaperclipIcon />
         </Button>
         <Button
           size="1"

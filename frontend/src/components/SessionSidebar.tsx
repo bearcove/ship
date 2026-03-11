@@ -2,13 +2,13 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Box, Flex, IconButton, Select, Spinner, Text, Tooltip } from "@radix-ui/themes";
 import {
-  Bug,
-  CaretDown,
-  CaretRight,
-  FolderSimplePlus,
-  Note,
-  SpeakerHigh,
-  SpeakerSlash,
+  BugIcon,
+  CaretDownIcon,
+  CaretRightIcon,
+  FolderSimplePlusIcon,
+  NoteIcon,
+  SpeakerHighIcon,
+  SpeakerSlashIcon,
 } from "@phosphor-icons/react";
 import type { AgentKind, ProjectInfo, SessionSummary, TaskStatus } from "../generated/ship";
 import { useSoundEnabled } from "../context/SoundContext";
@@ -87,12 +87,12 @@ function AgentKindSelect({
   return (
     <Flex align="center" gap="2">
       <Box width="7" flexShrink="0">
-        <Text size="1" color="gray">
+        <Text size="2" color="gray">
           {label}
         </Text>
       </Box>
       <Select.Root
-        size="1"
+        size="2"
         value={value.tag}
         onValueChange={(v) => onChange({ tag: v as "Claude" | "Codex" })}
       >
@@ -157,22 +157,24 @@ function ProjectGroup({
     <Box>
       <div className={projectRow} onClick={toggleCollapsed}>
         {collapsed ? (
-          <CaretRight size={12} style={{ color: "var(--gray-9)", flexShrink: 0 }} />
+          <CaretRightIcon size={12} style={{ color: "var(--gray-9)", flexShrink: 0 }} />
         ) : (
-          <CaretDown size={12} style={{ color: "var(--gray-9)", flexShrink: 0 }} />
+          <CaretDownIcon size={12} style={{ color: "var(--gray-9)", flexShrink: 0 }} />
         )}
-        <Text className={projectName}>{project.name}</Text>
+        <Text size="2" className={projectName}>
+          {project.name}
+        </Text>
         <div className={projectActions}>
           <Tooltip content={`New session in ${project.name}`}>
             <IconButton
-              size="1"
+              size="2"
               variant="ghost"
               color="gray"
               aria-label={`New session in ${project.name}`}
               onClick={handleCreate}
               disabled={creating}
             >
-              {creating ? <Spinner size="1" /> : <Note size={13} />}
+              {creating ? <Spinner size="2" /> : <NoteIcon size={13} />}
             </IconButton>
           </Tooltip>
         </div>
@@ -194,7 +196,9 @@ function ProjectGroup({
                   data-active={isActive ? "true" : "false"}
                   aria-current={isActive ? "page" : undefined}
                 >
-                  <Text className={sessionRowTitle}>{title}</Text>
+                  <Text size="2" className={sessionRowTitle}>
+                    {title}
+                  </Text>
                   {session.task_status && (
                     <div
                       className={sidebarStatusDot}
@@ -272,7 +276,7 @@ export function SessionSidebar({
           ))}
         </Box>
 
-        <Flex align="center" gap="3" pt="3" pb="5" px="2" style={{ flexShrink: 0 }}>
+        <Flex align="center" gap="3" pt="3" pb="4" px="3" style={{ flexShrink: 0 }}>
           <Tooltip content="Add project">
             <IconButton
               variant="ghost"
@@ -281,7 +285,7 @@ export function SessionSidebar({
               aria-label="Add project"
               onClick={() => setAddProjectOpen(true)}
             >
-              <FolderSimplePlus size={16} />
+              <FolderSimplePlusIcon size={16} />
             </IconButton>
           </Tooltip>
           <IconButton
@@ -291,7 +295,7 @@ export function SessionSidebar({
             onClick={onToggleDebug}
             aria-label={debugMode ? "Disable debug mode" : "Enable debug mode"}
           >
-            <Bug size={16} />
+            <BugIcon size={16} />
           </IconButton>
           <IconButton
             variant="ghost"
@@ -300,7 +304,7 @@ export function SessionSidebar({
             onClick={() => setSoundEnabled(!soundEnabled)}
             aria-label={soundEnabled ? "Mute sounds" : "Unmute sounds"}
           >
-            {soundEnabled ? <SpeakerHigh size={16} /> : <SpeakerSlash size={16} />}
+            {soundEnabled ? <SpeakerHighIcon size={16} /> : <SpeakerSlashIcon size={16} />}
           </IconButton>
         </Flex>
 

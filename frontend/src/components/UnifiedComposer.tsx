@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Box, Button, Flex, Text, TextArea } from "@radix-ui/themes";
-import { Warning } from "@phosphor-icons/react";
+import { PaperclipIcon, Warning } from "@phosphor-icons/react";
 import { getShipClient } from "../api/client";
 import type {
   AgentSnapshot,
@@ -376,7 +376,7 @@ export function UnifiedComposer({
         {(captainStateTag === "Working" || mateStateTag === "Working") && (
           <Flex align="center" gap="1" style={{ marginRight: "auto" }}>
             <div className={composerActivityDot} />
-            <Text size="1" color="gray">
+            <Text size="2" color="gray">
               {captainStateTag === "Working" && mateStateTag === "Working"
                 ? "Both working"
                 : captainStateTag === "Working"
@@ -392,16 +392,16 @@ export function UnifiedComposer({
         )}
 
         <Button
-          size="1"
+          size="3"
           variant="ghost"
           onClick={() => fileInputRef.current?.click()}
           disabled={loading}
           title="Attach image"
         >
-          ⌗
+          <PaperclipIcon />
         </Button>
         <Button
-          size="1"
+          size="2"
           onClick={() => void handleSubmit()}
           disabled={(!text.trim() && attachedImages.length === 0) || disableSubmit}
           loading={loading}
@@ -414,7 +414,7 @@ export function UnifiedComposer({
       </Flex>
 
       {error && (
-        <Text size="1" color="red">
+        <Text size="2" color="red">
           {error}
         </Text>
       )}
