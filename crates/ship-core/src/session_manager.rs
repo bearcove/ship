@@ -13,7 +13,7 @@ use ship_types::{
 use tokio::sync::broadcast;
 
 use crate::AgentSessionConfig;
-use crate::{AgentDriver, SessionStore, StopReason, WorktreeOps};
+use crate::{AgentDriver, SessionGitNames, SessionStore, StopReason, WorktreeOps};
 
 #[derive(Debug)]
 pub enum SessionManagerError {
@@ -137,8 +137,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         _repo_root: &Path,
     ) -> Result<SessionId, SessionManagerError> {
         let session_id = SessionId::new();
-        let slug = worktree_slug(&session_id);
-        let branch_name = format!("ship-{slug}");
+        let session_git_names = SessionGitNames::from_session_id(&session_id);
         let mcp_servers = req.mcp_servers.clone().unwrap_or_default();
         let (events_tx, _) = broadcast::channel(256);
 
@@ -148,7 +147,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             config: SessionConfig {
                 project: req.project,
                 base_branch: req.base_branch,
-                branch_name,
+                branch_name: session_git_names.branch_name,
                 captain_kind: req.captain_kind,
                 mate_kind: req.mate_kind,
                 autonomy_mode: AutonomyMode::HumanInTheLoop,
@@ -213,14 +212,14 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         )
         .await?;
 
-        let (base_branch, branch_name, captain_kind, mate_kind, mcp_servers) = {
+        let session_git_names = SessionGitNames::from_session_id(session_id);
+        let (base_branch, captain_kind, mate_kind, mcp_servers) = {
             let session = self
                 .sessions
                 .get(session_id)
                 .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
             (
                 session.config.base_branch.clone(),
-                session.config.branch_name.clone(),
                 session.config.captain_kind,
                 session.config.mate_kind,
                 session.config.mcp_servers.clone(),
@@ -230,8 +229,8 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         let worktree_path = self
             .worktree_ops
             .create_worktree(
-                &branch_name,
-                &format!("@{}", &branch_name[5..]),
+                &session_git_names.branch_name,
+                &session_git_names.worktree_dir,
                 &base_branch,
                 repo_root,
             )
@@ -244,7 +243,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                 .get_mut(session_id)
                 .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
             session.worktree_path = Some(worktree_path.clone());
-            session.config.branch_name = branch_name;
+            session.config.branch_name = session_git_names.branch_name.clone();
         }
         self.persist_session(session_id).await?;
 
@@ -1479,15 +1478,4 @@ pub fn current_task_status(session: &ActiveSession) -> Result<TaskStatus, Sessio
 
 pub fn set_agent_state(session: &mut ActiveSession, role: Role, state: AgentState) {
     apply_event(session, SessionEvent::AgentStateChanged { role, state });
-}
-
-/// Generate a 4-char lowercase alphanumeric slug for a session's branch and
-/// worktree directory. Takes chars 10-13 of the ULID (random portion, not
-/// timestamp), which are Crockford base32 digits — safe to lowercase as-is.
-fn worktree_slug(id: &SessionId) -> String {
-    id.0.chars()
-        .skip(10)
-        .take(4)
-        .map(|c| c.to_ascii_lowercase())
-        .collect()
 }

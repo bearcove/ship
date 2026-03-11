@@ -14,8 +14,8 @@ use roam::{
 };
 use ship_core::{
     AcpAgentDriver, ActiveSession, AgentDriver, AgentSessionConfig, GitWorktreeOps,
-    JsonSessionStore, PendingEdit, ProjectRegistry, SessionStore, WorktreeOps, apply_event,
-    archive_terminal_task, current_task_status, rebuild_materialized_from_event_log,
+    JsonSessionStore, PendingEdit, ProjectRegistry, SessionGitNames, SessionStore, WorktreeOps,
+    apply_event, archive_terminal_task, current_task_status, rebuild_materialized_from_event_log,
     resolve_mcp_servers, set_agent_state, transition_task,
 };
 use ship_service::{CaptainMcp, CaptainMcpDispatcher, MateMcp, MateMcpDispatcher, Ship};
@@ -3582,7 +3582,8 @@ Here is your task:
         let _ = self.set_startup_stage(&session_id, stage).await;
 
         let step_started_at = Instant::now();
-        let (project, base_branch, branch_name, resolved_mcp_servers) = {
+        let session_git_names = SessionGitNames::from_session_id(&session_id);
+        let (project, base_branch, resolved_mcp_servers) = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let Some(session) = sessions.get(&session_id) else {
                 return;
@@ -3590,7 +3591,6 @@ Here is your task:
             (
                 session.config.project.clone(),
                 session.config.base_branch.clone(),
-                session.config.branch_name.clone(),
                 session.config.mcp_servers.clone(),
             )
         };
@@ -3609,11 +3609,14 @@ Here is your task:
         let stage = SessionStartupStage::CreatingWorktree;
         let _ = self.set_startup_stage(&session_id, stage).await;
         let step_started_at = Instant::now();
-        // branch_name is "ship-{slug}"; worktree dir is "@{slug}" (.ship/@{slug})
-        let worktree_dir = format!("@{}", &branch_name[5..]);
         let worktree_path = match self
             .worktree_ops
-            .create_worktree(&branch_name, &worktree_dir, &base_branch, &repo_root)
+            .create_worktree(
+                &session_git_names.branch_name,
+                &session_git_names.worktree_dir,
+                &base_branch,
+                &repo_root,
+            )
             .await
         {
             Ok(path) => path,
@@ -3626,6 +3629,7 @@ Here is your task:
         {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             if let Some(session) = sessions.get_mut(&session_id) {
+                session.config.branch_name = session_git_names.branch_name.clone();
                 session.worktree_path = Some(worktree_path.clone());
             }
         }
@@ -4721,7 +4725,7 @@ impl Ship for ShipImpl {
         };
 
         let session_id = SessionId::new();
-        let branch_name = format!("ship/{}/session", short_id(&session_id));
+        let session_git_names = SessionGitNames::from_session_id(&session_id);
         let (events_tx, _) = broadcast::channel(256);
         let session = ActiveSession {
             id: session_id.clone(),
@@ -4729,7 +4733,7 @@ impl Ship for ShipImpl {
             config: SessionConfig {
                 project: req.project,
                 base_branch: req.base_branch,
-                branch_name,
+                branch_name: session_git_names.branch_name,
                 captain_kind: req.captain_kind,
                 mate_kind: req.mate_kind,
                 autonomy_mode: AutonomyMode::HumanInTheLoop,
@@ -5595,10 +5599,6 @@ fn rejection_metadata(reason: &'static str) -> Metadata<'static> {
         value: MetadataValue::String(reason),
         flags: MetadataFlags::NONE,
     }]
-}
-
-fn short_id(id: &SessionId) -> String {
-    id.0.to_string().chars().take(8).collect()
 }
 
 #[cfg(test)]

@@ -7,6 +7,7 @@ mod json_store;
 mod mcp;
 mod project_registry;
 mod session_manager;
+mod session_naming;
 
 use core::fmt;
 use std::error::Error;
@@ -34,6 +35,7 @@ pub use session_manager::{
     SessionStateView, apply_event, archive_terminal_task, current_task_status,
     rebuild_materialized_from_event_log, set_agent_state, transition_task,
 };
+pub use session_naming::SessionGitNames;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AgentHandle {
