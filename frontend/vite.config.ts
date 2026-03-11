@@ -17,6 +17,7 @@ export default defineConfig({
   server: {
     host: "127.0.0.1",
     strictPort: true,
+    cors: true,
     hmr: {
       host: process.env.SHIP_VITE_HMR_HOST,
       clientPort: Number.isNaN(hmrClientPort) ? undefined : hmrClientPort,
