@@ -268,7 +268,9 @@ export const appColLeft = style({
   overflow: "hidden",
   "@media": {
     "(max-width: 700px)": {
-      display: "none",
+      position: "absolute",
+      width: 0,
+      overflow: "visible",
     },
   },
 });
