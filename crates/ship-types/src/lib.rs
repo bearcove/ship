@@ -360,8 +360,7 @@ pub mod events {
         Diff {
             path: String,
             display_path: Option<String>,
-            old_text: Option<String>,
-            new_text: String,
+            unified_diff: String,
         },
         Terminal {
             terminal_id: String,
@@ -624,8 +623,8 @@ pub mod protocol {
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub struct McpDiffContent {
         pub path: String,
-        pub old_text: Option<String>,
-        pub new_text: String,
+        /// Compact unified diff (±3 context lines) showing what changed.
+        pub unified_diff: String,
         /// For edit_prepare responses: the edit_id to pass to edit_confirm.
         pub edit_id: Option<String>,
     }

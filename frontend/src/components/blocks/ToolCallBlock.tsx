@@ -82,15 +82,7 @@ function legacyCollapsedSummary(
 }
 
 function buildUnifiedDiff(content: Extract<ToolCallContent, { tag: "Diff" }>): string {
-  const oldLines = (content.old_text ?? "").split("\n");
-  const newLines = content.new_text.split("\n");
-  const displayPath = displayTargetPath(content.path, content.display_path);
-  return [
-    `--- a/${displayPath}`,
-    `+++ b/${displayPath}`,
-    ...oldLines.filter(Boolean).map((line) => `-${line}`),
-    ...newLines.filter(Boolean).map((line) => `+${line}`),
-  ].join("\n");
+  return content.unified_diff;
 }
 
 function collapsedSummary(block: ToolCallBlockType): string {

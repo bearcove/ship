@@ -471,11 +471,8 @@ fn mcp_tool_call_result(result: &McpToolCallResponse) -> CallToolResult {
                 let mut obj = json!({
                     "type": "diff",
                     "path": d.path,
-                    "new_text": d.new_text,
+                    "unified_diff": d.unified_diff,
                 });
-                if let Some(old) = &d.old_text {
-                    obj["old_text"] = json!(old);
-                }
                 if let Some(edit_id) = &d.edit_id {
                     obj["edit_id"] = json!(edit_id);
                 }

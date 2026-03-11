@@ -29,6 +29,7 @@ use ship_types::{
     SessionStartupState, SessionSummary, SetAgentEffortResponse, SetAgentModelResponse,
     SubscribeMessage, TaskId, TaskRecord, TaskStatus, ToolCallKind, ToolTarget,
 };
+use similar::TextDiff;
 use tokio::process::Command as TokioCommand;
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
@@ -1800,6 +1801,14 @@ Here is your task:
         })
     }
 
+    fn generate_unified_diff(path: &str, old: &str, new: &str) -> String {
+        let diff = TextDiff::from_lines(old, new);
+        diff.unified_diff()
+            .context_radius(3)
+            .header(&format!("a/{path}"), &format!("b/{path}"))
+            .to_string()
+    }
+
     fn format_read_file_excerpt(
         path: &Path,
         offset: usize,
@@ -2254,12 +2263,16 @@ and the captain will help you find the right approach."
                 };
 
                 let path_str = relative_path.display().to_string();
+                let unified_diff = Self::generate_unified_diff(
+                    &path_str,
+                    old_text.as_deref().unwrap_or(""),
+                    &content,
+                );
                 Ok((
                     format!("Wrote {path_str} ({line_count} lines)"),
                     McpDiffContent {
                         path: path_str,
-                        old_text,
-                        new_text: content,
+                        unified_diff,
                         edit_id: None,
                     },
                 ))
@@ -2415,6 +2428,8 @@ and the captain will help you find the right approach."
             let old_content = prepared.pending.old_content.clone();
             let new_content = prepared.pending.new_content.clone();
             let path_str = relative_path.display().to_string();
+            let unified_diff =
+                Self::generate_unified_diff(&path_str, &old_content, &new_content);
             {
                 let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
                 let session = sessions
@@ -2427,13 +2442,12 @@ and the captain will help you find the right approach."
 
             Ok(McpToolCallResponse {
                 text: format!(
-                    "Edit prepared. Pass this edit_id to edit_confirm to apply it: {edit_id}"
+                    "Edit prepared (edit_id={edit_id}). Call edit_confirm(edit_id=\"{edit_id}\") to apply.\n\n{unified_diff}"
                 ),
                 is_error: false,
                 diffs: vec![McpDiffContent {
                     path: path_str,
-                    old_text: Some(old_content),
-                    new_text: new_content,
+                    unified_diff,
                     edit_id: Some(edit_id),
                 }],
             })
@@ -2583,13 +2597,14 @@ and the captain will help you find the right approach."
                     }
                 }
                 let path_str = confirmed_path.display().to_string();
+                let unified_diff =
+                    Self::generate_unified_diff(&path_str, &old_content, &new_content);
                 McpToolCallResponse {
-                    text: format!("Applied {edit_id} to {path_str}"),
+                    text: format!("Applied {edit_id} to {path_str}\n\n{unified_diff}"),
                     is_error: false,
                     diffs: vec![McpDiffContent {
                         path: path_str,
-                        old_text: Some(old_content),
-                        new_text: new_content,
+                        unified_diff,
                         edit_id: None,
                     }],
                 }
@@ -5227,11 +5242,12 @@ mod tests {
     }
 
     fn parse_edit_id(response: &str) -> String {
-        // The edit_prepare response text ends with the edit_id after ": "
+        // The edit_prepare response text starts with "Edit prepared (edit_id=<id>)."
         response
-            .rsplit(": ")
-            .next()
-            .expect("edit_id should be at end of response text")
+            .split("edit_id=")
+            .nth(1)
+            .and_then(|s| s.split(')').next())
+            .expect("edit_id should appear as edit_id=<id> in response text")
             .trim()
             .to_owned()
     }
@@ -6057,17 +6073,14 @@ and the captain will help you find the right approach."
         let diff = &prepared.diffs[0];
         assert_eq!(diff.path, "src/lib.rs");
         assert!(
-            diff.old_text
-                .as_deref()
-                .unwrap_or("")
-                .contains("old_name();"),
-            "expected old content to contain old_name(): {:?}",
-            diff.old_text
+            diff.unified_diff.contains("-    old_name();"),
+            "expected diff to remove old_name(): {}",
+            diff.unified_diff
         );
         assert!(
-            diff.new_text.contains("new_name()"),
-            "expected new content to contain new_name(): {}",
-            diff.new_text
+            diff.unified_diff.contains("+    new_name()"),
+            "expected diff to add new_name(): {}",
+            diff.unified_diff
         );
         let edit_id = parse_edit_id(&prepared.text);
 
@@ -6192,19 +6205,15 @@ and the captain will help you find the right approach."
         );
         assert_eq!(second.diffs.len(), 1, "expected one diff");
         assert!(
-            second.diffs[0]
-                .old_text
-                .as_deref()
-                .unwrap_or("")
-                .contains("foo"),
-            "unexpected old content: {:?}",
-            second.diffs[0].old_text
+            second.diffs[0].unified_diff.contains("-foo"),
+            "unexpected diff: {}",
+            second.diffs[0].unified_diff
         );
         assert_eq!(
-            second.diffs[0].new_text.matches("bar").count(),
+            second.diffs[0].unified_diff.matches("+bar").count(),
             2,
-            "unexpected new content: {}",
-            second.diffs[0].new_text
+            "unexpected diff: {}",
+            second.diffs[0].unified_diff
         );
         let second_id = parse_edit_id(&second.text);
 

@@ -1,3 +1,4 @@
+use similar::TextDiff;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -216,18 +217,15 @@ impl ShipAcpClient {
                     let Some(path) = diff.get("path").and_then(|p| p.as_str()) else {
                         continue;
                     };
-                    let Some(new_text) = diff.get("new_text").and_then(|t| t.as_str()) else {
-                        continue;
-                    };
-                    let old_text = diff
-                        .get("old_text")
+                    let unified_diff = diff
+                        .get("unified_diff")
                         .and_then(|t| t.as_str())
-                        .map(String::from);
+                        .unwrap_or("")
+                        .to_owned();
                     content.push(ShipToolCallContent::Diff {
                         path: path.to_owned(),
                         display_path: display_path_for_string(&self.worktree_path, path),
-                        old_text,
-                        new_text: new_text.to_owned(),
+                        unified_diff,
                     });
                 }
             }
@@ -658,12 +656,20 @@ fn map_tool_call_content(
                 ),
             },
         },
-        ToolCallContent::Diff(diff) => ShipToolCallContent::Diff {
-            path: diff.path.display().to_string(),
-            display_path: display_path_for_path(worktree_path, &diff.path),
-            old_text: diff.old_text.clone(),
-            new_text: diff.new_text.clone(),
-        },
+        ToolCallContent::Diff(diff) => {
+            let path_str = diff.path.display().to_string();
+            let old = diff.old_text.as_deref().unwrap_or("");
+            let unified_diff = TextDiff::from_lines(old, &diff.new_text)
+                .unified_diff()
+                .context_radius(3)
+                .header(&format!("a/{path_str}"), &format!("b/{path_str}"))
+                .to_string();
+            ShipToolCallContent::Diff {
+                path: path_str,
+                display_path: display_path_for_path(worktree_path, &diff.path),
+                unified_diff,
+            }
+        }
         ToolCallContent::Terminal(terminal) => ShipToolCallContent::Terminal {
             terminal_id: terminal.terminal_id.0.to_string(),
             snapshot: map_terminal_snapshot(terminals, &terminal.terminal_id.0),

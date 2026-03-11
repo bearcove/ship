@@ -36,40 +36,12 @@ export function displayTargetPath(path: string, displayPath: string | null): str
   return displayPath ?? formatDisplayPath(path);
 }
 
-function changedLineCounts(oldText: string, newText: string): { added: number; removed: number } {
-  const oldLines = oldText.split("\n");
-  const newLines = newText.split("\n");
-
-  let prefix = 0;
-  while (
-    prefix < oldLines.length &&
-    prefix < newLines.length &&
-    oldLines[prefix] === newLines[prefix]
-  ) {
-    prefix += 1;
-  }
-
-  let oldSuffix = oldLines.length - 1;
-  let newSuffix = newLines.length - 1;
-  while (
-    oldSuffix >= prefix &&
-    newSuffix >= prefix &&
-    oldLines[oldSuffix] === newLines[newSuffix]
-  ) {
-    oldSuffix -= 1;
-    newSuffix -= 1;
-  }
-
-  return {
-    added: Math.max(0, newSuffix - prefix + 1),
-    removed: Math.max(0, oldSuffix - prefix + 1),
-  };
-}
-
 export function diffStats(contents: ToolCallContent[]): string {
   const diff = contents.find((item) => item.tag === "Diff");
   if (!diff) return "";
-  const { added, removed } = changedLineCounts(diff.old_text ?? "", diff.new_text);
+  const lines = diff.unified_diff.split("\n");
+  const added = lines.filter((l) => l.startsWith("+") && !l.startsWith("+++")).length;
+  const removed = lines.filter((l) => l.startsWith("-") && !l.startsWith("---")).length;
   return `+${added} -${removed}`;
 }
 

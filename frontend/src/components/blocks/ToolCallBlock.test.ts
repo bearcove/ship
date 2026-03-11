@@ -55,8 +55,8 @@ describe("collapsedSummary", () => {
             tag: "Diff",
             path: "/repo/src/auth.rs",
             display_path: "src/auth.rs",
-            old_text: "fn validate() {\n    old_check();\n}",
-            new_text: "fn validate() {\n    check_token();\n}",
+            unified_diff:
+              "--- a/src/auth.rs\n+++ b/src/auth.rs\n@@ -1,3 +1,3 @@\n fn validate() {\n-    old_check();\n+    check_token();\n }\n",
           },
         ],
       }),
