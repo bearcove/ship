@@ -7,11 +7,11 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
-use roam::Tx;
 use roam::{
     AcceptedConnection, ConnectionAcceptor, ConnectionSettings, Driver, Metadata, MetadataEntry,
     MetadataFlags, MetadataValue,
 };
+use roam::{Rx, Tx};
 use ship_core::{
     AcpAgentDriver, ActiveSession, AgentDriver, AgentSessionConfig, GitWorktreeOps,
     JsonSessionStore, PendingEdit, ProjectRegistry, SessionGitNames, SessionStore, WorktreeOps,
@@ -28,7 +28,7 @@ use ship_types::{
     PromptContentPart, Role, ServerInfo, SessionConfig, SessionDetail, SessionEvent,
     SessionEventEnvelope, SessionId, SessionStartupStage, SessionStartupState, SessionSummary,
     SetAgentEffortResponse, SetAgentModelResponse, SubscribeMessage, TaskId, TaskRecord,
-    TaskStatus, ToolCallKind, ToolTarget,
+    TaskStatus, ToolCallKind, ToolTarget, TranscribeSegment,
 };
 use similar::TextDiff;
 use tokio::process::Command as TokioCommand;
@@ -179,7 +179,11 @@ pub struct ShipImpl {
     listen_http_urls: Arc<Mutex<Vec<String>>>,
     startup_started_at: Arc<Mutex<HashMap<SessionId, Instant>>>,
     user_avatar_url: Arc<Mutex<Option<String>>>,
+    whisper_model_path: Arc<Mutex<Option<PathBuf>>>,
 }
+
+/// Default whisper model filename to look for.
+const WHISPER_MODEL_FILENAME: &str = "ggml-base.en.bin";
 
 impl ShipImpl {
     pub fn new(
@@ -199,7 +203,43 @@ impl ShipImpl {
             listen_http_urls: Arc::new(Mutex::new(Vec::new())),
             startup_started_at: Arc::new(Mutex::new(HashMap::new())),
             user_avatar_url: Arc::new(Mutex::new(None)),
+            whisper_model_path: Arc::new(Mutex::new(None)),
         }
+    }
+
+    /// Configure the whisper model path from env var or default locations.
+    pub fn configure_whisper_model(&self) {
+        let path = if let Ok(path) = std::env::var("SHIP_WHISPER_MODEL") {
+            let p = PathBuf::from(path);
+            if p.exists() {
+                Some(p)
+            } else {
+                tracing::warn!(path = %p.display(), "SHIP_WHISPER_MODEL path does not exist");
+                None
+            }
+        } else {
+            // Check common locations
+            let candidates = [
+                dirs_next::data_dir().map(|d| d.join("whisper").join(WHISPER_MODEL_FILENAME)),
+                dirs_next::home_dir()
+                    .map(|d| d.join(".local/share/whisper").join(WHISPER_MODEL_FILENAME)),
+                Some(PathBuf::from(WHISPER_MODEL_FILENAME)),
+            ];
+            candidates.into_iter().flatten().find(|p| p.exists())
+        };
+
+        if let Some(ref path) = path {
+            tracing::info!(path = %path.display(), "whisper model found");
+        } else {
+            tracing::info!(
+                "no whisper model found — voice transcription disabled. Set SHIP_WHISPER_MODEL or place {WHISPER_MODEL_FILENAME} in ~/.local/share/whisper/"
+            );
+        }
+
+        *self
+            .whisper_model_path
+            .lock()
+            .expect("whisper mutex poisoned") = path;
     }
 
     #[allow(dead_code)] // called from ship binary; not from ship-startup-probe
@@ -5003,6 +5043,139 @@ impl Ship for ShipImpl {
             return;
         };
         Self::spawn_event_subscription(session, receiver, replay, output);
+    }
+
+    async fn transcribe_audio(
+        &self,
+        mut audio_in: Rx<Vec<u8>>,
+        segments_out: Tx<TranscribeSegment>,
+    ) {
+        tracing::info!("transcribe_audio: stream started");
+
+        // Resolve whisper model path
+        let model_path = {
+            let guard = self
+                .whisper_model_path
+                .lock()
+                .expect("whisper mutex poisoned");
+            guard.clone()
+        };
+        let Some(model_path) = model_path else {
+            tracing::warn!("transcribe_audio: no whisper model configured");
+            let _ = segments_out.close(Default::default()).await;
+            return;
+        };
+
+        // Create whisper context and stream in a blocking thread
+        let (audio_tx, audio_rx) = tokio::sync::mpsc::channel::<Vec<f32>>(32);
+        let (segment_tx, mut segment_rx) = tokio::sync::mpsc::channel::<TranscribeSegment>(64);
+
+        // Spawn blocking whisper worker
+        let whisper_handle = std::thread::spawn(move || {
+            let ctx = match whisper_cpp_plus::WhisperContext::new(model_path.to_str().unwrap()) {
+                Ok(ctx) => ctx,
+                Err(e) => {
+                    tracing::error!("failed to create whisper context: {e}");
+                    return;
+                }
+            };
+
+            let params = whisper_cpp_plus::TranscriptionParams::builder()
+                .language("en")
+                .build();
+
+            // Collect audio chunks until the channel closes, then transcribe
+            let mut all_audio = Vec::<f32>::new();
+            let mut audio_rx = audio_rx;
+
+            while let Some(chunk) = audio_rx.blocking_recv() {
+                all_audio.extend_from_slice(&chunk);
+            }
+
+            if all_audio.is_empty() {
+                tracing::info!("transcribe_audio: no audio received");
+                return;
+            }
+
+            tracing::info!(
+                "transcribe_audio: processing {} samples ({:.1}s)",
+                all_audio.len(),
+                all_audio.len() as f64 / 16000.0
+            );
+
+            match ctx.transcribe_with_params(&all_audio, params) {
+                Ok(result) => {
+                    for seg in result.segments {
+                        let ts = TranscribeSegment {
+                            start_ms: (seg.start_seconds() * 1000.0) as u64,
+                            end_ms: (seg.end_seconds() * 1000.0) as u64,
+                            text: seg.text.clone(),
+                        };
+                        if segment_tx.blocking_send(ts).is_err() {
+                            break;
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("whisper transcription failed: {e}");
+                }
+            }
+        });
+
+        // Forward audio from roam Rx to the whisper worker
+        let forward_handle = tokio::spawn(async move {
+            loop {
+                match audio_in.recv().await {
+                    Ok(Some(chunk)) => {
+                        // Reinterpret bytes as f32 samples
+                        let bytes: &[u8] = &chunk;
+                        if bytes.len() % 4 != 0 {
+                            tracing::warn!(
+                                "transcribe_audio: received audio chunk with non-aligned length: {}",
+                                bytes.len()
+                            );
+                            continue;
+                        }
+                        let samples: Vec<f32> = bytes
+                            .chunks_exact(4)
+                            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                            .collect();
+                        if audio_tx.send(samples).await.is_err() {
+                            break;
+                        }
+                    }
+                    Ok(None) => {
+                        tracing::info!("transcribe_audio: audio stream closed by client");
+                        break;
+                    }
+                    Err(e) => {
+                        tracing::warn!("transcribe_audio: audio recv error: {e}");
+                        break;
+                    }
+                }
+            }
+            drop(audio_tx); // Signal whisper worker to process
+        });
+
+        // Forward segments from whisper worker to roam Tx
+        tokio::spawn(async move {
+            forward_handle.await.ok();
+
+            // Wait for whisper to finish in a blocking-safe way
+            tokio::task::spawn_blocking(move || {
+                whisper_handle.join().ok();
+            })
+            .await
+            .ok();
+
+            // Send all segments
+            while let Some(segment) = segment_rx.recv().await {
+                if segments_out.send(segment).await.is_err() {
+                    break;
+                }
+            }
+            let _ = segments_out.close(Default::default()).await;
+        });
     }
 }
 

@@ -1,10 +1,10 @@
-use roam::Tx;
+use roam::{Rx, Tx};
 use ship_types::{
     AgentDiscovery, ArchiveSessionRequest, ArchiveSessionResponse, CaptainAssignExtras,
     CloseSessionRequest, CloseSessionResponse, CreateSessionRequest, CreateSessionResponse,
     McpToolCallResponse, ProjectInfo, ProjectName, PromptContentPart, Role, ServerInfo,
     SessionDetail, SessionId, SessionSummary, SetAgentEffortResponse, SetAgentModelResponse,
-    SubscribeMessage,
+    SubscribeMessage, TranscribeSegment,
 };
 
 // r[backend.rpc]
@@ -89,6 +89,11 @@ pub trait Ship {
 
     // r[event.subscribe.roam-channel]
     async fn subscribe_events(&self, session: SessionId, output: Tx<SubscribeMessage>);
+
+    /// Stream audio for speech-to-text transcription.
+    /// Client sends 16kHz mono f32 PCM audio as raw bytes via `audio_in`.
+    /// Server sends back transcribed segments via `segments_out`.
+    async fn transcribe_audio(&self, audio_in: Rx<Vec<u8>>, segments_out: Tx<TranscribeSegment>);
 }
 
 // r[captain.tool.implementation]

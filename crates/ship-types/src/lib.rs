@@ -782,6 +782,19 @@ pub mod prompt {
     }
 }
 
+pub mod transcription {
+    /// A transcribed text segment from the whisper model.
+    #[derive(Debug, Clone, PartialEq, facet::Facet)]
+    pub struct TranscribeSegment {
+        /// Start time in milliseconds
+        pub start_ms: u64,
+        /// End time in milliseconds
+        pub end_ms: u64,
+        /// The transcribed text
+        pub text: String,
+    }
+}
+
 pub mod persistence {
     use crate::agent::{AgentKind, AgentSnapshot, PlanStep, Role};
     use crate::events::{ContentBlock, SessionEventEnvelope};
@@ -862,3 +875,4 @@ pub use structured::{
     ToolCallError, ToolCallKind, ToolTarget,
 };
 pub use task::{TaskRecord, TaskStatus};
+pub use transcription::TranscribeSegment;

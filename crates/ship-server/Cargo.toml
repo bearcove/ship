@@ -38,3 +38,5 @@ tracing-subscriber = { workspace = true }
 serde_json = "1"
 rust-mcp-sdk = { version = "0.8.3", default-features = false, features = ["server", "stdio"] }
 similar = "2"
+whisper-cpp-plus = { version = "0.1.4", features = ["metal", "async", "tokio"] }
+dirs-next = "2.0.0"
