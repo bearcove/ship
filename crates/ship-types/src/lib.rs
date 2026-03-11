@@ -655,6 +655,24 @@ pub mod protocol {
         pub force: bool,
     }
 
+    // r[proto.archive-session]
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct ArchiveSessionRequest {
+        pub id: SessionId,
+        pub force: bool,
+    }
+
+    // r[proto.archive-session]
+    // r[proto.archive-session.safety-check]
+    #[repr(u8)]
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub enum ArchiveSessionResponse {
+        Archived,
+        RequiresConfirmation { unmerged_commits: Vec<String> },
+        NotFound,
+        Failed { message: String },
+    }
+
     #[repr(u8)]
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub enum SetAgentModelResponse {
@@ -814,6 +832,9 @@ pub mod persistence {
         pub session_event_log: Vec<SessionEventEnvelope>,
         pub current_task: Option<CurrentTask>,
         pub task_history: Vec<TaskRecord>,
+        // r[proto.archive-session]
+        #[facet(default)]
+        pub archived_at: Option<String>,
     }
 }
 
@@ -829,11 +850,11 @@ pub use ids::{BlockId, ProjectName, SessionId, TaskId};
 pub use persistence::{CurrentTask, PersistedSession, SessionConfig, TaskContentRecord};
 pub use prompt::PromptContentPart;
 pub use protocol::{
-    AgentDiscovery, AutonomyMode, CloseSessionRequest, CloseSessionResponse, CreateSessionRequest,
-    CreateSessionResponse, HumanReviewRequest, McpDiffContent, McpEnvVar, McpHeader,
-    McpHttpServerConfig, McpServerConfig, McpSseServerConfig, McpStdioServerConfig,
-    McpToolCallResponse, ProjectInfo, ServerInfo, SessionDetail, SessionSummary,
-    SetAgentEffortResponse, SetAgentModelResponse,
+    AgentDiscovery, ArchiveSessionRequest, ArchiveSessionResponse, AutonomyMode,
+    CloseSessionRequest, CloseSessionResponse, CreateSessionRequest, CreateSessionResponse,
+    HumanReviewRequest, McpDiffContent, McpEnvVar, McpHeader, McpHttpServerConfig, McpServerConfig,
+    McpSseServerConfig, McpStdioServerConfig, McpToolCallResponse, ProjectInfo, ServerInfo,
+    SessionDetail, SessionSummary, SetAgentEffortResponse, SetAgentModelResponse,
 };
 pub use session::{SessionStartupStage, SessionStartupState};
 pub use structured::{

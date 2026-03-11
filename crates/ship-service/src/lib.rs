@@ -1,9 +1,10 @@
 use roam::Tx;
 use ship_types::{
-    AgentDiscovery, CaptainAssignExtras, CloseSessionRequest, CloseSessionResponse,
-    CreateSessionRequest, CreateSessionResponse, McpToolCallResponse, ProjectInfo, ProjectName,
-    PromptContentPart, Role, ServerInfo, SessionDetail, SessionId, SessionSummary,
-    SetAgentEffortResponse, SetAgentModelResponse, SubscribeMessage,
+    AgentDiscovery, ArchiveSessionRequest, ArchiveSessionResponse, CaptainAssignExtras,
+    CloseSessionRequest, CloseSessionResponse, CreateSessionRequest, CreateSessionResponse,
+    McpToolCallResponse, ProjectInfo, ProjectName, PromptContentPart, Role, ServerInfo,
+    SessionDetail, SessionId, SessionSummary, SetAgentEffortResponse, SetAgentModelResponse,
+    SubscribeMessage,
 };
 
 // r[backend.rpc]
@@ -79,6 +80,9 @@ pub trait Ship {
 
     // r[proto.close-session]
     async fn close_session(&self, req: CloseSessionRequest) -> CloseSessionResponse;
+
+    // r[proto.archive-session]
+    async fn archive_session(&self, req: ArchiveSessionRequest) -> ArchiveSessionResponse;
 
     // r[ui.composer.file-mention]
     async fn list_worktree_files(&self, session: SessionId) -> Vec<String>;

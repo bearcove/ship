@@ -65,6 +65,7 @@ impl From<LegacyPersistedSession> for PersistedSession {
             session_event_log: Vec::new(),
             current_task: value.current_task,
             task_history: value.task_history,
+            archived_at: None,
         }
     }
 }
@@ -123,6 +124,7 @@ impl SessionStore for JsonSessionStore {
         Ok(Some(session))
     }
 
+    // r[session.persistent.across-restart]
     async fn list_sessions(&self) -> Result<Vec<PersistedSession>, StoreError> {
         let mut out = Vec::new();
         let mut entries = match fs::read_dir(&self.dir).await {
@@ -143,10 +145,26 @@ impl SessionStore for JsonSessionStore {
                 continue;
             }
 
-            let bytes = fs::read(&path).await.map_err(|error| StoreError {
-                message: error.to_string(),
-            })?;
-            let session = decode_persisted_session(&bytes, &path.display().to_string())?;
+            let bytes = match fs::read(&path).await {
+                Ok(b) => b,
+                Err(error) => {
+                    tracing::warn!(path = %path.display(), %error, "skipping unreadable session file");
+                    continue;
+                }
+            };
+
+            let session = match decode_persisted_session(&bytes, &path.display().to_string()) {
+                Ok(s) => s,
+                Err(error) => {
+                    tracing::warn!(path = %path.display(), %error.message, "skipping unparseable session file");
+                    continue;
+                }
+            };
+
+            if session.archived_at.is_some() {
+                continue;
+            }
+
             out.push(session);
         }
 

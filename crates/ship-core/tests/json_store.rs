@@ -110,6 +110,7 @@ fn make_persisted_session(id: &str, description: &str) -> PersistedSession {
             }],
         }),
         task_history: Vec::new(),
+        archived_at: None,
     }
 }
 

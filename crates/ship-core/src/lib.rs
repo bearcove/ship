@@ -193,6 +193,17 @@ pub trait WorktreeOps: Send + Sync {
 
     /// Fast-forward merge `branch` into the repo root's current branch.
     async fn merge_ff_only(&self, repo_root: &Path, branch: &str) -> Result<(), WorktreeError>;
+
+    // r[proto.archive-session.safety-check]
+    /// Returns the list of commits on `branch_name` not yet in `base_branch`.
+    /// An empty list means the branch has been fully merged.
+    /// Returns an error only if git itself fails unexpectedly.
+    async fn branch_unmerged_commits(
+        &self,
+        branch_name: &str,
+        base_branch: &str,
+        repo_root: &Path,
+    ) -> Result<Vec<String>, WorktreeError>;
 }
 
 // r[testability.persistence-trait]

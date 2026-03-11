@@ -78,13 +78,6 @@ export const projectName = style({
 export const projectActions = style({
   display: "flex",
   alignItems: "center",
-  opacity: 0,
-  transition: "opacity 0.1s",
-  selectors: {
-    [`${projectRow}:hover &`]: {
-      opacity: 1,
-    },
-  },
 });
 
 export const sessionRow = style({

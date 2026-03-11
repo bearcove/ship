@@ -185,6 +185,40 @@ impl WorktreeOps for GitWorktreeOps {
 
         ensure_success(output)
     }
+
+    // r[proto.archive-session.safety-check]
+    async fn branch_unmerged_commits(
+        &self,
+        branch_name: &str,
+        base_branch: &str,
+        repo_root: &Path,
+    ) -> Result<Vec<String>, WorktreeError> {
+        let range = format!("{base_branch}..{branch_name}");
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(repo_root)
+            .arg("log")
+            .arg("--oneline")
+            .arg(&range)
+            .output()
+            .await
+            .map_err(|error| WorktreeError {
+                message: error.to_string(),
+            })?;
+
+        if !output.status.success() {
+            // Branch may not exist (already deleted) — treat as fully merged.
+            return Ok(Vec::new());
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let commits: Vec<String> = stdout
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(str::to_owned)
+            .collect();
+        Ok(commits)
+    }
 }
 
 fn repo_root_for_worktree(path: &Path) -> Result<&Path, WorktreeError> {

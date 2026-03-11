@@ -239,6 +239,7 @@ struct FakeWorktreeInner {
     deleted_branches: Vec<(String, bool, PathBuf)>,
     remove_errors: HashMap<PathBuf, String>,
     delete_branch_errors: HashMap<String, String>,
+    unmerged_commits: HashMap<String, Vec<String>>,
 }
 
 #[derive(Clone, Default)]
@@ -280,6 +281,14 @@ impl FakeWorktreeOps {
             .expect("fake worktree ops mutex poisoned")
             .delete_branch_errors
             .insert(branch_name.into(), message.into());
+    }
+
+    pub fn set_unmerged_commits(&self, branch_name: impl Into<String>, commits: Vec<String>) {
+        self.inner
+            .lock()
+            .expect("fake worktree ops mutex poisoned")
+            .unmerged_commits
+            .insert(branch_name.into(), commits);
     }
 
     pub fn created_paths(&self) -> Vec<PathBuf> {
@@ -404,6 +413,20 @@ impl WorktreeOps for FakeWorktreeOps {
     async fn merge_ff_only(&self, _repo_root: &Path, _branch: &str) -> Result<(), WorktreeError> {
         Ok(())
     }
+
+    async fn branch_unmerged_commits(
+        &self,
+        branch_name: &str,
+        _base_branch: &str,
+        _repo_root: &Path,
+    ) -> Result<Vec<String>, WorktreeError> {
+        let inner = self.inner.lock().expect("fake worktree ops mutex poisoned");
+        Ok(inner
+            .unmerged_commits
+            .get(branch_name)
+            .cloned()
+            .unwrap_or_default())
+    }
 }
 
 #[derive(Clone, Default)]
@@ -444,6 +467,7 @@ impl SessionStore for FakeSessionStore {
             .lock()
             .expect("fake session store mutex poisoned")
             .values()
+            .filter(|s| s.archived_at.is_none())
             .cloned()
             .collect())
     }

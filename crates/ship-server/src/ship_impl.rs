@@ -20,15 +20,15 @@ use ship_core::{
 };
 use ship_service::{CaptainMcp, CaptainMcpDispatcher, MateMcp, MateMcpDispatcher, Ship};
 use ship_types::{
-    AgentDiscovery, AgentKind, AgentSnapshot, AgentState, AutonomyMode, BlockId,
-    CaptainAssignExtras, CloseSessionRequest, CloseSessionResponse, ContentBlock,
-    CreateSessionRequest, CreateSessionResponse, CurrentTask, HumanReviewRequest, McpDiffContent,
-    McpServerConfig, McpStdioServerConfig, McpToolCallResponse, PersistedSession, PlanStep,
-    PlanStepPriority, PlanStepStatus, ProjectInfo, ProjectName, PromptContentPart, Role,
-    ServerInfo, SessionConfig, SessionDetail, SessionEvent, SessionEventEnvelope, SessionId,
-    SessionStartupStage, SessionStartupState, SessionSummary, SetAgentEffortResponse,
-    SetAgentModelResponse, SubscribeMessage, TaskId, TaskRecord, TaskStatus, ToolCallKind,
-    ToolTarget,
+    AgentDiscovery, AgentKind, AgentSnapshot, AgentState, ArchiveSessionRequest,
+    ArchiveSessionResponse, AutonomyMode, BlockId, CaptainAssignExtras, CloseSessionRequest,
+    CloseSessionResponse, ContentBlock, CreateSessionRequest, CreateSessionResponse, CurrentTask,
+    HumanReviewRequest, McpDiffContent, McpServerConfig, McpStdioServerConfig, McpToolCallResponse,
+    PersistedSession, PlanStep, PlanStepPriority, PlanStepStatus, ProjectInfo, ProjectName,
+    PromptContentPart, Role, ServerInfo, SessionConfig, SessionDetail, SessionEvent,
+    SessionEventEnvelope, SessionId, SessionStartupStage, SessionStartupState, SessionSummary,
+    SetAgentEffortResponse, SetAgentModelResponse, SubscribeMessage, TaskId, TaskRecord,
+    TaskStatus, ToolCallKind, ToolTarget,
 };
 use similar::TextDiff;
 use tokio::process::Command as TokioCommand;
@@ -328,6 +328,7 @@ impl ShipImpl {
                 pending_steer: None,
                 pending_human_review: None,
                 title: None,
+                archived_at: None,
                 events_tx,
                 next_event_seq,
             };
@@ -3530,6 +3531,7 @@ and the captain will help you find the right approach."
                 session_event_log: session.session_event_log.clone(),
                 current_task: session.current_task.clone(),
                 task_history: session.task_history.clone(),
+                archived_at: session.archived_at.clone(),
             }
         };
 
@@ -4450,6 +4452,7 @@ impl Ship for ShipImpl {
             pending_steer: None,
             pending_human_review: None,
             title: None,
+            archived_at: None,
             events_tx,
             next_event_seq: 0,
         };
@@ -4857,11 +4860,17 @@ impl Ship for ShipImpl {
             Self::log_error("close_session_cleanup", &error);
             return CloseSessionResponse::Failed { message: error };
         }
-        if let Err(error) = self.store.delete_session(&req.id).await {
-            Self::log_error("close_session_delete_session", &error.message);
-            return CloseSessionResponse::Failed {
-                message: error.message,
-            };
+
+        // r[proto.close-session]
+        // Retain the persistence file for history — mark it archived instead of deleting.
+        {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            if let Some(session) = sessions.get_mut(&req.id) {
+                session.archived_at = Some(chrono::Utc::now().to_rfc3339());
+            }
+        }
+        if let Err(error) = self.persist_session(&req.id).await {
+            Self::log_error("close_session_persist", &error);
         }
         self.sessions
             .lock()
@@ -4869,6 +4878,95 @@ impl Ship for ShipImpl {
             .remove(&req.id);
 
         CloseSessionResponse::Closed
+    }
+
+    // r[proto.archive-session]
+    // r[proto.archive-session.safety-check]
+    async fn archive_session(&self, req: ArchiveSessionRequest) -> ArchiveSessionResponse {
+        let session = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let Some(session) = sessions.get(&req.id) else {
+                Self::log_error("archive_session", "session not found");
+                return ArchiveSessionResponse::NotFound;
+            };
+            session.clone()
+        };
+
+        if !req.force {
+            let repo_root = match self.resolve_project_root(&session.config.project).await {
+                Ok(root) => root,
+                Err(error) => {
+                    Self::log_error("archive_session_resolve_project", &error);
+                    return ArchiveSessionResponse::Failed { message: error };
+                }
+            };
+
+            let mut unmerged_commits: Vec<String> = Vec::new();
+
+            if let Some(worktree_path) = session.worktree_path.as_ref()
+                && worktree_path.exists()
+            {
+                match self
+                    .worktree_ops
+                    .has_uncommitted_changes(worktree_path)
+                    .await
+                {
+                    Ok(true) => {
+                        unmerged_commits.push("(uncommitted changes in worktree)".to_owned());
+                    }
+                    Ok(false) => {}
+                    Err(error) => {
+                        Self::log_error("archive_session_uncommitted_check", &error.message);
+                        return ArchiveSessionResponse::Failed {
+                            message: error.message,
+                        };
+                    }
+                }
+            }
+
+            match self
+                .worktree_ops
+                .branch_unmerged_commits(
+                    &session.config.branch_name,
+                    &session.config.base_branch,
+                    &repo_root,
+                )
+                .await
+            {
+                Ok(commits) => unmerged_commits.extend(commits),
+                Err(error) => {
+                    Self::log_error("archive_session_unmerged_check", &error.message);
+                    return ArchiveSessionResponse::Failed {
+                        message: error.message,
+                    };
+                }
+            }
+
+            if !unmerged_commits.is_empty() {
+                return ArchiveSessionResponse::RequiresConfirmation { unmerged_commits };
+            }
+        }
+
+        if let Err(error) = self.cleanup_session_resources(&session, true).await {
+            Self::log_error("archive_session_cleanup", &error);
+            return ArchiveSessionResponse::Failed { message: error };
+        }
+
+        {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            if let Some(session) = sessions.get_mut(&req.id) {
+                session.archived_at = Some(chrono::Utc::now().to_rfc3339());
+            }
+        }
+        if let Err(error) = self.persist_session(&req.id).await {
+            Self::log_error("archive_session_persist", &error);
+        }
+        self.sessions
+            .lock()
+            .expect("sessions mutex poisoned")
+            .remove(&req.id);
+
+        ArchiveSessionResponse::Archived
     }
 
     // r[event.subscribe.replay]

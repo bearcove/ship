@@ -96,6 +96,7 @@ pub struct ActiveSession {
     pub pending_steer: Option<String>,
     pub pending_human_review: Option<HumanReviewRequest>,
     pub title: Option<String>,
+    pub archived_at: Option<String>,
     pub events_tx: broadcast::Sender<SessionEventEnvelope>,
     pub next_event_seq: u64,
 }
@@ -189,6 +190,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             pending_steer: None,
             pending_human_review: None,
             title: None,
+            archived_at: None,
             events_tx,
             next_event_seq: 0,
         };
@@ -1025,6 +1027,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             session_event_log: session.session_event_log.clone(),
             current_task: session.current_task.clone(),
             task_history: session.task_history.clone(),
+            archived_at: session.archived_at.clone(),
         };
 
         self.store

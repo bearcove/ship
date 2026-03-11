@@ -6,15 +6,17 @@ import {
   Button,
   Callout,
   Card,
+  Code,
   Dialog,
   Flex,
+  IconButton,
   Select,
   SegmentedControl,
   Text,
   TextField,
   Tooltip,
 } from "@radix-ui/themes";
-import { CaretDown, Plus, WarningCircle } from "@phosphor-icons/react";
+import { Archive, CaretDown, Plus, WarningCircle } from "@phosphor-icons/react";
 import { useProjects } from "../hooks/useProjects";
 import { refreshSessionList, useSessionList } from "../hooks/useSessionList";
 import { useAgentDiscovery } from "../hooks/useAgentDiscovery";
@@ -25,7 +27,7 @@ import {
   keyboardShortcutKey,
   sessionCard,
 } from "../styles/session-list.css";
-import type { AgentKind, TaskStatus } from "../generated/ship";
+import type { AgentKind, SessionSummary, TaskStatus } from "../generated/ship";
 import { getShipClient } from "../api/client";
 import { agentKindTooltip } from "./session-list-utils";
 
@@ -276,6 +278,58 @@ function BranchCombobox({
         </Box>
       )}
     </Flex>
+  );
+}
+
+// r[proto.archive-session]
+function ArchiveSessionDialog({
+  session,
+  unmergedCommits,
+  onConfirm,
+  onCancel,
+  archiving,
+}: {
+  session: SessionSummary;
+  unmergedCommits: string[];
+  onConfirm: () => void;
+  onCancel: () => void;
+  archiving: boolean;
+}) {
+  return (
+    <Dialog.Root open onOpenChange={(open) => !open && onCancel()}>
+      <Dialog.Content maxWidth="500px">
+        <Dialog.Title>Archive session?</Dialog.Title>
+        <Dialog.Description size="2" color="gray">
+          <Text>
+            <Code variant="ghost">{session.branch_name}</Code> has unmerged work. Archive anyway?
+          </Text>
+        </Dialog.Description>
+
+        <Box mt="3">
+          <Text size="2" weight="medium" mb="2" as="p">
+            Unmerged commits ({unmergedCommits.length}):
+          </Text>
+          <Box style={{ maxHeight: 160, overflowY: "auto" }}>
+            <Flex direction="column" gap="1">
+              {unmergedCommits.map((commit, i) => (
+                <Text key={i} size="1" style={{ fontFamily: "monospace", color: "var(--gray-11)" }}>
+                  {commit}
+                </Text>
+              ))}
+            </Flex>
+          </Box>
+        </Box>
+
+        <Flex gap="2" justify="end" mt="4">
+          <Button variant="soft" color="gray" onClick={onCancel} disabled={archiving}>
+            Cancel
+          </Button>
+          <Button color="red" onClick={onConfirm} loading={archiving}>
+            Archive anyway
+          </Button>
+        </Flex>
+      </Dialog.Content>
+    </Dialog.Root>
   );
 }
 
@@ -538,6 +592,34 @@ export function SessionListPage() {
   const [newSessionOpen, setNewSessionOpen] = useState(false);
   const [addProjectOpen, setAddProjectOpen] = useState(false);
 
+  const [archivingId, setArchivingId] = useState<string | null>(null);
+  const [archiveConfirm, setArchiveConfirm] = useState<{
+    session: SessionSummary;
+    unmergedCommits: string[];
+  } | null>(null);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
+
+  async function handleArchive(session: SessionSummary, force: boolean) {
+    setArchivingId(session.id);
+    setArchiveError(null);
+    try {
+      const client = await getShipClient();
+      const result = await client.archiveSession({ id: session.id, force });
+      if (result.tag === "Archived") {
+        setArchiveConfirm(null);
+        await refreshSessionList();
+      } else if (result.tag === "RequiresConfirmation") {
+        setArchiveConfirm({ session, unmergedCommits: result.unmerged_commits });
+      } else if (result.tag === "Failed") {
+        setArchiveError(result.message);
+      }
+    } catch (e) {
+      setArchiveError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setArchivingId(null);
+    }
+  }
+
   const noProjects = validProjects.length === 0;
 
   return (
@@ -620,67 +702,101 @@ export function SessionListPage() {
           </Callout.Root>
         </Flex>
       ) : (
-        <Flex direction="column" gap="3">
-          {sessions.map((session) => (
-            <Link
-              key={session.id}
-              to={`/sessions/${session.slug}`}
-              style={{ textDecoration: "none", color: "inherit" }}
-            >
-              <Card className={sessionCard}>
-                <Flex direction="column" gap="2">
-                  <Flex align="center" gap="2" wrap="wrap">
-                    <Badge color="gray" variant="outline" size="1">
-                      {session.project}
-                    </Badge>
-                    <Text size="2" style={{ fontFamily: "monospace", color: "var(--gray-11)" }}>
-                      {session.branch_name}
-                    </Text>
-                    <Flex gap="1" ml="auto" align="center">
-                      {session.task_status && (
-                        <Badge color={STATUS_COLOR[session.task_status.tag]} size="1">
-                          {session.task_status.tag}
+        <>
+          {archiveError && (
+            <Callout.Root color="red" size="1" mb="3">
+              <Callout.Icon>
+                <WarningCircle size={16} />
+              </Callout.Icon>
+              <Callout.Text>{archiveError}</Callout.Text>
+            </Callout.Root>
+          )}
+
+          <Flex direction="column" gap="3">
+            {sessions.map((session) => (
+              <Box key={session.id} style={{ position: "relative" }}>
+                <Link
+                  to={`/sessions/${session.slug}`}
+                  style={{ textDecoration: "none", color: "inherit" }}
+                >
+                  <Card className={sessionCard}>
+                    <Flex direction="column" gap="2">
+                      <Flex align="center" gap="2" wrap="wrap">
+                        <Badge color="gray" variant="outline" size="1">
+                          {session.project}
                         </Badge>
+                        <Text size="2" style={{ fontFamily: "monospace", color: "var(--gray-11)" }}>
+                          {session.branch_name}
+                        </Text>
+                        <Flex gap="1" ml="auto" align="center">
+                          {session.task_status && (
+                            <Badge color={STATUS_COLOR[session.task_status.tag]} size="1">
+                              {session.task_status.tag}
+                            </Badge>
+                          )}
+                        </Flex>
+                      </Flex>
+
+                      {session.current_task_title && (
+                        <Text size="3" weight="medium" style={{ lineHeight: 1.4 }}>
+                          {session.current_task_title}
+                        </Text>
                       )}
+                      {!session.current_task_title && session.startup_state.tag !== "Ready" && (
+                        <Text size="2" color="gray">
+                          {session.startup_state.tag === "Pending"
+                            ? "Session startup is queued."
+                            : session.startup_state.message}
+                        </Text>
+                      )}
+
+                      <Flex align="center" gap="2">
+                        <Text size="1" color="gray">
+                          Captain:
+                        </Text>
+                        <AgentKindLabel kind={session.captain.kind} />
+                        <Text size="1" color="gray">
+                          Mate:
+                        </Text>
+                        <AgentKindLabel kind={session.mate.kind} />
+                        <Text size="1" color="gray" ml="auto">
+                          {new Date(session.created_at).toLocaleString(undefined, {
+                            month: "short",
+                            day: "numeric",
+                            hour: "numeric",
+                            minute: "2-digit",
+                          })}
+                        </Text>
+                      </Flex>
                     </Flex>
-                  </Flex>
-
-                  {session.current_task_title && (
-                    <Text size="3" weight="medium" style={{ lineHeight: 1.4 }}>
-                      {session.current_task_title}
-                    </Text>
-                  )}
-                  {!session.current_task_title && session.startup_state.tag !== "Ready" && (
-                    <Text size="2" color="gray">
-                      {session.startup_state.tag === "Pending"
-                        ? "Session startup is queued."
-                        : session.startup_state.message}
-                    </Text>
-                  )}
-
-                  <Flex align="center" gap="2">
-                    <Text size="1" color="gray">
-                      Captain:
-                    </Text>
-                    <AgentKindLabel kind={session.captain.kind} />
-                    <Text size="1" color="gray">
-                      Mate:
-                    </Text>
-                    <AgentKindLabel kind={session.mate.kind} />
-                    <Text size="1" color="gray" ml="auto">
-                      {new Date(session.created_at).toLocaleString(undefined, {
-                        month: "short",
-                        day: "numeric",
-                        hour: "numeric",
-                        minute: "2-digit",
-                      })}
-                    </Text>
-                  </Flex>
-                </Flex>
-              </Card>
-            </Link>
-          ))}
-        </Flex>
+                  </Card>
+                </Link>
+                {/* r[proto.archive-session] */}
+                <Tooltip content="Archive session">
+                  <IconButton
+                    size="1"
+                    variant="ghost"
+                    color="gray"
+                    loading={archivingId === session.id}
+                    style={{
+                      position: "absolute",
+                      top: 8,
+                      right: 8,
+                      zIndex: 1,
+                    }}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleArchive(session, false);
+                    }}
+                  >
+                    <Archive size={14} />
+                  </IconButton>
+                </Tooltip>
+              </Box>
+            ))}
+          </Flex>
+        </>
       )}
 
       <NewSessionDialog
@@ -689,6 +805,15 @@ export function SessionListPage() {
         preselectedProject={projectFilter}
       />
       <AddProjectDialog open={addProjectOpen} onOpenChange={setAddProjectOpen} />
+      {archiveConfirm && (
+        <ArchiveSessionDialog
+          session={archiveConfirm.session}
+          unmergedCommits={archiveConfirm.unmergedCommits}
+          onConfirm={() => handleArchive(archiveConfirm.session, true)}
+          onCancel={() => setArchiveConfirm(null)}
+          archiving={archivingId === archiveConfirm.session.id}
+        />
+      )}
     </Box>
   );
 }

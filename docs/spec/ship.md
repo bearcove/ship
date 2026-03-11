@@ -218,6 +218,23 @@ The protocol MUST support a `close_session` operation that tears down both
 agents, triggers worktree cleanup (with confirmation), and removes the session
 from the active list. The session's persistence file is retained for history.
 
+r[proto.archive-session]
+The protocol MUST support an `archive_session` operation that retires a session:
+tears down both agents, removes the worktree and branch, marks the session as
+archived (sets `archived_at`), and removes it from the active list. The
+persistence file is kept on disk with `archived_at` set.
+
+r[proto.archive-session.safety-check]
+Before archiving, the system MUST check whether the session's branch has unmerged
+work relative to its base branch. If it does and `force` is false, the operation
+MUST return `RequiresConfirmation` with a list of unmerged commit summaries so
+the user can decide whether to proceed.
+
+r[session.persistent.across-restart]
+Sessions that are active (not archived) MUST be reloaded from disk on server
+restart. Corrupted or unreadable session files MUST be skipped with a warning
+rather than preventing all sessions from loading.
+
 r[proto.get-session]
 The protocol MUST support a `get_session` operation that returns the session's
 structural state: agent snapshots, current task metadata and status, task

@@ -291,6 +291,17 @@ export type CloseSessionResponse =
   | { tag: "NotFound" }
   | { tag: "Failed"; message: string };
 
+export interface ArchiveSessionRequest {
+  id: SessionId;
+  force: boolean;
+}
+
+export type ArchiveSessionResponse =
+  | { tag: "Archived" }
+  | { tag: "RequiresConfirmation"; unmerged_commits: string[] }
+  | { tag: "NotFound" }
+  | { tag: "Failed"; message: string };
+
 export type BlockId = string;
 
 export type TextSource = { tag: "Human" } | { tag: "AgentMessage" } | { tag: "AgentThought" };
@@ -521,6 +532,7 @@ export interface ShipCaller {
     valueId: string,
   ): CallBuilder<SetAgentEffortResponse>;
   closeSession(req: CloseSessionRequest): CallBuilder<CloseSessionResponse>;
+  archiveSession(req: ArchiveSessionRequest): CallBuilder<ArchiveSessionResponse>;
   listWorktreeFiles(session: SessionId): CallBuilder<string[]>;
   subscribeEvents(session: SessionId, output: Tx<SubscribeMessage>): CallBuilder<void>;
 }
@@ -808,8 +820,22 @@ export class ShipClient implements ShipCaller {
     });
   }
 
-  listWorktreeFiles(session: SessionId): CallBuilder<string[]> {
+  archiveSession(req: ArchiveSessionRequest): CallBuilder<ArchiveSessionResponse> {
     const descriptor = ship_descriptor.methods[19];
+    return new CallBuilder(async (metadata) => {
+      const value = await this.caller.call({
+        method: "Ship.archiveSession",
+        args: { req },
+        descriptor,
+        schemaRegistry: ship_descriptor.schema_registry,
+        metadata,
+      });
+      return value as ArchiveSessionResponse;
+    });
+  }
+
+  listWorktreeFiles(session: SessionId): CallBuilder<string[]> {
+    const descriptor = ship_descriptor.methods[20];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.listWorktreeFiles",
@@ -823,7 +849,7 @@ export class ShipClient implements ShipCaller {
   }
 
   subscribeEvents(session: SessionId, output: Tx<SubscribeMessage>): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[20];
+    const descriptor = ship_descriptor.methods[21];
     // Bind any Tx/Rx channels in arguments and collect channel IDs
     const channels = bindChannels(
       descriptor.args.elements,
@@ -891,6 +917,9 @@ export interface ShipHandler {
     valueId: string,
   ): Promise<SetAgentEffortResponse> | SetAgentEffortResponse;
   closeSession(req: CloseSessionRequest): Promise<CloseSessionResponse> | CloseSessionResponse;
+  archiveSession(
+    req: ArchiveSessionRequest,
+  ): Promise<ArchiveSessionResponse> | ArchiveSessionResponse;
   listWorktreeFiles(session: SessionId): Promise<string[]> | string[];
   subscribeEvents(session: SessionId, output: Tx<SubscribeMessage>): Promise<void> | void;
 }
@@ -1052,6 +1081,13 @@ export class ShipDispatcher implements ChannelingDispatcher {
     } else if (method.id === 0xc86b919e995583afn) {
       try {
         const result = await this.handler.closeSession(args[0] as CloseSessionRequest);
+        call.reply(result);
+      } catch {
+        call.replyInternalError();
+      }
+    } else if (method.id === 0x6c26e8aa2031bad6n) {
+      try {
+        const result = await this.handler.archiveSession(args[0] as ArchiveSessionRequest);
         call.reply(result);
       } catch {
         call.replyInternalError();
@@ -1587,6 +1623,25 @@ const ship_schema_registry: SchemaRegistry = new Map<string, Schema>([
       variants: [
         { name: "Closed", fields: null },
         { name: "RequiresConfirmation", fields: null },
+        { name: "NotFound", fields: null },
+        { name: "Failed", fields: { message: { kind: "string" } } },
+      ],
+    },
+  ],
+  [
+    "ArchiveSessionRequest",
+    { kind: "struct", fields: { id: { kind: "string" }, force: { kind: "bool" } } },
+  ],
+  [
+    "ArchiveSessionResponse",
+    {
+      kind: "enum",
+      variants: [
+        { name: "Archived", fields: null },
+        {
+          name: "RequiresConfirmation",
+          fields: { unmerged_commits: { kind: "vec", element: { kind: "string" } } },
+        },
         { name: "NotFound", fields: null },
         { name: "Failed", fields: { message: { kind: "string" } } },
       ],
@@ -2338,6 +2393,29 @@ export const ship_descriptor: ServiceDescriptor = {
         kind: "enum",
         variants: [
           { name: "Ok", fields: { kind: "ref", name: "CloseSessionResponse" } },
+          {
+            name: "Err",
+            fields: {
+              kind: "enum",
+              variants: [
+                { name: "User", fields: null },
+                { name: "UnknownMethod", fields: null },
+                { name: "InvalidPayload", fields: null },
+                { name: "Cancelled", fields: null },
+              ],
+            },
+          },
+        ],
+      },
+    },
+    {
+      name: "archiveSession",
+      id: 0x6c26e8aa2031bad6n,
+      args: { kind: "tuple", elements: [{ kind: "ref", name: "ArchiveSessionRequest" }] },
+      result: {
+        kind: "enum",
+        variants: [
+          { name: "Ok", fields: { kind: "ref", name: "ArchiveSessionResponse" } },
           {
             name: "Err",
             fields: {
