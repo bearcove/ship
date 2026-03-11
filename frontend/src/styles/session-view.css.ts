@@ -640,6 +640,23 @@ export const composerInputWrapper = style({
   position: "relative",
 });
 
+export const pageDropOverlay = style({
+  position: "fixed",
+  inset: 0,
+  zIndex: 1000,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  background: "color-mix(in srgb, var(--accent-9) 10%, transparent)",
+  border: "3px dashed var(--accent-9)",
+  borderRadius: "var(--radius-4)",
+  color: "var(--accent-11)",
+  fontSize: "var(--font-size-4)",
+  fontWeight: "var(--font-weight-medium)",
+  pointerEvents: "none",
+  margin: "var(--space-3)",
+});
+
 export const composerDropIndicator = style({
   position: "absolute",
   inset: 0,
