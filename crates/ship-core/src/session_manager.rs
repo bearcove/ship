@@ -811,11 +811,6 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         session: &ActiveSession,
         force: bool,
     ) -> Result<(), SessionManagerError> {
-        let worktree_path = session.worktree_path.as_ref().ok_or_else(|| {
-            SessionManagerError::Worktree("session worktree not ready".to_owned())
-        })?;
-        let repo_root = Self::repo_root_for_worktree(worktree_path)?;
-
         if let Some(handle) = &session.captain_handle {
             self.agent_driver
                 .kill(handle)
@@ -828,6 +823,11 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                 .await
                 .map_err(|error| SessionManagerError::Agent(error.message.clone()))?;
         }
+
+        let Some(worktree_path) = session.worktree_path.as_ref() else {
+            return Ok(());
+        };
+        let repo_root = Self::repo_root_for_worktree(worktree_path)?;
 
         self.worktree_ops
             .remove_worktree(worktree_path, force)
