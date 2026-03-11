@@ -182,17 +182,6 @@ impl ServerHandler for MateMcpHandler {
                     .await
                     .map_err(call_tool_rpc_error)?
             }
-            // r[mate.tool.pnpm-install]
-            "pnpm_install" => {
-                let args = arguments
-                    .get("args")
-                    .and_then(Value::as_str)
-                    .map(ToOwned::to_owned);
-                self.client
-                    .pnpm_install(args)
-                    .await
-                    .map_err(call_tool_rpc_error)?
-            }
             // r[mate.tool.ask-captain]
             "mate_ask_captain" => {
                 let Some(question) = arguments.get("question").and_then(Value::as_str) else {
@@ -420,17 +409,6 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "summary": { "type": "string" }
                 },
                 "required": ["step_index", "summary"],
-                "additionalProperties": false,
-            }),
-        },
-        ToolDefinition {
-            name: "pnpm_install",
-            description: "Run `pnpm install` in the worktree. Network-enabled sandbox. Takes an optional args string.",
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "args": { "type": "string" }
-                },
                 "additionalProperties": false,
             }),
         },

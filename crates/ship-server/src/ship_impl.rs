@@ -107,10 +107,6 @@ that are hard to undo. Stop what you're doing and use mate_ask_captain to \
 explain what you were trying to accomplish — the captain can help you find \
 a safe approach.";
 
-const RUN_COMMAND_GUARDRAIL_TEMPLATE: &str = "\
-The command `{command}` has been blocked because it could affect the worktree \
-in ways that are hard to undo. Use mate_ask_captain to explain what you need, \
-and the captain will help you find the right approach.";
 const DEFAULT_READ_FILE_LIMIT: usize = 2000;
 const MAX_READ_FILE_LINE_LENGTH: usize = 2000;
 const BINARY_DETECTION_BYTES: usize = 8 * 1024;
@@ -778,7 +774,8 @@ You can also steer the mate mid-flight with captain_steer if you see it going \
 off track, or notify the human with captain_notify_human if you need their input.
 
 Your available tools are your Ship MCP tools: captain_assign, captain_steer, \
-captain_accept, captain_cancel, captain_notify_human, read_file, and web_search. \
+captain_accept, captain_cancel, captain_notify_human, read_file, run_command, and web_search. \
+Use run_command for codebase exploration (rg to search, fd to list files, git log, etc.) — use rg instead of grep, fd instead of find. \
 Built-in tools (Bash, Read, Write, Edit) are \
 disabled in this environment. If you try one and it fails or is rejected, do \
 not stop — use your MCP tools instead and continue.
@@ -1419,44 +1416,6 @@ Here is your task:
             .await
     }
 
-    // r[mate.tool.pnpm-install]
-    async fn mate_tool_pnpm_install(
-        &self,
-        session_id: &SessionId,
-        args: Option<String>,
-    ) -> Result<String, String> {
-        let worktree_path = {
-            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
-            let session = sessions
-                .get(session_id)
-                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-            Self::current_task_worktree_path(session)?.to_path_buf()
-        };
-        let cmd_str = match args {
-            Some(a) if !a.trim().is_empty() => format!("pnpm install {a}"),
-            _ => "pnpm install".to_owned(),
-        };
-        let shell_command = format!("exec 2>&1; {cmd_str}");
-        let child = Self::networked_sandboxed_sh(&worktree_path, &shell_command)?;
-        let output = match tokio::time::timeout(RUN_COMMAND_TIMEOUT, child.wait_with_output()).await
-        {
-            Ok(Ok(output)) => output,
-            Ok(Err(error)) => return Err(format!("Command failed: {error}")),
-            Err(_) => return Err("Command timed out after 120 seconds.".to_owned()),
-        };
-        let combined = String::from_utf8_lossy(&output.stdout);
-        let truncated = Self::truncate_run_command_output(&combined);
-        let exit_code = output
-            .status
-            .code()
-            .map_or_else(|| "signal".to_owned(), |c| c.to_string());
-        if truncated.is_empty() {
-            Ok(format!("exit code: {exit_code}"))
-        } else {
-            Ok(format!("{truncated}\nexit code: {exit_code}"))
-        }
-    }
-
     fn format_plan_status(steps: &[PlanStep]) -> String {
         steps
             .iter()
@@ -1580,7 +1539,45 @@ Here is your task:
         Ok(RustfmtOutcome::Failure(details))
     }
 
+    fn strip_ansi(s: &str) -> String {
+        let mut out = String::with_capacity(s.len());
+        let mut chars = s.chars().peekable();
+        while let Some(ch) = chars.next() {
+            if ch == '\x1b' {
+                match chars.peek() {
+                    Some(&'[') => {
+                        chars.next();
+                        for c in chars.by_ref() {
+                            if c.is_ascii_alphabetic() {
+                                break;
+                            }
+                        }
+                    }
+                    Some(&']') => {
+                        chars.next();
+                        while let Some(c) = chars.next() {
+                            if c == '\x07' {
+                                break;
+                            }
+                            if c == '\x1b' {
+                                if chars.peek() == Some(&'\\') {
+                                    chars.next();
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            } else {
+                out.push(ch);
+            }
+        }
+        out
+    }
+
     fn truncate_run_command_output(output: &str) -> String {
+        let output = Self::strip_ansi(output);
         let output = output.trim_end_matches('\n');
         let lines = output.lines().collect::<Vec<_>>();
         if lines.len() <= MAX_TOOL_OUTPUT_LINES {
@@ -1606,35 +1603,10 @@ Here is your task:
 
     // r[mate.tool.sandbox]
     fn sandboxed_sh(cwd: &Path, shell_command: &str) -> Result<tokio::process::Child, String> {
-        Self::spawn_sh(cwd, shell_command, false)
-    }
-
-    // r[mate.tool.networked-sandbox]
-    fn networked_sandboxed_sh(
-        cwd: &Path,
-        shell_command: &str,
-    ) -> Result<tokio::process::Child, String> {
-        Self::spawn_sh(cwd, shell_command, true)
-    }
-
-    fn spawn_sh(
-        cwd: &Path,
-        shell_command: &str,
-        allow_network: bool,
-    ) -> Result<tokio::process::Child, String> {
         #[cfg(target_os = "macos")]
         {
-            let home = std::env::var("HOME").unwrap_or_else(|_| "/nonexistent".to_owned());
             let system_tmpdir = std::env::var("TMPDIR").unwrap_or_else(|_| "/tmp".to_owned());
             let worktree = cwd.to_string_lossy();
-            let extra_rules = if allow_network {
-                format!(
-                    "\n(allow file-write* (subpath \"{home}/.cargo\"))\
-                    \n(allow file-write* (subpath \"{home}/.rustup\"))"
-                )
-            } else {
-                "\n(deny network*)".to_owned()
-            };
             let profile = format!(
                 "(version 1)\
                 \n(allow default)\
@@ -1644,7 +1616,7 @@ Here is your task:
                 \n(allow file-write* (subpath \"/tmp\"))\
                 \n(allow file-write* (subpath \"{system_tmpdir}\"))\
                 \n(allow file-write* (literal \"/dev/null\"))\
-                {extra_rules}"
+                \n(deny network*)"
             );
             let mut cmd = TokioCommand::new("/usr/bin/sandbox-exec");
             cmd.arg("-p")
@@ -1660,7 +1632,6 @@ Here is your task:
         }
         #[cfg(not(target_os = "macos"))]
         {
-            let _ = allow_network;
             let mut cmd = TokioCommand::new("/bin/sh");
             cmd.arg("-c")
                 .arg(shell_command)
@@ -1893,8 +1864,8 @@ Here is your task:
         command: String,
         cwd: Option<String>,
     ) -> Result<String, String> {
-        if Self::is_dangerous_command(&command) {
-            return Err(RUN_COMMAND_GUARDRAIL_TEMPLATE.replace("{command}", &command));
+        if let Some(msg) = Self::is_dangerous_command(&command) {
+            return Err(msg.to_owned());
         }
 
         let relative_cwd = match cwd {
@@ -3485,29 +3456,39 @@ Here is your task:
         }?;
 
         match target {
-            ToolTarget::Command { command, .. } if Self::is_dangerous_command(command) => {
+            ToolTarget::Command { command, .. }
+                if Self::is_dangerous_command(command).is_some() =>
+            {
                 Some(command.clone())
             }
             _ => None,
         }
     }
 
-    fn is_dangerous_command(command: &str) -> bool {
+    fn is_dangerous_command(command: &str) -> Option<&'static str> {
         let normalized = command.trim().to_ascii_lowercase();
         let mut parts = normalized.split_whitespace();
         let Some(program) = parts.next() else {
-            return false;
+            return None;
         };
         let subcommand = parts.next();
 
         if program == "git"
             && matches!(subcommand, Some("checkout" | "restore" | "clean" | "reset"))
         {
-            return true;
+            return Some("Blocked: destructive git command. This is not reversible.");
+        }
+
+        if program == "find" {
+            return Some("Blocked: use fd instead of find. Example: fd -t f 'pattern' path/");
+        }
+
+        if program == "grep" {
+            return Some("Blocked: use rg instead of grep. Example: rg 'pattern' path/");
         }
 
         if program != "rm" {
-            return false;
+            return None;
         }
 
         let has_recursive = normalized.contains(" -r")
@@ -3525,7 +3506,11 @@ Here is your task:
             || normalized.contains(" ..")
             || normalized.contains(" ~");
 
-        has_recursive && has_force && broad_target
+        if has_recursive && has_force && broad_target {
+            return Some("Blocked: broad recursive delete.");
+        }
+
+        None
     }
 
     fn inspect_mate_event_for_guardrails(
@@ -4959,6 +4944,18 @@ impl CaptainMcp for CaptainMcpSessionService {
                 .await,
         )
     }
+
+    async fn captain_run_command(
+        &self,
+        command: String,
+        cwd: Option<String>,
+    ) -> McpToolCallResponse {
+        Self::response(
+            self.ship
+                .mate_tool_run_command(&self.session_id, command, cwd)
+                .await,
+        )
+    }
 }
 
 #[derive(Clone)]
@@ -5061,15 +5058,6 @@ impl MateMcp for MateMcpSessionService {
         Self::response(
             self.ship
                 .mate_tool_plan_step_complete(&self.session_id, step_index, summary)
-                .await,
-        )
-    }
-
-    // r[mate.tool.pnpm-install]
-    async fn pnpm_install(&self, args: Option<String>) -> McpToolCallResponse {
-        Self::response(
-            self.ship
-                .mate_tool_pnpm_install(&self.session_id, args)
                 .await,
         )
     }

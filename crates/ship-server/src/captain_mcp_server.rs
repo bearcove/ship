@@ -119,6 +119,19 @@ impl ServerHandler for CaptainMcpHandler {
                     .await
                     .map_err(call_tool_rpc_error)?
             }
+            "run_command" => {
+                let Some(command) = arguments.get("command").and_then(Value::as_str) else {
+                    return Ok(tool_result("missing required argument: command", true));
+                };
+                let cwd = arguments
+                    .get("cwd")
+                    .and_then(Value::as_str)
+                    .map(ToOwned::to_owned);
+                self.client
+                    .captain_run_command(command.to_owned(), cwd)
+                    .await
+                    .map_err(call_tool_rpc_error)?
+            }
             "web_search" => {
                 let Some(query) = arguments.get("query").and_then(Value::as_str) else {
                     return Ok(tool_result("missing required argument: query", true));
@@ -292,6 +305,19 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "limit": { "type": "integer", "description": "Maximum number of lines to return." }
                 },
                 "required": ["path"],
+                "additionalProperties": false,
+            }),
+        },
+        ToolDefinition {
+            name: "run_command",
+            description: "Run a read-only shell command in the session worktree (e.g. rg, fd, git log, cat). Use rg instead of grep, fd instead of find. Write operations are the mate's job.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "command": { "type": "string" },
+                    "cwd": { "type": "string", "description": "Worktree-relative subdirectory to run in (optional)." }
+                },
+                "required": ["command"],
                 "additionalProperties": false,
             }),
         },

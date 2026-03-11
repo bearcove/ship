@@ -114,6 +114,12 @@ pub trait CaptainMcp {
         offset: Option<u64>,
         limit: Option<u64>,
     ) -> McpToolCallResponse;
+
+    async fn captain_run_command(
+        &self,
+        command: String,
+        cwd: Option<String>,
+    ) -> McpToolCallResponse;
 }
 
 // r[mate.tool.implementation]
@@ -153,9 +159,6 @@ pub trait MateMcp {
 
     // r[mate.tool.plan-step-complete]
     async fn plan_step_complete(&self, step_index: u64, summary: String) -> McpToolCallResponse;
-
-    // r[mate.tool.pnpm-install]
-    async fn pnpm_install(&self, args: Option<String>) -> McpToolCallResponse;
 
     // r[mate.tool.ask-captain]
     async fn mate_ask_captain(&self, question: String) -> McpToolCallResponse;
