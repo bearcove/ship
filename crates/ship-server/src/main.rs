@@ -64,7 +64,7 @@ enum Command {
 
 #[derive(Debug, facet::Facet)]
 struct ServeArgs {
-    /// HTTP listen address (for example: `[::]:9140`).
+    /// HTTP listen address (for example: `[::1]:9140`).
     #[facet(args::named, default)]
     listen: Option<String>,
 }
@@ -250,7 +250,7 @@ fn resolve_listen_addr(
 ) -> Result<SocketAddr, Box<dyn std::error::Error>> {
     let listen = cli_listen
         .or_else(|| std::env::var("SHIP_LISTEN").ok())
-        .unwrap_or_else(|| "[::]:9140".to_owned());
+        .unwrap_or_else(|| "[::1]:9140".to_owned());
     Ok(listen.parse::<SocketAddr>()?)
 }
 
@@ -540,9 +540,12 @@ async fn shutdown_signal() {
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
+    use std::sync::{LazyLock, Mutex, MutexGuard};
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use super::ensure_ship_entry_for_project;
+    use super::{ensure_ship_entry_for_project, resolve_listen_addr};
+
+    static SHIP_LISTEN_ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
     fn make_temp_dir(test_name: &str) -> PathBuf {
         let nanos = SystemTime::now()
@@ -552,6 +555,37 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("ship-server-{test_name}-{nanos}"));
         std::fs::create_dir_all(&dir).expect("temp dir should be created");
         dir
+    }
+
+    struct ShipListenEnvGuard {
+        _lock: MutexGuard<'static, ()>,
+        original: Option<String>,
+    }
+
+    impl ShipListenEnvGuard {
+        fn set(value: Option<&str>) -> Self {
+            let lock = SHIP_LISTEN_ENV_LOCK
+                .lock()
+                .expect("SHIP_LISTEN test lock should not be poisoned");
+            let original = std::env::var("SHIP_LISTEN").ok();
+            match value {
+                Some(value) => unsafe { std::env::set_var("SHIP_LISTEN", value) },
+                None => unsafe { std::env::remove_var("SHIP_LISTEN") },
+            }
+            Self {
+                _lock: lock,
+                original,
+            }
+        }
+    }
+
+    impl Drop for ShipListenEnvGuard {
+        fn drop(&mut self) {
+            match self.original.as_deref() {
+                Some(value) => unsafe { std::env::set_var("SHIP_LISTEN", value) },
+                None => unsafe { std::env::remove_var("SHIP_LISTEN") },
+            }
+        }
     }
 
     // r[verify backend.persistence-dir-gitignore]
@@ -569,5 +603,30 @@ mod tests {
         assert_eq!(contents, "target/\n.ship/\n");
 
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    // r[verify server.listen]
+    #[test]
+    fn resolve_listen_addr_defaults_to_ipv6_loopback() {
+        let _env_guard = ShipListenEnvGuard::set(None);
+        let listen_addr = resolve_listen_addr(None).expect("default listen address should parse");
+        assert_eq!(listen_addr, "[::1]:9140".parse().unwrap());
+    }
+
+    // r[verify server.listen]
+    #[test]
+    fn resolve_listen_addr_uses_ship_listen_env_before_default() {
+        let _env_guard = ShipListenEnvGuard::set(Some("127.0.0.1:9200"));
+        let listen_addr = resolve_listen_addr(None).expect("env listen address should parse");
+        assert_eq!(listen_addr, "127.0.0.1:9200".parse().unwrap());
+    }
+
+    // r[verify server.listen]
+    #[test]
+    fn resolve_listen_addr_prefers_cli_over_ship_listen_env() {
+        let _env_guard = ShipListenEnvGuard::set(Some("127.0.0.1:9200"));
+        let listen_addr = resolve_listen_addr(Some("[::1]:9300".to_owned()))
+            .expect("cli listen address should parse");
+        assert_eq!(listen_addr, "[::1]:9300".parse().unwrap());
     }
 }

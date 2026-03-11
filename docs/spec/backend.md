@@ -407,7 +407,7 @@ paths.
 
 r[server.listen]
 The server's HTTP listen address MUST be configurable via the `SHIP_LISTEN`
-environment variable, defaulting to `[::]:9140`.
+environment variable, defaulting to `[::1]:9140`.
 
 r[server.multi-repo]
 A single Ship server instance manages sessions across all registered
