@@ -207,6 +207,20 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
     if (await sendNow(content, to)) setText("");
   }
 
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    const style = getComputedStyle(el);
+    const lineHeight = parseFloat(style.lineHeight) || 24;
+    const paddingTop = parseFloat(style.paddingTop) || 0;
+    const paddingBottom = parseFloat(style.paddingBottom) || 0;
+    const maxHeight = lineHeight * 6 + paddingTop + paddingBottom;
+    const newHeight = Math.min(el.scrollHeight, maxHeight);
+    el.style.height = newHeight + "px";
+    el.style.overflowY = el.scrollHeight > maxHeight ? "auto" : "hidden";
+  }, [text]);
+
   function handleTextChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     const newText = e.target.value;
     setText(newText);
@@ -374,7 +388,7 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
           ref={textareaRef}
           className={composerInput}
           size="3"
-          rows={2}
+          rows={1}
           placeholder="Steer the captain…"
           value={text}
           onChange={handleTextChange}

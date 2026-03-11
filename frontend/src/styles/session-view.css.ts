@@ -744,7 +744,7 @@ export const attachedImageRemove = style({
 });
 
 export const composerInput = style({
-  resize: "vertical",
+  resize: "none",
   borderRadius: "12px",
 });
 
@@ -966,6 +966,12 @@ globalStyle(`${textBlockRoot} a`, {
   textDecoration: "underline",
   textDecorationColor: "var(--gray-a7)",
   textUnderlineOffset: "2px",
+});
+
+globalStyle(`${textBlockRoot} blockquote`, {
+  borderLeft: "3px solid var(--gray-a6)",
+  paddingLeft: "var(--space-3)",
+  color: "var(--gray-11)",
 });
 
 export const textBlockCodeBlock = style({

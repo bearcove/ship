@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Box, Button, Code, IconButton } from "@radix-ui/themes";
+import { useEffect, useMemo, useState } from "react";
+import { Box, Code, IconButton } from "@radix-ui/themes";
 import ReactMarkdown from "react-markdown";
 import { bundledLanguages, codeToHtml } from "shiki";
 import type { BundledLanguage } from "shiki";
@@ -7,7 +7,6 @@ import { Check, CopySimple } from "@phosphor-icons/react";
 import type { ContentBlock } from "../../generated/ship";
 import {
   bubbleContent,
-  bubbleContentCollapsed,
   bubbleCopyBtn,
   textBlockCodeBlock,
   textBlockCodeFallback,
@@ -81,24 +80,9 @@ function MarkdownCodeBlock({ className, code }: { className?: string; code: stri
   );
 }
 
-const COLLAPSE_HEIGHT = 400;
-
 // r[ui.block.text]
 export function TextBlock({ block }: Props) {
-  const [isOverflowing, setIsOverflowing] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
-  const contentRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const el = contentRef.current;
-    if (!el) return;
-    const check = () => setIsOverflowing(el.scrollHeight > COLLAPSE_HEIGHT);
-    check();
-    const observer = new ResizeObserver(check);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [block.text]);
 
   const handleCopy = () => {
     void navigator.clipboard.writeText(block.text).then(() => {
@@ -106,8 +90,6 @@ export function TextBlock({ block }: Props) {
       setTimeout(() => setCopied(false), 2000);
     });
   };
-
-  const collapsed = isOverflowing && !isExpanded;
 
   const markdownComponents = useMemo(
     () => ({
@@ -129,22 +111,9 @@ export function TextBlock({ block }: Props) {
 
   return (
     <Box className={textBlockRoot}>
-      <div
-        ref={contentRef}
-        className={collapsed ? `${bubbleContent} ${bubbleContentCollapsed}` : bubbleContent}
-      >
+      <div className={bubbleContent}>
         <ReactMarkdown components={markdownComponents}>{block.text}</ReactMarkdown>
       </div>
-      {isOverflowing && (
-        <Button
-          size="1"
-          variant="ghost"
-          style={{ marginTop: "var(--space-1)" }}
-          onClick={() => setIsExpanded(!isExpanded)}
-        >
-          {isExpanded ? "Show less" : "Show more"}
-        </Button>
-      )}
       <IconButton
         size="1"
         variant="ghost"
