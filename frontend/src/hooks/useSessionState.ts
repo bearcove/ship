@@ -271,7 +271,6 @@ function startSubscription(sessionId: string, sub: SessionSubscription) {
           { kind: "channel-closed", reason: stopReason, attempt },
         ];
         log("warn", "subscription channel closed", { sessionId, attempt });
-        invalidateShipClient(stopReason);
         break;
       }
 
