@@ -3470,12 +3470,6 @@ and the captain will help you find the right approach."
         session: &ActiveSession,
         force: bool,
     ) -> Result<(), String> {
-        let worktree_path = session
-            .worktree_path
-            .as_ref()
-            .ok_or_else(|| "session worktree not ready".to_owned())?;
-        let repo_root = Self::repo_root_for_worktree(worktree_path)?;
-
         if let Some(handle) = &session.captain_handle
             && let Err(error) = self.agent_driver.kill(handle).await
         {
@@ -3486,6 +3480,11 @@ and the captain will help you find the right approach."
         {
             Self::log_error("close_session_kill_mate", &error.message);
         }
+
+        let Some(worktree_path) = session.worktree_path.as_ref() else {
+            return Ok(());
+        };
+        let repo_root = Self::repo_root_for_worktree(worktree_path)?;
 
         if worktree_path.exists() {
             self.worktree_ops
