@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Routes, Route, Link, useMatch } from "react-router-dom";
 import { Flex, Box, Text, IconButton } from "@radix-ui/themes";
-import { SpeakerHigh, SpeakerSlash } from "@phosphor-icons/react";
+import { List, SpeakerHigh, SpeakerSlash } from "@phosphor-icons/react";
 import { SessionListPage } from "./pages/SessionListPage";
 import { SessionAgentRail, SessionViewPage } from "./pages/SessionViewPage";
 import { ConnectionBanner } from "./components/ConnectionBanner";
@@ -10,7 +10,13 @@ import { SessionSidebar } from "./components/SessionSidebar";
 import { useSoundEnabled } from "./context/SoundContext";
 import { useSessionList } from "./hooks/useSessionList";
 import { useProjects } from "./hooks/useProjects";
-import { appColumns, appColLeft, appColCenter, appColRight } from "./styles/session-view.css";
+import {
+  appColumns,
+  appColLeft,
+  appColCenter,
+  appColRight,
+  hamburgerBtn,
+} from "./styles/session-view.css";
 
 function readDebugPreference(): boolean {
   try {
@@ -62,14 +68,25 @@ export function App() {
                 Ship
               </Text>
             </Link>
-            <IconButton
-              variant="ghost"
-              size="2"
-              onClick={() => setSoundEnabled(!soundEnabled)}
-              aria-label={soundEnabled ? "Mute sounds" : "Unmute sounds"}
-            >
-              {soundEnabled ? <SpeakerHigh size={18} /> : <SpeakerSlash size={18} />}
-            </IconButton>
+            <Flex align="center" gap="1">
+              <IconButton
+                className={hamburgerBtn}
+                variant="ghost"
+                size="2"
+                onClick={() => setSidebarOpen(true)}
+                aria-label="Open sidebar"
+              >
+                <List size={18} />
+              </IconButton>
+              <IconButton
+                variant="ghost"
+                size="2"
+                onClick={() => setSoundEnabled(!soundEnabled)}
+                aria-label={soundEnabled ? "Mute sounds" : "Unmute sounds"}
+              >
+                {soundEnabled ? <SpeakerHigh size={18} /> : <SpeakerSlash size={18} />}
+              </IconButton>
+            </Flex>
           </Flex>
         </Box>
       )}

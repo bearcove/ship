@@ -1020,3 +1020,12 @@ export const permissionCard = style({
   flexDirection: "column",
   gap: "var(--space-2)",
 });
+
+export const hamburgerBtn = style({
+  display: "none",
+  "@media": {
+    "(max-width: 700px)": {
+      display: "flex",
+    },
+  },
+});
