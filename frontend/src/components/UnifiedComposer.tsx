@@ -18,6 +18,8 @@ import {
   composerActivityDot,
   composerInput,
   composerInputWrapper,
+  composerListeningBar,
+  composerListeningIndicator,
   composerRoot,
   fileMentionItem,
   fileMentionPopup,
@@ -412,6 +414,14 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
           onPaste={handlePaste}
           aria-label="Steer input"
         />
+        {(transcription.state.tag === "recording" || transcription.state.tag === "processing") && (
+          <div className={composerListeningIndicator}>
+            <span className={composerListeningBar} />
+            <span className={composerListeningBar} />
+            <span className={composerListeningBar} />
+            <span className={composerListeningBar} />
+          </div>
+        )}
       </div>
 
       <input

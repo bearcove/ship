@@ -770,6 +770,37 @@ export const composerActivityDot = style({
   animation: `${composerPulse} 1.5s ease-in-out infinite`,
 });
 
+export const composerListeningIndicator = style({
+  position: "absolute",
+  bottom: 8,
+  right: 12,
+  display: "flex",
+  alignItems: "center",
+  gap: 4,
+  pointerEvents: "none",
+  zIndex: 1,
+});
+
+const listeningBarBounce = keyframes({
+  "0%, 100%": { transform: "scaleY(0.3)" },
+  "50%": { transform: "scaleY(1)" },
+});
+
+export const composerListeningBar = style({
+  width: 2,
+  height: 12,
+  borderRadius: 1,
+  background: "var(--red-9)",
+  transformOrigin: "bottom",
+  animation: `${listeningBarBounce} 0.8s ease-in-out infinite`,
+  selectors: {
+    "&:nth-child(1)": { animationDelay: "0s" },
+    "&:nth-child(2)": { animationDelay: "0.15s" },
+    "&:nth-child(3)": { animationDelay: "0.3s" },
+    "&:nth-child(4)": { animationDelay: "0.45s" },
+  },
+});
+
 export const fileMentionPopup = style({
   position: "absolute",
   bottom: "100%",
