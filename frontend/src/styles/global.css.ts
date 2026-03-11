@@ -36,6 +36,16 @@ globalStyle("html, body, #root", {
   padding: 0,
 });
 
+// Fill the browser chrome (iOS status bar, overscroll area) with the app background.
+globalStyle("html", {
+  backgroundColor: "#111113",
+  "@media": {
+    "(prefers-color-scheme: light)": {
+      backgroundColor: "#ffffff",
+    },
+  },
+});
+
 globalStyle(".radix-themes", {
   vars: {
     "--default-font-family": sansFontStack,

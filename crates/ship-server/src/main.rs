@@ -13,7 +13,7 @@ use agent_discovery::{SystemBinaryPathProbe, discover_agents};
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::extract::{Request, State};
-use axum::http::{HeaderName, StatusCode};
+use axum::http::{HeaderName, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::any;
 use figue::{self as args, FigueBuiltins};
@@ -908,6 +908,9 @@ async fn proxy_vite_handler(
         response.headers_mut().append(name.clone(), value.clone());
     }
     response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
 }
 
 fn should_skip_request_header(name: &HeaderName) -> bool {
@@ -940,6 +943,9 @@ fn should_skip_response_header(name: &HeaderName) -> bool {
             | "trailer"
             | "transfer-encoding"
             | "content-length"
+            | "cache-control"
+            | "etag"
+            | "last-modified"
     )
 }
 
