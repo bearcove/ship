@@ -24,7 +24,7 @@ use ship_types::{
     CloseSessionRequest, CloseSessionResponse, ContentBlock, CreateSessionRequest,
     CreateSessionResponse, CurrentTask, HumanReviewRequest, McpDiffContent, McpServerConfig,
     McpStdioServerConfig, McpToolCallResponse, PersistedSession, PlanStep, PlanStepPriority,
-    PlanStepStatus, ProjectInfo, ProjectName, PromptContentPart, Role, SessionConfig,
+    PlanStepStatus, ProjectInfo, ProjectName, PromptContentPart, Role, ServerInfo, SessionConfig,
     SessionDetail, SessionEvent, SessionEventEnvelope, SessionId, SessionStartupStage,
     SessionStartupState, SessionSummary, SetAgentEffortResponse, SetAgentModelResponse,
     SubscribeMessage, TaskId, TaskRecord, TaskStatus, ToolCallKind, ToolTarget,
@@ -178,6 +178,7 @@ pub struct ShipImpl {
     sessions: Arc<Mutex<HashMap<SessionId, ActiveSession>>>,
     pending_mcp_ops: Arc<Mutex<HashMap<SessionId, PendingMcpOps>>>,
     server_ws_url: Arc<Mutex<String>>,
+    listen_http_urls: Arc<Mutex<Vec<String>>>,
     startup_started_at: Arc<Mutex<HashMap<SessionId, Instant>>>,
     user_avatar_url: Arc<Mutex<Option<String>>>,
 }
@@ -197,6 +198,7 @@ impl ShipImpl {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             pending_mcp_ops: Arc::new(Mutex::new(HashMap::new())),
             server_ws_url: Arc::new(Mutex::new("ws://127.0.0.1:9/ws".to_owned())),
+            listen_http_urls: Arc::new(Mutex::new(Vec::new())),
             startup_started_at: Arc::new(Mutex::new(HashMap::new())),
             user_avatar_url: Arc::new(Mutex::new(None)),
         }
@@ -239,6 +241,13 @@ impl ShipImpl {
             .server_ws_url
             .lock()
             .expect("server websocket url mutex poisoned") = url.into();
+    }
+
+    pub fn set_listen_http_urls(&self, urls: Vec<String>) {
+        *self
+            .listen_http_urls
+            .lock()
+            .expect("listen_http_urls mutex poisoned") = urls;
     }
 
     // r[resilience.server-restart]
@@ -4195,6 +4204,16 @@ impl Ship for ShipImpl {
 
     async fn agent_discovery(&self) -> AgentDiscovery {
         self.agent_discovery.clone()
+    }
+
+    async fn get_server_info(&self) -> ServerInfo {
+        ServerInfo {
+            http_urls: self
+                .listen_http_urls
+                .lock()
+                .expect("listen_http_urls mutex poisoned")
+                .clone(),
+        }
     }
 
     async fn add_project(&self, path: String) -> ProjectInfo {

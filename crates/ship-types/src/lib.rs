@@ -681,6 +681,12 @@ pub mod protocol {
         pub codex: bool,
     }
 
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct ServerInfo {
+        /// All HTTP URLs the server is listening on, non-loopback first.
+        pub http_urls: Vec<String>,
+    }
+
     // r[session.list]
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub struct SessionSummary {
@@ -806,8 +812,8 @@ pub use protocol::{
     AgentDiscovery, AutonomyMode, CloseSessionRequest, CloseSessionResponse, CreateSessionRequest,
     CreateSessionResponse, HumanReviewRequest, McpDiffContent, McpEnvVar, McpHeader,
     McpHttpServerConfig, McpServerConfig, McpSseServerConfig, McpStdioServerConfig,
-    McpToolCallResponse, ProjectInfo, SessionDetail, SessionSummary, SetAgentEffortResponse,
-    SetAgentModelResponse,
+    McpToolCallResponse, ProjectInfo, ServerInfo, SessionDetail, SessionSummary,
+    SetAgentEffortResponse, SetAgentModelResponse,
 };
 pub use session::{SessionStartupStage, SessionStartupState};
 pub use structured::{

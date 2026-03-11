@@ -550,6 +550,23 @@ async fn run_serve(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
         tracing::info!(%url, "ship server started");
     }
 
+    let mut http_urls: Vec<String> = listeners
+        .iter()
+        .filter(|l| !l.local_addr().map(|a| a.ip().is_loopback()).unwrap_or(true))
+        .map(|l| format!("http://{}", l.local_addr().unwrap()))
+        .collect();
+    http_urls.extend(
+        listeners
+            .iter()
+            .filter(|l| {
+                l.local_addr()
+                    .map(|a| a.ip().is_loopback())
+                    .unwrap_or(false)
+            })
+            .map(|l| format!("http://{}", l.local_addr().unwrap())),
+    );
+    ship.set_listen_http_urls(http_urls);
+
     // Shared shutdown signal broadcast via Notify.
     let shutdown = Arc::new(tokio::sync::Notify::new());
     let shutdown_driver = shutdown.clone();

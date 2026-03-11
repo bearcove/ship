@@ -2,8 +2,8 @@ use roam::Tx;
 use ship_types::{
     AgentDiscovery, CloseSessionRequest, CloseSessionResponse, CreateSessionRequest,
     CreateSessionResponse, McpToolCallResponse, ProjectInfo, ProjectName, PromptContentPart, Role,
-    SessionDetail, SessionId, SessionSummary, SetAgentEffortResponse, SetAgentModelResponse,
-    SubscribeMessage,
+    ServerInfo, SessionDetail, SessionId, SessionSummary, SetAgentEffortResponse,
+    SetAgentModelResponse, SubscribeMessage,
 };
 
 // r[backend.rpc]
@@ -23,6 +23,8 @@ pub trait Ship {
 
     // r[server.agent-discovery]
     async fn agent_discovery(&self) -> AgentDiscovery;
+
+    async fn get_server_info(&self) -> ServerInfo;
 
     // r[proto.get-session]
     async fn get_session(&self, id: SessionId) -> SessionDetail;
