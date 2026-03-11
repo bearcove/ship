@@ -52,7 +52,7 @@ export function Waveform({ analyser, color = "var(--red-9)" }: Props) {
 
       for (let i = 0; i < barCount; i++) {
         const value = dataArray[i] / 255;
-        const barHeight = Math.max(2, value * h * 0.85);
+        const barHeight = Math.max(2, value * h * 0.6);
         const x = startX + i * (barWidth + gap);
         const y = (h - barHeight) / 2;
 

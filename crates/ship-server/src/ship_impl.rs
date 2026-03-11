@@ -5134,27 +5134,19 @@ impl Ship for ShipImpl {
                             break;
                         }
 
+                        // Drain intermediate hypotheses to keep the stream moving,
+                        // but don't send them — the waveform overlay covers the textarea
+                        // and sending fragments causes unwanted vertical resizing.
                         while let Some(segments) = stream.try_recv_segments() {
                             let hypothesis: String = segments
                                 .iter()
                                 .map(|s| s.text.trim())
                                 .collect::<Vec<_>>()
                                 .join(" ");
-
-                            if hypothesis.is_empty() {
-                                continue;
-                            }
-
-                            tracing::info!("transcribe_audio: hypothesis: {hypothesis}");
-
-                            let ts = TranscribeSegment {
-                                start_ms: 0,
-                                end_ms: (total_samples as f64 / 16.0) as u64,
-                                text: hypothesis,
-                            };
-                            if segments_out.send(ts).await.is_err() {
-                                let _ = stream.stop().await;
-                                return;
+                            if !hypothesis.is_empty() {
+                                tracing::debug!(
+                                    "transcribe_audio: intermediate hypothesis (not sent): {hypothesis}"
+                                );
                             }
                         }
                     }

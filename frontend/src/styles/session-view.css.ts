@@ -686,11 +686,11 @@ export const composerOverlay = style({
   display: "flex",
   alignItems: "center",
   gap: "var(--space-2)",
-  padding: "0 42px",
+  padding: "4px 48px",
   pointerEvents: "none",
   "@media": {
     "(max-width: 700px)": {
-      padding: "0 48px",
+      padding: "4px 56px",
     },
   },
 });
