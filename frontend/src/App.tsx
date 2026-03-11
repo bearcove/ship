@@ -10,7 +10,6 @@ import { SessionSidebar } from "./components/SessionSidebar";
 import { useSoundEnabled } from "./context/SoundContext";
 import { useSessionList } from "./hooks/useSessionList";
 import { useProjects } from "./hooks/useProjects";
-import { QrCodeButton } from "./components/QrCodeButton";
 import { appColumns, appColLeft, appColCenter, appColRight } from "./styles/session-view.css";
 
 function readDebugPreference(): boolean {
@@ -63,17 +62,14 @@ export function App() {
                 Ship
               </Text>
             </Link>
-            <Flex align="center" gap="1">
-              <QrCodeButton />
-              <IconButton
-                variant="ghost"
-                size="2"
-                onClick={() => setSoundEnabled(!soundEnabled)}
-                aria-label={soundEnabled ? "Mute sounds" : "Unmute sounds"}
-              >
-                {soundEnabled ? <SpeakerHigh size={18} /> : <SpeakerSlash size={18} />}
-              </IconButton>
-            </Flex>
+            <IconButton
+              variant="ghost"
+              size="2"
+              onClick={() => setSoundEnabled(!soundEnabled)}
+              aria-label={soundEnabled ? "Mute sounds" : "Unmute sounds"}
+            >
+              {soundEnabled ? <SpeakerHigh size={18} /> : <SpeakerSlash size={18} />}
+            </IconButton>
           </Flex>
         </Box>
       )}
