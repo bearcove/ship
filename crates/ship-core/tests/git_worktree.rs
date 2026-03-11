@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use ship_core::{GitWorktreeOps, WorktreeOps};
+use ship_core::{GitWorktreeOps, SessionGitNames, WorktreeOps};
 use ship_types::SessionId;
 
 fn run_git(args: &[&str], cwd: &Path) {
@@ -28,6 +28,7 @@ fn make_temp_dir(test_name: &str) -> PathBuf {
 // r[verify backend.git-shell]
 // r[verify testability.git-trait]
 // r[verify worktree.path]
+// r[verify worktree.branch-name]
 #[tokio::test]
 async fn git_worktree_create_status_and_remove() {
     let root = make_temp_dir("git-worktree");
@@ -43,29 +44,35 @@ async fn git_worktree_create_status_and_remove() {
     run_git(&["branch", "-M", "main"], &repo);
 
     let ops = GitWorktreeOps;
-    let clean_session_id = SessionId("01J00000000000000000000000".to_owned());
-    let clean_slug = "clean-worktree";
-    let clean_branch_name = format!("ship/{}/{clean_slug}", &clean_session_id.0[..8]);
+    let clean_session_id = SessionId("01J0000000ABCD000000000000".to_owned());
+    let clean_names = SessionGitNames::from_session_id(&clean_session_id);
+
+    assert_eq!(clean_names.branch_name, "ship-abcd");
+    assert_eq!(clean_names.worktree_dir, "@abcd");
 
     let clean_worktree_path = ops
-        .create_worktree(&clean_session_id, "main", clean_slug, &repo)
+        .create_worktree(
+            &clean_names.branch_name,
+            &clean_names.worktree_dir,
+            "main",
+            &repo,
+        )
         .await
         .expect("create_worktree should succeed");
 
     assert!(clean_worktree_path.exists(), "worktree path should exist");
-    assert_eq!(
-        clean_worktree_path,
-        repo.join(".ship")
-            .join("worktrees")
-            .join(format!("{}-{clean_slug}", &clean_session_id.0[..8]))
-    );
+    assert_eq!(clean_worktree_path, repo.join(".ship").join("@abcd"));
 
     let branches = ops
         .list_branches(&repo)
         .await
         .expect("list_branches should succeed");
     assert!(branches.iter().any(|branch| branch == "main"));
-    assert!(branches.iter().any(|branch| branch == &clean_branch_name));
+    assert!(
+        branches
+            .iter()
+            .any(|branch| branch == &clean_names.branch_name)
+    );
 
     let clean_dirty = ops
         .has_uncommitted_changes(&clean_worktree_path)
@@ -81,17 +88,27 @@ async fn git_worktree_create_status_and_remove() {
         "clean worktree path should be removed"
     );
 
-    ops.delete_branch(&clean_branch_name, false, &repo)
+    ops.delete_branch(&clean_names.branch_name, false, &repo)
         .await
         .expect("delete branch should succeed");
 
-    let dirty_session_id = SessionId("01J00000000000000000000001".to_owned());
-    let dirty_slug = "dirty-worktree";
-    let dirty_branch_name = format!("ship/{}/{dirty_slug}", &dirty_session_id.0[..8]);
+    let dirty_session_id = SessionId("01J0000000WXYZ000000000000".to_owned());
+    let dirty_names = SessionGitNames::from_session_id(&dirty_session_id);
+
+    assert_eq!(dirty_names.branch_name, "ship-wxyz");
+    assert_eq!(dirty_names.worktree_dir, "@wxyz");
+
     let worktree_path = ops
-        .create_worktree(&dirty_session_id, "main", dirty_slug, &repo)
+        .create_worktree(
+            &dirty_names.branch_name,
+            &dirty_names.worktree_dir,
+            "main",
+            &repo,
+        )
         .await
         .expect("dirty create_worktree should succeed");
+
+    assert_eq!(worktree_path, repo.join(".ship").join("@wxyz"));
 
     let dirty_after = ops
         .has_uncommitted_changes(&worktree_path)
@@ -121,7 +138,7 @@ async fn git_worktree_create_status_and_remove() {
         .expect("forced remove should succeed");
     assert!(!worktree_path.exists(), "worktree path should be removed");
 
-    ops.delete_branch(&dirty_branch_name, true, &repo)
+    ops.delete_branch(&dirty_names.branch_name, true, &repo)
         .await
         .expect("delete branch should succeed");
     let branches_after = ops
@@ -131,12 +148,12 @@ async fn git_worktree_create_status_and_remove() {
     assert!(
         !branches_after
             .iter()
-            .any(|branch| branch == &clean_branch_name)
+            .any(|branch| branch == &clean_names.branch_name)
     );
     assert!(
         !branches_after
             .iter()
-            .any(|branch| branch == &dirty_branch_name)
+            .any(|branch| branch == &dirty_names.branch_name)
     );
 
     let _ = std::fs::remove_dir_all(&root);
@@ -155,11 +172,13 @@ async fn git_worktree_rejects_invalid_or_unborn_base_branch() {
     run_git(&["checkout", "-b", "main"], &repo);
 
     let ops = GitWorktreeOps;
+    let unborn_names =
+        SessionGitNames::from_session_id(&SessionId("01J0000000UNBR000000000000".to_owned()));
     let unborn_error = ops
         .create_worktree(
-            &SessionId("01J00000000000000000000010".to_owned()),
+            &unborn_names.branch_name,
+            &unborn_names.worktree_dir,
             "main",
-            "unborn-base",
             &repo,
         )
         .await
@@ -174,11 +193,13 @@ async fn git_worktree_rejects_invalid_or_unborn_base_branch() {
     run_git(&["add", "README.md"], &repo);
     run_git(&["commit", "-m", "seed"], &repo);
 
+    let invalid_names =
+        SessionGitNames::from_session_id(&SessionId("01J0000000MISS000000000000".to_owned()));
     let invalid_error = ops
         .create_worktree(
-            &SessionId("01J00000000000000000000011".to_owned()),
+            &invalid_names.branch_name,
+            &invalid_names.worktree_dir,
             "missing-branch",
-            "invalid-base",
             &repo,
         )
         .await

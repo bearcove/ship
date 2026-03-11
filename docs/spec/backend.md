@@ -336,10 +336,9 @@ r[worktree.isolated]
 Each session MUST operate in an isolated git worktree.
 
 r[worktree.path]
-Worktrees MUST be created under
-`.ship/worktrees/{session_short_id}-{slug}/` relative to the repository root,
-where `session_short_id` is the first 8 characters of the session ULID and
-`slug` is the kebab-case task summary used in the branch name.
+Worktrees MUST be created under `.ship/` relative to the repository root using
+an `@{four}` directory name, where `four` is the first 4 characters of the
+session ULID.
 
 r[worktree.gitignore]
 The `.ship/` directory entry MUST cover worktree storage; Ship MUST NOT rely on
@@ -350,11 +349,8 @@ Worktrees MUST be created from a user-specified base branch when the session
 starts.
 
 r[worktree.branch-name]
-Each worktree MUST be created on a new branch named
-`ship/{session_short_id}/{slug}` where `session_short_id` is the first 8
-characters of the session ULID and `slug` is a kebab-case summary derived from
-the initial task description (always available since session creation requires
-a task).
+Each worktree MUST be created on a new branch named `ship-{four}`, where
+`four` is the first 4 characters of the session ULID.
 
 r[worktree.git-command]
 Worktree creation MUST use `git worktree add` with the `--track` flag pointing
