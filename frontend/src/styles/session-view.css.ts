@@ -764,7 +764,19 @@ export const fileMentionItem = style({
     "&:hover": {
       background: "var(--gray-a3)",
     },
+    '&[data-special="mate"]': {
+      display: "flex",
+      alignItems: "center",
+      gap: "var(--space-2)",
+      color: "var(--accent-11)",
+      fontFamily: "inherit",
+    },
   },
+});
+
+globalStyle(`${composerInputWrapper}[data-target="mate"] textarea`, {
+  outline: "2px solid var(--accent-9)",
+  outlineOffset: "-1px",
 });
 
 export const toolCallBlock = style({
