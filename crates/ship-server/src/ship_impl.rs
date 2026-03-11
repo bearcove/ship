@@ -5157,7 +5157,29 @@ impl Ship for ShipImpl {
                 }
             }
 
-            // Flush remaining audio
+            // Drain segments emitted by queued Feed commands that were processed
+            // between our last try_recv and now. try_recv so we don't block if
+            // there's nothing yet — flush will catch the rest.
+            while let Some(segments) = stream.try_recv_segments() {
+                for seg in segments {
+                    let start_ms = (seg.start_seconds() * 1000.0) as u64;
+                    let end_ms = (seg.end_seconds() * 1000.0) as u64;
+                    if start_ms < sent_up_to_ms {
+                        continue;
+                    }
+                    let ts = TranscribeSegment {
+                        start_ms,
+                        end_ms,
+                        text: seg.text.clone(),
+                    };
+                    sent_up_to_ms = end_ms;
+                    let _ = segments_out.send(ts).await;
+                }
+            }
+
+            // Flush queues behind all pending Feed commands. The background thread
+            // processes them in order, so flush waits for all feeds to complete
+            // (each running process_step), then flushes remaining audio.
             tracing::info!("transcribe_audio: flushing");
             match stream.flush().await {
                 Ok(segments) => {
@@ -5178,6 +5200,24 @@ impl Ship for ShipImpl {
                 }
                 Err(e) => {
                     tracing::error!("whisper flush failed: {e}");
+                }
+            }
+
+            // Drain any segments emitted by the Feed commands that ran before flush
+            while let Some(segments) = stream.try_recv_segments() {
+                for seg in segments {
+                    let start_ms = (seg.start_seconds() * 1000.0) as u64;
+                    let end_ms = (seg.end_seconds() * 1000.0) as u64;
+                    if start_ms < sent_up_to_ms {
+                        continue;
+                    }
+                    let ts = TranscribeSegment {
+                        start_ms,
+                        end_ms,
+                        text: seg.text.clone(),
+                    };
+                    sent_up_to_ms = end_ms;
+                    let _ = segments_out.send(ts).await;
                 }
             }
 
