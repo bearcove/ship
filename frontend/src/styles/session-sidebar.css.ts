@@ -43,6 +43,18 @@ export const sidebarBackdrop = style({
   },
 });
 
+export const sidebarHomeLink = style({
+  display: "none",
+  "@media": {
+    "(min-width: 701px)": {
+      display: "flex",
+      alignItems: "center",
+      padding: "var(--space-3) var(--space-3) var(--space-1)",
+      flexShrink: 0,
+    },
+  },
+});
+
 export const sidebarScrollArea = style({
   flex: 1,
   overflowY: "auto",

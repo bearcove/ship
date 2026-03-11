@@ -28,6 +28,7 @@ import {
   sessionRowEmpty,
   sessionRowTitle,
   sidebarBackdrop,
+  sidebarHomeLink,
   sidebarRoot,
   sidebarScrollArea,
   sidebarStatusDot,
@@ -301,6 +302,13 @@ export function SessionSidebar({
     <>
       {isOpen && <div className={sidebarBackdrop} onClick={onClose} />}
       <Box className={sidebarRoot} data-open={isOpen ? "true" : undefined}>
+        <div className={sidebarHomeLink}>
+          <Link to="/" style={{ textDecoration: "none", color: "inherit" }}>
+            <Text size="3" weight="bold">
+              Ship
+            </Text>
+          </Link>
+        </div>
         <Flex direction="column" gap="3" pt="3" pb="3" px="3">
           <AgentKindSelect
             label="Captain"
