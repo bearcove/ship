@@ -26,12 +26,6 @@ use ship_types::{
 use tokio::process::Child;
 use tokio::sync::{mpsc, oneshot, watch};
 
-const BUILTIN_TOOL_BLOCKED_GUIDANCE: &str = "\
-A built-in tool (Bash, Read, Write, or Edit) was blocked — those are disabled \
-in Ship. Use your MCP tools instead: run_command to run shell commands, \
-read_file to read files, write_file to write files. \
-Do not stop — continue your task using these tools.";
-
 pub struct ShipAcpClient {
     role: Role,
     worktree_path: PathBuf,
@@ -95,8 +89,8 @@ impl ShipAcpClient {
     // r[mate.capabilities]
     // Both agents must only use Ship's MCP tools. Any ACP built-in tool usage
     // (Read, Write, Edit, Bash, etc.) is rejected outright. We select a Reject
-    // option and, for the mate, also emit MateGuidanceQueued so the session
-    // manager can inject a correction before the mate's next prompt turn.
+    // option and silently return — MateGuidanceQueued is emitted separately when
+    // the agent directly calls a blocked tool function (create_terminal, etc.).
     fn blocked_permission_option_id(&self, request: &RequestPermissionRequest) -> Option<String> {
         request.options.iter().find_map(|option| {
             matches!(
@@ -332,17 +326,9 @@ impl Client for ShipAcpClient {
     ) -> AcpResult<RequestPermissionResponse> {
         self.reset_text_block();
 
-        // Auto-reject built-in tool permissions before emitting any UI events.
-        // For the mate, also emit MateGuidanceQueued so the session manager can
-        // inject a correction into the mate's next prompt turn.
+        // Auto-reject built-in tool permissions silently, before emitting any UI events.
         if let Some(option_id) = self.blocked_permission_option_id(&args) {
             tracing::warn!(role = ?self.role, "auto-rejected ACP built-in tool permission request");
-            let _ = self
-                .notifications_tx
-                .send(SessionEvent::MateGuidanceQueued {
-                    role: self.role,
-                    message: BUILTIN_TOOL_BLOCKED_GUIDANCE.to_owned(),
-                });
             return Ok(RequestPermissionResponse::new(
                 RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(option_id)),
             ));
@@ -1015,6 +1001,7 @@ mod tests {
         ToolCallUpdateFields, UsageUpdate,
     };
     use std::process::Stdio;
+    use tokio::process::Command;
 
     fn make_client() -> ShipAcpClient {
         let (tx, _rx) = mpsc::unbounded_channel();
