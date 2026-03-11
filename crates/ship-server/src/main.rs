@@ -17,6 +17,7 @@ use axum::http::{HeaderName, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::any;
 use figue::{self as args, FigueBuiltins};
+use futures_util::{SinkExt, StreamExt};
 use roam::channel;
 use ship_core::ProjectRegistry;
 use ship_impl::ShipImpl;
@@ -149,9 +150,8 @@ struct ProjectRemoveArgs {
 
 #[derive(Clone)]
 enum FrontendMode {
-    // vite_origin: loopback URL used by Axum to proxy requests to Vite
-    // vite_port: Vite's port, injected into HTML so the browser loads JS
-    //            directly from Vite (bypassing Axum's connection pool)
+    // vite_origin: loopback URL used by Axum to proxy HTTP requests to Vite
+    // vite_port: Vite's port, used for WebSocket proxy (HMR)
     DevProxy { vite_origin: String, vite_port: u16 },
 }
 
@@ -729,7 +729,7 @@ async fn spawn_vite_dev_server(
         .arg("--port")
         .arg(vite_addr.port().to_string())
         .env("SHIP_VITE_HMR_HOST", vite_hmr_host(hmr_addr))
-        .env("SHIP_VITE_HMR_CLIENT_PORT", vite_addr.port().to_string())
+        .env("SHIP_VITE_HMR_CLIENT_PORT", hmr_addr.port().to_string())
         .current_dir(frontend_dir)
         .kill_on_drop(true)
         .stdin(std::process::Stdio::null())
@@ -809,6 +809,7 @@ fn ensure_ship_entry_for_project(project_path: &Path) -> Result<(), Box<dyn std:
 }
 
 async fn ws_handler(State(state): State<AppState>, mut request: Request) -> impl IntoResponse {
+    tracing::info!("ws_handler entered");
     if !hyper_tungstenite::is_upgrade_request(&request) {
         return (StatusCode::BAD_REQUEST, "expected websocket upgrade").into_response();
     }
@@ -853,6 +854,13 @@ async fn ws_handler(State(state): State<AppState>, mut request: Request) -> impl
     response.map(Body::new).into_response()
 }
 
+fn is_websocket_upgrade(req: &Request) -> bool {
+    req.headers()
+        .get(header::UPGRADE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.eq_ignore_ascii_case("websocket"))
+}
+
 async fn proxy_vite_handler(
     State(state): State<AppState>,
     request: Request,
@@ -862,22 +870,28 @@ async fn proxy_vite_handler(
         vite_port,
     } = &state.frontend_mode;
 
-    let (parts, body) = request.into_parts();
+    let path = request.uri().path().to_string();
+    let query = request
+        .uri()
+        .query()
+        .map(|q| format!("?{q}"))
+        .unwrap_or_default();
 
-    // Extract the hostname from the Host header (strips port if present)
-    let request_host = parts
-        .headers
-        .get(header::HOST)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|h| h.split(':').next())
-        .unwrap_or("localhost")
-        .to_owned();
-    let path_and_query = parts
-        .uri
+    // WebSocket upgrade (Vite HMR) — proxy as WebSocket
+    if is_websocket_upgrade(&request) {
+        tracing::debug!(path = %path, "detected websocket upgrade for vite HMR");
+        return handle_vite_ws_upgrade(request, *vite_port, path, query).await;
+    }
+
+    // Regular HTTP proxy
+    let path_and_query = request
+        .uri()
         .path_and_query()
         .map(|pq| pq.as_str())
         .unwrap_or("/");
     let target_url = format!("{vite_origin}{path_and_query}");
+
+    let (parts, body) = request.into_parts();
 
     let body = match to_bytes(body, 8 * 1024 * 1024).await {
         Ok(body) => body,
@@ -931,28 +945,7 @@ async fn proxy_vite_handler(
         }
     };
 
-    // If the response is HTML, inject <base href> so the browser loads JS modules
-    // directly from Vite's port instead of going through Axum. This prevents iOS
-    // Safari's 6-connection-per-host limit from starving the WebSocket connection.
-    let is_html = response_headers
-        .get(header::CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .map(|ct| ct.starts_with("text/html"))
-        .unwrap_or(false);
-
-    let final_body = if is_html {
-        if let Ok(html) = std::str::from_utf8(&response_body) {
-            let base_tag = format!(r#"<base href="http://{request_host}:{vite_port}/">"#);
-            let patched = html.replacen("<head>", &format!("<head>{base_tag}"), 1);
-            axum::body::Bytes::from(patched.into_bytes())
-        } else {
-            response_body
-        }
-    } else {
-        response_body
-    };
-
-    let mut response = Response::new(Body::from(final_body));
+    let mut response = Response::new(Body::from(response_body));
     *response.status_mut() = status;
     for (name, value) in &response_headers {
         if should_skip_response_header(name) {
@@ -964,6 +957,180 @@ async fn proxy_vite_handler(
         .headers_mut()
         .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     response
+}
+
+/// Handle WebSocket upgrade for Vite HMR proxy
+async fn handle_vite_ws_upgrade(
+    mut request: Request,
+    vite_port: u16,
+    path: String,
+    query: String,
+) -> axum::response::Response {
+    if let Some(protocol) = request.headers().get("sec-websocket-protocol") {
+        tracing::debug!(protocol = ?protocol, "incoming vite websocket protocol header");
+    }
+
+    if !hyper_tungstenite::is_upgrade_request(&request) {
+        return (StatusCode::BAD_REQUEST, "expected websocket upgrade").into_response();
+    }
+
+    let (mut response, websocket) = match hyper_tungstenite::upgrade(&mut request, None) {
+        Ok(ok) => ok,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to upgrade vite websocket");
+            return (
+                StatusCode::BAD_REQUEST,
+                format!("WebSocket upgrade failed: {e}"),
+            )
+                .into_response();
+        }
+    };
+
+    // Echo back the Sec-WebSocket-Protocol header so the browser accepts the upgrade.
+    if let Some(protocol) = request.headers().get("sec-websocket-protocol") {
+        response
+            .headers_mut()
+            .insert("sec-websocket-protocol", protocol.clone());
+    }
+
+    tokio::spawn(async move {
+        match websocket.await {
+            Ok(client_ws) => {
+                tracing::debug!(path = %path, "vite HMR websocket established, starting proxy");
+                if let Err(e) = proxy_vite_ws(client_ws, vite_port, &path, &query).await {
+                    tracing::warn!(error = %e, path = %path, "vite websocket proxy error");
+                }
+                tracing::debug!(path = %path, "vite HMR websocket closed");
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "vite HMR websocket upgrade failed");
+            }
+        }
+    });
+
+    response.into_response()
+}
+
+/// Bidirectional WebSocket proxy to Vite dev server
+async fn proxy_vite_ws<S>(
+    client_socket: S,
+    vite_port: u16,
+    path: &str,
+    query: &str,
+) -> eyre::Result<()>
+where
+    S: futures_util::Stream<
+            Item = Result<
+                tokio_tungstenite::tungstenite::Message,
+                tokio_tungstenite::tungstenite::Error,
+            >,
+        > + futures_util::Sink<tokio_tungstenite::tungstenite::Message>
+        + Unpin
+        + Send,
+{
+    use tokio_tungstenite::connect_async_with_config;
+    use tokio_tungstenite::tungstenite;
+
+    // Try both IPv6 and IPv4
+    let addrs: &[&str] = &["[::1]", "127.0.0.1"];
+    let mut last_error: Option<eyre::Report> = None;
+
+    for addr in addrs {
+        let vite_url = format!("ws://{addr}:{vite_port}{path}{query}");
+        tracing::trace!(vite_url = %vite_url, "attempting vite websocket connection");
+
+        let request = tungstenite::http::Request::builder()
+            .uri(&vite_url)
+            .header("Sec-WebSocket-Protocol", "vite-hmr")
+            .header("Host", format!("{addr}:{vite_port}"))
+            .header("Connection", "Upgrade")
+            .header("Upgrade", "websocket")
+            .header("Sec-WebSocket-Version", "13")
+            .header("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+            .body(())?;
+
+        let connect_result = tokio::time::timeout(
+            Duration::from_secs(5),
+            connect_async_with_config(request, None, false),
+        )
+        .await;
+
+        match connect_result {
+            Ok(Ok((vite_ws, _response))) => {
+                tracing::debug!(addr = %addr, "vite websocket connected");
+                return run_ws_proxy(client_socket, vite_ws).await;
+            }
+            Ok(Err(e)) => {
+                tracing::trace!(addr = %addr, error = %e, "vite ws connect failed");
+                last_error = Some(e.into());
+            }
+            Err(_) => {
+                tracing::trace!(addr = %addr, "vite ws connect timed out");
+                last_error = Some(eyre::eyre!("vite ws connect timed out"));
+            }
+        }
+    }
+
+    Err(last_error.unwrap_or_else(|| eyre::eyre!("no addresses to try")))
+}
+
+/// Run bidirectional message relay between client and Vite WebSocket
+async fn run_ws_proxy<C, V>(client_socket: C, vite_ws: V) -> eyre::Result<()>
+where
+    C: futures_util::Stream<
+            Item = Result<
+                tokio_tungstenite::tungstenite::Message,
+                tokio_tungstenite::tungstenite::Error,
+            >,
+        > + futures_util::Sink<tokio_tungstenite::tungstenite::Message>
+        + Unpin,
+    V: futures_util::Stream<
+            Item = Result<
+                tokio_tungstenite::tungstenite::Message,
+                tokio_tungstenite::tungstenite::Error,
+            >,
+        > + futures_util::Sink<tokio_tungstenite::tungstenite::Message>
+        + Unpin,
+{
+    use tokio_tungstenite::tungstenite::Message as TungMsg;
+
+    let (mut client_tx, mut client_rx) = client_socket.split();
+    let (mut vite_tx, mut vite_rx) = vite_ws.split();
+
+    let client_to_vite = async {
+        while let Some(Ok(msg)) = client_rx.next().await {
+            match &msg {
+                TungMsg::Text(_) | TungMsg::Binary(_) => {
+                    if vite_tx.send(msg).await.is_err() {
+                        break;
+                    }
+                }
+                TungMsg::Close(_) => break,
+                _ => {}
+            }
+        }
+    };
+
+    let vite_to_client = async {
+        while let Some(Ok(msg)) = vite_rx.next().await {
+            match &msg {
+                TungMsg::Text(_) | TungMsg::Binary(_) => {
+                    if client_tx.send(msg).await.is_err() {
+                        break;
+                    }
+                }
+                TungMsg::Close(_) => break,
+                _ => {}
+            }
+        }
+    };
+
+    tokio::select! {
+        _ = client_to_vite => {}
+        _ = vite_to_client => {}
+    }
+
+    Ok(())
 }
 
 fn should_skip_request_header(name: &HeaderName) -> bool {

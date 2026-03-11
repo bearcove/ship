@@ -22,6 +22,7 @@ axum = { workspace = true }
 facet = { workspace = true }
 figue = { workspace = true }
 hyper-tungstenite = { workspace = true }
+eyre = { workspace = true }
 futures-util = "0.3"
 reqwest = { workspace = true }
 ulid = { workspace = true }

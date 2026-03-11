@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head><meta name="viewport" content="width=device-width"><title>WS Test</title></head>
+<body>
+<pre id="log" style="font-size:14px;white-space:pre-wrap;"></pre>
+<script>
+var el = document.getElementById("log");
+function log(msg) {
+  var ts = new Date().toISOString().slice(11, 23);
+  el.textContent += ts + " " + msg + "\n";
+}
+
+var protocol = location.protocol === "https:" ? "wss:" : "ws:";
+var url = protocol + "//" + location.host + "/ws";
+
+log("creating WebSocket: " + url);
+var ws = new WebSocket(url);
+ws.binaryType = "arraybuffer";
+log("created, readyState=" + ws.readyState);
+
+ws.addEventListener("open", function() { log("OPEN readyState=" + ws.readyState); });
+ws.addEventListener("error", function() { log("ERROR EVENT readyState=" + ws.readyState); });
+ws.addEventListener("close", function(ev) { log("CLOSE code=" + ev.code + " reason=" + ev.reason); });
+
+setInterval(function() { log("poll readyState=" + ws.readyState); }, 1000);
+</script>
+</body>
+</html>
