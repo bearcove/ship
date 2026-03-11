@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Box, Button, Flex, Text, TextArea } from "@radix-ui/themes";
-import { PaperclipIcon, Warning } from "@phosphor-icons/react";
+import { PaperclipIcon, Robot, Warning } from "@phosphor-icons/react";
 import { getShipClient } from "../api/client";
 import type {
   AgentSnapshot,
@@ -94,16 +94,12 @@ function AgentStateChips({
   );
 }
 
+const ACTIVE_TASK_STATUS_TAGS = new Set(["Assigned", "Working", "ReviewPending", "SteerPending"]);
+
 // r[ui.keys.steer-send]
 // r[ui.composer.image-attach]
 // r[view.agent-panel.activity]
-export function UnifiedComposer({
-  sessionId,
-  captain,
-  mate,
-  startupState,
-  taskStatus: _taskStatus,
-}: Props) {
+export function UnifiedComposer({ sessionId, captain, mate, startupState, taskStatus }: Props) {
   const [text, setText] = useState("");
   const [queuedText, setQueuedText] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -129,8 +125,17 @@ export function UnifiedComposer({
     activeStateTag === "ContextExhausted" || activeStateTag === "Error" || startupFailed;
 
   const queueOnSubmit = agentWorking && !queuedText;
-  const submitLabel = queuedText ? "Replace queue" : queueOnSubmit ? "Queue" : "Send";
-  const disableSubmit = agentCantSend || (!startupReady && target === "mate");
+  const submitLabel =
+    target === "mate"
+      ? "Steer mate"
+      : queuedText
+        ? "Replace queue"
+        : queueOnSubmit
+          ? "Queue"
+          : "Send";
+  const mateUnavailable =
+    target === "mate" && (taskStatus === null || !ACTIVE_TASK_STATUS_TAGS.has(taskStatus.tag));
+  const disableSubmit = agentCantSend || (!startupReady && target === "mate") || mateUnavailable;
 
   const filteredFiles =
     mentionQuery !== null
@@ -263,11 +268,14 @@ export function UnifiedComposer({
     }
   }
 
+  const showMateEntry = mentionQuery !== null && "mate".includes(mentionQuery.toLowerCase());
+  const totalMentionItems = (showMateEntry ? 1 : 0) + filteredFiles.length;
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (mentionQuery !== null && filteredFiles.length > 0) {
+    if (mentionQuery !== null && totalMentionItems > 0) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        setSelectedIndex((i) => Math.min(i + 1, filteredFiles.length - 1));
+        setSelectedIndex((i) => Math.min(i + 1, totalMentionItems - 1));
         return;
       }
       if (e.key === "ArrowUp") {
@@ -277,7 +285,11 @@ export function UnifiedComposer({
       }
       if (e.key === "Enter" && !e.metaKey && !e.ctrlKey) {
         e.preventDefault();
-        insertMention(filteredFiles[selectedIndex]);
+        if (showMateEntry && selectedIndex === 0) {
+          insertMention("mate");
+        } else {
+          insertMention(filteredFiles[selectedIndex - (showMateEntry ? 1 : 0)]);
+        }
         return;
       }
       if (e.key === "Escape") {
@@ -326,14 +338,28 @@ export function UnifiedComposer({
         </div>
       )}
 
-      <div className={composerInputWrapper}>
-        {mentionQuery !== null && filteredFiles.length > 0 && (
+      <div className={composerInputWrapper} data-target={target === "mate" ? "mate" : undefined}>
+        {mentionQuery !== null && totalMentionItems > 0 && (
           <div className={fileMentionPopup}>
+            {showMateEntry && (
+              <div
+                className={fileMentionItem}
+                data-special="mate"
+                data-selected={selectedIndex === 0}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  insertMention("mate");
+                }}
+              >
+                <Robot size={14} weight="regular" />
+                mate
+              </div>
+            )}
             {filteredFiles.map((file, index) => (
               <div
                 key={file}
                 className={fileMentionItem}
-                data-selected={index === selectedIndex}
+                data-selected={(showMateEntry ? index + 1 : index) === selectedIndex}
                 onMouseDown={(e) => {
                   e.preventDefault();
                   insertMention(file);
@@ -349,7 +375,7 @@ export function UnifiedComposer({
           className={composerInput}
           size="2"
           rows={2}
-          placeholder="Steer the captain… (@mate to reach mate)"
+          placeholder="Steer the captain…"
           value={text}
           onChange={handleTextChange}
           onKeyDown={handleKeyDown}
@@ -400,6 +426,11 @@ export function UnifiedComposer({
         >
           <PaperclipIcon />
         </Button>
+        {mateUnavailable && (
+          <Text size="1" color="gray">
+            No active task — mate unavailable
+          </Text>
+        )}
         <Button
           size="2"
           onClick={() => void handleSubmit()}
