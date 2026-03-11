@@ -13,7 +13,7 @@ import {
   agentStatusBar,
   agentStatusBarAvatar,
   agentStatusBarItem,
-  mobileNavBar,
+  hamburgerBtn,
   sessionFeedColumn,
   sessionViewRoot,
 } from "../styles/session-view.css";
@@ -125,27 +125,27 @@ export function SessionViewPage({
 
   return (
     <Flex className={sessionViewRoot}>
-      <Box className={mobileNavBar}>
-        <Flex align="center" gap="2" px="2" py="2">
-          <IconButton
-            variant="ghost"
-            color="gray"
-            size="2"
-            onClick={onOpenSidebar}
-            aria-label="Open sidebar"
-          >
-            <List size={18} />
-          </IconButton>
-          <Link to="/" style={{ color: "var(--gray-11)", display: "flex", alignItems: "center" }}>
-            <ArrowLeft size={18} />
-          </Link>
-        </Flex>
-      </Box>
-
       <Flex style={{ flex: 1, overflow: "hidden", minHeight: 0 }}>
         <Box className={sessionFeedColumn}>
           {(captain ?? mate) && (
             <Flex className={agentStatusBar}>
+              <IconButton
+                className={hamburgerBtn}
+                variant="ghost"
+                color="gray"
+                size="2"
+                onClick={onOpenSidebar}
+                aria-label="Open sidebar"
+              >
+                <List size={18} />
+              </IconButton>
+              <Link
+                to="/"
+                className={hamburgerBtn}
+                style={{ color: "var(--gray-11)", alignItems: "center" }}
+              >
+                <ArrowLeft size={18} />
+              </Link>
               {captain && (
                 <AgentStatusBarItem
                   sessionId={session.id}

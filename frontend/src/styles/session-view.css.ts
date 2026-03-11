@@ -1022,10 +1022,11 @@ export const permissionCard = style({
 });
 
 export const hamburgerBtn = style({
-  display: "none",
+  // !important needed to override Radix IconButton's display: inline-flex
+  display: "none !important" as "none",
   "@media": {
     "(max-width: 700px)": {
-      display: "flex",
+      display: "flex !important" as "flex",
     },
   },
 });
