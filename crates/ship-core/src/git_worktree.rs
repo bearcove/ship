@@ -188,25 +188,28 @@ impl WorktreeOps for GitWorktreeOps {
 }
 
 fn repo_root_for_worktree(path: &Path) -> Result<&Path, WorktreeError> {
-    let worktrees_dir = path.parent().ok_or_else(|| WorktreeError {
-        message: format!("invalid worktree path: {}", path.display()),
-    })?;
-    let ship_dir = worktrees_dir.parent().ok_or_else(|| WorktreeError {
-        message: format!("invalid worktree path: {}", path.display()),
-    })?;
-    let repo_root = ship_dir.parent().ok_or_else(|| WorktreeError {
-        message: format!("invalid worktree path: {}", path.display()),
-    })?;
-
-    if worktrees_dir.file_name().and_then(|name| name.to_str()) != Some("worktrees")
-        || ship_dir.file_name().and_then(|name| name.to_str()) != Some(".ship")
-    {
-        return Err(WorktreeError {
+    let mut current = path;
+    loop {
+        let parent = current.parent().ok_or_else(|| WorktreeError {
             message: format!("invalid worktree path: {}", path.display()),
-        });
+        })?;
+        if parent.file_name().and_then(|n| n.to_str()) == Some(".ship") {
+            return parent.parent().ok_or_else(|| WorktreeError {
+                message: format!("invalid worktree path: {}", path.display()),
+            });
+        }
+        current = parent;
+        if path
+            .components()
+            .count()
+            .saturating_sub(current.components().count())
+            > 3
+        {
+            return Err(WorktreeError {
+                message: format!("invalid worktree path: {}", path.display()),
+            });
+        }
     }
-
-    Ok(repo_root)
 }
 
 fn ensure_success(output: Output) -> Result<(), WorktreeError> {
