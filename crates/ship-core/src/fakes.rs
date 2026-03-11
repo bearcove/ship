@@ -232,7 +232,7 @@ impl AgentDriver for FakeAgentDriver {
 #[derive(Default)]
 struct FakeWorktreeInner {
     next_idx: usize,
-    created: HashMap<PathBuf, (SessionId, String, String, PathBuf)>,
+    created: HashMap<PathBuf, (String, String, String, PathBuf)>,
     removed: Vec<(PathBuf, bool)>,
     dirty_flags: HashMap<PathBuf, bool>,
     branches: Vec<String>,
@@ -323,28 +323,26 @@ impl WorktreeOps for FakeWorktreeOps {
     // r[worktree.path]
     async fn create_worktree(
         &self,
-        session_id: &SessionId,
+        branch_name: &str,
+        worktree_dir: &str,
         base_branch: &str,
-        slug: &str,
         repo_root: &Path,
     ) -> Result<PathBuf, WorktreeError> {
         let mut inner = self.inner.lock().expect("fake worktree ops mutex poisoned");
 
         inner.next_idx += 1;
         let path = repo_root.join(format!(".ship/worktrees/fake-{}", inner.next_idx));
-        let short_session_id: String = session_id.0.chars().take(8).collect();
-        let branch_name = format!("ship/{short_session_id}/{slug}");
         inner.created.insert(
             path.clone(),
             (
-                session_id.clone(),
+                branch_name.to_owned(),
+                worktree_dir.to_owned(),
                 base_branch.to_owned(),
-                slug.to_owned(),
                 repo_root.to_path_buf(),
             ),
         );
-        if !inner.branches.iter().any(|branch| branch == &branch_name) {
-            inner.branches.push(branch_name);
+        if !inner.branches.iter().any(|b| b == branch_name) {
+            inner.branches.push(branch_name.to_owned());
         }
 
         Ok(path)

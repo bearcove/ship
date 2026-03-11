@@ -3515,7 +3515,7 @@ Here is your task:
         let _ = self.set_startup_stage(&session_id, stage).await;
 
         let step_started_at = Instant::now();
-        let (project, base_branch, resolved_mcp_servers) = {
+        let (project, base_branch, branch_name, resolved_mcp_servers) = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let Some(session) = sessions.get(&session_id) else {
                 return;
@@ -3523,6 +3523,7 @@ Here is your task:
             (
                 session.config.project.clone(),
                 session.config.base_branch.clone(),
+                session.config.branch_name.clone(),
                 session.config.mcp_servers.clone(),
             )
         };
@@ -3541,9 +3542,11 @@ Here is your task:
         let stage = SessionStartupStage::CreatingWorktree;
         let _ = self.set_startup_stage(&session_id, stage).await;
         let step_started_at = Instant::now();
+        // branch_name is "ship-{slug}"; worktree dir is "@{slug}" (.ship/@{slug})
+        let worktree_dir = format!("@{}", &branch_name[5..]);
         let worktree_path = match self
             .worktree_ops
-            .create_worktree(&session_id, &base_branch, "session", &repo_root)
+            .create_worktree(&branch_name, &worktree_dir, &base_branch, &repo_root)
             .await
         {
             Ok(path) => path,

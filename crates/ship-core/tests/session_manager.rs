@@ -750,7 +750,7 @@ async fn test_close_session_cleans_up_clean_worktree() {
     assert_eq!(
         worktree.deleted_branches(),
         vec![(
-            "ship/".to_owned() + &session_id.0[..8] + "/session",
+            "ship-".to_owned() + &session_id.0[10..14].to_ascii_lowercase(),
             false,
             Path::new("/repo").to_path_buf()
         )]
@@ -842,7 +842,7 @@ async fn test_close_session_force_deletes_dirty_worktree() {
     assert_eq!(
         worktree.deleted_branches(),
         vec![(
-            "ship/".to_owned() + &session_id.0[..8] + "/session",
+            "ship-".to_owned() + &session_id.0[10..14].to_ascii_lowercase(),
             true,
             Path::new("/repo").to_path_buf()
         )]

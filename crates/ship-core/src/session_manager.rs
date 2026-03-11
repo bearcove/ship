@@ -136,8 +136,8 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         _repo_root: &Path,
     ) -> Result<SessionId, SessionManagerError> {
         let session_id = SessionId::new();
-        let slug = "session".to_owned();
-        let branch_name = format!("ship/{}/{slug}", short_id(&session_id));
+        let slug = worktree_slug(&session_id);
+        let branch_name = format!("ship-{slug}");
         let mcp_servers = req.mcp_servers.clone().unwrap_or_default();
         let (events_tx, _) = broadcast::channel(256);
 
@@ -227,7 +227,12 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
 
         let worktree_path = self
             .worktree_ops
-            .create_worktree(session_id, &base_branch, "session", repo_root)
+            .create_worktree(
+                &branch_name,
+                &format!("@{}", &branch_name[5..]),
+                &base_branch,
+                repo_root,
+            )
             .await
             .map_err(|error| SessionManagerError::Worktree(error.message))?;
 
@@ -1469,6 +1474,13 @@ pub fn set_agent_state(session: &mut ActiveSession, role: Role, state: AgentStat
     apply_event(session, SessionEvent::AgentStateChanged { role, state });
 }
 
-fn short_id(id: &SessionId) -> String {
-    id.0.to_string().chars().take(8).collect()
+/// Generate a 4-char lowercase alphanumeric slug for a session's branch and
+/// worktree directory. Takes chars 10-13 of the ULID (random portion, not
+/// timestamp), which are Crockford base32 digits — safe to lowercase as-is.
+fn worktree_slug(id: &SessionId) -> String {
+    id.0.chars()
+        .skip(10)
+        .take(4)
+        .map(|c| c.to_ascii_lowercase())
+        .collect()
 }

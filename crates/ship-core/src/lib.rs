@@ -160,9 +160,9 @@ pub trait AgentDriver: Send + Sync {
 pub trait WorktreeOps: Send + Sync {
     async fn create_worktree(
         &self,
-        session_id: &SessionId,
+        branch_name: &str,
+        worktree_dir: &str,
         base_branch: &str,
-        slug: &str,
         repo_root: &Path,
     ) -> Result<PathBuf, WorktreeError>;
 

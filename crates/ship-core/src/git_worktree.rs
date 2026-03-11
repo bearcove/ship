@@ -1,7 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::process::Output;
 
-use ship_types::SessionId;
 use tokio::process::Command;
 
 use crate::{WorktreeError, WorktreeOps};
@@ -15,28 +14,23 @@ impl WorktreeOps for GitWorktreeOps {
     // r[worktree.path]
     async fn create_worktree(
         &self,
-        session_id: &SessionId,
+        branch_name: &str,
+        worktree_dir: &str,
         base_branch: &str,
-        slug: &str,
         repo_root: &Path,
     ) -> Result<PathBuf, WorktreeError> {
         tracing::info!(
-            session_id = %session_id.0,
+            branch_name = %branch_name,
+            worktree_dir = %worktree_dir,
             base_branch = %base_branch,
-            slug = %slug,
             repo_root = %repo_root.display(),
             "resolving base ref before worktree creation"
         );
         ensure_valid_base_ref(repo_root, base_branch).await?;
 
-        let short_session_id: String = session_id.0.chars().take(8).collect();
-        let branch_name = format!("ship/{short_session_id}/{slug}");
-        let worktree_path = repo_root
-            .join(".ship")
-            .join("worktrees")
-            .join(format!("{short_session_id}-{slug}"));
+        let worktree_path = repo_root.join(".ship").join(worktree_dir);
 
-        fs_err::tokio::create_dir_all(repo_root.join(".ship").join("worktrees"))
+        fs_err::tokio::create_dir_all(repo_root.join(".ship"))
             .await
             .map_err(|error| WorktreeError {
                 message: error.to_string(),
@@ -48,7 +42,7 @@ impl WorktreeOps for GitWorktreeOps {
             .arg("worktree")
             .arg("add")
             .arg("-b")
-            .arg(&branch_name)
+            .arg(branch_name)
             .arg(&worktree_path)
             .arg(base_branch)
             .output()
@@ -59,8 +53,6 @@ impl WorktreeOps for GitWorktreeOps {
 
         ensure_success(output)?;
         tracing::info!(
-            session_id = %session_id.0,
-            base_branch = %base_branch,
             branch_name = %branch_name,
             worktree_path = %worktree_path.display(),
             "created git worktree"
