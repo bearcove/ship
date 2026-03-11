@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Box, Button, Flex, Text, TextArea } from "@radix-ui/themes";
-import { PaperclipIcon, Robot, Warning } from "@phosphor-icons/react";
+import { Microphone, PaperclipIcon, Robot, Stop, Warning, Waveform } from "@phosphor-icons/react";
 import { getShipClient } from "../api/client";
 import type {
   AgentSnapshot,
@@ -25,6 +25,7 @@ import {
 } from "../styles/session-view.css";
 import { useWorktreeFiles } from "../hooks/useWorktreeFiles";
 import { useDocumentDrop } from "../hooks/useDocumentDrop";
+import { useTranscription } from "../hooks/useTranscription";
 
 interface AttachedImage {
   id: string;
@@ -96,6 +97,13 @@ function AgentStateChips({
 
 const ACTIVE_TASK_STATUS_TAGS = new Set(["Assigned", "Working", "ReviewPending", "SteerPending"]);
 
+function formatElapsed(ms: number): string {
+  const totalSec = Math.floor(ms / 1000);
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  return `${min}:${sec.toString().padStart(2, "0")}`;
+}
+
 // r[ui.keys.steer-send]
 // r[ui.composer.image-attach]
 // r[view.agent-panel.activity]
@@ -110,6 +118,18 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
   const fileInputRef = useRef<HTMLInputElement>(null);
   const worktreeFiles = useWorktreeFiles(sessionId);
   const isDragOver = useDocumentDrop(addImageFiles);
+  const transcription = useTranscription();
+
+  // When transcription result arrives, insert text into the composer
+  const lastResultRef = useRef(transcription.result);
+  if (transcription.result && transcription.result !== lastResultRef.current) {
+    lastResultRef.current = transcription.result;
+    if (transcription.result.text) {
+      setText((prev) =>
+        prev ? prev + " " + transcription.result!.text : transcription.result!.text,
+      );
+    }
+  }
 
   const { target } = parseTarget(text);
   const activeAgent = target === "captain" ? captain : mate;
@@ -423,6 +443,37 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
         >
           <PaperclipIcon />
         </Button>
+        {transcription.state.tag === "idle" ? (
+          <Button
+            size="3"
+            variant="ghost"
+            onClick={() => void transcription.startRecording()}
+            disabled={loading}
+            title="Voice input"
+          >
+            <Microphone />
+          </Button>
+        ) : transcription.state.tag === "recording" ? (
+          <Button
+            size="3"
+            variant="ghost"
+            color="red"
+            onClick={() => void transcription.stopRecording()}
+            title="Stop recording"
+          >
+            <Stop weight="fill" />
+            <Text size="1" color="red">
+              {formatElapsed(transcription.state.elapsed)}
+            </Text>
+          </Button>
+        ) : transcription.state.tag === "processing" ? (
+          <Button size="3" variant="ghost" disabled>
+            <Waveform />
+            <Text size="1" color="gray">
+              Transcribing...
+            </Text>
+          </Button>
+        ) : null}
         {mateUnavailable && (
           <Text size="1" color="gray">
             No active task — mate unavailable
