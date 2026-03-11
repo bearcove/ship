@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Box, Flex, IconButton, Select, Spinner, Text, Tooltip } from "@radix-ui/themes";
 import {
+  Archive,
   BugIcon,
   FolderIcon,
   FolderOpenIcon,
@@ -15,7 +16,7 @@ import { useSoundEnabled } from "../context/SoundContext";
 import { useAgentDiscovery } from "../hooks/useAgentDiscovery";
 import { useAgentKindPrefs } from "../hooks/useAgentKindPrefs";
 import { refreshSessionList } from "../hooks/useSessionList";
-import { AddProjectDialog } from "../pages/SessionListPage";
+import { AddProjectDialog, ArchiveSessionDialog } from "../pages/SessionListPage";
 import { getShipClient } from "../api/client";
 import { QrCodeButton } from "./QrCodeButton";
 import {
@@ -23,6 +24,7 @@ import {
   projectName,
   projectRow,
   sessionRow,
+  sessionRowArchiveBtn,
   sessionRowEmpty,
   sessionRowTitle,
   sidebarBackdrop,
@@ -126,7 +128,31 @@ function ProjectGroup({
 }) {
   const [collapsed, toggleCollapsed] = useProjectCollapsed(project.name);
   const [creating, setCreating] = useState(false);
+  const [archivingId, setArchivingId] = useState<string | null>(null);
+  const [archiveConfirm, setArchiveConfirm] = useState<{
+    session: SessionSummary;
+    unmergedCommits: string[];
+  } | null>(null);
   const navigate = useNavigate();
+
+  async function handleArchive(session: SessionSummary, force: boolean) {
+    setArchivingId(session.id);
+    try {
+      const client = await getShipClient();
+      const result = await client.archiveSession({ id: session.id, force });
+      if (result.tag === "Archived") {
+        setArchiveConfirm(null);
+        await refreshSessionList();
+        if (currentSessionId === session.id) {
+          navigate("/");
+        }
+      } else if (result.tag === "RequiresConfirmation") {
+        setArchiveConfirm({ session, unmergedCommits: result.unmerged_commits });
+      }
+    } finally {
+      setArchivingId(null);
+    }
+  }
 
   async function handleCreate(e: React.MouseEvent) {
     e.stopPropagation();
@@ -181,6 +207,16 @@ function ProjectGroup({
         </div>
       </div>
 
+      {archiveConfirm && (
+        <ArchiveSessionDialog
+          session={archiveConfirm.session}
+          unmergedCommits={archiveConfirm.unmergedCommits}
+          onConfirm={() => handleArchive(archiveConfirm.session, true)}
+          onCancel={() => setArchiveConfirm(null)}
+          archiving={archivingId === archiveConfirm.session.id}
+        />
+      )}
+
       {!collapsed && (
         <Box>
           {sessions.length === 0 ? (
@@ -206,6 +242,23 @@ function ProjectGroup({
                       style={{ background: STATUS_DOT_COLOR[session.task_status.tag] }}
                     />
                   )}
+                  {/* r[proto.archive-session] */}
+                  <Tooltip content="Archive session">
+                    <IconButton
+                      size="1"
+                      variant="ghost"
+                      color="gray"
+                      className={sessionRowArchiveBtn}
+                      loading={archivingId === session.id}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleArchive(session, false);
+                      }}
+                    >
+                      <Archive size={12} />
+                    </IconButton>
+                  </Tooltip>
                 </Link>
               );
             })

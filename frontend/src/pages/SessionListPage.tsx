@@ -282,7 +282,7 @@ function BranchCombobox({
 }
 
 // r[proto.archive-session]
-function ArchiveSessionDialog({
+export function ArchiveSessionDialog({
   session,
   unmergedCommits,
   onConfirm,
