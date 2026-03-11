@@ -32,8 +32,9 @@ pub use mcp::{McpConfigError, resolve_mcp_servers};
 pub use project_registry::{ProjectRegistry, ProjectRegistryError};
 pub use session_manager::{
     ActiveSession, PendingEdit, PendingPermission, SessionManager, SessionManagerError,
-    SessionStateView, apply_event, archive_terminal_task, current_task_status,
-    rebuild_materialized_from_event_log, set_agent_state, transition_task,
+    SessionStateView, apply_block_patch, apply_event, archive_terminal_task,
+    coalesce_replay_events, current_task_status, rebuild_materialized_from_event_log,
+    set_agent_state, transition_task,
 };
 pub use session_naming::SessionGitNames;
 

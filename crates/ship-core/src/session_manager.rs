@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -470,18 +470,12 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
 
         let mut live_rx = session.events_tx.subscribe();
-        let replay = session
-            .session_event_log
-            .iter()
-            .cloned()
-            .chain(
-                session
-                    .current_task
-                    .as_ref()
-                    .into_iter()
-                    .flat_map(|task| task.event_log.clone()),
-            )
-            .collect::<Vec<_>>();
+        let raw_replay: Vec<SessionEventEnvelope> = session
+            .current_task
+            .as_ref()
+            .map(|task| task.event_log.clone())
+            .unwrap_or_default();
+        let replay = coalesce_replay_events(&raw_replay);
         let (subscriber_tx, subscriber_rx) = broadcast::channel(256);
 
         for envelope in replay {
@@ -1478,4 +1472,67 @@ pub fn current_task_status(session: &ActiveSession) -> Result<TaskStatus, Sessio
 
 pub fn set_agent_state(session: &mut ActiveSession, role: Role, state: AgentState) {
     apply_event(session, SessionEvent::AgentStateChanged { role, state });
+}
+
+/// Fold `BlockAppend` + subsequent `BlockPatch` sequences into a single
+/// `BlockAppend` carrying the fully-materialized block state. Non-block events
+/// pass through unchanged. The original sequence numbers and timestamps are
+/// preserved for each retained event.
+///
+/// This is applied to replay events only. Live events always flow individually.
+// r[event.subscribe.replay]
+pub fn coalesce_replay_events(events: &[SessionEventEnvelope]) -> Vec<SessionEventEnvelope> {
+    // Pass 1: build the final materialized state for every block.
+    let mut final_states: HashMap<BlockId, (Role, ContentBlock)> = HashMap::new();
+    for envelope in events {
+        match &envelope.event {
+            SessionEvent::BlockAppend {
+                block_id,
+                role,
+                block,
+            } => {
+                final_states.insert(block_id.clone(), (*role, block.clone()));
+            }
+            SessionEvent::BlockPatch {
+                block_id, patch, ..
+            } => {
+                if let Some((_, block)) = final_states.get_mut(block_id) {
+                    apply_block_patch(block, patch);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // Pass 2: emit one coalesced BlockAppend per block; skip all BlockPatch events.
+    let mut result = Vec::with_capacity(events.len());
+    let mut emitted: HashSet<BlockId> = HashSet::new();
+    for envelope in events {
+        match &envelope.event {
+            SessionEvent::BlockAppend { block_id, .. } => {
+                if let Some((role, block)) = final_states.get(block_id) {
+                    result.push(SessionEventEnvelope {
+                        seq: envelope.seq,
+                        timestamp: envelope.timestamp.clone(),
+                        event: SessionEvent::BlockAppend {
+                            block_id: block_id.clone(),
+                            role: *role,
+                            block: block.clone(),
+                        },
+                    });
+                    emitted.insert(block_id.clone());
+                }
+            }
+            SessionEvent::BlockPatch { block_id, .. } => {
+                // Skip — already folded into the preceding BlockAppend.
+                // If there's somehow a patch without a prior append, pass through.
+                if !emitted.contains(block_id) {
+                    result.push(envelope.clone());
+                }
+            }
+            _ => result.push(envelope.clone()),
+        }
+    }
+
+    result
 }
