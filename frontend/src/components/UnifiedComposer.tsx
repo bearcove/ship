@@ -1,6 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { Box, Flex, Text, TextArea } from "@radix-ui/themes";
-import { ArrowUp, Microphone, PaperclipIcon, Robot, Stop, Warning } from "@phosphor-icons/react";
+import {
+  ArrowUp,
+  Microphone,
+  PaperclipIcon,
+  Robot,
+  Spinner,
+  Stop,
+  Warning,
+  X,
+} from "@phosphor-icons/react";
 import { getShipClient } from "../api/client";
 import type {
   AgentSnapshot,
@@ -14,21 +23,18 @@ import {
   attachedImageThumb,
   attachedImageThumbList,
   attachedImageThumbWrapper,
-  composerActionBtn,
   composerActivityDot,
   composerInlineBtn,
   composerInput,
   composerInputWrapper,
-  composerRecordingBar,
+  composerOverlay,
   composerRoot,
-  composerRow,
   composerStatusRow,
-  composerWaveformBar,
-  composerWaveformBars,
   fileMentionItem,
   fileMentionPopup,
   pageDropOverlay,
 } from "../styles/session-view.css";
+import { Waveform } from "./Waveform";
 import { useWorktreeFiles } from "../hooks/useWorktreeFiles";
 import { useDocumentDrop } from "../hooks/useDocumentDrop";
 import { useTranscription } from "../hooks/useTranscription";
@@ -236,15 +242,18 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
-    el.style.height = "auto";
     const style = getComputedStyle(el);
     const lineHeight = parseFloat(style.lineHeight) || 24;
     const paddingTop = parseFloat(style.paddingTop) || 0;
     const paddingBottom = parseFloat(style.paddingBottom) || 0;
+    const minHeight = lineHeight + paddingTop + paddingBottom;
     const maxHeight = lineHeight * 6 + paddingTop + paddingBottom;
-    const newHeight = Math.min(el.scrollHeight, maxHeight);
+    // Reset to 0 so scrollHeight reflects actual content, not previous height
+    el.style.height = "0px";
+    const contentHeight = Math.max(el.scrollHeight, minHeight);
+    const newHeight = Math.min(contentHeight, maxHeight);
     el.style.height = newHeight + "px";
-    el.style.overflowY = el.scrollHeight > maxHeight ? "auto" : "hidden";
+    el.style.overflowY = contentHeight > maxHeight ? "auto" : "hidden";
   }, [text]);
 
   function handleTextChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
@@ -432,18 +441,73 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
         }}
       />
 
-      {isRecording ? (
-        <div className={composerRow}>
-          <button
-            type="button"
-            className={composerActionBtn}
-            data-variant="stop"
-            onClick={() => void transcription.stopRecording()}
-            title="Stop recording"
-          >
-            <Stop size={18} weight="fill" />
-          </button>
-          <div className={composerRecordingBar}>
+      <div className={composerInputWrapper} data-target={target === "mate" ? "mate" : undefined}>
+        {mentionQuery !== null && totalMentionItems > 0 && (
+          <div className={fileMentionPopup}>
+            {showMateEntry && (
+              <div
+                className={fileMentionItem}
+                data-special="mate"
+                data-selected={selectedIndex === 0}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  insertMention("mate");
+                }}
+              >
+                <Robot size={14} weight="regular" />
+                mate
+              </div>
+            )}
+            {filteredFiles.map((file, index) => (
+              <div
+                key={file}
+                className={fileMentionItem}
+                data-selected={(showMateEntry ? index + 1 : index) === selectedIndex}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  insertMention(file);
+                }}
+              >
+                {file}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Left slot */}
+        <button
+          type="button"
+          className={composerInlineBtn}
+          data-pos="left"
+          onClick={
+            isRecording
+              ? () => void transcription.stopRecording()
+              : () => fileInputRef.current?.click()
+          }
+          disabled={!isRecording && loading}
+          title={isRecording ? "Stop recording" : "Attach image"}
+        >
+          {isRecording ? <Stop size={18} weight="fill" /> : <PaperclipIcon size={18} />}
+        </button>
+
+        {/* Textarea — always present, hidden behind overlay when recording/processing */}
+        <TextArea
+          ref={textareaRef}
+          className={composerInput}
+          size="3"
+          rows={1}
+          placeholder="Steer the captain…"
+          value={text}
+          onChange={handleTextChange}
+          onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
+          aria-label="Steer input"
+          style={{ visibility: isRecording || isProcessing ? "hidden" : undefined }}
+        />
+
+        {/* Overlay: waveform during recording, spinner during processing */}
+        {isRecording && transcription.analyser && (
+          <div className={composerOverlay}>
             <Text
               size="1"
               color="red"
@@ -453,15 +517,25 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
                 transcription.state.tag === "recording" ? transcription.state.elapsed : 0,
               )}
             </Text>
-            <div className={composerWaveformBars}>
-              {Array.from({ length: 24 }, (_, i) => (
-                <span key={i} className={composerWaveformBar} />
-              ))}
-            </div>
+            <Waveform analyser={transcription.analyser} />
           </div>
+        )}
+        {isProcessing && (
+          <div className={composerOverlay}>
+            <Spinner size={16} />
+            <Text size="2" color="gray">
+              {sendAfterTranscription ? "Sending…" : "Transcribing…"}
+            </Text>
+          </div>
+        )}
+
+        {/* Right slot */}
+        {isRecording ? (
           <button
             type="button"
-            className={composerActionBtn}
+            className={composerInlineBtn}
+            data-pos="right"
+            data-variant="solid"
             onClick={() => {
               setSendAfterTranscription(true);
               void transcription.stopRecording();
@@ -471,97 +545,41 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
           >
             <ArrowUp size={20} weight="bold" />
           </button>
-        </div>
-      ) : isProcessing ? (
-        <div
-          className={composerRecordingBar}
-          style={{ borderColor: "var(--gray-a4)", background: "var(--gray-a2)" }}
-        >
-          <Text size="1" color="gray">
-            {sendAfterTranscription ? "Sending…" : "Transcribing…"}
-          </Text>
-        </div>
-      ) : (
-        <div className={composerInputWrapper} data-target={target === "mate" ? "mate" : undefined}>
-          {mentionQuery !== null && totalMentionItems > 0 && (
-            <div className={fileMentionPopup}>
-              {showMateEntry && (
-                <div
-                  className={fileMentionItem}
-                  data-special="mate"
-                  data-selected={selectedIndex === 0}
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    insertMention("mate");
-                  }}
-                >
-                  <Robot size={14} weight="regular" />
-                  mate
-                </div>
-              )}
-              {filteredFiles.map((file, index) => (
-                <div
-                  key={file}
-                  className={fileMentionItem}
-                  data-selected={(showMateEntry ? index + 1 : index) === selectedIndex}
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    insertMention(file);
-                  }}
-                >
-                  {file}
-                </div>
-              ))}
-            </div>
-          )}
+        ) : isProcessing ? (
           <button
             type="button"
             className={composerInlineBtn}
-            data-pos="left"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={loading}
-            title="Attach image"
+            data-pos="right"
+            onClick={() => void transcription.cancelRecording()}
+            title="Cancel"
           >
-            <PaperclipIcon size={18} />
+            <X size={18} />
           </button>
-          <TextArea
-            ref={textareaRef}
-            className={composerInput}
-            size="3"
-            rows={1}
-            placeholder="Steer the captain…"
-            value={text}
-            onChange={handleTextChange}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
-            aria-label="Steer input"
-          />
-          {hasContent ? (
-            <button
-              type="button"
-              className={composerInlineBtn}
-              data-pos="right"
-              data-variant="solid"
-              onClick={() => void handleSubmit()}
-              disabled={disableSubmit || loading}
-              title={submitLabel}
-            >
-              <ArrowUp size={20} weight="bold" />
-            </button>
-          ) : (
-            <button
-              type="button"
-              className={composerInlineBtn}
-              data-pos="right"
-              onClick={() => void transcription.startRecording()}
-              disabled={loading}
-              title="Voice input"
-            >
-              <Microphone size={20} />
-            </button>
-          )}
-        </div>
-      )}
+        ) : hasContent ? (
+          <button
+            type="button"
+            className={composerInlineBtn}
+            data-pos="right"
+            data-variant="solid"
+            onClick={() => void handleSubmit()}
+            disabled={disableSubmit || loading}
+            title={submitLabel}
+          >
+            <ArrowUp size={20} weight="bold" />
+          </button>
+        ) : (
+          <button
+            type="button"
+            className={composerInlineBtn}
+            data-pos="right"
+            onClick={() => void transcription.startRecording()}
+            disabled={loading}
+            title="Voice input"
+          >
+            <Microphone size={20} />
+          </button>
+        )}
+      </div>
 
       {error && (
         <Text size="2" color="red">

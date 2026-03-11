@@ -36,6 +36,7 @@ function float32ToBytes(samples: Float32Array): Uint8Array {
 export function useTranscription() {
   const [state, setState] = useState<TranscriptionState>({ tag: "idle" });
   const [result, setResult] = useState<TranscriptionResult | null>(null);
+  const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
   const activeRef = useRef<{
     audioContext: AudioContext;
     mediaStream: MediaStream;
@@ -104,8 +105,15 @@ export function useTranscription() {
         pendingLength += e.data.length;
       };
 
+      const analyserNode = audioContext.createAnalyser();
+      analyserNode.fftSize = 256;
+      analyserNode.smoothingTimeConstant = 0.7;
+      source.connect(analyserNode);
+
       source.connect(workletNode);
       workletNode.connect(audioContext.destination);
+
+      setAnalyser(analyserNode);
 
       // Elapsed timer
       const startTime = Date.now();
@@ -150,6 +158,7 @@ export function useTranscription() {
     const active = activeRef.current;
     if (!active) return;
     activeRef.current = null;
+    setAnalyser(null);
 
     active.stopElapsedTimer();
     active.flushAudio();
@@ -170,6 +179,7 @@ export function useTranscription() {
     const active = activeRef.current;
     if (!active) return;
     activeRef.current = null;
+    setAnalyser(null);
 
     active.stopElapsedTimer();
 
@@ -187,6 +197,7 @@ export function useTranscription() {
   return {
     state,
     result,
+    analyser,
     startRecording,
     stopRecording,
     cancelRecording,

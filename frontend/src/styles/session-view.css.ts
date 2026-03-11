@@ -673,21 +673,32 @@ export const composerRoot = style({
   flexShrink: 0,
 });
 
-export const composerRow = style({
-  display: "flex",
-  alignItems: "flex-end",
-  gap: "var(--space-2)",
-});
-
 export const composerInputWrapper = style({
   position: "relative",
   flex: 1,
   minWidth: 0,
 });
 
+export const composerOverlay = style({
+  position: "absolute",
+  inset: 0,
+  zIndex: 1,
+  display: "flex",
+  alignItems: "center",
+  gap: "var(--space-2)",
+  padding: "0 42px",
+  pointerEvents: "none",
+  "@media": {
+    "(max-width: 700px)": {
+      padding: "0 48px",
+    },
+  },
+});
+
 export const composerInlineBtn = style({
   position: "absolute",
-  bottom: 4,
+  top: "50%",
+  transform: "translateY(-50%)",
   zIndex: 2,
   width: 32,
   height: 32,
@@ -729,64 +740,6 @@ export const composerInlineBtn = style({
       height: 40,
     },
   },
-});
-
-export const composerActionBtn = style({
-  flexShrink: 0,
-  width: 36,
-  height: 36,
-  borderRadius: "50%",
-  border: "none",
-  cursor: "pointer",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: 0,
-  transition: "background 0.1s, opacity 0.1s",
-  background: "var(--accent-9)",
-  color: "var(--accent-contrast)",
-  ":hover": {
-    opacity: 0.85,
-  },
-  selectors: {
-    "&:disabled": {
-      opacity: 0.3,
-      cursor: "default",
-    },
-    '&[data-variant="ghost"]': {
-      background: "transparent",
-      color: "var(--gray-11)",
-    },
-    '&[data-variant="ghost"]:hover': {
-      background: "var(--gray-a3)",
-    },
-    '&[data-variant="stop"]': {
-      background: "var(--gray-a4)",
-      color: "var(--gray-12)",
-    },
-    '&[data-variant="stop"]:hover': {
-      background: "var(--gray-a5)",
-    },
-  },
-  "@media": {
-    "(max-width: 700px)": {
-      width: 44,
-      height: 44,
-    },
-  },
-});
-
-export const composerRecordingBar = style({
-  flex: 1,
-  minWidth: 0,
-  display: "flex",
-  alignItems: "center",
-  gap: "var(--space-2)",
-  padding: "var(--space-2) var(--space-3)",
-  borderRadius: 12,
-  border: "1px solid var(--red-a6)",
-  background: "var(--red-a2)",
-  height: 40,
 });
 
 export const pageDropOverlay = style({
@@ -866,6 +819,7 @@ export const composerInput = style({
   borderRadius: "12px",
   paddingLeft: 42,
   paddingRight: 42,
+  background: "transparent",
   "@media": {
     "(max-width: 700px)": {
       paddingLeft: 48,
@@ -893,36 +847,6 @@ export const composerActivityDot = style({
   borderRadius: "50%",
   background: "var(--accent-9)",
   animation: `${composerPulse} 1.5s ease-in-out infinite`,
-});
-
-export const composerWaveformBars = style({
-  flex: 1,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  gap: 2,
-  height: 20,
-  overflow: "hidden",
-});
-
-const waveformBounce = keyframes({
-  "0%, 100%": { transform: "scaleY(0.25)" },
-  "50%": { transform: "scaleY(1)" },
-});
-
-export const composerWaveformBar = style({
-  width: 2,
-  height: "100%",
-  borderRadius: 1,
-  background: "var(--red-9)",
-  transformOrigin: "center",
-  animation: `${waveformBounce} 0.6s ease-in-out infinite`,
-  selectors: {
-    "&:nth-child(2n)": { animationDelay: "0.1s" },
-    "&:nth-child(3n)": { animationDelay: "0.2s" },
-    "&:nth-child(5n)": { animationDelay: "0.3s" },
-    "&:nth-child(7n)": { animationDelay: "0.15s" },
-  },
 });
 
 export const fileMentionPopup = style({
@@ -963,6 +887,11 @@ export const fileMentionItem = style({
       fontFamily: "inherit",
     },
   },
+});
+
+globalStyle(`${composerInput}, ${composerInput} textarea`, {
+  background: "transparent",
+  minHeight: "unset",
 });
 
 globalStyle(`${composerInputWrapper}[data-target="mate"] textarea`, {
