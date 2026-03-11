@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import { channel, Tx, Rx } from "@bearcove/roam-core";
+import { channel, type Tx } from "@bearcove/roam-core";
 import { getShipClient } from "../api/client";
 import type { TranscribeSegment } from "../generated/ship";
 
