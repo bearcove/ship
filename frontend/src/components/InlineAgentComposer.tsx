@@ -9,14 +9,15 @@ import {
   attachedImageThumbWrapper,
   composerActions,
   composerActivityDot,
-  composerDropIndicator,
   composerInput,
   composerInputWrapper,
   composerRoot,
   fileMentionItem,
   fileMentionPopup,
+  pageDropOverlay,
 } from "../styles/session-view.css";
 import { useWorktreeFiles } from "../hooks/useWorktreeFiles";
+import { useDocumentDrop } from "../hooks/useDocumentDrop";
 
 interface AttachedImage {
   id: string;
@@ -152,11 +153,11 @@ export function InlineAgentComposer({
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
-  const [isDragOver, setIsDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const status = getStatusCopy(role, agentStateTag, startupState, taskStatus, queuedText);
   const worktreeFiles = useWorktreeFiles(sessionId);
+  const isDragOver = useDocumentDrop(addImageFiles);
 
   const filteredFiles =
     mentionQuery !== null
@@ -222,22 +223,6 @@ export function InlineAgentComposer({
       };
       reader.readAsArrayBuffer(file);
     }
-  }
-
-  function handleDragOver(event: React.DragEvent) {
-    event.preventDefault();
-    setIsDragOver(true);
-  }
-
-  function handleDragLeave() {
-    setIsDragOver(false);
-  }
-
-  function handleDrop(event: React.DragEvent) {
-    event.preventDefault();
-    setIsDragOver(false);
-    const files = event.dataTransfer.files;
-    if (files.length > 0) addImageFiles(files);
   }
 
   function removeImage(id: string) {
@@ -368,16 +353,8 @@ export function InlineAgentComposer({
   }
 
   return (
-    <Flex
-      className={composerRoot}
-      direction="column"
-      gap="2"
-      onDragOver={handleDragOver}
-      onDragEnter={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-      data-drag-over={isDragOver}
-    >
+    <Flex className={composerRoot} direction="column" gap="2">
+      {isDragOver && <div className={pageDropOverlay}>Drop image to attach</div>}
       {attachedImages.length > 0 && (
         <div className={attachedImageThumbList}>
           {attachedImages.map((img) => (
@@ -395,7 +372,6 @@ export function InlineAgentComposer({
         </div>
       )}
       <div className={composerInputWrapper}>
-        {isDragOver && <div className={composerDropIndicator}>Drop image here</div>}
         {mentionQuery !== null && filteredFiles.length > 0 && (
           <div className={fileMentionPopup}>
             {filteredFiles.map((file, index) => (
