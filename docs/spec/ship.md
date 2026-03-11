@@ -850,6 +850,21 @@ working on it immediately. If `keep` is false or omitted, the mate's ACP
 session is torn down and a new one is started (fresh context). If `keep` is
 true, the existing mate ACP session is reused.
 
+r[captain.tool.assign.files]
+`captain_assign` MAY include a `files` argument: an array of objects with a
+required `path` (worktree-relative string) and optional `start_line` /
+`end_line` (1-based integers). The backend reads each file at the given line
+range (or the whole file if no range is given) and inlines the contents
+directly into the mate's initial prompt, formatted as fenced code blocks. This
+eliminates redundant read_file calls at the start of a task.
+
+r[captain.tool.assign.plan]
+`captain_assign` MAY include a `plan` argument: an array of step description
+strings. If provided, the backend pre-populates the task's `mate_plan` with
+those steps (all `Pending`) before the mate starts, and the mate's initial
+prompt instructs it to skip research and planning and proceed directly to step
+1. The mate MUST NOT call `set_plan` when a plan is pre-supplied.
+
 r[captain.tool.steer]
 The captain MUST have access to a `captain_steer` tool that takes a `message`
 argument (string). This is fire-and-forget: if the mate is blocked on

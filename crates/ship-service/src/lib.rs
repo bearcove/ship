@@ -1,9 +1,9 @@
 use roam::Tx;
 use ship_types::{
-    AgentDiscovery, CloseSessionRequest, CloseSessionResponse, CreateSessionRequest,
-    CreateSessionResponse, McpToolCallResponse, ProjectInfo, ProjectName, PromptContentPart, Role,
-    ServerInfo, SessionDetail, SessionId, SessionSummary, SetAgentEffortResponse,
-    SetAgentModelResponse, SubscribeMessage,
+    AgentDiscovery, CaptainAssignExtras, CloseSessionRequest, CloseSessionResponse,
+    CreateSessionRequest, CreateSessionResponse, McpToolCallResponse, ProjectInfo, ProjectName,
+    PromptContentPart, Role, ServerInfo, SessionDetail, SessionId, SessionSummary,
+    SetAgentEffortResponse, SetAgentModelResponse, SubscribeMessage,
 };
 
 // r[backend.rpc]
@@ -91,11 +91,14 @@ pub trait Ship {
 #[roam::service]
 pub trait CaptainMcp {
     // r[captain.tool.assign]
+    // r[captain.tool.assign.files]
+    // r[captain.tool.assign.plan]
     async fn captain_assign(
         &self,
         title: String,
         description: String,
         keep: bool,
+        extras: CaptainAssignExtras,
     ) -> McpToolCallResponse;
 
     // r[captain.tool.steer]

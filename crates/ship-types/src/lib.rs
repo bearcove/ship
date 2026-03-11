@@ -103,6 +103,25 @@ pub mod agent {
         pub status: PlanStepStatus,
     }
 
+    // r[captain.tool.assign.files]
+    /// A file reference supplied by the captain in captain_assign.
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct AssignFileRef {
+        pub path: String,
+        pub start_line: Option<u64>,
+        pub end_line: Option<u64>,
+    }
+
+    // r[captain.tool.assign.files]
+    // r[captain.tool.assign.plan]
+    /// Extra optional parameters for captain_assign, bundled to stay within
+    /// roam's 4-tuple serialization limit.
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct CaptainAssignExtras {
+        pub files: Vec<AssignFileRef>,
+        pub plan: Vec<String>,
+    }
+
     // r[approval.request.content]
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub struct PermissionRequest {
@@ -799,8 +818,8 @@ pub mod persistence {
 }
 
 pub use agent::{
-    AgentKind, AgentSnapshot, AgentState, EffortValue, PermissionRequest, PlanStep,
-    PlanStepPriority, PlanStepStatus, Role,
+    AgentKind, AgentSnapshot, AgentState, AssignFileRef, CaptainAssignExtras, EffortValue,
+    PermissionRequest, PlanStep, PlanStepPriority, PlanStepStatus, Role,
 };
 pub use events::{
     BlockPatch, ContentBlock, PermissionResolution, SessionEvent, SessionEventEnvelope,

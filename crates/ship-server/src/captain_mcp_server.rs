@@ -12,7 +12,7 @@ use rust_mcp_sdk::schema::{
 use rust_mcp_sdk::{McpServer, StdioTransport, ToMcpServerHandler, TransportOptions};
 use serde_json::{Value, json};
 use ship_service::CaptainMcpClient;
-use ship_types::SessionId;
+use ship_types::{AssignFileRef, CaptainAssignExtras, SessionId};
 
 pub struct CaptainMcpServerArgs {
     pub session_id: SessionId,
@@ -60,8 +60,42 @@ impl ServerHandler for CaptainMcpHandler {
                     .get("keep")
                     .and_then(Value::as_bool)
                     .unwrap_or(false);
+                // r[captain.tool.assign.files]
+                let files = arguments
+                    .get("files")
+                    .and_then(Value::as_array)
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| {
+                                let path = v.get("path").and_then(Value::as_str)?.to_owned();
+                                let start_line = v.get("start_line").and_then(Value::as_u64);
+                                let end_line = v.get("end_line").and_then(Value::as_u64);
+                                Some(AssignFileRef {
+                                    path,
+                                    start_line,
+                                    end_line,
+                                })
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                // r[captain.tool.assign.plan]
+                let plan = arguments
+                    .get("plan")
+                    .and_then(Value::as_array)
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(ToOwned::to_owned))
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
                 self.client
-                    .captain_assign(title.to_owned(), description.to_owned(), keep)
+                    .captain_assign(
+                        title.to_owned(),
+                        description.to_owned(),
+                        keep,
+                        CaptainAssignExtras { files, plan },
+                    )
                     .await
                     .map_err(call_tool_rpc_error)?
             }
@@ -236,13 +270,35 @@ fn tool_definitions() -> Vec<ToolDefinition> {
     vec![
         ToolDefinition {
             name: "captain_assign",
-            description: "Assign a task to the mate. The mate will start working on it immediately. Set keep=true to reuse the mate's existing context; omit or set false to restart the mate with a fresh context (default).",
+            description: "Assign a task to the mate. The mate will start working on it immediately. \
+Set keep=true to reuse the mate's existing context; omit or set false to restart the mate with a fresh context (default). \
+Use files to inline specific file contents into the mate's prompt so it can start work without re-reading them. \
+Use plan to supply a pre-built step list — the mate will skip research and go straight to execution.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
                     "title": { "type": "string", "description": "Short title for the task (under 60 chars). Shown in the UI sidebar and headers." },
                     "description": { "type": "string", "description": "Full task description with all details the mate needs." },
-                    "keep": { "type": "boolean" }
+                    "keep": { "type": "boolean", "description": "Reuse the mate's existing context (default false)." },
+                    "files": {
+                        "type": "array",
+                        "description": "Files to inline into the mate's prompt. The mate receives the file contents directly — no need to re-read them.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "path": { "type": "string", "description": "Worktree-relative file path." },
+                                "start_line": { "type": "integer", "description": "1-based first line to include (optional, defaults to start of file)." },
+                                "end_line": { "type": "integer", "description": "1-based last line to include (optional, defaults to end of file)." }
+                            },
+                            "required": ["path"],
+                            "additionalProperties": false
+                        }
+                    },
+                    "plan": {
+                        "type": "array",
+                        "description": "Pre-built plan steps. If supplied, the mate skips research and planning and goes directly to execution. Each item is a step description string.",
+                        "items": { "type": "string" }
+                    }
                 },
                 "required": ["title", "description"],
                 "additionalProperties": false,

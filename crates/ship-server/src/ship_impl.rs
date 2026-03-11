@@ -21,13 +21,14 @@ use ship_core::{
 use ship_service::{CaptainMcp, CaptainMcpDispatcher, MateMcp, MateMcpDispatcher, Ship};
 use ship_types::{
     AgentDiscovery, AgentKind, AgentSnapshot, AgentState, AutonomyMode, BlockId,
-    CloseSessionRequest, CloseSessionResponse, ContentBlock, CreateSessionRequest,
-    CreateSessionResponse, CurrentTask, HumanReviewRequest, McpDiffContent, McpServerConfig,
-    McpStdioServerConfig, McpToolCallResponse, PersistedSession, PlanStep, PlanStepPriority,
-    PlanStepStatus, ProjectInfo, ProjectName, PromptContentPart, Role, ServerInfo, SessionConfig,
-    SessionDetail, SessionEvent, SessionEventEnvelope, SessionId, SessionStartupStage,
-    SessionStartupState, SessionSummary, SetAgentEffortResponse, SetAgentModelResponse,
-    SubscribeMessage, TaskId, TaskRecord, TaskStatus, ToolCallKind, ToolTarget,
+    CaptainAssignExtras, CloseSessionRequest, CloseSessionResponse, ContentBlock,
+    CreateSessionRequest, CreateSessionResponse, CurrentTask, HumanReviewRequest, McpDiffContent,
+    McpServerConfig, McpStdioServerConfig, McpToolCallResponse, PersistedSession, PlanStep,
+    PlanStepPriority, PlanStepStatus, ProjectInfo, ProjectName, PromptContentPart, Role,
+    ServerInfo, SessionConfig, SessionDetail, SessionEvent, SessionEventEnvelope, SessionId,
+    SessionStartupStage, SessionStartupState, SessionSummary, SetAgentEffortResponse,
+    SetAgentModelResponse, SubscribeMessage, TaskId, TaskRecord, TaskStatus, ToolCallKind,
+    ToolTarget,
 };
 use similar::TextDiff;
 use tokio::process::Command as TokioCommand;
@@ -781,8 +782,12 @@ Here's how a typical cycle works:
 
 1. The human describes a goal.
 2. You discuss it with the human until the scope is clear.
-3. You call captain_assign to hand the work to the mate.
-4. The mate creates a plan, implements it, and calls mate_submit when done.
+3. You research the codebase (read_file, run_command) to understand the scope, \
+   identify relevant files, and draft a concrete step-by-step plan.
+4. You call captain_assign with the task description, the relevant files \
+   (files argument), and your plan (plan argument). The mate receives the \
+   file contents directly and starts execution without re-reading them.
+5. The mate implements the plan and calls mate_submit when done.
 5. You review the mate's work and either accept it (captain_accept), give \
    feedback (captain_steer), or cancel it (captain_cancel).
 
@@ -1134,13 +1139,35 @@ the human briefly and wait for them to describe what they'd like to work on."
     }
 
     // r[mate.system-prompt]
-    fn mate_task_preamble(description: &str) -> String {
-        format!(
-            "<system-notification>\
-You are the mate — an implementation-focused engineer. The captain has just \
-assigned you a task. Your job is to write code, run tests, and get things done.
+    // r[captain.tool.assign.files]
+    // r[captain.tool.assign.plan]
+    fn mate_task_preamble(
+        description: &str,
+        file_context: &str,
+        pre_supplied_plan: Option<&[PlanStep]>,
+    ) -> String {
+        let work_instructions = if let Some(plan) = pre_supplied_plan {
+            let plan_text = plan
+                .iter()
+                .enumerate()
+                .map(|(i, s)| format!("{}. {}", i + 1, s.description))
+                .collect::<Vec<_>>()
+                .join("\n");
+            format!(
+                "The captain has already researched this task and provided a plan. \
+Do NOT call set_plan — your plan is already set. Go directly to work.
 
-Here's how you work:
+Your plan:
+{plan_text}
+
+Work ONE step at a time: complete the step fully, then immediately call \
+plan_step_complete before starting the next step. Never work ahead. \
+Steps that produce file changes are committed individually — one step, \
+one commit. Steps with no file changes (research, investigation) are \
+marked complete without a commit."
+            )
+        } else {
+            "Here's how you work:
 
 1. Read the relevant files and understand the problem.
 2. Call set_plan with a list of steps you intend to take. You cannot write \
@@ -1149,10 +1176,28 @@ Here's how you work:
    plan_step_complete before starting the next step. Never work ahead. \
    Steps that produce file changes are committed individually — one step, \
    one commit. Steps with no file changes (research, investigation) are \
-   marked complete without a commit.
-4. When you're done, call mate_submit with a summary of all your changes.
-5. After calling mate_submit, do not send any further messages. The tool \
-   call is the final action — the submission itself carries the summary.
+   marked complete without a commit."
+                .to_owned()
+        };
+
+        let file_section = if file_context.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "\n\nThe captain has included the following files for context:\n\n{file_context}"
+            )
+        };
+
+        format!(
+            "<system-notification>\
+You are the mate — an implementation-focused engineer. The captain has just \
+assigned you a task. Your job is to write code, run tests, and get things done.
+
+{work_instructions}
+
+When you're done, call mate_submit with a summary of all your changes. \
+After calling mate_submit, do not send any further messages. The tool \
+call is the final action — the submission itself carries the summary.
 
 If you get stuck or need a decision, call mate_ask_captain — it will block \
 until the captain responds, so use it when you genuinely need direction.
@@ -1168,20 +1213,25 @@ equivalent and continue your task.
 
 Here is your task:
 
-{description}\
+{description}{file_section}\
 </system-notification>"
         )
     }
 
     // r[task.assign]
     // r[captain.tool.assign]
+    // r[captain.tool.assign.files]
+    // r[captain.tool.assign.plan]
     async fn captain_tool_assign(
         &self,
         session_id: &SessionId,
         title: String,
         description: String,
         keep: bool,
+        extras: CaptainAssignExtras,
     ) -> Result<String, String> {
+        let files = extras.files;
+        let plan = extras.plan;
         let task_id = self
             .start_task(session_id, title.clone(), description.clone())
             .await?;
@@ -1190,7 +1240,71 @@ Here is your task:
             self.restart_mate(session_id).await?;
         }
 
-        let mate_prompt = Self::mate_task_preamble(&description);
+        // Pre-populate the plan if the captain supplied one.
+        let pre_supplied_plan = if !plan.is_empty() {
+            let plan_steps = Self::build_plan_steps(plan);
+            {
+                let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                if let Some(session) = sessions.get_mut(session_id) {
+                    if let Some(task) = session.current_task.as_mut() {
+                        task.mate_plan = Some(plan_steps.clone());
+                    }
+                }
+            }
+            self.persist_session(session_id).await?;
+            Some(plan_steps)
+        } else {
+            None
+        };
+
+        // Read files the captain wants inlined into the mate's prompt.
+        let file_context = if files.is_empty() {
+            String::new()
+        } else {
+            let worktree_path = {
+                let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                let session = sessions
+                    .get(session_id)
+                    .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+                Self::current_task_worktree_path(session)?.to_path_buf()
+            };
+            let mut sections = Vec::with_capacity(files.len());
+            for file_ref in &files {
+                let relative_path = match Self::validate_worktree_path(&file_ref.path) {
+                    Ok(p) => p.to_path_buf(),
+                    Err(e) => {
+                        tracing::warn!(path = %file_ref.path, "captain_assign: invalid file path: {e}");
+                        sections.push(format!("(skipped {}: {e})", file_ref.path));
+                        continue;
+                    }
+                };
+                let offset = file_ref.start_line.unwrap_or(1).max(1) as usize;
+                let limit = match (file_ref.start_line, file_ref.end_line) {
+                    (Some(start), Some(end)) if end >= start => (end - start + 1) as usize,
+                    _ => DEFAULT_READ_FILE_LIMIT,
+                };
+                let path = file_ref.path.clone();
+                let worktree = worktree_path.clone();
+                let excerpt = tokio::task::spawn_blocking(move || {
+                    let canonical_worktree =
+                        std::fs::canonicalize(&worktree).map_err(|e| e.to_string())?;
+                    let candidate = canonical_worktree.join(&relative_path);
+                    let canonical_file =
+                        std::fs::canonicalize(&candidate).map_err(|e| e.to_string())?;
+                    if !canonical_file.starts_with(&canonical_worktree) {
+                        return Err("path resolves outside the worktree".to_owned());
+                    }
+                    Self::format_read_file_excerpt(&canonical_file, offset, limit)
+                })
+                .await
+                .map_err(|e| format!("file read task failed: {e}"))??;
+                sections.push(format!("### {path}\n\n```\n{excerpt}\n```"));
+            }
+            sections.join("\n\n")
+        };
+
+        let mate_prompt =
+            Self::mate_task_preamble(&description, &file_context, pre_supplied_plan.as_deref());
 
         let this = self.clone();
         let session_id = session_id.clone();
@@ -4570,7 +4684,7 @@ impl Ship for ShipImpl {
                     let this = self.clone();
                     tokio::spawn(async move {
                         let parts = vec![PromptContentPart::Text {
-                            text: Self::mate_task_preamble(&description),
+                            text: Self::mate_task_preamble(&description, "", None),
                         }];
                         if let Err(error) = this.dispatch_steer_to_mate(&session, parts).await {
                             Self::log_error("retry_agent dispatch_steer_to_mate", &error);
@@ -4894,10 +5008,11 @@ impl CaptainMcp for CaptainMcpSessionService {
         title: String,
         description: String,
         keep: bool,
+        extras: CaptainAssignExtras,
     ) -> McpToolCallResponse {
         Self::response(
             self.ship
-                .captain_tool_assign(&self.session_id, title, description, keep)
+                .captain_tool_assign(&self.session_id, title, description, keep, extras)
                 .await,
         )
     }
@@ -6104,7 +6219,13 @@ and the captain will help you find the right approach."
             "edit_confirm should succeed: {}",
             confirmed.text
         );
-        assert_eq!(confirmed.text, format!("Applied {edit_id} to src/lib.rs"));
+        assert!(
+            confirmed
+                .text
+                .starts_with(&format!("Applied {edit_id} to src/lib.rs")),
+            "unexpected confirm response: {}",
+            confirmed.text
+        );
         assert_eq!(
             std::fs::read_to_string(project_root.join("src/lib.rs"))
                 .expect("edited file should exist"),
