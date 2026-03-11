@@ -1,10 +1,16 @@
 use std::error::Error;
+use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
         Some("codegen") => codegen_typescript(&workspace_root()?),
+        Some("install") => {
+            install(&workspace_root()?);
+            Ok(())
+        }
         Some("help") | Some("--help") | Some("-h") => {
             print_usage();
             Ok(())
@@ -30,6 +36,91 @@ fn print_usage() {
     eprintln!();
     eprintln!("Commands:");
     eprintln!("  codegen    Generate TypeScript bindings from the Ship roam service trait");
+    eprintln!("  install    Build and install ship binaries to ~/.cargo/bin");
+}
+
+fn install(workspace_root: &Path) {
+    let binaries = ["ship", "ship-startup-probe"];
+
+    println!("Building ship binaries...");
+    let status = Command::new("cargo")
+        .args(["build", "--release"])
+        .current_dir(workspace_root)
+        .status()
+        .expect("Failed to run cargo build");
+
+    if !status.success() {
+        std::process::exit(status.code().unwrap_or(1));
+    }
+
+    let release_dir = workspace_root.join("target/release");
+
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .expect("Neither HOME nor USERPROFILE is set");
+    let install_dir = PathBuf::from(home).join(".cargo").join("bin");
+
+    for binary_name in binaries {
+        let src = if cfg!(windows) {
+            release_dir.join(format!("{binary_name}.exe"))
+        } else {
+            release_dir.join(binary_name)
+        };
+        let dst = if cfg!(windows) {
+            install_dir.join(format!("{binary_name}.exe"))
+        } else {
+            install_dir.join(binary_name)
+        };
+
+        if !src.exists() {
+            eprintln!(
+                "Warning: {} not found in target/release, skipping",
+                binary_name
+            );
+            continue;
+        }
+
+        fs::copy(&src, &dst).unwrap_or_else(|_| panic!("Failed to copy {}", binary_name));
+        println!("Copied {} to {}", binary_name, dst.display());
+
+        // On macOS, codesign the installed binary to avoid AMFI issues.
+        // Signing must happen AFTER copy, not before.
+        #[cfg(target_os = "macos")]
+        {
+            let dst_str = dst.to_str().expect("non-UTF-8 path");
+            let status = Command::new("codesign")
+                .args(["--sign", "-", "--force", dst_str])
+                .status()
+                .expect("Failed to run codesign");
+
+            if !status.success() {
+                eprintln!(
+                    "Warning: codesign failed for {}, continuing anyway",
+                    binary_name
+                );
+            }
+        }
+
+        // Verify the installed binary works. ship-startup-probe is a long-running
+        // server process with no --version flag, so skip verification for it.
+        if binary_name == "ship" {
+            let output = Command::new(&dst)
+                .arg("--version")
+                .output()
+                .unwrap_or_else(|_| panic!("Failed to run {} --version", binary_name));
+
+            if !output.status.success() {
+                eprintln!("Error: {} --version failed", binary_name);
+                eprintln!("stderr: {}", String::from_utf8_lossy(&output.stderr));
+                std::process::exit(1);
+            }
+
+            let version = String::from_utf8_lossy(&output.stdout);
+            println!("Installed: {}", version.trim());
+        } else {
+            println!("Installed {}", binary_name);
+        }
+    }
 }
 
 // r[frontend.codegen]
