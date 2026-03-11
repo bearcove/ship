@@ -114,7 +114,7 @@ enum FrontendMode {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args: Args = args::from_std_args().into_result()?.value;
+    let args: Args = args::from_std_args().unwrap();
 
     match args.command {
         Command::Serve(args) => run_serve(args).await,
