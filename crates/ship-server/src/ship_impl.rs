@@ -1613,6 +1613,7 @@ Here is your task:
         #[cfg(target_os = "macos")]
         {
             let home = std::env::var("HOME").unwrap_or_else(|_| "/nonexistent".to_owned());
+            let system_tmpdir = std::env::var("TMPDIR").unwrap_or_else(|_| "/tmp".to_owned());
             let worktree = cwd.to_string_lossy();
             let extra_rules = if allow_network {
                 format!(
@@ -1629,6 +1630,7 @@ Here is your task:
                 \n(allow file-write* (subpath \"{worktree}\"))\
                 \n(allow file-write* (subpath \"/private/tmp\"))\
                 \n(allow file-write* (subpath \"/tmp\"))\
+                \n(allow file-write* (subpath \"{system_tmpdir}\"))\
                 \n(allow file-write* (literal \"/dev/null\"))\
                 {extra_rules}"
             );

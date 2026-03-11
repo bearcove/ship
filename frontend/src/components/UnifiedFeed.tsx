@@ -100,6 +100,11 @@ function buildSegments(blocks: BlockEntry[]): FeedSegment[] {
   return segments;
 }
 
+function segmentLastTimestamp(seg: FeedSegment): string | null | undefined {
+  if (seg.kind === "tool-group") return seg.entries.at(-1)?.timestamp;
+  return seg.entry.timestamp;
+}
+
 // Returns the "agent side" role of a segment, or null if it's a user message.
 function segmentAgentRole(seg: FeedSegment): Role | null {
   if (seg.kind === "tool-group") return seg.role;
@@ -172,12 +177,25 @@ function ThoughtBlock({
   block,
   role,
   showAvatar,
+  prevTimestamp,
+  timestamp,
 }: {
   block: TextBlockType;
   role: Role;
   showAvatar: boolean;
+  prevTimestamp?: string | null;
+  timestamp?: string | null;
 }) {
   const [expanded, setExpanded] = useState(false);
+
+  let durationLabel = "Thought";
+  if (prevTimestamp && timestamp) {
+    const secs = Math.round(
+      (new Date(timestamp).getTime() - new Date(prevTimestamp).getTime()) / 1000,
+    );
+    if (secs > 0) durationLabel = `Thought for ${secs}s`;
+  }
+
   return (
     <Box className={feedRowAgent}>
       <Avatar role={role} show={showAvatar} />
@@ -190,7 +208,7 @@ function ThoughtBlock({
         >
           {expanded ? <CaretDown size={11} /> : <CaretRight size={11} />}
           <Text size="1" color="gray">
-            Thought
+            {durationLabel}
           </Text>
         </div>
         {expanded && (
@@ -213,6 +231,7 @@ function SingleBlock({
   showAvatar,
   userAvatarUrl,
   isLast,
+  prevTimestamp,
 }: {
   entry: BlockEntry;
   sessionId: string;
@@ -221,6 +240,7 @@ function SingleBlock({
   showAvatar: boolean;
   userAvatarUrl: string | null;
   isLast: boolean;
+  prevTimestamp?: string | null;
 }) {
   const { block, blockId, role } = entry;
   const isCaptain = role.tag === "Captain";
@@ -260,7 +280,15 @@ function SingleBlock({
 
       // Thought block — collapsible, no bubble
       if (isThought) {
-        return <ThoughtBlock block={block as TextBlockType} role={role} showAvatar={showAvatar} />;
+        return (
+          <ThoughtBlock
+            block={block as TextBlockType}
+            role={role}
+            showAvatar={showAvatar}
+            prevTimestamp={prevTimestamp}
+            timestamp={entry.timestamp}
+          />
+        );
       }
 
       // Agent message — left side with avatar
@@ -444,6 +472,7 @@ export function UnifiedFeed({
             }
 
             const agentForBlock = seg.entry.role.tag === "Captain" ? captain : mate;
+            const prevTimestamp = idx > 0 ? segmentLastTimestamp(segments[idx - 1]) : null;
             return (
               <Fragment key={seg.entry.blockId}>
                 <SingleBlock
@@ -454,6 +483,7 @@ export function UnifiedFeed({
                   showAvatar={showAvatar}
                   userAvatarUrl={userAvatarUrl}
                   isLast={idx === segments.length - 1}
+                  prevTimestamp={prevTimestamp}
                 />
                 {debugMode && (
                   <Box

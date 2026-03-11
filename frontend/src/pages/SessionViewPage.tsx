@@ -9,14 +9,35 @@ import { UnifiedComposer } from "../components/UnifiedComposer";
 import { SteerReview } from "../components/SteerReview";
 import {
   agentRail,
+  agentStatusBar,
+  agentStatusBarAvatar,
+  agentStatusBarItem,
   mobileNavBar,
   sessionFeedColumn,
   sessionViewRoot,
 } from "../styles/session-view.css";
 import { AgentHeader } from "../components/AgentHeader";
+import { AgentModelPicker } from "../components/AgentModelPicker";
 import captainAvatar from "../assets/avatars/captain.png";
 import mateAvatar from "../assets/avatars/mate.png";
-import type { TaskRecord } from "../generated/ship";
+import type { AgentSnapshot, TaskRecord } from "../generated/ship";
+
+function AgentStatusBarItem({
+  sessionId,
+  agent,
+  avatarSrc,
+}: {
+  sessionId: string;
+  agent: AgentSnapshot;
+  avatarSrc: string;
+}) {
+  return (
+    <Flex className={agentStatusBarItem}>
+      <img src={avatarSrc} alt={agent.role.tag} className={agentStatusBarAvatar} />
+      <AgentModelPicker sessionId={sessionId} agent={agent} />
+    </Flex>
+  );
+}
 
 // r[view.session]
 // r[ui.layout.session-view]
@@ -121,6 +142,20 @@ export function SessionViewPage({
 
       <Flex style={{ flex: 1, overflow: "hidden", minHeight: 0 }}>
         <Box className={sessionFeedColumn}>
+          {(captain ?? mate) && (
+            <Flex className={agentStatusBar}>
+              {captain && (
+                <AgentStatusBarItem
+                  sessionId={session.id}
+                  agent={captain}
+                  avatarSrc={captainAvatar}
+                />
+              )}
+              {mate && (
+                <AgentStatusBarItem sessionId={session.id} agent={mate} avatarSrc={mateAvatar} />
+              )}
+            </Flex>
+          )}
           <UnifiedFeed
             sessionId={session.id}
             captain={captain}

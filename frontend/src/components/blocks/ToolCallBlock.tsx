@@ -1,7 +1,6 @@
 import { Fragment, useMemo, useState } from "react";
 import { Badge, Box, Code, Flex, ScrollArea, Spinner, Text } from "@radix-ui/themes";
 import { CaretDown, CaretRight } from "@phosphor-icons/react";
-import ReactMarkdown from "react-markdown";
 import type {
   ContentBlock,
   ToolCallContent,
@@ -356,9 +355,19 @@ function terminalExitLabel(
 
 function RichTextContent({ text }: { text: string }) {
   return (
-    <Box className={toolCallContentSection}>
-      <ReactMarkdown>{formatDisplayText(text)}</ReactMarkdown>
-    </Box>
+    <ScrollArea style={{ maxHeight: "20rem", maxWidth: "100%" }}>
+      <Box
+        className={toolCallContentSection}
+        style={{
+          fontFamily: "monospace",
+          fontSize: "var(--font-size-1)",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-all",
+        }}
+      >
+        {formatDisplayText(text)}
+      </Box>
+    </ScrollArea>
   );
 }
 

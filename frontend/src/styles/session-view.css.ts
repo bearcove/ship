@@ -224,39 +224,30 @@ export const appColumns = style({
 });
 
 export const appColLeft = style({
-  flex: 1,
-  minWidth: 220,
+  flex: "0 0 260px",
   display: "flex",
-  justifyContent: "flex-end",
   overflow: "hidden",
   "@media": {
-    "(max-width: 500px)": {
+    "(max-width: 700px)": {
       display: "none",
     },
   },
 });
 
 export const appColCenter = style({
-  width: 720,
-  flexShrink: 0,
+  flex: 1,
+  minWidth: 400,
   display: "flex",
   flexDirection: "column",
   overflow: "hidden",
-  "@media": {
-    "(max-width: 500px)": {
-      width: "100%",
-      flex: 1,
-    },
-  },
 });
 
 export const appColRight = style({
-  flex: 1,
-  minWidth: 0,
+  flex: "0 0 260px",
   display: "flex",
   overflow: "hidden",
   "@media": {
-    "(max-width: 768px)": {
+    "(max-width: 980px)": {
       display: "none",
     },
   },
@@ -337,17 +328,46 @@ export const agentPanelScrollArea = style({
 });
 
 export const agentRail = style({
-  width: 260,
+  width: "100%",
   flexShrink: 0,
   overflowY: "auto",
   display: "flex",
   flexDirection: "column",
-  borderLeft: "1px solid var(--gray-a5)",
   "@media": {
     "(max-width: 768px)": {
       display: "none",
     },
   },
+});
+
+export const agentStatusBar = style({
+  display: "none",
+  "@media": {
+    "(max-width: 980px)": {
+      display: "flex",
+      alignItems: "center",
+      gap: "var(--space-4)",
+      padding: "var(--space-2) var(--space-3)",
+      borderBottom: "1px solid var(--gray-a4)",
+      flexShrink: 0,
+    },
+  },
+});
+
+export const agentStatusBarItem = style({
+  display: "flex",
+  alignItems: "center",
+  gap: "var(--space-2)",
+  minWidth: 0,
+});
+
+export const agentStatusBarAvatar = style({
+  width: 20,
+  height: 20,
+  borderRadius: "50%",
+  flexShrink: 0,
+  objectFit: "cover",
+  maskImage: "radial-gradient(circle, black 64%, transparent 64%)",
 });
 
 export const agentHeader = style({
@@ -388,7 +408,7 @@ export const agentHeaderAvatarFallback = style({
 export const agentHeaderBody = style({
   display: "flex",
   flexDirection: "column",
-  gap: "4px",
+  gap: "1px",
   flex: 1,
   minWidth: 0,
 });
