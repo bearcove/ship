@@ -17,6 +17,7 @@ import { useAgentKindPrefs } from "../hooks/useAgentKindPrefs";
 import { refreshSessionList } from "../hooks/useSessionList";
 import { AddProjectDialog } from "../pages/SessionListPage";
 import { getShipClient } from "../api/client";
+import { QrCodeButton } from "./QrCodeButton";
 import {
   projectActions,
   projectName,
@@ -306,6 +307,7 @@ export function SessionSidebar({
           >
             {soundEnabled ? <SpeakerHighIcon size={16} /> : <SpeakerSlashIcon size={16} />}
           </IconButton>
+          <QrCodeButton />
         </Flex>
 
         <AddProjectDialog open={addProjectOpen} onOpenChange={setAddProjectOpen} />
