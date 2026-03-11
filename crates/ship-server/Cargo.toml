@@ -20,6 +20,7 @@ path = "src/startup_probe.rs"
 
 [dependencies]
 async-trait = "0.1"
+if-addrs = "0.10"
 chrono = { workspace = true }
 axum = { workspace = true }
 facet = { workspace = true }

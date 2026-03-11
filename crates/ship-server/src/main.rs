@@ -6,6 +6,7 @@ use std::io::Write;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::Duration;
 
 use agent_discovery::{SystemBinaryPathProbe, discover_agents};
@@ -148,10 +149,15 @@ async fn run_serve(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
         }))
         .init();
 
-    let listen_addr = resolve_listen_addr(args.listen)?;
+    let listen_addrs = resolve_listen_addrs(args.listen)?;
+    let primary_addr = listen_addrs
+        .iter()
+        .find(|a| a.ip().is_loopback())
+        .copied()
+        .unwrap_or(listen_addrs[0]);
     let vite_addr = resolve_vite_addr()?;
     // r[dev-proxy.vite-lifecycle]
-    let _vite_process = spawn_vite_dev_server(listen_addr, vite_addr).await?;
+    let _vite_process = spawn_vite_dev_server(primary_addr, vite_addr).await?;
     wait_for_tcp_readiness(vite_addr, Duration::from_secs(10)).await?;
 
     let frontend_mode = load_frontend_mode(vite_addr);
@@ -179,16 +185,62 @@ async fn run_serve(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
         .fallback(proxy_vite_handler)
         .with_state(state);
 
-    let listener = tokio::net::TcpListener::bind(listen_addr).await?;
-    let url = format!("http://{}", listener.local_addr()?);
-    ship.set_server_ws_url(format!("ws://{}/ws", listener.local_addr()?));
-    // r[cli.open-browser]
-    println!("Ship server listening at {url}");
-    tracing::info!(%url, "ship server started");
+    // Bind a listener on every resolved address.
+    let mut listeners: Vec<tokio::net::TcpListener> = Vec::new();
+    for addr in &listen_addrs {
+        match tokio::net::TcpListener::bind(addr).await {
+            Ok(l) => {
+                tracing::debug!(addr = %l.local_addr()?, "bound listener");
+                listeners.push(l);
+            }
+            Err(e) => {
+                tracing::warn!(%addr, "failed to bind: {e}");
+            }
+        }
+    }
+    if listeners.is_empty() {
+        return Err("failed to bind on any address".into());
+    }
 
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+    // Use the loopback listener for the agent WS URL.
+    let ws_listener = listeners
+        .iter()
+        .find(|l| {
+            l.local_addr()
+                .map(|a| a.ip().is_loopback())
+                .unwrap_or(false)
+        })
+        .unwrap_or(&listeners[0]);
+    ship.set_server_ws_url(format!("ws://{}/ws", ws_listener.local_addr()?));
+
+    // r[cli.open-browser]
+    for l in &listeners {
+        let url = format!("http://{}", l.local_addr()?);
+        println!("Ship server listening at {url}");
+        tracing::info!(%url, "ship server started");
+    }
+
+    // Shared shutdown signal broadcast via Notify.
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+    let shutdown_driver = shutdown.clone();
+    tokio::spawn(async move {
+        shutdown_signal().await;
+        shutdown_driver.notify_waiters();
+    });
+
+    let mut join_set = tokio::task::JoinSet::new();
+    for listener in listeners {
+        let app = app.clone();
+        let shutdown = shutdown.clone();
+        join_set.spawn(async move {
+            axum::serve(listener, app)
+                .with_graceful_shutdown(async move { shutdown.notified().await })
+                .await
+        });
+    }
+    while let Some(res) = join_set.join_next().await {
+        res??;
+    }
     Ok(())
 }
 
@@ -245,13 +297,40 @@ async fn run_project(command: ProjectCommand) -> Result<(), Box<dyn std::error::
 }
 
 // r[server.listen]
-fn resolve_listen_addr(
+fn resolve_listen_addrs(
     cli_listen: Option<String>,
-) -> Result<SocketAddr, Box<dyn std::error::Error>> {
-    let listen = cli_listen
-        .or_else(|| std::env::var("SHIP_LISTEN").ok())
-        .unwrap_or_else(|| "[::1]:9140".to_owned());
-    Ok(listen.parse::<SocketAddr>()?)
+) -> Result<Vec<SocketAddr>, Box<dyn std::error::Error>> {
+    // Explicit address from CLI or env → single bind, old behavior.
+    if let Some(addr) = cli_listen.or_else(|| std::env::var("SHIP_LISTEN").ok()) {
+        return Ok(vec![addr.parse::<SocketAddr>()?]);
+    }
+
+    // Enumerate every non-wildcard, non-link-local interface address on port 9140.
+    let port = 9140u16;
+    let mut addrs: Vec<SocketAddr> = if_addrs::get_if_addrs()?
+        .into_iter()
+        .filter_map(|iface| {
+            let ip = iface.ip();
+            match ip {
+                std::net::IpAddr::V4(v4) if v4.is_unspecified() || v4.is_link_local() => None,
+                std::net::IpAddr::V6(v6) if v6.is_unspecified() => None,
+                // Skip link-local IPv6 (fe80::/10) — scope IDs make them unreliable to bind.
+                std::net::IpAddr::V6(v6) if (v6.segments()[0] & 0xffc0) == 0xfe80 => None,
+                _ => Some(SocketAddr::new(ip, port)),
+            }
+        })
+        .collect();
+
+    // Stable order: loopback first, then the rest sorted by string representation.
+    addrs.sort_by_key(|a| (!a.ip().is_loopback(), a.to_string()));
+    addrs.dedup();
+
+    if addrs.is_empty() {
+        // Fallback: at minimum bind loopback.
+        addrs.push("[::1]:9140".parse()?);
+    }
+
+    Ok(addrs)
 }
 
 // r[dev-proxy.vite-port]
