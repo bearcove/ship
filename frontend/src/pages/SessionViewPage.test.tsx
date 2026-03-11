@@ -4,7 +4,6 @@ import { describe, expect, it, beforeEach, vi } from "vitest";
 import type { SessionDetail } from "../generated/ship";
 import { SoundProvider } from "../context/SoundContext";
 import { renderWithTheme } from "../test/render";
-import { sessionFeedColumn, unifiedFeedRoot } from "../styles/session-view.css";
 import { SessionViewPage } from "./SessionViewPage";
 
 const mocks = vi.hoisted(() => ({
