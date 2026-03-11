@@ -606,6 +606,8 @@ pub mod protocol {
         pub path: String,
         pub old_text: Option<String>,
         pub new_text: String,
+        /// For edit_prepare responses: the edit_id to pass to edit_confirm.
+        pub edit_id: Option<String>,
     }
 
     // r[proto.close-session]

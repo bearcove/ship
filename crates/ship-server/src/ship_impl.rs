@@ -2412,6 +2412,35 @@ Here is your task:
             Some(limit) => usize::try_from(limit).map_err(|_| "limit is too large".to_owned())?,
             None => DEFAULT_READ_FILE_LIMIT,
         };
+        let candidate = Path::new(&path);
+        if candidate.is_absolute() {
+            // Absolute paths are allowed for read_file (read-only access).
+            // The agent may need to read files outside the worktree, e.g. installed
+            // crate sources in ~/.cargo/registry.
+            let candidate_path = candidate.to_path_buf();
+            return tokio::task::spawn_blocking(move || {
+                let metadata = fs::metadata(&candidate_path).map_err(|error| {
+                    if error.kind() == std::io::ErrorKind::NotFound {
+                        format!("File not found: {}", candidate_path.display())
+                    } else {
+                        format!("Failed to access file: {error}")
+                    }
+                })?;
+                if metadata.is_dir() {
+                    return Err("Path is a directory, not a file.".to_owned());
+                }
+                let canonical_file = fs::canonicalize(&candidate_path).map_err(|error| {
+                    format!(
+                        "Failed to resolve file path {}: {error}",
+                        candidate_path.display()
+                    )
+                })?;
+                Self::format_read_file_excerpt(&canonical_file, offset, limit)
+            })
+            .await
+            .map_err(|error| format!("read_file task failed: {error}"))?;
+        }
+
         let relative_path = Self::validate_worktree_path(&path)?.to_path_buf();
         let worktree_path = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
@@ -2590,6 +2619,7 @@ Here is your task:
                         path: path_str,
                         old_text,
                         new_text: content,
+                        edit_id: None,
                     },
                 ))
             }
@@ -2755,12 +2785,15 @@ Here is your task:
             }
 
             Ok(McpToolCallResponse {
-                text: format!("edit_id: {edit_id}"),
+                text: format!(
+                    "Edit prepared. Pass this edit_id to edit_confirm to apply it: {edit_id}"
+                ),
                 is_error: false,
                 diffs: vec![McpDiffContent {
                     path: path_str,
                     old_text: Some(old_content),
                     new_text: new_content,
+                    edit_id: Some(edit_id),
                 }],
             })
         }
@@ -2916,6 +2949,7 @@ Here is your task:
                         path: path_str,
                         old_text: Some(old_content),
                         new_text: new_content,
+                        edit_id: None,
                     }],
                 }
             }
@@ -5467,10 +5501,12 @@ mod tests {
     }
 
     fn parse_edit_id(response: &str) -> String {
+        // The edit_prepare response text ends with the edit_id after ": "
         response
-            .lines()
-            .find_map(|line| line.strip_prefix("edit_id: "))
-            .expect("edit_id line should be present")
+            .rsplit(": ")
+            .next()
+            .expect("edit_id should be at end of response text")
+            .trim()
             .to_owned()
     }
 

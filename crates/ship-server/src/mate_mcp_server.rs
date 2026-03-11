@@ -416,7 +416,7 @@ fn tool_definitions() -> Vec<ToolDefinition> {
         },
         ToolDefinition {
             name: "edit_prepare",
-            description: "Prepare a search-and-replace edit. Returns a diff preview without modifying the file. You MUST call edit_confirm to apply it.",
+            description: "Prepare a search-and-replace edit. Returns a diff preview without modifying the file. The response includes an edit_id in the structured content (diff.edit_id) and in the text. You MUST call edit_confirm with that edit_id to apply the edit.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -431,7 +431,7 @@ fn tool_definitions() -> Vec<ToolDefinition> {
         },
         ToolDefinition {
             name: "edit_confirm",
-            description: "Apply a previously prepared edit. Runs syntax validation for Rust files. If validation fails, the file is not modified and the error is returned.",
+            description: "Apply a previously prepared edit. Pass the edit_id exactly as returned by edit_prepare (from the structured content diff.edit_id field, or from the text response). Runs syntax validation for Rust files. If validation fails, the file is not modified and the error is returned.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -628,6 +628,9 @@ fn mcp_tool_call_result(result: &McpToolCallResponse) -> CallToolResult {
                 });
                 if let Some(old) = &d.old_text {
                     obj["old_text"] = json!(old);
+                }
+                if let Some(edit_id) = &d.edit_id {
+                    obj["edit_id"] = json!(edit_id);
                 }
                 obj
             })
