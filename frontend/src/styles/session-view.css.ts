@@ -19,8 +19,8 @@ export const unifiedFeedScroll = style({
 });
 
 export const scrollToBottomBtn = style({
-  position: "absolute",
-  bottom: "var(--space-4)",
+  position: "fixed",
+  bottom: "140px",
   left: "50%",
   transform: "translateX(-50%)",
   width: 36,
@@ -244,6 +244,8 @@ export const appColumns = style({
   flex: 1,
   overflow: "hidden",
   minHeight: 0,
+  maxWidth: "1200px",
+  margin: "0 auto",
 });
 
 export const appColLeft = style({
@@ -737,6 +739,7 @@ export const attachedImageRemove = style({
 
 export const composerInput = style({
   resize: "vertical",
+  borderRadius: "12px",
 });
 
 export const composerActions = style({

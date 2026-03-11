@@ -373,7 +373,7 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
         <TextArea
           ref={textareaRef}
           className={composerInput}
-          size="2"
+          size="3"
           rows={2}
           placeholder="Steer the captain…"
           value={text}
