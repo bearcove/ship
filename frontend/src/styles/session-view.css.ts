@@ -244,19 +244,27 @@ export const sessionFeedColumn = style({
   overflow: "hidden",
 });
 
-// Three-column app layout: [left: sidebar floats right] [center: 720px] [right: empty]
+// Three-column app layout: [left: sidebar] [center: fills space] [right: agent rail]
 export const appColumns = style({
-  display: "flex",
-  flex: 1,
-  overflow: "hidden",
-  minHeight: 0,
+  display: "grid",
+  gridTemplateColumns: "260px 1fr 260px",
   maxWidth: "1200px",
+  width: "100%",
   margin: "0 auto",
+  flex: 1,
+  minHeight: 0,
+  overflow: "hidden",
+  "@media": {
+    "(max-width: 980px)": {
+      gridTemplateColumns: "260px 1fr",
+    },
+    "(max-width: 700px)": {
+      gridTemplateColumns: "1fr",
+    },
+  },
 });
 
 export const appColLeft = style({
-  flex: "0 0 260px",
-  display: "flex",
   overflow: "hidden",
   "@media": {
     "(max-width: 700px)": {
@@ -266,16 +274,10 @@ export const appColLeft = style({
 });
 
 export const appColCenter = style({
-  flex: 1,
-  minWidth: 400,
-  display: "flex",
-  flexDirection: "column",
   overflow: "hidden",
 });
 
 export const appColRight = style({
-  flex: "0 0 260px",
-  display: "flex",
   overflow: "hidden",
   "@media": {
     "(max-width: 980px)": {
