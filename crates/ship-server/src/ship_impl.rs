@@ -2519,134 +2519,156 @@ Here is your task:
         old_string: String,
         new_string: String,
         replace_all: Option<bool>,
-    ) -> Result<String, String> {
-        let relative_path = Self::validate_worktree_path(&path)?.to_path_buf();
-        let worktree_path = {
-            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
-            let session = sessions
-                .get(session_id)
-                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-            Self::require_mate_plan(session)?;
-            Self::current_task_worktree_path(session)?.to_path_buf()
-        };
+    ) -> McpToolCallResponse {
+        let result: Result<McpToolCallResponse, String> = async {
+            let relative_path = Self::validate_worktree_path(&path)?.to_path_buf();
+            let worktree_path = {
+                let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                let session = sessions
+                    .get(session_id)
+                    .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+                Self::require_mate_plan(session)?;
+                Self::current_task_worktree_path(session)?.to_path_buf()
+            };
 
-        let prepared = tokio::task::spawn_blocking({
-            let relative_path = relative_path.clone();
-            move || {
-                let canonical_worktree = fs::canonicalize(&worktree_path).map_err(|error| {
-                    format!(
-                        "Failed to resolve worktree path {}: {error}",
-                        worktree_path.display()
-                    )
-                })?;
-                let candidate_path = canonical_worktree.join(&relative_path);
-                let metadata = fs::metadata(&candidate_path).map_err(|error| {
-                    if error.kind() == std::io::ErrorKind::NotFound {
-                        format!("File not found: {}", relative_path.display())
-                    } else {
-                        format!("Failed to access file: {error}")
+            let prepared = tokio::task::spawn_blocking({
+                let relative_path = relative_path.clone();
+                move || {
+                    let canonical_worktree = fs::canonicalize(&worktree_path).map_err(|error| {
+                        format!(
+                            "Failed to resolve worktree path {}: {error}",
+                            worktree_path.display()
+                        )
+                    })?;
+                    let candidate_path = canonical_worktree.join(&relative_path);
+                    let metadata = fs::metadata(&candidate_path).map_err(|error| {
+                        if error.kind() == std::io::ErrorKind::NotFound {
+                            format!("File not found: {}", relative_path.display())
+                        } else {
+                            format!("Failed to access file: {error}")
+                        }
+                    })?;
+                    if metadata.is_dir() {
+                        return Err("Path is a directory, not a file.".to_owned());
                     }
-                })?;
-                if metadata.is_dir() {
-                    return Err("Path is a directory, not a file.".to_owned());
-                }
 
-                let canonical_file = fs::canonicalize(&candidate_path).map_err(|error| {
-                    format!(
-                        "Failed to resolve file path {}: {error}",
-                        candidate_path.display()
-                    )
-                })?;
-                if !canonical_file.starts_with(&canonical_worktree) {
-                    return Err("Path resolves outside the worktree.".to_owned());
-                }
+                    let canonical_file = fs::canonicalize(&candidate_path).map_err(|error| {
+                        format!(
+                            "Failed to resolve file path {}: {error}",
+                            candidate_path.display()
+                        )
+                    })?;
+                    if !canonical_file.starts_with(&canonical_worktree) {
+                        return Err("Path resolves outside the worktree.".to_owned());
+                    }
 
-                let old_content = fs::read_to_string(&canonical_file)
-                    .map_err(|error| format!("Failed to read file: {error}"))?;
-                let mut prepared = Self::build_prepared_edit(
-                    &relative_path,
-                    old_content.clone(),
-                    old_string,
-                    new_string,
-                    replace_all.unwrap_or(false),
-                )?;
-
-                // Write speculatively, run rustfmt, then restore — this
-                // validates that the edit produces syntactically valid code
-                // before the agent is asked to confirm it.
-                if canonical_file.extension().and_then(|e| e.to_str()) == Some("rs") {
-                    Self::write_text_file(
-                        &canonical_file,
-                        &prepared.pending.new_content,
+                    let old_content = fs::read_to_string(&canonical_file)
+                        .map_err(|error| format!("Failed to read file: {error}"))?;
+                    let mut prepared = Self::build_prepared_edit(
                         &relative_path,
-                    )
-                    .map_err(|e| format!("edit_prepare speculative write failed: {e}"))?;
+                        old_content.clone(),
+                        old_string,
+                        new_string,
+                        replace_all.unwrap_or(false),
+                    )?;
 
-                    let rustfmt_result =
-                        Self::run_rustfmt(&Self::rustfmt_program(), &canonical_file);
+                    // Write speculatively, run rustfmt, then restore — this
+                    // validates that the edit produces syntactically valid code
+                    // before the agent is asked to confirm it.
+                    if canonical_file.extension().and_then(|e| e.to_str()) == Some("rs") {
+                        Self::write_text_file(
+                            &canonical_file,
+                            &prepared.pending.new_content,
+                            &relative_path,
+                        )
+                        .map_err(|e| format!("edit_prepare speculative write failed: {e}"))?;
 
-                    match rustfmt_result {
-                        Ok(RustfmtOutcome::Failure(details)) => {
-                            let _ = Self::restore_file_from_content(
-                                &canonical_file,
-                                &relative_path,
-                                &old_content,
-                            );
-                            return Err(format!(
-                                "Edit would produce invalid Rust in {}:\n{details}",
-                                relative_path.display()
-                            ));
-                        }
-                        Ok(RustfmtOutcome::Success) => {
-                            // Read the rustfmt-formatted content BEFORE restoring,
-                            // so edit_confirm applies the formatted version.
-                            let formatted = fs::read_to_string(&canonical_file)
-                                .map_err(|e| format!("Failed to read formatted file: {e}"))?;
-                            Self::restore_file_from_content(
-                                &canonical_file,
-                                &relative_path,
-                                &old_content,
-                            )
-                            .map_err(|e| format!("edit_prepare restore failed: {e}"))?;
-                            prepared.pending.new_content = formatted;
-                        }
-                        Ok(RustfmtOutcome::NotFound) => {
-                            Self::restore_file_from_content(
-                                &canonical_file,
-                                &relative_path,
-                                &old_content,
-                            )
-                            .map_err(|e| format!("edit_prepare restore failed: {e}"))?;
-                        }
-                        Err(e) => {
-                            let _ = Self::restore_file_from_content(
-                                &canonical_file,
-                                &relative_path,
-                                &old_content,
-                            );
-                            return Err(format!("edit_prepare rustfmt failed: {e}"));
+                        let rustfmt_result =
+                            Self::run_rustfmt(&Self::rustfmt_program(), &canonical_file);
+
+                        match rustfmt_result {
+                            Ok(RustfmtOutcome::Failure(details)) => {
+                                let _ = Self::restore_file_from_content(
+                                    &canonical_file,
+                                    &relative_path,
+                                    &old_content,
+                                );
+                                return Err(format!(
+                                    "Edit would produce invalid Rust in {}:\n{details}",
+                                    relative_path.display()
+                                ));
+                            }
+                            Ok(RustfmtOutcome::Success) => {
+                                // Read the rustfmt-formatted content BEFORE restoring,
+                                // so edit_confirm applies the formatted version.
+                                let formatted = fs::read_to_string(&canonical_file)
+                                    .map_err(|e| format!("Failed to read formatted file: {e}"))?;
+                                Self::restore_file_from_content(
+                                    &canonical_file,
+                                    &relative_path,
+                                    &old_content,
+                                )
+                                .map_err(|e| format!("edit_prepare restore failed: {e}"))?;
+                                prepared.pending.new_content = formatted;
+                            }
+                            Ok(RustfmtOutcome::NotFound) => {
+                                Self::restore_file_from_content(
+                                    &canonical_file,
+                                    &relative_path,
+                                    &old_content,
+                                )
+                                .map_err(|e| format!("edit_prepare restore failed: {e}"))?;
+                            }
+                            Err(e) => {
+                                let _ = Self::restore_file_from_content(
+                                    &canonical_file,
+                                    &relative_path,
+                                    &old_content,
+                                );
+                                return Err(format!("edit_prepare rustfmt failed: {e}"));
+                            }
                         }
                     }
+
+                    Ok(prepared)
                 }
+            })
+            .await
+            .map_err(|error| format!("edit_prepare task failed: {error}"))??;
 
-                Ok(prepared)
+            let edit_id = format!("edit-{}", ulid::Ulid::new());
+            let old_content = prepared.pending.old_content.clone();
+            let new_content = prepared.pending.new_content.clone();
+            let path_str = relative_path.display().to_string();
+            {
+                let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                let session = sessions
+                    .get_mut(session_id)
+                    .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+                session
+                    .pending_edits
+                    .insert(edit_id.clone(), prepared.pending);
             }
-        })
-        .await
-        .map_err(|error| format!("edit_prepare task failed: {error}"))??;
 
-        let edit_id = format!("edit-{}", ulid::Ulid::new());
-        {
-            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
-            let session = sessions
-                .get_mut(session_id)
-                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-            session
-                .pending_edits
-                .insert(edit_id.clone(), prepared.pending);
+            Ok(McpToolCallResponse {
+                text: format!("edit_id: {edit_id}"),
+                is_error: false,
+                diffs: vec![McpDiffContent {
+                    path: path_str,
+                    old_text: Some(old_content),
+                    new_text: new_content,
+                }],
+            })
         }
-
-        Ok(format!("edit_id: {edit_id}\n{}", prepared.diff))
+        .await;
+        match result {
+            Ok(r) => r,
+            Err(e) => McpToolCallResponse {
+                text: e,
+                is_error: true,
+                diffs: vec![],
+            },
+        }
     }
 
     // r[mate.tool.edit-confirm]
@@ -5009,11 +5031,9 @@ impl MateMcp for MateMcpSessionService {
         new_string: String,
         replace_all: Option<bool>,
     ) -> McpToolCallResponse {
-        Self::response(
-            self.ship
-                .mate_tool_edit_prepare(&self.session_id, path, old_string, new_string, replace_all)
-                .await,
-        )
+        self.ship
+            .mate_tool_edit_prepare(&self.session_id, path, old_string, new_string, replace_all)
+            .await
     }
 
     // r[mate.tool.edit-confirm]
@@ -5724,11 +5744,12 @@ mod tests {
                 "new".to_owned(),
                 None,
             )
-            .await
-            .expect_err("edit_prepare without plan should fail");
+            .await;
+        assert!(edit_err.is_error, "edit_prepare without plan should fail");
         assert!(
-            edit_err.contains("set_plan"),
-            "error should mention set_plan: {edit_err}"
+            edit_err.text.contains("set_plan"),
+            "error should mention set_plan: {}",
+            edit_err.text
         );
 
         let confirm_err = ship
@@ -6268,21 +6289,29 @@ and the captain will help you find the right approach."
                 "new_name( );".to_owned(),
                 None,
             )
-            .await
-            .expect("edit_prepare should succeed");
+            .await;
         assert!(
-            prepared.contains("--- src/lib.rs"),
-            "unexpected diff: {prepared}"
+            !prepared.is_error,
+            "edit_prepare should succeed: {}",
+            prepared.text
+        );
+        assert_eq!(prepared.diffs.len(), 1, "expected one diff");
+        let diff = &prepared.diffs[0];
+        assert_eq!(diff.path, "src/lib.rs");
+        assert!(
+            diff.old_text
+                .as_deref()
+                .unwrap_or("")
+                .contains("old_name();"),
+            "expected old content to contain old_name(): {:?}",
+            diff.old_text
         );
         assert!(
-            prepared.contains("-    old_name();"),
-            "unexpected diff: {prepared}"
+            diff.new_text.contains("new_name()"),
+            "expected new content to contain new_name(): {}",
+            diff.new_text
         );
-        assert!(
-            prepared.contains("+    new_name( );"),
-            "unexpected diff: {prepared}"
-        );
-        let edit_id = parse_edit_id(&prepared);
+        let edit_id = parse_edit_id(&prepared.text);
 
         let confirmed = ship
             .mate_tool_edit_confirm(&session_id, edit_id.clone())
@@ -6333,9 +6362,9 @@ and the captain will help you find the right approach."
                 "delta".to_owned(),
                 None,
             )
-            .await
-            .expect_err("missing old_string should fail");
-        assert_eq!(missing, "old_string not found in notes.txt.");
+            .await;
+        assert!(missing.is_error, "missing old_string should fail");
+        assert_eq!(missing.text, "old_string not found in notes.txt.");
 
         let ambiguous = ship
             .mate_tool_edit_prepare(
@@ -6345,10 +6374,10 @@ and the captain will help you find the right approach."
                 "delta".to_owned(),
                 None,
             )
-            .await
-            .expect_err("ambiguous old_string should fail");
+            .await;
+        assert!(ambiguous.is_error, "ambiguous old_string should fail");
         assert_eq!(
-            ambiguous,
+            ambiguous.text,
             "old_string matches 2 locations in notes.txt. Provide more surrounding context to make the match unique."
         );
 
@@ -6381,9 +6410,13 @@ and the captain will help you find the right approach."
                 "center".to_owned(),
                 None,
             )
-            .await
-            .expect("first prepare should succeed");
-        let first_id = parse_edit_id(&first);
+            .await;
+        assert!(
+            !first.is_error,
+            "first prepare should succeed: {}",
+            first.text
+        );
+        let first_id = parse_edit_id(&first.text);
 
         let second = ship
             .mate_tool_edit_prepare(
@@ -6393,15 +6426,29 @@ and the captain will help you find the right approach."
                 "bar".to_owned(),
                 Some(true),
             )
-            .await
-            .expect("replace_all prepare should succeed");
-        assert!(second.contains("-foo"), "unexpected diff: {second}");
-        assert_eq!(
-            second.matches("+bar").count(),
-            2,
-            "unexpected diff: {second}"
+            .await;
+        assert!(
+            !second.is_error,
+            "replace_all prepare should succeed: {}",
+            second.text
         );
-        let second_id = parse_edit_id(&second);
+        assert_eq!(second.diffs.len(), 1, "expected one diff");
+        assert!(
+            second.diffs[0]
+                .old_text
+                .as_deref()
+                .unwrap_or("")
+                .contains("foo"),
+            "unexpected old content: {:?}",
+            second.diffs[0].old_text
+        );
+        assert_eq!(
+            second.diffs[0].new_text.matches("bar").count(),
+            2,
+            "unexpected new content: {}",
+            second.diffs[0].new_text
+        );
+        let second_id = parse_edit_id(&second.text);
 
         // Confirm first edit (middle → center). File becomes foo\ncenter\nfoo\n.
         let first_confirm = ship.mate_tool_edit_confirm(&session_id, first_id).await;
@@ -6452,9 +6499,13 @@ and the captain will help you find the right approach."
                 "gamma".to_owned(),
                 None,
             )
-            .await
-            .expect("prepare should succeed");
-        let edit_id = parse_edit_id(&prepared);
+            .await;
+        assert!(
+            !prepared.is_error,
+            "prepare should succeed: {}",
+            prepared.text
+        );
+        let edit_id = parse_edit_id(&prepared.text);
 
         // Overwrite the file so "beta" (the old_string) is gone.
         std::fs::write(project_root.join("notes.txt"), "alpha\nchanged\n")
@@ -6511,11 +6562,13 @@ and the captain will help you find the right approach."
                 "pub fn broken( {\n".to_owned(),
                 None,
             )
-            .await
-            .expect_err("prepare should fail for invalid Rust");
+            .await;
+        assert!(err.is_error, "prepare should fail for invalid Rust");
         assert!(
-            err.contains("Edit would produce invalid Rust in src/lib.rs"),
-            "unexpected error: {err}"
+            err.text
+                .contains("Edit would produce invalid Rust in src/lib.rs"),
+            "unexpected error: {}",
+            err.text
         );
         // Original file must be intact after the rejected prepare.
         assert_eq!(
