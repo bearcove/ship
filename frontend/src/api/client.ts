@@ -53,67 +53,33 @@ export function useClientLogs(): ClientLogEntry[] {
   return entries;
 }
 
-function tryCreateWs(url: string): Promise<WsTransport> {
+function connectWsOpen(url: string): Promise<WsTransport> {
   return new Promise((resolve, reject) => {
-    log("info", "creating WebSocket object", { url });
+    log("info", "opening WebSocket", { url });
     const ws = new WebSocket(url);
     ws.binaryType = "arraybuffer";
-    log("info", "WebSocket created", { readyState: ws.readyState });
 
     let settled = false;
 
-    // Poll readyState to detect changes without events
-    const poller = setInterval(() => {
-      log("info", "ws readyState poll", { readyState: ws.readyState, settled });
-    }, 500);
-
     ws.addEventListener("open", () => {
-      log("info", "WebSocket open event fired", { readyState: ws.readyState });
       settled = true;
-      clearInterval(poller);
       resolve(new WsTransport(ws));
     });
 
     ws.addEventListener("error", () => {
-      log("warn", "WebSocket error event fired", { readyState: ws.readyState });
       if (!settled) {
         settled = true;
-        clearInterval(poller);
         reject(new Error(`WebSocket connection failed: ${url}`));
       }
     });
 
     ws.addEventListener("close", (ev) => {
-      log("info", "WebSocket close event fired", {
-        code: ev.code,
-        reason: ev.reason,
-        readyState: ws.readyState,
-      });
       if (!settled) {
         settled = true;
-        clearInterval(poller);
         reject(new Error(`WebSocket closed before open: ${ev.code} ${ev.reason}`));
       }
     });
   });
-}
-
-async function connectWsOpen(url: string): Promise<WsTransport> {
-  // First attempt: create WebSocket normally
-  const first = tryCreateWs(url);
-
-  // Race against a 3s timeout — if the WebSocket opens in time, great
-  const timeout = new Promise<"stuck">((r) => setTimeout(() => r("stuck"), 3000));
-  const result = await Promise.race([first, timeout]);
-  if (result !== "stuck") return result;
-
-  // First WebSocket is permanently stuck. Close it and retry after a delay
-  // to let module loading finish freeing up network connections.
-  log("warn", "WebSocket stuck at readyState=0 for 3s, retrying in 2s");
-
-  await new Promise<void>((r) => setTimeout(r, 2000));
-  log("info", "retrying WebSocket after delay (no user interaction)");
-  return tryCreateWs(url);
 }
 
 type CloseableConnection = {
@@ -173,42 +139,28 @@ async function createShipClient(generation: number): Promise<ShipClientHandle> {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const wsUrl = `${protocol}//${window.location.host}/ws`;
   log("info", "opening websocket client", { attempt, url: wsUrl });
-  const t0 = Date.now();
-  // Watchdog: if the event loop is alive, this will fire every 2s
-  const watchdog = setInterval(() => {
-    log("info", "watchdog tick", { attempt, elapsed: Date.now() - t0 });
-  }, 2000);
-  try {
-    const transport = await connectWsOpen(wsUrl);
-    log("info", "websocket open, starting hello exchange", {
+  const transport = await connectWsOpen(wsUrl);
+  const connection = await helloExchangeInitiator(transport, defaultHello(), {
+    keepalive: { pingIntervalMs: 5000, pongTimeoutMs: 10000 },
+  });
+  if (generation !== clientGeneration) {
+    log("warn", "closing stale websocket client", {
       attempt,
-      elapsed: Date.now() - t0,
+      generation,
+      current: clientGeneration,
     });
-    const connection = await helloExchangeInitiator(transport, defaultHello(), {
-      keepalive: { pingIntervalMs: 5000, pongTimeoutMs: 10000 },
-    });
-    log("info", "hello exchange complete", { attempt, elapsed: Date.now() - t0 });
-    if (generation !== clientGeneration) {
-      log("warn", "closing stale websocket client", {
-        attempt,
-        generation,
-        current: clientGeneration,
-      });
-      connection.getIo().close();
-      throw new Error("stale websocket client");
-    }
-    log("info", "websocket client ready", { attempt });
-    const handle = {
-      attempt,
-      client: new ShipClient(connection.asCaller()),
-      connection,
-    };
-    activeHandle = handle;
-    for (const cb of clientReadyListeners) cb();
-    return handle;
-  } finally {
-    clearInterval(watchdog);
+    connection.getIo().close();
+    throw new Error("stale websocket client");
   }
+  log("info", "websocket client ready", { attempt });
+  const handle = {
+    attempt,
+    client: new ShipClient(connection.asCaller()),
+    connection,
+  };
+  activeHandle = handle;
+  for (const cb of clientReadyListeners) cb();
+  return handle;
 }
 
 export function getShipClient(options?: { forceNew?: boolean }): Promise<ShipClient> {
@@ -236,22 +188,3 @@ export function invalidateShipClient(reason: string) {
   clientPromise = null;
   scheduleRetry();
 }
-
-// Eagerly connect and make an RPC call at module load time (before React renders)
-log("info", "eager getShipClient at module load");
-void (async () => {
-  try {
-    const client = await Promise.race([
-      getShipClient(),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 1000)),
-    ]);
-    log("info", "eager client ready, calling listProjects");
-    const projects = await Promise.race([
-      client.listProjects(),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("rpc timeout")), 1000)),
-    ]);
-    log("info", "eager listProjects result", { count: projects.length });
-  } catch (e) {
-    log("warn", "eager call failed", { error: String(e) });
-  }
-})();
