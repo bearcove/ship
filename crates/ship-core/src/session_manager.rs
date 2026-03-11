@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use futures_util::StreamExt;
 use ship_types::{
     AgentSnapshot, AgentState, AutonomyMode, BlockId, BlockPatch, CloseSessionResponse,
-    ContentBlock, CreateSessionRequest, CurrentTask, EffortValue, HumanReviewRequest,
-    PermissionRequest, PermissionResolution, PersistedSession, Role, SessionConfig, SessionEvent,
+    ContentBlock, CreateSessionRequest, CurrentTask, HumanReviewRequest, PermissionRequest,
+    PermissionResolution, PersistedSession, Role, SessionConfig, SessionEvent,
     SessionEventEnvelope, SessionId, SessionStartupStage, SessionStartupState, SessionSummary,
     TaskContentRecord, TaskId, TaskRecord, TaskStatus,
 };

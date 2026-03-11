@@ -122,16 +122,8 @@ struct AutoCommitResult {
     diff_stat: String,
 }
 
-struct ReplacementOccurrence {
-    old_start: usize,
-    old_end: usize,
-    new_start: usize,
-    new_end: usize,
-}
-
 struct PreparedEdit {
     pending: PendingEdit,
-    diff: String,
 }
 
 enum RustfmtOutcome {
@@ -210,6 +202,7 @@ impl ShipImpl {
         }
     }
 
+    #[allow(dead_code)] // called from ship binary; not from ship-startup-probe
     pub async fn fetch_github_user_avatar(&self) {
         let output = TokioCommand::new("gh")
             .args(["api", "/user"])
@@ -249,6 +242,7 @@ impl ShipImpl {
     }
 
     // r[resilience.server-restart]
+    #[allow(dead_code)] // called from ship binary; not from ship-startup-probe
     pub async fn load_persisted_sessions(&self) {
         let sessions_list = match self.store.list_sessions().await {
             Ok(list) => list,
@@ -1762,31 +1756,6 @@ Here is your task:
         }
     }
 
-    fn line_start_offsets(content: &str) -> Vec<usize> {
-        let mut offsets = vec![0];
-        for (index, byte) in content.bytes().enumerate() {
-            if byte == b'\n' {
-                offsets.push(index + 1);
-            }
-        }
-        offsets
-    }
-
-    fn byte_offset_to_line_index(line_offsets: &[usize], byte_offset: usize) -> usize {
-        line_offsets
-            .partition_point(|start| *start <= byte_offset)
-            .saturating_sub(1)
-    }
-
-    fn byte_span_to_line_range(line_offsets: &[usize], start: usize, end: usize) -> (usize, usize) {
-        let start_line = Self::byte_offset_to_line_index(line_offsets, start);
-        if start == end {
-            return (start_line, start_line);
-        }
-        let end_line = Self::byte_offset_to_line_index(line_offsets, end.saturating_sub(1)) + 1;
-        (start_line, end_line)
-    }
-
     fn find_match_offsets(content: &str, needle: &str) -> Vec<usize> {
         content
             .match_indices(needle)
@@ -1824,25 +1793,12 @@ Here is your task:
             old_content.len()
                 + match_offsets.len() * new_string.len().saturating_sub(old_string.len()),
         );
-        let mut occurrences = Vec::with_capacity(match_offsets.len());
         let mut old_cursor = 0;
-        let mut new_cursor = 0;
 
         for old_start in match_offsets {
             let old_end = old_start + old_string.len();
-            let unchanged = &old_content[old_cursor..old_start];
-            new_content.push_str(unchanged);
-            new_cursor += unchanged.len();
-
-            let new_start = new_cursor;
+            new_content.push_str(&old_content[old_cursor..old_start]);
             new_content.push_str(&new_string);
-            new_cursor += new_string.len();
-            occurrences.push(ReplacementOccurrence {
-                old_start,
-                old_end,
-                new_start,
-                new_end: new_cursor,
-            });
             old_cursor = old_end;
 
             if !replace_all {
@@ -1851,12 +1807,6 @@ Here is your task:
         }
 
         new_content.push_str(&old_content[old_cursor..]);
-        let diff = Self::render_prepared_edit_diff(
-            relative_path,
-            &old_content,
-            &new_content,
-            &occurrences,
-        );
 
         Ok(PreparedEdit {
             pending: PendingEdit {
@@ -1867,86 +1817,7 @@ Here is your task:
                 new_string,
                 replace_all,
             },
-            diff,
         })
-    }
-
-    fn render_prepared_edit_diff(
-        relative_path: &Path,
-        old_content: &str,
-        new_content: &str,
-        occurrences: &[ReplacementOccurrence],
-    ) -> String {
-        const CONTEXT_LINES: usize = 3;
-
-        let old_lines = old_content.lines().collect::<Vec<_>>();
-        let new_lines = new_content.lines().collect::<Vec<_>>();
-        let old_offsets = Self::line_start_offsets(old_content);
-        let new_offsets = Self::line_start_offsets(new_content);
-
-        let mut hunks: Vec<(usize, usize, usize, usize)> = Vec::new();
-        for occurrence in occurrences {
-            let (old_start_line, old_end_line) = Self::byte_span_to_line_range(
-                &old_offsets,
-                occurrence.old_start,
-                occurrence.old_end,
-            );
-            let (new_start_line, new_end_line) = Self::byte_span_to_line_range(
-                &new_offsets,
-                occurrence.new_start,
-                occurrence.new_end,
-            );
-
-            if let Some(previous) = hunks.last_mut() {
-                let previous_old_context_end = previous.1.saturating_add(CONTEXT_LINES);
-                let previous_new_context_end = previous.3.saturating_add(CONTEXT_LINES);
-                if old_start_line <= previous_old_context_end
-                    || new_start_line <= previous_new_context_end
-                {
-                    previous.1 = previous.1.max(old_end_line);
-                    previous.3 = previous.3.max(new_end_line);
-                    continue;
-                }
-            }
-            hunks.push((old_start_line, old_end_line, new_start_line, new_end_line));
-        }
-
-        let mut rendered = vec![
-            format!("--- {}", relative_path.display()),
-            format!("+++ {}", relative_path.display()),
-        ];
-
-        for (old_start_line, old_end_line, new_start_line, new_end_line) in hunks {
-            let old_context_start = old_start_line.saturating_sub(CONTEXT_LINES);
-            let new_context_start = new_start_line.saturating_sub(CONTEXT_LINES);
-            let old_context_end = old_lines.len().min(old_end_line + CONTEXT_LINES);
-            let new_context_end = new_lines.len().min(new_end_line + CONTEXT_LINES);
-
-            rendered.push(format!(
-                "@@ -{},{} +{},{} @@",
-                old_context_start + 1,
-                old_context_end.saturating_sub(old_context_start),
-                new_context_start + 1,
-                new_context_end.saturating_sub(new_context_start),
-            ));
-
-            for line in &old_lines[old_context_start..old_start_line] {
-                rendered.push(format!(" {line}"));
-            }
-            for line in &old_lines[old_start_line..old_end_line] {
-                rendered.push(format!("-{line}"));
-            }
-            for line in &new_lines[new_start_line..new_end_line] {
-                rendered.push(format!("+{line}"));
-            }
-
-            let old_suffix = old_lines.get(old_end_line..old_context_end).unwrap_or(&[]);
-            for line in old_suffix {
-                rendered.push(format!(" {line}"));
-            }
-        }
-
-        rendered.join("\n")
     }
 
     fn format_read_file_excerpt(
@@ -2049,7 +1920,7 @@ Here is your task:
         .map_err(|error| format!("run_command path resolution failed: {error}"))??;
 
         let shell_command = format!("exec 2>&1; {}", command);
-        let mut child = Self::sandboxed_sh(&resolved_cwd, &shell_command)?;
+        let child = Self::sandboxed_sh(&resolved_cwd, &shell_command)?;
 
         let output = match tokio::time::timeout(RUN_COMMAND_TIMEOUT, child.wait_with_output()).await
         {

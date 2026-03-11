@@ -7,7 +7,7 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use agent_discovery::{SystemBinaryPathProbe, discover_agents};
 use axum::Router;
@@ -17,10 +17,15 @@ use axum::http::{HeaderName, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::any;
 use figue::{self as args, FigueBuiltins};
+use roam::channel;
 use ship_core::ProjectRegistry;
 use ship_impl::ShipImpl;
 use ship_service::{ShipClient, ShipDispatcher};
-use ship_types::SessionId;
+use ship_types::{
+    AgentKind, CreateSessionRequest, CreateSessionResponse, PromptContentPart, SessionEvent,
+    SessionId, SessionStartupState, SubscribeMessage,
+};
+use tokio::time::{sleep, timeout};
 use tracing::Level;
 use tracing_subscriber::EnvFilter;
 
@@ -61,6 +66,40 @@ enum Command {
         #[facet(args::subcommand)]
         command: ProjectCommand,
     },
+
+    /// Spin up an in-process server, create a session, and watch events.
+    Probe(ProbeArgs),
+}
+
+#[derive(Debug, facet::Facet)]
+struct ProbeArgs {
+    /// Project name.
+    #[facet(args::positional)]
+    project: String,
+
+    /// Base branch for the session.
+    #[facet(args::named, default)]
+    base_branch: Option<String>,
+
+    /// Captain agent kind (claude or codex).
+    #[facet(args::named, default)]
+    captain: Option<AgentKind>,
+
+    /// Mate agent kind (claude or codex).
+    #[facet(args::named, default)]
+    mate: Option<AgentKind>,
+
+    /// Delay in milliseconds before sending the captain prompt.
+    #[facet(args::named, default)]
+    prompt_after_ms: Option<u64>,
+
+    /// Prompt to send to the captain after the delay.
+    #[facet(args::named, default)]
+    prompt: Option<String>,
+
+    /// Idle timeout in milliseconds (exit when no events arrive for this long).
+    #[facet(args::named, default)]
+    idle_timeout_ms: Option<u64>,
 }
 
 #[derive(Debug, facet::Facet)]
@@ -136,6 +175,297 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(())
         }
         Command::Project { command } => run_project(command).await,
+        Command::Probe(args) => run_probe(args).await,
+    }
+}
+
+#[derive(Clone)]
+struct ProbeState {
+    ship: ShipImpl,
+}
+
+async fn probe_ws_handler(
+    State(state): State<ProbeState>,
+    mut request: Request,
+) -> impl IntoResponse {
+    if !hyper_tungstenite::is_upgrade_request(&request) {
+        return (StatusCode::BAD_REQUEST, "expected websocket upgrade").into_response();
+    }
+
+    let (response, websocket) = match hyper_tungstenite::upgrade(&mut request, None) {
+        Ok(ok) => ok,
+        Err(error) => {
+            tracing::warn!(%error, "failed to upgrade probe websocket request");
+            return (StatusCode::BAD_REQUEST, "invalid websocket upgrade").into_response();
+        }
+    };
+
+    let ship = state.ship.clone();
+    tokio::spawn(async move {
+        let ws_stream = match websocket.await {
+            Ok(stream) => stream,
+            Err(error) => {
+                tracing::warn!(%error, "probe websocket upgrade future failed");
+                return;
+            }
+        };
+
+        let link = roam_websocket::WsLink::new(ws_stream);
+        match roam::acceptor(link)
+            .on_connection(ship.ship_mcp_connection_acceptor())
+            .establish::<ShipClient>(ShipDispatcher::new(ship))
+            .await
+        {
+            Ok((caller_guard, _session_handle)) => {
+                let _caller_guard = caller_guard;
+                std::future::pending::<()>().await;
+            }
+            Err(error) => {
+                tracing::warn!(?error, "probe roam websocket session closed or failed");
+            }
+        }
+    });
+
+    response.map(Body::new).into_response()
+}
+
+async fn run_probe(args: ProbeArgs) -> Result<(), Box<dyn std::error::Error>> {
+    let base_branch = args.base_branch.unwrap_or_else(|| "main".to_owned());
+    let captain_kind = args.captain.unwrap_or(AgentKind::Claude);
+    let mate_kind = args.mate.unwrap_or(AgentKind::Claude);
+    let idle_timeout_ms = args.idle_timeout_ms.unwrap_or(10_000);
+
+    if args.prompt_after_ms.is_some() && args.prompt.is_none() {
+        return Err("--prompt-after-ms requires --prompt".into());
+    }
+
+    let mut registry = ProjectRegistry::load_default().await?;
+    registry.validate_all().await?;
+    if registry.get(&args.project).is_none() {
+        let known = registry
+            .list()
+            .into_iter()
+            .map(|project| project.name.0)
+            .collect::<Vec<_>>();
+        return Err(format!(
+            "project '{}' is not registered; known projects: {}",
+            args.project,
+            known.join(", ")
+        )
+        .into());
+    }
+
+    let sessions_dir = registry.config_dir().join("sessions");
+    let ship = ShipImpl::new(
+        registry,
+        sessions_dir,
+        discover_agents(&SystemBinaryPathProbe),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let ws_url = format!("ws://{}/ws", listener.local_addr()?);
+    ship.set_server_ws_url(ws_url.clone());
+    let app = Router::new()
+        .route("/ws", any(probe_ws_handler))
+        .with_state(ProbeState { ship: ship.clone() });
+    let server_task = tokio::spawn(async move {
+        axum::serve(listener, app)
+            .await
+            .expect("probe websocket server");
+    });
+
+    let ws_stream = tokio_tungstenite::connect_async(&ws_url)
+        .await
+        .map_err(|error| format!("failed to connect probe websocket: {error}"))?
+        .0;
+    let link = roam_websocket::WsLink::new(ws_stream);
+    let (client, _client_session_handle) = roam::initiator(link)
+        .establish::<ShipClient>(())
+        .await
+        .expect("client handshake should succeed");
+
+    let created_at = Instant::now();
+    let response = client
+        .create_session(CreateSessionRequest {
+            project: ship_types::ProjectName(args.project.clone()),
+            captain_kind,
+            mate_kind,
+            base_branch: base_branch.clone(),
+            mcp_servers: None,
+        })
+        .await
+        .map_err(|error| format!("create_session failed: {error:?}"))?;
+
+    let session_id = match response {
+        CreateSessionResponse::Created { session_id } => session_id,
+        CreateSessionResponse::Failed { message } => return Err(message.into()),
+    };
+
+    println!(
+        "[probe +{:>5}ms] created session {}",
+        created_at.elapsed().as_millis(),
+        session_id.0
+    );
+
+    let (tx, mut rx) = channel::<SubscribeMessage>();
+    client
+        .subscribe_events(session_id.clone(), tx)
+        .await
+        .map_err(|error| format!("subscribe_events failed: {error:?}"))?;
+
+    if let (Some(delay_ms), Some(prompt)) = (args.prompt_after_ms, args.prompt.clone()) {
+        let client = client.clone();
+        let session_id = session_id.clone();
+        tokio::spawn(async move {
+            sleep(Duration::from_millis(delay_ms)).await;
+            println!(
+                "[probe +{:>5}ms] sending captain prompt {:?}",
+                created_at.elapsed().as_millis(),
+                prompt
+            );
+            if let Err(error) = client
+                .prompt_captain(session_id, vec![PromptContentPart::Text { text: prompt }])
+                .await
+            {
+                eprintln!(
+                    "[probe +{:>5}ms] prompt_captain failed: {:?}",
+                    created_at.elapsed().as_millis(),
+                    error
+                );
+            }
+        });
+    }
+
+    loop {
+        match timeout(Duration::from_millis(idle_timeout_ms), rx.recv()).await {
+            Ok(Ok(Some(message))) => {
+                log_message(created_at, &message);
+            }
+            Ok(Ok(None)) => {
+                println!(
+                    "[probe +{:>5}ms] subscription channel closed",
+                    created_at.elapsed().as_millis()
+                );
+                break;
+            }
+            Ok(Err(error)) => {
+                println!(
+                    "[probe +{:>5}ms] subscription recv error: {}",
+                    created_at.elapsed().as_millis(),
+                    error
+                );
+                break;
+            }
+            Err(_) => {
+                println!(
+                    "[probe +{:>5}ms] no events for {}ms, stopping",
+                    created_at.elapsed().as_millis(),
+                    idle_timeout_ms
+                );
+                break;
+            }
+        }
+    }
+
+    server_task.abort();
+    Ok(())
+}
+
+fn log_message(started_at: Instant, message: &SubscribeMessage) {
+    match message {
+        SubscribeMessage::ReplayComplete => {
+            println!(
+                "[probe +{:>5}ms] replay complete",
+                started_at.elapsed().as_millis()
+            );
+        }
+        SubscribeMessage::Event(envelope) => {
+            let event_summary = match &envelope.event {
+                SessionEvent::SessionStartupChanged { state } => match state {
+                    SessionStartupState::Pending => "startup pending".to_owned(),
+                    SessionStartupState::Ready => "startup ready".to_owned(),
+                    SessionStartupState::Running { stage, message } => {
+                        format!("startup running stage={stage:?} message={message}")
+                    }
+                    SessionStartupState::Failed { stage, message } => {
+                        format!("startup failed stage={stage:?} message={message}")
+                    }
+                },
+                SessionEvent::AgentStateChanged { role, state } => {
+                    format!("agent state role={role:?} state={state:?}")
+                }
+                SessionEvent::BlockAppend {
+                    role,
+                    block_id,
+                    block,
+                } => {
+                    format!(
+                        "block append role={role:?} block_id={} block={block:?}",
+                        block_id.0
+                    )
+                }
+                SessionEvent::BlockPatch {
+                    role,
+                    block_id,
+                    patch,
+                } => {
+                    format!(
+                        "block patch role={role:?} block_id={} patch={patch:?}",
+                        block_id.0
+                    )
+                }
+                SessionEvent::TaskStarted {
+                    task_id,
+                    title,
+                    description,
+                } => {
+                    format!(
+                        "task started id={} title={title:?} description={description:?}",
+                        task_id.0
+                    )
+                }
+                SessionEvent::TaskStatusChanged { task_id, status } => {
+                    format!("task status id={} status={status:?}", task_id.0)
+                }
+                SessionEvent::ContextUpdated {
+                    role,
+                    remaining_percent,
+                } => {
+                    format!("context updated role={role:?} remaining={remaining_percent}%")
+                }
+                SessionEvent::AgentModelChanged {
+                    role,
+                    model_id,
+                    available_models,
+                } => {
+                    format!(
+                        "model changed role={role:?} model_id={model_id:?} available={available_models:?}"
+                    )
+                }
+                SessionEvent::AgentEffortChanged {
+                    role,
+                    effort_config_id,
+                    effort_value_id,
+                    ..
+                } => {
+                    format!(
+                        "effort changed role={role:?} config_id={effort_config_id:?} value_id={effort_value_id:?}"
+                    )
+                }
+                SessionEvent::MateGuidanceQueued { .. } => "mate guidance queued".to_owned(),
+                SessionEvent::HumanReviewRequested { .. } => "human review requested".to_owned(),
+                SessionEvent::HumanReviewCleared => "human review cleared".to_owned(),
+                SessionEvent::SessionTitleChanged { title } => {
+                    format!("session title changed: {title}")
+                }
+            };
+            println!(
+                "[probe +{:>5}ms] seq={} {}",
+                started_at.elapsed().as_millis(),
+                envelope.seq,
+                event_summary
+            );
+        }
     }
 }
 

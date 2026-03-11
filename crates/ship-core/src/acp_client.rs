@@ -1,9 +1,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::path::{Component, Path, PathBuf};
-use std::process::ExitStatus;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::time::Duration;
 
 use agent_client_protocol::{
     Client, ContentBlock, CreateTerminalRequest, CreateTerminalResponse, Error,
@@ -11,7 +9,7 @@ use agent_client_protocol::{
     PlanEntryPriority, ReadTextFileRequest, ReadTextFileResponse, ReleaseTerminalRequest,
     ReleaseTerminalResponse, RequestPermissionOutcome, RequestPermissionRequest,
     RequestPermissionResponse, Result as AcpResult, SelectedPermissionOutcome, SessionNotification,
-    SessionUpdate, TerminalExitStatus, TerminalId, TerminalOutputRequest, TerminalOutputResponse,
+    SessionUpdate, TerminalExitStatus, TerminalOutputRequest, TerminalOutputResponse,
     ToolCallContent, ToolCallStatus, ToolKind, WaitForTerminalExitRequest,
     WaitForTerminalExitResponse, WriteTextFileRequest, WriteTextFileResponse,
 };
@@ -24,15 +22,14 @@ use ship_types::{
     ToolCallKind as ShipToolCallKind, ToolCallLocation as ShipToolCallLocation,
     ToolCallStatus as ShipToolCallStatus, ToolTarget as ShipToolTarget,
 };
-use tokio::io::{AsyncRead, AsyncReadExt};
-use tokio::process::{Child, Command};
+use tokio::process::Child;
 use tokio::sync::{mpsc, oneshot, watch};
 
 const BUILTIN_TOOL_BLOCKED_GUIDANCE: &str = "\
 A built-in tool (Bash, Read, Write, or Edit) was blocked — those are disabled \
 in Ship. Use your MCP tools instead: run_command to run shell commands, \
-read_file to read files, write_file to write files, search_files to search, \
-list_files to list. Do not stop — continue your task using these tools.";
+read_file to read files, write_file to write files. \
+Do not stop — continue your task using these tools.";
 
 pub struct ShipAcpClient {
     role: Role,
@@ -556,88 +553,12 @@ impl Client for ShipAcpClient {
     }
 }
 
-async fn read_terminal_stream<R: AsyncRead + Unpin>(mut stream: R, output: Rc<RefCell<String>>) {
-    let mut buffer = [0_u8; 4096];
-    loop {
-        match stream.read(&mut buffer).await {
-            Ok(0) => return,
-            Ok(read) => {
-                output
-                    .borrow_mut()
-                    .push_str(&String::from_utf8_lossy(&buffer[..read]));
-            }
-            Err(error) => {
-                tracing::warn!(%error, "failed reading terminal output");
-                return;
-            }
-        }
-    }
-}
-
-async fn watch_terminal_exit(
-    child: Rc<RefCell<Child>>,
-    exit_status: Rc<RefCell<Option<TerminalExitStatus>>>,
-    exit_status_tx: watch::Sender<Option<TerminalExitStatus>>,
-) {
-    loop {
-        let exited = {
-            let mut child = child.borrow_mut();
-            match child.try_wait() {
-                Ok(status) => status,
-                Err(error) => {
-                    tracing::warn!(%error, "failed to check terminal exit status");
-                    let failed = TerminalExitStatus::new().signal("unknown".to_owned());
-                    *exit_status.borrow_mut() = Some(failed.clone());
-                    let _ = exit_status_tx.send(Some(failed));
-                    return;
-                }
-            }
-        };
-
-        if let Some(status) = exited {
-            let terminal_status = map_exit_status(status);
-            *exit_status.borrow_mut() = Some(terminal_status.clone());
-            let _ = exit_status_tx.send(Some(terminal_status));
-            return;
-        }
-
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-}
-
 fn kill_if_running(child: &Rc<RefCell<Child>>) -> std::io::Result<()> {
     let mut child = child.borrow_mut();
     if child.try_wait()?.is_none() {
         child.start_kill()?;
     }
     Ok(())
-}
-
-fn map_exit_status(exit_status: ExitStatus) -> TerminalExitStatus {
-    let mut status =
-        TerminalExitStatus::new().exit_code(exit_status.code().map(|code| code as u32));
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::ExitStatusExt;
-        if let Some(signal) = exit_status.signal() {
-            status = status.signal(signal.to_string());
-        }
-    }
-    status
-}
-
-fn resolve_relative_to_worktree(worktree_path: &Path, path: &Path) -> PathBuf {
-    let mut resolved = PathBuf::from(worktree_path);
-    for component in path.components() {
-        match component {
-            Component::Prefix(_) | Component::RootDir | Component::CurDir => {}
-            Component::ParentDir => {
-                resolved.pop();
-            }
-            Component::Normal(part) => resolved.push(part),
-        }
-    }
-    resolved
 }
 
 fn format_content_block(block: ContentBlock) -> String {
@@ -1000,46 +921,6 @@ fn map_permission_option_kind(kind: PermissionOptionKind) -> ShipPermissionOptio
         PermissionOptionKind::RejectAlways => ShipPermissionOptionKind::RejectAlways,
         _ => ShipPermissionOptionKind::Other,
     }
-}
-
-fn is_dangerous_command(command: &str) -> bool {
-    let trimmed = command.trim();
-    let normalized = trimmed.to_ascii_lowercase();
-    let mut parts = normalized.split_whitespace();
-    let Some(program) = parts.next() else {
-        return false;
-    };
-    let subcommand = parts.next();
-
-    if program == "git" && matches!(subcommand, Some("checkout" | "restore" | "clean" | "reset")) {
-        return true;
-    }
-
-    program == "rm" && is_broad_recursive_delete(trimmed)
-}
-
-fn is_broad_recursive_delete(command: &str) -> bool {
-    let normalized = command.trim().to_ascii_lowercase();
-    if !normalized.starts_with("rm ") {
-        return false;
-    }
-
-    let has_recursive = normalized.contains(" -r")
-        || normalized.contains(" -rf")
-        || normalized.contains(" -fr")
-        || normalized.contains(" --recursive");
-    let has_force = normalized.contains(" -f")
-        || normalized.contains(" -rf")
-        || normalized.contains(" -fr")
-        || normalized.contains(" --force");
-    let targets_rootish = normalized.contains(" *")
-        || normalized.ends_with(" .")
-        || normalized.contains(" ./")
-        || normalized.contains(" /")
-        || normalized.contains(" ..")
-        || normalized.contains(" ~");
-
-    has_recursive && has_force && targets_rootish
 }
 
 fn display_path_for_path(worktree_path: &Path, path: &Path) -> Option<String> {

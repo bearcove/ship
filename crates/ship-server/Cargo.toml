@@ -14,10 +14,6 @@ rustdoc-args = ["--html-in-header", "arborium-header.html"]
 name = "ship"
 path = "src/main.rs"
 
-[[bin]]
-name = "ship-startup-probe"
-path = "src/startup_probe.rs"
-
 [dependencies]
 async-trait = "0.1"
 if-addrs = "0.10"
