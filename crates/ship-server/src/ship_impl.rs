@@ -3775,21 +3775,29 @@ Here is your task:
     }
 
     fn repo_root_for_worktree(worktree_path: &std::path::Path) -> Result<&std::path::Path, String> {
-        let ship_dir = worktree_path
-            .parent()
-            .ok_or_else(|| format!("invalid worktree path: {}", worktree_path.display()))?;
-        let repo_root = ship_dir
-            .parent()
-            .ok_or_else(|| format!("invalid worktree path: {}", worktree_path.display()))?;
-
-        if ship_dir.file_name().and_then(|name| name.to_str()) != Some(".ship") {
-            return Err(format!(
-                "invalid worktree path: {}",
-                worktree_path.display()
-            ));
+        let mut current = worktree_path;
+        loop {
+            let parent = current
+                .parent()
+                .ok_or_else(|| format!("invalid worktree path: {}", worktree_path.display()))?;
+            if parent.file_name().and_then(|n| n.to_str()) == Some(".ship") {
+                return parent
+                    .parent()
+                    .ok_or_else(|| format!("invalid worktree path: {}", worktree_path.display()));
+            }
+            current = parent;
+            if worktree_path
+                .components()
+                .count()
+                .saturating_sub(current.components().count())
+                > 3
+            {
+                return Err(format!(
+                    "invalid worktree path: {}",
+                    worktree_path.display()
+                ));
+            }
         }
-
-        Ok(repo_root)
     }
 
     async fn cleanup_session_resources(
