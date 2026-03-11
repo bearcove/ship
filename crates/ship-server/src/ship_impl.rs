@@ -5082,78 +5082,22 @@ impl Ship for ShipImpl {
             })
             .language("en");
 
-        // Use WhisperStream directly on a blocking thread for real-time streaming.
-        // The AsyncWhisperStream wrapper has borrow conflicts between feed_audio(&self)
-        // and recv_segments(&mut self), so we use the sync API with channels instead.
-        let (audio_tx, audio_rx) = tokio::sync::mpsc::channel::<Vec<f32>>(32);
-        let (segment_tx, mut segment_rx) = tokio::sync::mpsc::channel::<TranscribeSegment>(64);
-
-        // Blocking whisper worker: feed audio incrementally and emit segments in real-time
-        let whisper_handle = std::thread::spawn(move || {
-            let mut stream = match whisper_cpp_plus::WhisperStream::new(&ctx, params) {
-                Ok(s) => s,
-                Err(e) => {
-                    tracing::error!("failed to create whisper stream: {e}");
-                    return;
-                }
-            };
-
-            let mut audio_rx = audio_rx;
-
-            while let Some(samples) = audio_rx.blocking_recv() {
-                stream.feed_audio(&samples);
-
-                // Process any segments that are ready
-                loop {
-                    match stream.process_step() {
-                        Ok(Some(segments)) => {
-                            for seg in segments {
-                                let ts = TranscribeSegment {
-                                    start_ms: (seg.start_seconds() * 1000.0) as u64,
-                                    end_ms: (seg.end_seconds() * 1000.0) as u64,
-                                    text: seg.text.clone(),
-                                };
-                                tracing::info!(
-                                    "transcribe_audio: segment [{}-{}ms]: {}",
-                                    ts.start_ms,
-                                    ts.end_ms,
-                                    ts.text
-                                );
-                                if segment_tx.blocking_send(ts).is_err() {
-                                    return;
-                                }
-                            }
-                        }
-                        Ok(None) => break, // Not enough audio yet
-                        Err(e) => {
-                            tracing::error!("whisper process_step failed: {e}");
-                            return;
-                        }
-                    }
-                }
+        let mut stream = match whisper_cpp_plus::AsyncWhisperStream::new(ctx, params) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::error!("failed to create whisper stream: {e}");
+                let _ = segments_out.close(Default::default()).await;
+                return;
             }
+        };
 
-            // Flush remaining audio
-            tracing::info!("transcribe_audio: audio done, flushing");
-            match stream.flush() {
-                Ok(segments) => {
-                    for seg in segments {
-                        let ts = TranscribeSegment {
-                            start_ms: (seg.start_seconds() * 1000.0) as u64,
-                            end_ms: (seg.end_seconds() * 1000.0) as u64,
-                            text: seg.text.clone(),
-                        };
-                        let _ = segment_tx.blocking_send(ts);
-                    }
-                }
-                Err(e) => {
-                    tracing::error!("whisper flush failed: {e}");
-                }
-            }
-        });
+        // Single task: feed audio, then try_recv segments after each feed.
+        // Each try_recv_segments() batch is a full window result from the sliding
+        // window, so consecutive batches overlap. We deduplicate by tracking the
+        // latest end_ms we've sent and only forwarding segments that start after it.
+        tokio::spawn(async move {
+            let mut sent_up_to_ms: u64 = 0;
 
-        // Forward audio from roam Rx to the whisper worker
-        let forward_handle = tokio::spawn(async move {
             loop {
                 match audio_in.recv().await {
                     Ok(Some(chunk)) => {
@@ -5169,8 +5113,37 @@ impl Ship for ShipImpl {
                             .chunks_exact(4)
                             .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
                             .collect();
-                        if audio_tx.send(samples).await.is_err() {
+                        if stream.feed_audio(samples).await.is_err() {
+                            tracing::error!("transcribe_audio: feed_audio failed");
                             break;
+                        }
+
+                        // Check for segments immediately after feeding
+                        while let Some(segments) = stream.try_recv_segments() {
+                            for seg in segments {
+                                let start_ms = (seg.start_seconds() * 1000.0) as u64;
+                                let end_ms = (seg.end_seconds() * 1000.0) as u64;
+                                // Skip segments we've already sent (sliding window overlap)
+                                if start_ms < sent_up_to_ms {
+                                    continue;
+                                }
+                                let ts = TranscribeSegment {
+                                    start_ms,
+                                    end_ms,
+                                    text: seg.text.clone(),
+                                };
+                                tracing::info!(
+                                    "transcribe_audio: segment [{}-{}ms]: {}",
+                                    ts.start_ms,
+                                    ts.end_ms,
+                                    ts.text
+                                );
+                                sent_up_to_ms = end_ms;
+                                if segments_out.send(ts).await.is_err() {
+                                    let _ = stream.stop().await;
+                                    return;
+                                }
+                            }
                         }
                     }
                     Ok(None) => {
@@ -5183,25 +5156,32 @@ impl Ship for ShipImpl {
                     }
                 }
             }
-        });
 
-        // Forward segments from whisper worker to roam Tx in real-time
-        tokio::spawn(async move {
-            // Forward segments as they arrive (real-time)
-            while let Some(segment) = segment_rx.recv().await {
-                if segments_out.send(segment).await.is_err() {
-                    break;
+            // Flush remaining audio
+            tracing::info!("transcribe_audio: flushing");
+            match stream.flush().await {
+                Ok(segments) => {
+                    for seg in segments {
+                        let start_ms = (seg.start_seconds() * 1000.0) as u64;
+                        let end_ms = (seg.end_seconds() * 1000.0) as u64;
+                        if start_ms < sent_up_to_ms {
+                            continue;
+                        }
+                        let ts = TranscribeSegment {
+                            start_ms,
+                            end_ms,
+                            text: seg.text.clone(),
+                        };
+                        sent_up_to_ms = end_ms;
+                        let _ = segments_out.send(ts).await;
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("whisper flush failed: {e}");
                 }
             }
 
-            // Wait for feeder and whisper thread to finish
-            forward_handle.await.ok();
-            tokio::task::spawn_blocking(move || {
-                whisper_handle.join().ok();
-            })
-            .await
-            .ok();
-
+            let _ = stream.stop().await;
             let _ = segments_out.close(Default::default()).await;
         });
     }
