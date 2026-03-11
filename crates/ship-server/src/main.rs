@@ -149,7 +149,10 @@ struct ProjectRemoveArgs {
 
 #[derive(Clone)]
 enum FrontendMode {
-    DevProxy { vite_origin: String },
+    // vite_origin: loopback URL used by Axum to proxy requests to Vite
+    // vite_port: Vite's port, injected into HTML so the browser loads JS
+    //            directly from Vite (bypassing Axum's connection pool)
+    DevProxy { vite_origin: String, vite_port: u16 },
 }
 
 #[tokio::main]
@@ -485,9 +488,16 @@ async fn run_serve(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
         .find(|a| a.ip().is_loopback())
         .copied()
         .unwrap_or(listen_addrs[0]);
+    // Use the first non-loopback address for Vite HMR so mobile devices on the
+    // LAN can reach the HMR WebSocket. Falls back to loopback (localhost-only).
+    let hmr_addr = listen_addrs
+        .iter()
+        .find(|a| !a.ip().is_loopback())
+        .copied()
+        .unwrap_or(primary_addr);
     let vite_addr = resolve_vite_addr()?;
     // r[dev-proxy.vite-lifecycle]
-    let _vite_process = spawn_vite_dev_server(primary_addr, vite_addr).await?;
+    let _vite_process = spawn_vite_dev_server(hmr_addr, vite_addr).await?;
     wait_for_tcp_readiness(vite_addr, Duration::from_secs(10)).await?;
 
     let frontend_mode = load_frontend_mode(vite_addr);
@@ -689,14 +699,24 @@ fn resolve_vite_addr() -> Result<SocketAddr, Box<dyn std::error::Error>> {
 // r[server.mode]
 fn load_frontend_mode(vite_addr: SocketAddr) -> FrontendMode {
     let vite_origin = format!("http://{vite_addr}");
-    FrontendMode::DevProxy { vite_origin }
+    FrontendMode::DevProxy {
+        vite_origin,
+        vite_port: vite_addr.port(),
+    }
 }
 
 async fn spawn_vite_dev_server(
-    listen_addr: SocketAddr,
+    hmr_addr: SocketAddr,
     vite_addr: SocketAddr,
 ) -> Result<tokio::process::Child, Box<dyn std::error::Error>> {
     let frontend_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../frontend");
+    // When there's a LAN address, bind Vite on all interfaces so mobile HMR works.
+    // Axum still connects to Vite via loopback (vite_addr).
+    let vite_bind_host = if hmr_addr.ip().is_loopback() {
+        vite_addr.ip().to_string()
+    } else {
+        "0.0.0.0".to_owned()
+    };
     let mut child = tokio::process::Command::new("pnpm");
     child
         .arg("exec")
@@ -705,10 +725,10 @@ async fn spawn_vite_dev_server(
         .arg("false")
         .arg("--strictPort")
         .arg("--host")
-        .arg(vite_addr.ip().to_string())
+        .arg(vite_bind_host)
         .arg("--port")
         .arg(vite_addr.port().to_string())
-        .env("SHIP_VITE_HMR_HOST", vite_hmr_host(listen_addr))
+        .env("SHIP_VITE_HMR_HOST", vite_hmr_host(hmr_addr))
         .env("SHIP_VITE_HMR_CLIENT_PORT", vite_addr.port().to_string())
         .current_dir(frontend_dir)
         .kill_on_drop(true)
@@ -837,9 +857,21 @@ async fn proxy_vite_handler(
     State(state): State<AppState>,
     request: Request,
 ) -> axum::response::Response {
-    let FrontendMode::DevProxy { vite_origin } = &state.frontend_mode;
+    let FrontendMode::DevProxy {
+        vite_origin,
+        vite_port,
+    } = &state.frontend_mode;
 
     let (parts, body) = request.into_parts();
+
+    // Extract the hostname from the Host header (strips port if present)
+    let request_host = parts
+        .headers
+        .get(header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|h| h.split(':').next())
+        .unwrap_or("localhost")
+        .to_owned();
     let path_and_query = parts
         .uri
         .path_and_query()
@@ -899,7 +931,28 @@ async fn proxy_vite_handler(
         }
     };
 
-    let mut response = Response::new(Body::from(response_body));
+    // If the response is HTML, inject <base href> so the browser loads JS modules
+    // directly from Vite's port instead of going through Axum. This prevents iOS
+    // Safari's 6-connection-per-host limit from starving the WebSocket connection.
+    let is_html = response_headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(|ct| ct.starts_with("text/html"))
+        .unwrap_or(false);
+
+    let final_body = if is_html {
+        if let Ok(html) = std::str::from_utf8(&response_body) {
+            let base_tag = format!(r#"<base href="http://{request_host}:{vite_port}/">"#);
+            let patched = html.replacen("<head>", &format!("<head>{base_tag}"), 1);
+            axum::body::Bytes::from(patched.into_bytes())
+        } else {
+            response_body
+        }
+    } else {
+        response_body
+    };
+
+    let mut response = Response::new(Body::from(final_body));
     *response.status_mut() = status;
     for (name, value) in &response_headers {
         if should_skip_response_header(name) {

@@ -1,9 +1,40 @@
 // r[backend.rpc]
+import { useEffect, useState } from "react";
 import { defaultHello, helloExchangeInitiator } from "@bearcove/roam-core";
 import { connectWs } from "@bearcove/roam-ws";
 import { ShipClient } from "../generated/ship";
 
 export type { ShipClient } from "../generated/ship";
+
+export type ClientLogEntry = {
+  level: "info" | "warn";
+  message: string;
+  details: Record<string, unknown>;
+  ts: number;
+};
+
+const MAX_LOG_ENTRIES = 200;
+const logBuffer: ClientLogEntry[] = [];
+const logListeners = new Set<() => void>();
+
+function notifyLogListeners() {
+  for (const cb of logListeners) cb();
+}
+
+export function useClientLogs(): ClientLogEntry[] {
+  const [entries, setEntries] = useState<ClientLogEntry[]>(() => [...logBuffer]);
+  useEffect(() => {
+    function update() {
+      setEntries([...logBuffer]);
+    }
+    logListeners.add(update);
+    update(); // sync anything that fired before we subscribed
+    return () => {
+      logListeners.delete(update);
+    };
+  }, []);
+  return entries;
+}
 
 type CloseableConnection = {
   getIo(): { close(): void };
@@ -20,10 +51,23 @@ let clientPromise: Promise<ShipClientHandle> | null = null;
 let activeHandle: ShipClientHandle | null = null;
 let connectionAttempt = 0;
 let clientGeneration = 0;
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+const clientReadyListeners = new Set<() => void>();
+
+/** Subscribe to be notified whenever a new WebSocket connection is established. */
+export function onClientReady(cb: () => void): () => void {
+  clientReadyListeners.add(cb);
+  return () => clientReadyListeners.delete(cb);
+}
 
 function log(level: "info" | "warn", message: string, details?: Record<string, unknown>) {
   const method = level === "warn" ? console.warn : console.info;
   method(`[ship/ws] ${message}`, details ?? {});
+  const entry: ClientLogEntry = { level, message, details: details ?? {}, ts: Date.now() };
+  if (logBuffer.length >= MAX_LOG_ENTRIES) logBuffer.shift();
+  logBuffer.push(entry);
+  notifyLogListeners();
 }
 
 function closeActiveClient(reason: string) {
@@ -34,6 +78,14 @@ function closeActiveClient(reason: string) {
   });
   activeHandle.connection.getIo().close();
   activeHandle = null;
+}
+
+function scheduleRetry() {
+  if (retryTimer !== null) return;
+  retryTimer = setTimeout(() => {
+    retryTimer = null;
+    void getShipClient();
+  }, 3000);
 }
 
 async function createShipClient(generation: number): Promise<ShipClientHandle> {
@@ -61,6 +113,7 @@ async function createShipClient(generation: number): Promise<ShipClientHandle> {
     connection,
   };
   activeHandle = handle;
+  for (const cb of clientReadyListeners) cb();
   return handle;
 }
 
@@ -70,7 +123,14 @@ export function getShipClient(options?: { forceNew?: boolean }): Promise<ShipCli
     if (options?.forceNew) {
       closeActiveClient("forceNew client requested");
     }
-    clientPromise = createShipClient(clientGeneration);
+    const p = createShipClient(clientGeneration);
+    clientPromise = p;
+    p.catch(() => {
+      if (clientPromise === p) {
+        clientPromise = null;
+        scheduleRetry();
+      }
+    });
   }
   return clientPromise.then((handle) => handle.client);
 }
@@ -80,4 +140,5 @@ export function invalidateShipClient(reason: string) {
   clientGeneration += 1;
   closeActiveClient(reason);
   clientPromise = null;
+  scheduleRetry();
 }

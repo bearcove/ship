@@ -17,7 +17,7 @@ import { useAgentDiscovery } from "../hooks/useAgentDiscovery";
 import { useAgentKindPrefs } from "../hooks/useAgentKindPrefs";
 import { refreshSessionList } from "../hooks/useSessionList";
 import { AddProjectDialog, ArchiveSessionDialog } from "../pages/SessionListPage";
-import { getShipClient } from "../api/client";
+import { getShipClient, useClientLogs } from "../api/client";
 import { QrCodeButton } from "./QrCodeButton";
 import {
   projectActions,
@@ -293,6 +293,7 @@ export function SessionSidebar({
   const { soundEnabled, setSoundEnabled } = useSoundEnabled();
   const discovery = useAgentDiscovery();
   const { captainKind, setCaptainKind, mateKind, setMateKind } = useAgentKindPrefs();
+  const clientLogs = useClientLogs();
 
   const validProjects = projects.filter((p) => p.valid);
 
@@ -329,6 +330,39 @@ export function SessionSidebar({
             />
           ))}
         </Box>
+
+        {debugMode && (
+          <Box
+            style={{
+              flexShrink: 0,
+              borderTop: "1px solid var(--gray-a4)",
+              maxHeight: 240,
+              overflowY: "auto",
+              padding: "var(--space-2) var(--space-3)",
+              display: "flex",
+              flexDirection: "column",
+              gap: 2,
+            }}
+          >
+            {clientLogs.length === 0 ? (
+              <Text size="1" color="gray">
+                No connection events yet.
+              </Text>
+            ) : (
+              clientLogs.map((entry, i) => (
+                <Text
+                  key={i}
+                  size="1"
+                  color={entry.level === "warn" ? "amber" : "gray"}
+                  style={{ fontFamily: "monospace", wordBreak: "break-all" }}
+                >
+                  {new Date(entry.ts).toISOString().slice(11, 23)} {entry.message}
+                  {Object.keys(entry.details).length > 0 ? " " + JSON.stringify(entry.details) : ""}
+                </Text>
+              ))
+            )}
+          </Box>
+        )}
 
         <Flex align="center" gap="3" pt="3" pb="4" px="3" style={{ flexShrink: 0 }}>
           <Tooltip content="Add project">

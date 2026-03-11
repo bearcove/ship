@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getShipClient } from "../api/client";
+import { getShipClient, invalidateShipClient, onClientReady } from "../api/client";
 import type { SessionSummary } from "../generated/ship";
 
 type SessionListListener = (sessions: SessionSummary[]) => void;
@@ -28,9 +28,14 @@ export async function refreshSessionList(): Promise<SessionSummary[]> {
     const list = await client.listSessions();
     publishSessionList(list);
     return list;
-  })().finally(() => {
-    pendingRefresh = null;
-  });
+  })()
+    .catch((e) => {
+      invalidateShipClient(`listSessions failed: ${e}`);
+      throw e;
+    })
+    .finally(() => {
+      pendingRefresh = null;
+    });
 
   return pendingRefresh;
 }
@@ -59,9 +64,11 @@ export function useSessionList(projectFilter?: string): SessionSummary[] {
       void refreshSessionList();
     }
 
+    const unsubReady = onClientReady(() => void refreshSessionList());
     window.addEventListener("focus", handleFocus);
     return () => {
       active = false;
+      unsubReady();
       sessionListListeners.delete(handleSessionList);
       window.removeEventListener("focus", handleFocus);
     };
