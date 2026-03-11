@@ -1864,8 +1864,12 @@ Here is your task:
         command: String,
         cwd: Option<String>,
     ) -> Result<String, String> {
-        if let Some(msg) = Self::is_dangerous_command(&command) {
-            return Err(msg.to_owned());
+        if Self::is_dangerous_command(&command).is_some() {
+            return Err(format!(
+                "The command `{command}` has been blocked because it could affect the worktree \
+in ways that are hard to undo. Use mate_ask_captain to explain what you need, \
+and the captain will help you find the right approach."
+            ));
         }
 
         let relative_cwd = match cwd {
@@ -1877,7 +1881,6 @@ Here is your task:
             let session = sessions
                 .get(session_id)
                 .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-            Self::require_mate_plan(session)?;
             Self::current_task_worktree_path(session)?.to_path_buf()
         };
 
@@ -2079,35 +2082,6 @@ Here is your task:
             Some(limit) => usize::try_from(limit).map_err(|_| "limit is too large".to_owned())?,
             None => DEFAULT_READ_FILE_LIMIT,
         };
-        let candidate = Path::new(&path);
-        if candidate.is_absolute() {
-            // Absolute paths are allowed for read_file (read-only access).
-            // The agent may need to read files outside the worktree, e.g. installed
-            // crate sources in ~/.cargo/registry.
-            let candidate_path = candidate.to_path_buf();
-            return tokio::task::spawn_blocking(move || {
-                let metadata = fs::metadata(&candidate_path).map_err(|error| {
-                    if error.kind() == std::io::ErrorKind::NotFound {
-                        format!("File not found: {}", candidate_path.display())
-                    } else {
-                        format!("Failed to access file: {error}")
-                    }
-                })?;
-                if metadata.is_dir() {
-                    return Err("Path is a directory, not a file.".to_owned());
-                }
-                let canonical_file = fs::canonicalize(&candidate_path).map_err(|error| {
-                    format!(
-                        "Failed to resolve file path {}: {error}",
-                        candidate_path.display()
-                    )
-                })?;
-                Self::format_read_file_excerpt(&canonical_file, offset, limit)
-            })
-            .await
-            .map_err(|error| format!("read_file task failed: {error}"))?;
-        }
-
         let relative_path = Self::validate_worktree_path(&path)?.to_path_buf();
         let worktree_path = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
@@ -3433,15 +3407,7 @@ Here is your task:
 
         matches!(
             kind,
-            Some(
-                ToolCallKind::Read
-                    | ToolCallKind::Edit
-                    | ToolCallKind::Delete
-                    | ToolCallKind::Move
-                    | ToolCallKind::Search
-                    | ToolCallKind::Execute
-                    | ToolCallKind::Fetch
-            )
+            Some(ToolCallKind::Edit | ToolCallKind::Delete | ToolCallKind::Move)
         )
     }
 
@@ -4440,6 +4406,20 @@ impl Ship for ShipImpl {
     async fn cancel(&self, session: SessionId) {
         if let Err(error) = self.cancel_task(&session, None).await {
             Self::log_error("cancel", &error);
+        }
+    }
+
+    // r[proto.interrupt-captain]
+    async fn interrupt_captain(&self, session: SessionId) {
+        let handle = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let Some(active) = sessions.get(&session) else {
+                return;
+            };
+            active.captain_handle.clone()
+        };
+        if let Some(handle) = handle {
+            let _ = self.agent_driver.cancel(&handle).await;
         }
     }
 
@@ -5620,14 +5600,10 @@ mod tests {
             session.current_task.as_mut().unwrap().mate_plan = None;
         }
 
-        let run_err = ship
-            .mate_tool_run_command(&session_id, "echo hello".to_owned(), None)
+        // run_command is exploration — no plan required
+        ship.mate_tool_run_command(&session_id, "echo hello".to_owned(), None)
             .await
-            .expect_err("run_command without plan should fail");
-        assert!(
-            run_err.contains("set_plan"),
-            "error should mention set_plan: {run_err}"
-        );
+            .expect("run_command without plan should succeed");
 
         let write_err = ship
             .mate_tool_write_file(&session_id, "test.txt".to_owned(), "content".to_owned())

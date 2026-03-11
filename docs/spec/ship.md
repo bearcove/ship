@@ -187,6 +187,11 @@ mate's work and closes the task.
 r[proto.cancel]
 The protocol MUST support a `cancel` operation that cancels the current task.
 
+r[proto.interrupt-captain]
+The protocol MUST support an `interrupt_captain` operation that cancels any
+in-flight captain response without affecting task state. This is used by the
+UI when the user presses Escape while the captain is working.
+
 r[proto.resolve-permission]
 The protocol MUST support a `resolve_permission` operation to respond to agent
 permission requests.

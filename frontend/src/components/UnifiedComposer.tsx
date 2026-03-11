@@ -101,7 +101,6 @@ const ACTIVE_TASK_STATUS_TAGS = new Set(["Assigned", "Working", "ReviewPending",
 // r[view.agent-panel.activity]
 export function UnifiedComposer({ sessionId, captain, mate, startupState, taskStatus }: Props) {
   const [text, setText] = useState("");
-  const [queuedText, setQueuedText] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
@@ -120,19 +119,10 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
 
   const startupReady = startupState === null || startupState.tag === "Ready";
   const startupFailed = startupState?.tag === "Failed";
-  const agentWorking = activeStateTag === "Working";
   const agentCantSend =
     activeStateTag === "ContextExhausted" || activeStateTag === "Error" || startupFailed;
 
-  const queueOnSubmit = agentWorking && !queuedText;
-  const submitLabel =
-    target === "mate"
-      ? "Steer mate"
-      : queuedText
-        ? "Replace queue"
-        : queueOnSubmit
-          ? "Queue"
-          : "Send";
+  const submitLabel = target === "mate" ? "Steer mate" : "Send";
   const mateUnavailable =
     target === "mate" && (taskStatus === null || !ACTIVE_TASK_STATUS_TAGS.has(taskStatus.tag));
   const disableSubmit = agentCantSend || (!startupReady && target === "mate") || mateUnavailable;
@@ -176,7 +166,6 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
         for (const img of prev) URL.revokeObjectURL(img.objectUrl);
         return [];
       });
-      setQueuedText(null);
       return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -186,24 +175,10 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
     }
   }
 
-  // Auto-flush queued captain messages when captain becomes idle
-  useEffect(() => {
-    if (!queuedText || loading || captainStateTag === "Working" || startupFailed) return;
-    void (async () => {
-      await sendNow(queuedText, "captain");
-    })();
-  }, [captainStateTag, loading, queuedText, startupFailed]);
-
   async function handleSubmit() {
     const raw = text.trim();
     if ((!raw && attachedImages.length === 0) || loading || disableSubmit) return;
     const { target: to, content } = parseTarget(raw);
-    if (queueOnSubmit && to === "captain") {
-      setQueuedText(content);
-      setText("");
-      setError(null);
-      return;
-    }
     if (await sendNow(content, to)) setText("");
   }
 
@@ -317,12 +292,20 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
       void handleSubmit();
       return;
     }
-    if (e.key === "Escape" && activeStateTag === "Working") {
-      e.preventDefault();
-      void (async () => {
-        const client = await getShipClient();
-        await client.cancel(sessionId);
-      })();
+    if (e.key === "Escape") {
+      if (captainStateTag === "Working") {
+        e.preventDefault();
+        void (async () => {
+          const client = await getShipClient();
+          await client.interruptCaptain(sessionId);
+        })();
+      } else if (mateStateTag === "Working") {
+        e.preventDefault();
+        void (async () => {
+          const client = await getShipClient();
+          await client.cancel(sessionId);
+        })();
+      }
     }
   }
 

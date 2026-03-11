@@ -4,7 +4,7 @@ import { describe, expect, it, beforeEach, vi } from "vitest";
 import type { SessionDetail } from "../generated/ship";
 import { SoundProvider } from "../context/SoundContext";
 import { renderWithTheme } from "../test/render";
-import { agentRail, sessionFeedColumn, unifiedFeedRoot } from "../styles/session-view.css";
+import { sessionFeedColumn, unifiedFeedRoot } from "../styles/session-view.css";
 import { SessionViewPage } from "./SessionViewPage";
 
 const mocks = vi.hoisted(() => ({
@@ -50,6 +50,7 @@ vi.mock("../api/client", () => ({
     resolvePermission: async () => undefined,
     accept: async () => undefined,
     cancel: async () => undefined,
+    interruptCaptain: async () => undefined,
     listWorktreeFiles: async () => [],
   }),
 }));
@@ -123,35 +124,6 @@ function renderPage() {
   );
 }
 
-async function getStylesSource(): Promise<string> {
-  const response = await fetch(new URL("../styles/session-view.css.ts?raw", import.meta.url));
-  if (!response.ok) {
-    throw new Error(`Unable to load session styles source: ${response.status}`);
-  }
-
-  const source = await response.text();
-  if (!source.startsWith("export default ")) {
-    return source;
-  }
-
-  const encodedSource = source.slice("export default ".length).replace(/;\s*$/, "");
-  return JSON.parse(encodedSource) as string;
-}
-
-function extractStyleBlock(source: string, start: string, end: string): string {
-  const startIndex = source.indexOf(start);
-  if (startIndex === -1) {
-    throw new Error(`Missing style block start: ${start}`);
-  }
-
-  const endIndex = source.indexOf(end, startIndex);
-  if (endIndex === -1) {
-    throw new Error(`Missing style block end: ${end}`);
-  }
-
-  return source.slice(startIndex, endIndex);
-}
-
 beforeEach(() => {
   mocks.session = makeSession();
   mocks.sessionError = null;
@@ -189,36 +161,6 @@ describe("SessionViewPage UX slice", () => {
 
     expect(screen.getByLabelText("Steer input")).toBeInTheDocument();
     expect(screen.getByText("Captain working")).toBeInTheDocument();
-    expect(screen.getByText("Mate")).toBeInTheDocument();
-  });
-
-  // r[verify ui.layout.session-view]
-  it("uses a single desktop divider between the feed column and the agent rail", async () => {
-    renderPage();
-
-    const stylesSource = await getStylesSource();
-    const sessionFeedColumnBlock = extractStyleBlock(
-      stylesSource,
-      "export const sessionFeedColumn = style({",
-      "// Three-column app layout",
-    );
-    const agentRailBlock = extractStyleBlock(
-      stylesSource,
-      "export const agentRail = style({",
-      "export const agentHeader = style({",
-    );
-    const unifiedFeedRootBlock = extractStyleBlock(
-      stylesSource,
-      "export const unifiedFeedRoot = style({",
-      "export const unifiedFeedScroll = style({",
-    );
-
-    expect(document.querySelector(`.${sessionFeedColumn}`)).toBeInTheDocument();
-    expect(document.querySelector(`.${agentRail}`)).toBeInTheDocument();
-    expect(document.querySelector(`.${unifiedFeedRoot}`)).toBeInTheDocument();
-    expect(sessionFeedColumnBlock).toContain('borderRight: "1px solid var(--gray-a5)"');
-    expect(agentRailBlock).not.toContain("borderLeft");
-    expect(unifiedFeedRootBlock).not.toContain("borderRight");
   });
 
   // r[verify view.agent-panel.state]

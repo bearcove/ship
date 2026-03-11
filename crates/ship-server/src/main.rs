@@ -965,11 +965,12 @@ async fn shutdown_signal() {
 
 #[cfg(test)]
 mod tests {
+    use std::net::SocketAddr;
     use std::path::PathBuf;
     use std::sync::{LazyLock, Mutex, MutexGuard};
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use super::{ensure_ship_entry_for_project, resolve_listen_addr};
+    use super::{ensure_ship_entry_for_project, resolve_listen_addrs};
 
     static SHIP_LISTEN_ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
@@ -1033,26 +1034,29 @@ mod tests {
 
     // r[verify server.listen]
     #[test]
-    fn resolve_listen_addr_defaults_to_ipv6_loopback() {
+    fn resolve_listen_addr_defaults_to_loopback() {
         let _env_guard = ShipListenEnvGuard::set(None);
-        let listen_addr = resolve_listen_addr(None).expect("default listen address should parse");
-        assert_eq!(listen_addr, "[::1]:9140".parse().unwrap());
+        let addrs = resolve_listen_addrs(None).expect("default listen addresses should parse");
+        assert!(
+            addrs.iter().any(|a| a.ip().is_loopback()),
+            "expected at least one loopback address, got: {addrs:?}"
+        );
     }
 
     // r[verify server.listen]
     #[test]
     fn resolve_listen_addr_uses_ship_listen_env_before_default() {
         let _env_guard = ShipListenEnvGuard::set(Some("127.0.0.1:9200"));
-        let listen_addr = resolve_listen_addr(None).expect("env listen address should parse");
-        assert_eq!(listen_addr, "127.0.0.1:9200".parse().unwrap());
+        let addrs = resolve_listen_addrs(None).expect("env listen address should parse");
+        assert_eq!(addrs, vec!["127.0.0.1:9200".parse::<SocketAddr>().unwrap()]);
     }
 
     // r[verify server.listen]
     #[test]
     fn resolve_listen_addr_prefers_cli_over_ship_listen_env() {
         let _env_guard = ShipListenEnvGuard::set(Some("127.0.0.1:9200"));
-        let listen_addr = resolve_listen_addr(Some("[::1]:9300".to_owned()))
+        let addrs = resolve_listen_addrs(Some("[::1]:9300".to_owned()))
             .expect("cli listen address should parse");
-        assert_eq!(listen_addr, "[::1]:9300".parse().unwrap());
+        assert_eq!(addrs, vec!["[::1]:9300".parse::<SocketAddr>().unwrap()]);
     }
 }

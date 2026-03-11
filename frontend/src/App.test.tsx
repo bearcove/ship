@@ -20,6 +20,7 @@ vi.mock("./hooks/useSessionList", () => ({
 vi.mock("./pages/SessionListPage", () => ({
   SessionListPage: () => <div>Session list page</div>,
   NewSessionDialog: () => null,
+  AddProjectDialog: () => null,
 }));
 
 vi.mock("./pages/SessionViewPage", () => ({

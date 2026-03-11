@@ -47,6 +47,9 @@ pub trait Ship {
     // r[proto.cancel]
     async fn cancel(&self, session: SessionId);
 
+    // r[proto.interrupt-captain]
+    async fn interrupt_captain(&self, session: SessionId);
+
     // r[proto.resolve-permission]
     async fn resolve_permission(
         &self,

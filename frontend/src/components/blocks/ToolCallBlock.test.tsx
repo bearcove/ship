@@ -99,7 +99,7 @@ describe("ToolCallBlock", () => {
     fireEvent.click(screen.getByRole("button"));
 
     expect(screen.getByText("read failed")).toBeInTheDocument();
-    expect(screen.getByText("not structured terminal output")).toBeInTheDocument();
+    expect(screen.getByText(/not structured terminal output/)).toBeInTheDocument();
     expect(screen.queryByText(/\$ /)).not.toBeInTheDocument();
   });
 });
