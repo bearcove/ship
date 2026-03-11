@@ -883,7 +883,7 @@ the human briefly and wait for them to describe what they'd like to work on."
         session_id: &SessionId,
         parts: Vec<PromptContentPart>,
     ) -> Result<(), String> {
-        let already_working = {
+        let already_working_handle = {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let active = sessions
                 .get_mut(session_id)
@@ -913,9 +913,10 @@ the human briefly and wait for them to describe what they'd like to work on."
 
             let already_working = status == TaskStatus::Working;
             if already_working {
-                // Inject as pending guidance for the running loop to pick up
-                // at the end of the current turn. Prefix matches what
-                // prompt_mate_from_steer prepends to initial parts.
+                // Inject as pending guidance for the running loop to pick up.
+                // We must set this BEFORE cancelling the in-flight prompt so
+                // the loop always sees the guidance on the Cancelled stop reason
+                // and continues rather than archiving the task.
                 let guidance = format!("Captain steer:\n{log_text}");
                 if let Some(task) = active.current_task.as_mut() {
                     task.pending_mate_guidance = Some(guidance);
@@ -925,16 +926,19 @@ the human briefly and wait for them to describe what they'd like to work on."
             }
             active.pending_steer = None;
 
-            already_working
+            if already_working {
+                active.mate_handle.clone()
+            } else {
+                None
+            }
         };
 
         self.persist_session(session_id).await?;
 
-        if already_working {
-            // Guidance is queued; the running loop will deliver it after the
-            // current turn. No cancel needed — cancelling risks a race where
-            // the cancel arrives after the loop has already started a new
-            // turn from the guidance, archiving the task incorrectly.
+        if let Some(mate_handle) = already_working_handle {
+            // Cancel the in-flight prompt so the running loop wakes up,
+            // sees the pending guidance, and delivers it immediately.
+            let _ = self.agent_driver.cancel(&mate_handle).await;
             return Ok(());
         }
 
@@ -1422,18 +1426,22 @@ Here is your task:
     async fn captain_tool_search_files(
         &self,
         session_id: &SessionId,
-        args: String,
+        pattern: String,
+        path: Option<String>,
     ) -> Result<String, String> {
-        self.mate_tool_search_files(session_id, args).await
+        self.mate_tool_search_files(session_id, pattern, path).await
     }
 
     // r[captain.tool.read-only]
     async fn captain_tool_list_files(
         &self,
         session_id: &SessionId,
-        args: String,
+        path: Option<String>,
+        pattern: Option<String>,
+        extension: Option<String>,
     ) -> Result<String, String> {
-        self.mate_tool_list_files(session_id, args).await
+        self.mate_tool_list_files(session_id, path, pattern, extension)
+            .await
     }
 
     async fn mate_tool_networked_cargo(
@@ -1823,16 +1831,10 @@ Here is your task:
     async fn run_worktree_shell_command(
         worktree_path: PathBuf,
         program: std::ffi::OsString,
-        args: String,
+        args: Vec<String>,
         missing_program_message: &'static str,
         no_matches_message: Option<&'static str>,
     ) -> Result<String, String> {
-        let command_text = if args.trim().is_empty() {
-            program.to_string_lossy().into_owned()
-        } else {
-            format!("{} {}", program.to_string_lossy(), args)
-        };
-
         let augmented_path = {
             let base = std::env::var("PATH").unwrap_or_default();
             let extra = [
@@ -1855,10 +1857,9 @@ Here is your task:
         let _ = tokio::fs::create_dir_all(&tmp_dir).await;
         let _ = tokio::fs::write(tmp_dir.join(".gitignore"), "*\n").await;
 
-        let mut command = TokioCommand::new("/bin/sh");
+        let mut command = TokioCommand::new(&program);
         command
-            .arg("-c")
-            .arg(&command_text)
+            .args(&args)
             .current_dir(&worktree_path)
             .env("PATH", &augmented_path)
             .env("TMPDIR", &tmp_dir)
@@ -3026,7 +3027,8 @@ Here is your task:
     async fn mate_tool_search_files(
         &self,
         session_id: &SessionId,
-        args: String,
+        pattern: String,
+        path: Option<String>,
     ) -> Result<String, String> {
         let worktree_path = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
@@ -3035,6 +3037,11 @@ Here is your task:
                 .ok_or_else(|| format!("session not found: {}", session_id.0))?;
             Self::current_task_worktree_path(session)?.to_path_buf()
         };
+
+        let mut args = vec!["-n".to_owned(), "--".to_owned(), pattern];
+        if let Some(p) = path {
+            args.push(p);
+        }
 
         Self::run_worktree_shell_command(
             worktree_path,
@@ -3050,7 +3057,9 @@ Here is your task:
     async fn mate_tool_list_files(
         &self,
         session_id: &SessionId,
-        args: String,
+        path: Option<String>,
+        pattern: Option<String>,
+        extension: Option<String>,
     ) -> Result<String, String> {
         let worktree_path = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
@@ -3059,6 +3068,18 @@ Here is your task:
                 .ok_or_else(|| format!("session not found: {}", session_id.0))?;
             Self::current_task_worktree_path(session)?.to_path_buf()
         };
+
+        let mut args = Vec::new();
+        if let Some(pat) = pattern {
+            args.push(pat);
+        }
+        if let Some(p) = path {
+            args.push(p);
+        }
+        if let Some(ext) = extension {
+            args.push("-e".to_owned());
+            args.push(ext);
+        }
 
         Self::run_worktree_shell_command(
             worktree_path,
@@ -5347,19 +5368,28 @@ impl CaptainMcp for CaptainMcpSessionService {
     }
 
     // r[captain.tool.read-only]
-    async fn captain_search_files(&self, args: String) -> McpToolCallResponse {
+    async fn captain_search_files(
+        &self,
+        pattern: String,
+        path: Option<String>,
+    ) -> McpToolCallResponse {
         Self::response(
             self.ship
-                .captain_tool_search_files(&self.session_id, args)
+                .captain_tool_search_files(&self.session_id, pattern, path)
                 .await,
         )
     }
 
     // r[captain.tool.read-only]
-    async fn captain_list_files(&self, args: String) -> McpToolCallResponse {
+    async fn captain_list_files(
+        &self,
+        path: Option<String>,
+        pattern: Option<String>,
+        extension: Option<String>,
+    ) -> McpToolCallResponse {
         Self::response(
             self.ship
-                .captain_tool_list_files(&self.session_id, args)
+                .captain_tool_list_files(&self.session_id, path, pattern, extension)
                 .await,
         )
     }
@@ -5440,17 +5470,26 @@ impl MateMcp for MateMcpSessionService {
     }
 
     // r[mate.tool.search-files]
-    async fn search_files(&self, args: String) -> McpToolCallResponse {
+    async fn search_files(&self, pattern: String, path: Option<String>) -> McpToolCallResponse {
         Self::response(
             self.ship
-                .mate_tool_search_files(&self.session_id, args)
+                .mate_tool_search_files(&self.session_id, pattern, path)
                 .await,
         )
     }
 
     // r[mate.tool.list-files]
-    async fn list_files(&self, args: String) -> McpToolCallResponse {
-        Self::response(self.ship.mate_tool_list_files(&self.session_id, args).await)
+    async fn list_files(
+        &self,
+        path: Option<String>,
+        pattern: Option<String>,
+        extension: Option<String>,
+    ) -> McpToolCallResponse {
+        Self::response(
+            self.ship
+                .mate_tool_list_files(&self.session_id, path, pattern, extension)
+                .await,
+        )
     }
 
     // r[mate.tool.send-update]

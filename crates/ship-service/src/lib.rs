@@ -114,10 +114,19 @@ pub trait CaptainMcp {
     ) -> McpToolCallResponse;
 
     // r[captain.tool.read-only]
-    async fn captain_search_files(&self, args: String) -> McpToolCallResponse;
+    async fn captain_search_files(
+        &self,
+        pattern: String,
+        path: Option<String>,
+    ) -> McpToolCallResponse;
 
     // r[captain.tool.read-only]
-    async fn captain_list_files(&self, args: String) -> McpToolCallResponse;
+    async fn captain_list_files(
+        &self,
+        path: Option<String>,
+        pattern: Option<String>,
+        extension: Option<String>,
+    ) -> McpToolCallResponse;
 }
 
 // r[mate.tool.implementation]
@@ -150,10 +159,15 @@ pub trait MateMcp {
     async fn edit_confirm(&self, edit_id: String) -> McpToolCallResponse;
 
     // r[mate.tool.search-files]
-    async fn search_files(&self, args: String) -> McpToolCallResponse;
+    async fn search_files(&self, pattern: String, path: Option<String>) -> McpToolCallResponse;
 
     // r[mate.tool.list-files]
-    async fn list_files(&self, args: String) -> McpToolCallResponse;
+    async fn list_files(
+        &self,
+        path: Option<String>,
+        pattern: Option<String>,
+        extension: Option<String>,
+    ) -> McpToolCallResponse;
 
     // r[mate.tool.send-update]
     async fn mate_send_update(&self, message: String) -> McpToolCallResponse;

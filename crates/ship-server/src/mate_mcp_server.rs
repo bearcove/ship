@@ -1,12 +1,16 @@
 use std::sync::Arc;
 
+use super::worktree_tools::{
+    ToolDefinition, list_files_tool, parse_list_files_args, parse_search_files_args,
+    search_files_tool, to_sdk_tool,
+};
 use async_trait::async_trait;
 use roam::{ConnectionSettings, MetadataEntry, MetadataFlags, MetadataValue, NoopCaller, Parity};
 use rust_mcp_sdk::mcp_server::{McpServerOptions, ServerHandler, server_runtime};
 use rust_mcp_sdk::schema::{
     CallToolRequestParams, CallToolResult, Implementation, InitializeResult, ListToolsResult,
     PaginatedRequestParams, ProtocolVersion, RpcError, ServerCapabilities, ServerCapabilitiesTools,
-    TextContent, Tool, ToolInputSchema, schema_utils::CallToolError,
+    TextContent, schema_utils::CallToolError,
 };
 use rust_mcp_sdk::{McpServer, StdioTransport, ToMcpServerHandler, TransportOptions};
 use serde_json::{Value, json};
@@ -16,13 +20,6 @@ use ship_types::{McpToolCallResponse, SessionId};
 pub struct MateMcpServerArgs {
     pub session_id: SessionId,
     pub server_ws_url: String,
-}
-
-#[derive(Clone)]
-struct ToolDefinition {
-    name: &'static str,
-    description: &'static str,
-    input_schema: Value,
 }
 
 #[derive(Clone)]
@@ -152,21 +149,19 @@ impl ServerHandler for MateMcpHandler {
             }
             // r[mate.tool.search-files]
             "search_files" => {
-                let Some(args) = arguments.get("args").and_then(Value::as_str) else {
-                    return Ok(tool_result("missing required argument: args", true));
+                let Some((pattern, path)) = parse_search_files_args(&arguments) else {
+                    return Ok(tool_result("missing required argument: pattern", true));
                 };
                 self.client
-                    .search_files(args.to_owned())
+                    .search_files(pattern, path)
                     .await
                     .map_err(call_tool_rpc_error)?
             }
             // r[mate.tool.list-files]
             "list_files" => {
-                let Some(args) = arguments.get("args").and_then(Value::as_str) else {
-                    return Ok(tool_result("missing required argument: args", true));
-                };
+                let (path, pattern, extension) = parse_list_files_args(&arguments);
                 self.client
-                    .list_files(args.to_owned())
+                    .list_files(path, pattern, extension)
                     .await
                     .map_err(call_tool_rpc_error)?
             }
@@ -441,30 +436,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                 "additionalProperties": false,
             }),
         },
-        ToolDefinition {
-            name: "search_files",
-            description: "Search file contents using ripgrep (rg). Args are passed directly to rg.\nRuns in the worktree root. Output is line-numbered matches.\n\nKey flags:\n  rg PATTERN [PATH...]          Search for pattern\n  -t, --type TYPE               Filter by file type (rust, ts, py, json, ...)\n  -g, --glob GLOB               Include/exclude files by glob (-g '!vendor/')\n  -i, --ignore-case             Case-insensitive search\n  -w, --word-regexp             Match whole words only\n  -l, --files-with-matches      Only print file names\n  -c, --count                   Only print match counts per file\n  -C NUM, --context NUM         Show NUM lines of context\n  -n, --line-number             Show line numbers (default)\n  -F, --fixed-strings           Treat pattern as literal string\n  --multiline                   Match across line boundaries\n\nExample: \"fn handle_.*event\" -t rust src/",
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "args": { "type": "string" }
-                },
-                "required": ["args"],
-                "additionalProperties": false,
-            }),
-        },
-        ToolDefinition {
-            name: "list_files",
-            description: "List files using fd. Args are passed directly to fd.\nRuns in the worktree root.\n\nKey flags:\n  fd [PATTERN] [PATH...]        Search for files matching pattern\n  -e, --extension EXT           Filter by extension\n  -t, --type TYPE               f=file, d=directory, l=symlink\n  -d, --max-depth DEPTH         Limit directory traversal depth\n  -H, --hidden                  Include hidden files\n  -g, --glob PATTERN            Glob-based search instead of regex\n  -E, --exclude PATTERN         Exclude entries matching pattern\n\nExample: -e rs src/",
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "args": { "type": "string" }
-                },
-                "required": ["args"],
-                "additionalProperties": false,
-            }),
-        },
+        search_files_tool(),
+        list_files_tool(),
         ToolDefinition {
             name: "mate_send_update",
             description: "Send a progress update to the captain. Returns immediately without waiting for a response.",
@@ -587,21 +560,6 @@ fn tool_definitions() -> Vec<ToolDefinition> {
             }),
         },
     ]
-}
-
-fn to_sdk_tool(tool: &ToolDefinition) -> Tool {
-    Tool {
-        annotations: None,
-        description: Some(tool.description.to_owned()),
-        execution: None,
-        icons: Vec::new(),
-        input_schema: serde_json::from_value::<ToolInputSchema>(tool.input_schema.clone())
-            .expect("tool schema should be a valid MCP input schema"),
-        meta: None,
-        name: tool.name.to_owned(),
-        output_schema: None,
-        title: None,
-    }
 }
 
 fn tool_result(text: &str, is_error: bool) -> CallToolResult {

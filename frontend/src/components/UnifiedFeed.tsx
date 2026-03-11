@@ -23,6 +23,7 @@ import {
   feedBubbleCol,
   feedBubbleColUser,
   feedBubbleMate,
+  feedBubbleRelay,
   feedBubbleUser,
   feedTimestamp,
   feedRowAgent,
@@ -106,12 +107,15 @@ function segmentLastTimestamp(seg: FeedSegment): string | null | undefined {
   return seg.entry.timestamp;
 }
 
-// Returns the "agent side" role of a segment, or null if it's a user message.
+// Returns the "agent side" role of a segment, or null if it's a real user message.
+// Captain-to-mate relay messages (role=Mate, source=Human) are attributed to the
+// Captain so they group with other captain output and show the captain avatar.
 function segmentAgentRole(seg: FeedSegment): Role | null {
   if (seg.kind === "tool-group") return seg.role;
   const { block, role } = seg.entry;
   if (block.tag === "Text" && block.source.tag === "Human" && !isSystemInjection(block)) {
-    return null; // real user message → right side, no avatar
+    if (role.tag === "Captain") return null; // real user message → right side, no avatar
+    return { tag: "Captain" }; // captain relaying to mate → left side, captain avatar
   }
   return role;
 }
@@ -263,7 +267,7 @@ function SingleBlock({
       }
 
       // Real user message — right side with avatar
-      if (isHuman) {
+      if (isHuman && role.tag === "Captain") {
         return (
           <Box className={feedRowUser}>
             <Box className={`${feedBubbleCol} ${feedBubbleColUser}`}>
@@ -275,6 +279,23 @@ function SingleBlock({
               )}
             </Box>
             <UserAvatar url={userAvatarUrl} />
+          </Box>
+        );
+      }
+
+      // Captain relaying to mate — left side, captain avatar, amber tint
+      if (isHuman && role.tag === "Mate") {
+        return (
+          <Box className={feedRowAgent}>
+            <Avatar role={{ tag: "Captain" }} show={showAvatar} />
+            <Box className={feedBubbleCol}>
+              <Box className={`${feedBubble} ${feedBubbleRelay}`}>
+                <TextBlock block={block as TextBlockType} />
+              </Box>
+              {isLast && entry.timestamp && (
+                <Text className={feedTimestamp}>{formatTime(entry.timestamp)}</Text>
+              )}
+            </Box>
           </Box>
         );
       }

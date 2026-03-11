@@ -113,6 +113,12 @@ export const feedBubbleUser = style({
   borderColor: "color-mix(in srgb, var(--accent-9) 28%, var(--gray-a4))",
 });
 
+export const feedBubbleRelay = style({
+  background: "color-mix(in srgb, var(--amber-a3) 50%, var(--gray-a2))",
+  borderColor: "var(--amber-a4)",
+  opacity: 0.85,
+});
+
 export const feedToolGroup = style({
   maxWidth: "80%",
 });

@@ -1,12 +1,16 @@
 use std::sync::Arc;
 
+use super::worktree_tools::{
+    ToolDefinition, list_files_tool, parse_list_files_args, parse_search_files_args,
+    search_files_tool, to_sdk_tool,
+};
 use async_trait::async_trait;
 use roam::{ConnectionSettings, MetadataEntry, MetadataFlags, MetadataValue, NoopCaller, Parity};
 use rust_mcp_sdk::mcp_server::{McpServerOptions, ServerHandler, server_runtime};
 use rust_mcp_sdk::schema::{
     CallToolRequestParams, CallToolResult, Implementation, InitializeResult, ListToolsResult,
     PaginatedRequestParams, ProtocolVersion, RpcError, ServerCapabilities, ServerCapabilitiesTools,
-    TextContent, Tool, ToolInputSchema, schema_utils::CallToolError,
+    TextContent, schema_utils::CallToolError,
 };
 use rust_mcp_sdk::{McpServer, StdioTransport, ToMcpServerHandler, TransportOptions};
 use serde_json::{Value, json};
@@ -16,13 +20,6 @@ use ship_types::SessionId;
 pub struct CaptainMcpServerArgs {
     pub session_id: SessionId,
     pub server_ws_url: String,
-}
-
-#[derive(Clone)]
-struct ToolDefinition {
-    name: &'static str,
-    description: &'static str,
-    input_schema: Value,
 }
 
 #[derive(Clone)]
@@ -127,21 +124,19 @@ impl ServerHandler for CaptainMcpHandler {
             }
             // r[captain.tool.read-only]
             "search_files" => {
-                let Some(args) = arguments.get("args").and_then(Value::as_str) else {
-                    return Ok(tool_result("missing required argument: args", true));
+                let Some((pattern, path)) = parse_search_files_args(&arguments) else {
+                    return Ok(tool_result("missing required argument: pattern", true));
                 };
                 self.client
-                    .captain_search_files(args.to_owned())
+                    .captain_search_files(pattern, path)
                     .await
                     .map_err(call_tool_rpc_error)?
             }
             // r[captain.tool.read-only]
             "list_files" => {
-                let Some(args) = arguments.get("args").and_then(Value::as_str) else {
-                    return Ok(tool_result("missing required argument: args", true));
-                };
+                let (path, pattern, extension) = parse_list_files_args(&arguments);
                 self.client
-                    .captain_list_files(args.to_owned())
+                    .captain_list_files(path, pattern, extension)
                     .await
                     .map_err(call_tool_rpc_error)?
             }
@@ -321,30 +316,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                 "additionalProperties": false,
             }),
         },
-        ToolDefinition {
-            name: "search_files",
-            description: "Search files in the session worktree using ripgrep (rg). Pass rg arguments as a string.",
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "args": { "type": "string", "description": "ripgrep arguments, e.g. \"TODO --type rust\"" }
-                },
-                "required": ["args"],
-                "additionalProperties": false,
-            }),
-        },
-        ToolDefinition {
-            name: "list_files",
-            description: "List files in the session worktree using fd. Pass fd arguments as a string.",
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "args": { "type": "string", "description": "fd arguments, e.g. \"--extension rs\"" }
-                },
-                "required": ["args"],
-                "additionalProperties": false,
-            }),
-        },
+        search_files_tool(),
+        list_files_tool(),
         ToolDefinition {
             name: "web_search",
             description: "Search the web using Kagi FastGPT. Returns an AI-synthesized answer and a list of references.",
@@ -358,21 +331,6 @@ fn tool_definitions() -> Vec<ToolDefinition> {
             }),
         },
     ]
-}
-
-fn to_sdk_tool(tool: &ToolDefinition) -> Tool {
-    Tool {
-        annotations: None,
-        description: Some(tool.description.to_owned()),
-        execution: None,
-        icons: Vec::new(),
-        input_schema: serde_json::from_value::<ToolInputSchema>(tool.input_schema.clone())
-            .expect("tool schema should be a valid MCP input schema"),
-        meta: None,
-        name: tool.name.to_owned(),
-        output_schema: None,
-        title: None,
-    }
 }
 
 fn tool_result(text: &str, is_error: bool) -> CallToolResult {
