@@ -346,7 +346,7 @@ export function NewSessionDialog({
       }
       await refreshSessionList();
       onOpenChange(false);
-      navigate(`/sessions/${result.session_id}`);
+      navigate(`/sessions/${result.slug}`);
     } finally {
       setSubmitting(false);
     }
@@ -624,7 +624,7 @@ export function SessionListPage() {
           {sessions.map((session) => (
             <Link
               key={session.id}
-              to={`/sessions/${session.id}`}
+              to={`/sessions/${session.slug}`}
               style={{ textDecoration: "none", color: "inherit" }}
             >
               <Card className={sessionCard}>

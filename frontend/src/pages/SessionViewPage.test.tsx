@@ -66,6 +66,7 @@ function LocationEcho() {
 function makeSession(): SessionDetail {
   return {
     id: "session-1",
+    slug: "aaaa",
     project: "roam",
     branch_name: "feature/breadcrumbs",
     title: null,

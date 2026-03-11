@@ -148,7 +148,7 @@ function ProjectGroup({
         return;
       }
       await refreshSessionList();
-      navigate(`/sessions/${result.session_id}`);
+      navigate(`/sessions/${result.slug}`);
     } finally {
       setCreating(false);
     }
@@ -192,7 +192,7 @@ function ProjectGroup({
               return (
                 <Link
                   key={session.id}
-                  to={`/sessions/${session.id}`}
+                  to={`/sessions/${session.slug}`}
                   className={sessionRow}
                   data-active={isActive ? "true" : "false"}
                   aria-current={isActive ? "page" : undefined}

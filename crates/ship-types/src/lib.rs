@@ -609,7 +609,7 @@ pub mod protocol {
     #[repr(u8)]
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub enum CreateSessionResponse {
-        Created { session_id: SessionId },
+        Created { session_id: SessionId, slug: String },
         Failed { message: String },
     }
 
@@ -690,6 +690,7 @@ pub mod protocol {
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub struct SessionSummary {
         pub id: SessionId,
+        pub slug: String,
         pub project: ProjectName,
         pub branch_name: String,
         pub title: Option<String>,
@@ -717,6 +718,7 @@ pub mod protocol {
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub struct SessionDetail {
         pub id: SessionId,
+        pub slug: String,
         pub project: ProjectName,
         pub branch_name: String,
         pub title: Option<String>,

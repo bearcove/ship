@@ -63,6 +63,7 @@ describe("sessionReducer event handling", () => {
       type: "hydrate",
       session: {
         id: "session-1",
+        slug: "aaaa",
         project: "ship",
         branch_name: "ship/123/test",
         captain: {

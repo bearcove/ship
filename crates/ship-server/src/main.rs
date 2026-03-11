@@ -297,7 +297,7 @@ async fn run_probe(args: ProbeArgs) -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|error| format!("create_session failed: {error:?}"))?;
 
     let session_id = match response {
-        CreateSessionResponse::Created { session_id } => session_id,
+        CreateSessionResponse::Created { session_id, .. } => session_id,
         CreateSessionResponse::Failed { message } => return Err(message.into()),
     };
 

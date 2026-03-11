@@ -162,6 +162,7 @@ export type AutonomyMode = { tag: "HumanInTheLoop" } | { tag: "Autonomous" };
 
 export interface SessionSummary {
   id: SessionId;
+  slug: string;
   project: ProjectName;
   branch_name: string;
   title: string | null;
@@ -201,6 +202,7 @@ export interface HumanReviewRequest {
 
 export interface SessionDetail {
   id: SessionId;
+  slug: string;
   project: ProjectName;
   branch_name: string;
   title: string | null;
@@ -259,7 +261,7 @@ export interface CreateSessionRequest {
 }
 
 export type CreateSessionResponse =
-  | { tag: "Created"; session_id: SessionId }
+  | { tag: "Created"; session_id: SessionId; slug: string }
   | { tag: "Failed"; message: string };
 
 export type PromptContentPart =
@@ -923,7 +925,7 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0xcd14e1c0b8cfd214n) {
+    } else if (method.id === 0x06ba15742e3544c2n) {
       try {
         const result = await this.handler.listSessions();
         call.reply(result);
@@ -944,14 +946,14 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0xf1c0387a23c72f54n) {
+    } else if (method.id === 0xab5ae9123f8c9d28n) {
       try {
         const result = await this.handler.getSession(args[0] as SessionId);
         call.reply(result);
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0x8e760a2d21c1236fn) {
+    } else if (method.id === 0xac81153090312e94n) {
       try {
         const result = await this.handler.createSession(args[0] as CreateSessionRequest);
         call.reply(result);
@@ -1388,6 +1390,7 @@ const ship_schema_registry: SchemaRegistry = new Map<string, Schema>([
       kind: "struct",
       fields: {
         id: { kind: "string" },
+        slug: { kind: "string" },
         project: { kind: "string" },
         branch_name: { kind: "string" },
         title: { kind: "option", inner: { kind: "string" } },
@@ -1440,6 +1443,7 @@ const ship_schema_registry: SchemaRegistry = new Map<string, Schema>([
       kind: "struct",
       fields: {
         id: { kind: "string" },
+        slug: { kind: "string" },
         project: { kind: "string" },
         branch_name: { kind: "string" },
         title: { kind: "option", inner: { kind: "string" } },
@@ -1533,7 +1537,7 @@ const ship_schema_registry: SchemaRegistry = new Map<string, Schema>([
     {
       kind: "enum",
       variants: [
-        { name: "Created", fields: { session_id: { kind: "string" } } },
+        { name: "Created", fields: { session_id: { kind: "string" }, slug: { kind: "string" } } },
         { name: "Failed", fields: { message: { kind: "string" } } },
       ],
     },
@@ -1957,7 +1961,7 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: "listSessions",
-      id: 0xcd14e1c0b8cfd214n,
+      id: 0x06ba15742e3544c2n,
       args: { kind: "tuple", elements: [] },
       result: {
         kind: "enum",
@@ -2026,7 +2030,7 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: "getSession",
-      id: 0xf1c0387a23c72f54n,
+      id: 0xab5ae9123f8c9d28n,
       args: { kind: "tuple", elements: [{ kind: "string" }] },
       result: {
         kind: "enum",
@@ -2049,7 +2053,7 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: "createSession",
-      id: 0x8e760a2d21c1236fn,
+      id: 0xac81153090312e94n,
       args: { kind: "tuple", elements: [{ kind: "ref", name: "CreateSessionRequest" }] },
       result: {
         kind: "enum",

@@ -354,9 +354,22 @@ impl ShipImpl {
         }
     }
 
+    /// Resolve a session ref (full ULID or 4-char slug) to an active session.
+    fn resolve_session<'a>(
+        sessions: &'a HashMap<SessionId, ActiveSession>,
+        id: &SessionId,
+    ) -> Option<&'a ActiveSession> {
+        sessions.get(id).or_else(|| {
+            sessions
+                .values()
+                .find(|s| SessionGitNames::from_session_id(&s.id).slug == id.0)
+        })
+    }
+
     fn to_session_summary(session: &ActiveSession) -> SessionSummary {
         SessionSummary {
             id: session.id.clone(),
+            slug: SessionGitNames::from_session_id(&session.id).slug,
             project: session.config.project.clone(),
             branch_name: session.config.branch_name.clone(),
             title: session.title.clone(),
@@ -383,6 +396,7 @@ impl ShipImpl {
     ) -> SessionDetail {
         SessionDetail {
             id: session.id.clone(),
+            slug: SessionGitNames::from_session_id(&session.id).slug,
             project: session.config.project.clone(),
             branch_name: session.config.branch_name.clone(),
             title: session.title.clone(),
@@ -404,6 +418,7 @@ impl ShipImpl {
 
     fn fallback_session_detail(id: SessionId, user_avatar_url: Option<String>) -> SessionDetail {
         SessionDetail {
+            slug: SessionGitNames::from_session_id(&id).slug,
             id,
             project: ProjectName("unknown".to_owned()),
             branch_name: String::new(),
@@ -4242,8 +4257,7 @@ impl Ship for ShipImpl {
             .expect("user_avatar_url mutex poisoned")
             .clone();
         let sessions = self.sessions.lock().expect("sessions mutex poisoned");
-        sessions
-            .get(&id)
+        Self::resolve_session(&sessions, &id)
             .map(|s| Self::to_session_detail(s, user_avatar_url.clone()))
             .unwrap_or_else(|| Self::fallback_session_detail(id, user_avatar_url))
     }
@@ -4349,7 +4363,10 @@ impl Ship for ShipImpl {
             this.start_session_runtime(startup_session_id).await;
         });
 
-        CreateSessionResponse::Created { session_id }
+        CreateSessionResponse::Created {
+            slug: SessionGitNames::from_session_id(&session_id).slug,
+            session_id,
+        }
     }
 
     async fn steer(&self, session: SessionId, parts: Vec<PromptContentPart>) {
@@ -4759,7 +4776,7 @@ impl Ship for ShipImpl {
         tracing::info!(session_id = %session.0, "subscriber connected");
         let session_data = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
-            sessions.get(&session).map(|active| {
+            Self::resolve_session(&sessions, &session).map(|active| {
                 let raw_replay: Vec<SessionEventEnvelope> = active
                     .current_task
                     .as_ref()
@@ -5181,7 +5198,7 @@ mod tests {
         .await;
 
         let session_id = match response {
-            CreateSessionResponse::Created { session_id } => session_id,
+            CreateSessionResponse::Created { session_id, .. } => session_id,
             CreateSessionResponse::Failed { message } => {
                 panic!("create session should succeed: {message}")
             }
@@ -5416,7 +5433,7 @@ mod tests {
         .await;
 
         let session_id = match response {
-            CreateSessionResponse::Created { session_id } => session_id,
+            CreateSessionResponse::Created { session_id, .. } => session_id,
             CreateSessionResponse::Failed { message } => {
                 panic!("create session should succeed: {message}")
             }

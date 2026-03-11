@@ -414,6 +414,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             .values()
             .map(|session| SessionSummary {
                 id: session.id.clone(),
+                slug: SessionGitNames::from_session_id(&session.id).slug,
                 project: session.config.project.clone(),
                 branch_name: session.config.branch_name.clone(),
                 title: session.title.clone(),
