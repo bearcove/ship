@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use futures_util::StreamExt;
 use ship_types::{
     AgentSnapshot, AgentState, AutonomyMode, BlockId, BlockPatch, CloseSessionResponse,
-    ContentBlock, CreateSessionRequest, CurrentTask, HumanReviewRequest, PermissionRequest,
-    PermissionResolution, PersistedSession, Role, SessionConfig, SessionEvent,
+    ContentBlock, CreateSessionRequest, CurrentTask, EffortValue, HumanReviewRequest,
+    PermissionRequest, PermissionResolution, PersistedSession, Role, SessionConfig, SessionEvent,
     SessionEventEnvelope, SessionId, SessionStartupStage, SessionStartupState, SessionSummary,
     TaskContentRecord, TaskId, TaskRecord, TaskStatus,
 };
@@ -163,6 +163,9 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                 context_remaining_percent: None,
                 model_id: None,
                 available_models: Vec::new(),
+                effort_config_id: None,
+                effort_value_id: None,
+                available_effort_values: Vec::new(),
             },
             mate: AgentSnapshot {
                 role: Role::Mate,
@@ -171,6 +174,9 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                 context_remaining_percent: None,
                 model_id: None,
                 available_models: Vec::new(),
+                effort_config_id: None,
+                effort_value_id: None,
+                available_effort_values: Vec::new(),
             },
             startup_state: SessionStartupState::Pending,
             session_event_log: Vec::new(),
@@ -248,7 +254,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             },
         )
         .await?;
-        let (captain_handle, captain_model_id, captain_available_models) = self
+        let captain_spawn = self
             .agent_driver
             .spawn(captain_kind, Role::Captain, &agent_session_config)
             .await
@@ -258,9 +264,12 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                 .sessions
                 .get_mut(session_id)
                 .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
-            session.captain_handle = Some(captain_handle);
-            session.captain.model_id = captain_model_id;
-            session.captain.available_models = captain_available_models;
+            session.captain_handle = Some(captain_spawn.handle);
+            session.captain.model_id = captain_spawn.model_id;
+            session.captain.available_models = captain_spawn.available_models;
+            session.captain.effort_config_id = captain_spawn.effort_config_id;
+            session.captain.effort_value_id = captain_spawn.effort_value_id;
+            session.captain.available_effort_values = captain_spawn.available_effort_values;
         }
         self.persist_session(session_id).await?;
 
@@ -272,7 +281,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             },
         )
         .await?;
-        let (mate_handle, mate_model_id, mate_available_models) = self
+        let mate_spawn = self
             .agent_driver
             .spawn(mate_kind, Role::Mate, &agent_session_config)
             .await
@@ -282,9 +291,12 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                 .sessions
                 .get_mut(session_id)
                 .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
-            session.mate_handle = Some(mate_handle);
-            session.mate.model_id = mate_model_id;
-            session.mate.available_models = mate_available_models;
+            session.mate_handle = Some(mate_spawn.handle);
+            session.mate.model_id = mate_spawn.model_id;
+            session.mate.available_models = mate_spawn.available_models;
+            session.mate.effort_config_id = mate_spawn.effort_config_id;
+            session.mate.effort_value_id = mate_spawn.effort_value_id;
+            session.mate.available_effort_values = mate_spawn.available_effort_values;
         }
         self.set_startup_state(session_id, SessionStartupState::Ready)
             .await
@@ -343,6 +355,48 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                 role,
                 model_id: Some(model_id),
                 available_models,
+            },
+        );
+        self.persist_session(session_id).await
+    }
+
+    pub async fn set_agent_effort(
+        &mut self,
+        session_id: &SessionId,
+        role: Role,
+        config_id: String,
+        value_id: String,
+    ) -> Result<(), SessionManagerError> {
+        let handle = {
+            let session = self
+                .sessions
+                .get(session_id)
+                .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
+            match role {
+                Role::Captain => session.captain_handle.clone(),
+                Role::Mate => session.mate_handle.clone(),
+            }
+            .ok_or(SessionManagerError::Agent("agent not spawned".to_owned()))?
+        };
+        self.agent_driver
+            .set_effort(&handle, &config_id, &value_id)
+            .await
+            .map_err(|error| SessionManagerError::Agent(error.message))?;
+        let session = self
+            .sessions
+            .get_mut(session_id)
+            .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
+        let available_effort_values = match role {
+            Role::Captain => session.captain.available_effort_values.clone(),
+            Role::Mate => session.mate.available_effort_values.clone(),
+        };
+        apply_event(
+            session,
+            SessionEvent::AgentEffortChanged {
+                role,
+                effort_config_id: Some(config_id),
+                effort_value_id: Some(value_id),
+                available_effort_values,
             },
         );
         self.persist_session(session_id).await
@@ -1181,6 +1235,27 @@ pub fn apply_event_to_materialized_state(session: &mut ActiveSession, event: &Se
             Role::Mate => {
                 session.mate.model_id = model_id.clone();
                 session.mate.available_models = available_models.clone();
+            }
+        },
+        SessionEvent::AgentEffortChanged {
+            role,
+            effort_config_id,
+            effort_value_id,
+            available_effort_values,
+        } => match role {
+            Role::Captain => {
+                session.captain.effort_config_id = effort_config_id.clone();
+                session.captain.effort_value_id = effort_value_id.clone();
+                if !available_effort_values.is_empty() {
+                    session.captain.available_effort_values = available_effort_values.clone();
+                }
+            }
+            Role::Mate => {
+                session.mate.effort_config_id = effort_config_id.clone();
+                session.mate.effort_value_id = effort_value_id.clone();
+                if !available_effort_values.is_empty() {
+                    session.mate.available_effort_values = available_effort_values.clone();
+                }
             }
         },
         // Handled by the session manager before apply_event is called;

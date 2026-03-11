@@ -202,6 +202,29 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
             }
             break;
           }
+          // r[event.agent-effort-changed]
+          case "AgentEffortChanged": {
+            if (ev.role.tag === "Captain" && captain) {
+              captain = {
+                ...captain,
+                effort_config_id: ev.effort_config_id,
+                effort_value_id: ev.effort_value_id,
+                ...(ev.available_effort_values.length > 0 && {
+                  available_effort_values: ev.available_effort_values,
+                }),
+              };
+            } else if (ev.role.tag !== "Captain" && mate) {
+              mate = {
+                ...mate,
+                effort_config_id: ev.effort_config_id,
+                effort_value_id: ev.effort_value_id,
+                ...(ev.available_effort_values.length > 0 && {
+                  available_effort_values: ev.available_effort_values,
+                }),
+              };
+            }
+            break;
+          }
         }
       }
 
@@ -362,6 +385,39 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
           }
           return nextState;
         }
+
+        // r[event.agent-effort-changed]
+        case "AgentEffortChanged": {
+          const isCaptain = ev.role.tag === "Captain";
+          if (isCaptain && nextState.captain) {
+            return {
+              ...nextState,
+              captain: {
+                ...nextState.captain,
+                effort_config_id: ev.effort_config_id,
+                effort_value_id: ev.effort_value_id,
+                ...(ev.available_effort_values.length > 0 && {
+                  available_effort_values: ev.available_effort_values,
+                }),
+              },
+            };
+          }
+          if (!isCaptain && nextState.mate) {
+            return {
+              ...nextState,
+              mate: {
+                ...nextState.mate,
+                effort_config_id: ev.effort_config_id,
+                effort_value_id: ev.effort_value_id,
+                ...(ev.available_effort_values.length > 0 && {
+                  available_effort_values: ev.available_effort_values,
+                }),
+              },
+            };
+          }
+          return nextState;
+        }
+
         case "MateGuidanceQueued": {
           return nextState;
         }

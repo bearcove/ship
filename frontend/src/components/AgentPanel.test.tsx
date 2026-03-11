@@ -31,6 +31,9 @@ const agent: AgentSnapshot = {
   context_remaining_percent: 88,
   model_id: null,
   available_models: [],
+  effort_config_id: null,
+  effort_value_id: null,
+  available_effort_values: [],
 };
 
 const blocks: BlockEntry[] = [

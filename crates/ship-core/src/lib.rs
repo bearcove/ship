@@ -14,7 +14,9 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 
 use futures_core::Stream;
-use ship_types::{AgentKind, McpServerConfig, PersistedSession, Role, SessionEvent, SessionId};
+use ship_types::{
+    AgentKind, EffortValue, McpServerConfig, PersistedSession, Role, SessionEvent, SessionId,
+};
 
 pub use acp_driver::AcpAgentDriver;
 pub use acp_launcher::{
@@ -101,6 +103,16 @@ impl fmt::Display for StoreError {
 
 impl Error for StoreError {}
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentSpawnInfo {
+    pub handle: AgentHandle,
+    pub model_id: Option<String>,
+    pub available_models: Vec<String>,
+    pub effort_config_id: Option<String>,
+    pub effort_value_id: Option<String>,
+    pub available_effort_values: Vec<EffortValue>,
+}
+
 // r[testability.agent-trait]
 #[allow(async_fn_in_trait)]
 pub trait AgentDriver: Send + Sync {
@@ -109,7 +121,7 @@ pub trait AgentDriver: Send + Sync {
         kind: AgentKind,
         role: Role,
         config: &AgentSessionConfig,
-    ) -> Result<(AgentHandle, Option<String>, Vec<String>), AgentError>;
+    ) -> Result<AgentSpawnInfo, AgentError>;
 
     async fn prompt(
         &self,
@@ -132,6 +144,13 @@ pub trait AgentDriver: Send + Sync {
     ) -> Result<(), AgentError>;
 
     async fn set_model(&self, handle: &AgentHandle, model_id: &str) -> Result<(), AgentError>;
+
+    async fn set_effort(
+        &self,
+        handle: &AgentHandle,
+        config_id: &str,
+        value_id: &str,
+    ) -> Result<(), AgentError>;
 
     async fn kill(&self, handle: &AgentHandle) -> Result<(), AgentError>;
 }

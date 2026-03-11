@@ -26,8 +26,8 @@ use ship_types::{
     McpStdioServerConfig, McpToolCallResponse, PersistedSession, PlanStep, PlanStepPriority,
     PlanStepStatus, ProjectInfo, ProjectName, PromptContentPart, Role, SessionConfig,
     SessionDetail, SessionEvent, SessionEventEnvelope, SessionId, SessionStartupStage,
-    SessionStartupState, SessionSummary, SetAgentModelResponse, SubscribeMessage, TaskId,
-    TaskRecord, TaskStatus, ToolCallKind, ToolTarget,
+    SessionStartupState, SessionSummary, SetAgentEffortResponse, SetAgentModelResponse,
+    SubscribeMessage, TaskId, TaskRecord, TaskStatus, ToolCallKind, ToolTarget,
 };
 use tokio::process::Command as TokioCommand;
 use tokio::sync::broadcast;
@@ -315,6 +315,9 @@ impl ShipImpl {
             context_remaining_percent: None,
             model_id: None,
             available_models: Vec::new(),
+            effort_config_id: None,
+            effort_value_id: None,
+            available_effort_values: Vec::new(),
         }
     }
 
@@ -399,6 +402,7 @@ impl ShipImpl {
             SessionEvent::ContextUpdated { .. } => "ContextUpdated",
             SessionEvent::TaskStarted { .. } => "TaskStarted",
             SessionEvent::AgentModelChanged { .. } => "AgentModelChanged",
+            SessionEvent::AgentEffortChanged { .. } => "AgentEffortChanged",
             SessionEvent::MateGuidanceQueued { .. } => "MateGuidanceQueued",
             SessionEvent::HumanReviewRequested { .. } => "HumanReviewRequested",
             SessionEvent::HumanReviewCleared => "HumanReviewCleared",
@@ -411,7 +415,8 @@ impl ShipImpl {
             | SessionEvent::BlockPatch { role, .. }
             | SessionEvent::AgentStateChanged { role, .. }
             | SessionEvent::ContextUpdated { role, .. }
-            | SessionEvent::AgentModelChanged { role, .. } => Some(*role),
+            | SessionEvent::AgentModelChanged { role, .. }
+            | SessionEvent::AgentEffortChanged { role, .. } => Some(*role),
             SessionEvent::SessionStartupChanged { .. }
             | SessionEvent::TaskStatusChanged { .. }
             | SessionEvent::TaskStarted { .. }
@@ -431,6 +436,7 @@ impl ShipImpl {
             | SessionEvent::ContextUpdated { .. }
             | SessionEvent::TaskStarted { .. }
             | SessionEvent::AgentModelChanged { .. }
+            | SessionEvent::AgentEffortChanged { .. }
             | SessionEvent::MateGuidanceQueued { .. }
             | SessionEvent::HumanReviewRequested { .. }
             | SessionEvent::HumanReviewCleared => None,
@@ -447,6 +453,7 @@ impl ShipImpl {
             | SessionEvent::SessionStartupChanged { .. }
             | SessionEvent::ContextUpdated { .. }
             | SessionEvent::AgentModelChanged { .. }
+            | SessionEvent::AgentEffortChanged { .. }
             | SessionEvent::MateGuidanceQueued { .. }
             | SessionEvent::HumanReviewRequested { .. }
             | SessionEvent::HumanReviewCleared => None,
@@ -1045,7 +1052,7 @@ the human briefly and wait for them to describe what they'd like to work on."
             },
         };
 
-        let (new_handle, model_id, available_models) = self
+        let mate_spawn = self
             .agent_driver
             .spawn(mate_kind, Role::Mate, &mate_config)
             .await
@@ -1054,9 +1061,12 @@ the human briefly and wait for them to describe what they'd like to work on."
         {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             if let Some(session) = sessions.get_mut(session_id) {
-                session.mate_handle = Some(new_handle);
-                session.mate.model_id = model_id;
-                session.mate.available_models = available_models;
+                session.mate_handle = Some(mate_spawn.handle);
+                session.mate.model_id = mate_spawn.model_id;
+                session.mate.available_models = mate_spawn.available_models;
+                session.mate.effort_config_id = mate_spawn.effort_config_id;
+                session.mate.effort_value_id = mate_spawn.effort_value_id;
+                session.mate.available_effort_values = mate_spawn.available_effort_values;
             }
         }
 
@@ -3600,26 +3610,26 @@ Here is your task:
                 .spawn(captain_kind, Role::Captain, &captain_config),
             self.agent_driver.spawn(mate_kind, Role::Mate, &mate_config),
         );
-        let (captain_handle, captain_model_id, captain_available_models) = match captain_result {
+        let captain_spawn = match captain_result {
             Ok(result) => {
                 self.log_startup_step_elapsed(&session_id, "spawn-captain", captain_started_at);
                 result
             }
             Err(error) => {
-                if let Ok((mate_handle, _, _)) = mate_result {
-                    let _ = self.agent_driver.kill(&mate_handle).await;
+                if let Ok(mate_spawn) = mate_result {
+                    let _ = self.agent_driver.kill(&mate_spawn.handle).await;
                 }
                 self.fail_startup(&session_id, stage, error.message).await;
                 return;
             }
         };
-        let (mate_handle, mate_model_id, mate_available_models) = match mate_result {
+        let mate_spawn = match mate_result {
             Ok(result) => {
                 self.log_startup_step_elapsed(&session_id, "spawn-mate", mate_started_at);
                 result
             }
             Err(error) => {
-                let _ = self.agent_driver.kill(&captain_handle).await;
+                let _ = self.agent_driver.kill(&captain_spawn.handle).await;
                 self.fail_startup(
                     &session_id,
                     SessionStartupStage::StartingMate,
@@ -3632,22 +3642,40 @@ Here is your task:
         {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             if let Some(session) = sessions.get_mut(&session_id) {
-                session.captain_handle = Some(captain_handle);
-                session.mate_handle = Some(mate_handle);
+                session.captain_handle = Some(captain_spawn.handle);
+                session.mate_handle = Some(mate_spawn.handle);
                 apply_event(
                     session,
                     ship_types::SessionEvent::AgentModelChanged {
                         role: Role::Captain,
-                        model_id: captain_model_id,
-                        available_models: captain_available_models,
+                        model_id: captain_spawn.model_id,
+                        available_models: captain_spawn.available_models,
+                    },
+                );
+                apply_event(
+                    session,
+                    ship_types::SessionEvent::AgentEffortChanged {
+                        role: Role::Captain,
+                        effort_config_id: captain_spawn.effort_config_id,
+                        effort_value_id: captain_spawn.effort_value_id,
+                        available_effort_values: captain_spawn.available_effort_values,
                     },
                 );
                 apply_event(
                     session,
                     ship_types::SessionEvent::AgentModelChanged {
                         role: Role::Mate,
-                        model_id: mate_model_id,
-                        available_models: mate_available_models,
+                        model_id: mate_spawn.model_id,
+                        available_models: mate_spawn.available_models,
+                    },
+                );
+                apply_event(
+                    session,
+                    ship_types::SessionEvent::AgentEffortChanged {
+                        role: Role::Mate,
+                        effort_config_id: mate_spawn.effort_config_id,
+                        effort_value_id: mate_spawn.effort_value_id,
+                        available_effort_values: mate_spawn.available_effort_values,
                     },
                 );
             }
@@ -4554,6 +4582,9 @@ impl Ship for ShipImpl {
                 context_remaining_percent: None,
                 model_id: None,
                 available_models: Vec::new(),
+                effort_config_id: None,
+                effort_value_id: None,
+                available_effort_values: Vec::new(),
             },
             mate: AgentSnapshot {
                 role: Role::Mate,
@@ -4562,6 +4593,9 @@ impl Ship for ShipImpl {
                 context_remaining_percent: None,
                 model_id: None,
                 available_models: Vec::new(),
+                effort_config_id: None,
+                effort_value_id: None,
+                available_effort_values: Vec::new(),
             },
             startup_state: SessionStartupState::Pending,
             session_event_log: Vec::new(),
@@ -4844,6 +4878,61 @@ impl Ship for ShipImpl {
                 SetAgentModelResponse::Ok
             }
             Err(error) => SetAgentModelResponse::Failed {
+                message: error.message,
+            },
+        }
+    }
+
+    // r[proto.set-agent-effort]
+    async fn set_agent_effort(
+        &self,
+        session: SessionId,
+        role: Role,
+        config_id: String,
+        value_id: String,
+    ) -> SetAgentEffortResponse {
+        let agent_driver = self.agent_driver.clone();
+        let sessions = self.sessions.clone();
+
+        let handle = {
+            let sessions = sessions.lock().expect("sessions mutex poisoned");
+            let Some(session_state) = sessions.get(&session) else {
+                return SetAgentEffortResponse::SessionNotFound;
+            };
+            match role {
+                Role::Captain => session_state.captain_handle.clone(),
+                Role::Mate => session_state.mate_handle.clone(),
+            }
+        };
+
+        let Some(handle) = handle else {
+            return SetAgentEffortResponse::AgentNotSpawned;
+        };
+
+        match agent_driver
+            .set_effort(&handle, &config_id, &value_id)
+            .await
+        {
+            Ok(()) => {
+                let mut sessions = sessions.lock().expect("sessions mutex poisoned");
+                if let Some(session_state) = sessions.get_mut(&session) {
+                    let available_effort_values = match role {
+                        Role::Captain => session_state.captain.available_effort_values.clone(),
+                        Role::Mate => session_state.mate.available_effort_values.clone(),
+                    };
+                    apply_event(
+                        session_state,
+                        ship_types::SessionEvent::AgentEffortChanged {
+                            role,
+                            effort_config_id: Some(config_id),
+                            effort_value_id: Some(value_id),
+                            available_effort_values,
+                        },
+                    );
+                }
+                SetAgentEffortResponse::Ok
+            }
+            Err(error) => SetAgentEffortResponse::Failed {
                 message: error.message,
             },
         }

@@ -29,6 +29,9 @@ function makeAgent(overrides: Partial<AgentSnapshot> = {}): AgentSnapshot {
     context_remaining_percent: 82,
     model_id: "gpt-5-codex/medium",
     available_models: ["gpt-5-codex/medium", "gpt-5-codex/low", "gpt-5/medium"],
+    effort_config_id: null,
+    effort_value_id: null,
+    available_effort_values: [],
     ...overrides,
   };
 }

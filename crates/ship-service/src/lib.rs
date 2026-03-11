@@ -2,7 +2,8 @@ use roam::Tx;
 use ship_types::{
     AgentDiscovery, CloseSessionRequest, CloseSessionResponse, CreateSessionRequest,
     CreateSessionResponse, McpToolCallResponse, ProjectInfo, ProjectName, PromptContentPart, Role,
-    SessionDetail, SessionId, SessionSummary, SetAgentModelResponse, SubscribeMessage,
+    SessionDetail, SessionId, SessionSummary, SetAgentEffortResponse, SetAgentModelResponse,
+    SubscribeMessage,
 };
 
 // r[backend.rpc]
@@ -61,6 +62,15 @@ pub trait Ship {
         role: Role,
         model_id: String,
     ) -> SetAgentModelResponse;
+
+    // r[proto.set-agent-effort]
+    async fn set_agent_effort(
+        &self,
+        session: SessionId,
+        role: Role,
+        config_id: String,
+        value_id: String,
+    ) -> SetAgentEffortResponse;
 
     // r[proto.close-session]
     async fn close_session(&self, req: CloseSessionRequest) -> CloseSessionResponse;

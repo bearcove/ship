@@ -75,6 +75,9 @@ function makeSession(): SessionDetail {
       context_remaining_percent: 82,
       model_id: null,
       available_models: [],
+      effort_config_id: null,
+      effort_value_id: null,
+      available_effort_values: [],
     },
     mate: {
       role: { tag: "Mate" },
@@ -83,6 +86,9 @@ function makeSession(): SessionDetail {
       context_remaining_percent: 91,
       model_id: null,
       available_models: [],
+      effort_config_id: null,
+      effort_value_id: null,
+      available_effort_values: [],
     },
     current_task: {
       id: "task-1",

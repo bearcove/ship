@@ -3,6 +3,7 @@ import { ArrowsClockwise, Warning } from "@phosphor-icons/react";
 import type { AgentSnapshot } from "../generated/ship";
 import { AgentKindIcon } from "./AgentKindIcon";
 import { AgentModelPicker } from "./AgentModelPicker";
+import { AgentEffortPicker } from "./AgentEffortPicker";
 import {
   agentHeader,
   agentHeaderAvatar,
@@ -21,16 +22,6 @@ interface Props {
   sessionId: string;
   agent: AgentSnapshot;
   avatarSrc?: string;
-}
-
-function parseModelId(modelId: string): { model: string; effort: string | null } {
-  const slashIndex = modelId.lastIndexOf("/");
-  if (slashIndex === -1) return { model: modelId, effort: null };
-  return { model: modelId.slice(0, slashIndex), effort: modelId.slice(slashIndex + 1) };
-}
-
-function buildModelId(model: string, effort: string | null): string {
-  return effort ? `${model}/${effort}` : model;
 }
 
 // r[ui.agent-header.layout]
@@ -89,6 +80,7 @@ export function AgentHeader({ sessionId, agent, avatarSrc }: Props) {
             )}
           </Flex>
           <AgentModelPicker sessionId={sessionId} agent={agent} />
+          <AgentEffortPicker sessionId={sessionId} agent={agent} />
         </Flex>
       </Flex>
 

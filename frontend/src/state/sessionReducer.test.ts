@@ -72,6 +72,9 @@ describe("sessionReducer event handling", () => {
           context_remaining_percent: 75,
           model_id: null,
           available_models: [],
+          effort_config_id: null,
+          effort_value_id: null,
+          available_effort_values: [],
         },
         mate: {
           role: { tag: "Mate" },
@@ -80,6 +83,9 @@ describe("sessionReducer event handling", () => {
           context_remaining_percent: 55,
           model_id: null,
           available_models: [],
+          effort_config_id: null,
+          effort_value_id: null,
+          available_effort_values: [],
         },
         startup_state: { tag: "Ready" },
         current_task: {

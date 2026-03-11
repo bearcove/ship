@@ -136,6 +136,12 @@ pub mod agent {
         },
     }
 
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct EffortValue {
+        pub id: String,
+        pub name: String,
+    }
+
     // r[agent-state.snapshot]
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub struct AgentSnapshot {
@@ -145,6 +151,9 @@ pub mod agent {
         pub context_remaining_percent: Option<u8>,
         pub model_id: Option<String>,
         pub available_models: Vec<String>,
+        pub effort_config_id: Option<String>,
+        pub effort_value_id: Option<String>,
+        pub available_effort_values: Vec<EffortValue>,
     }
 }
 
@@ -306,7 +315,7 @@ pub mod session {
 
 pub mod events {
     use crate::TaskId;
-    use crate::agent::{AgentState, PlanStep, Role};
+    use crate::agent::{AgentState, EffortValue, PlanStep, Role};
     use crate::ids::BlockId;
     use crate::session::SessionStartupState;
     use crate::structured::{JsonValue, TerminalSnapshot, ToolCallError, ToolCallKind, ToolTarget};
@@ -480,6 +489,12 @@ pub mod events {
             model_id: Option<String>,
             available_models: Vec<String>,
         },
+        AgentEffortChanged {
+            role: Role,
+            effort_config_id: Option<String>,
+            effort_value_id: Option<String>,
+            available_effort_values: Vec<EffortValue>,
+        },
         /// A built-in tool was blocked; the session manager should inject this
         /// message into the agent's next prompt turn so it knows to use MCP
         /// tools instead. Role indicates which agent triggered it.
@@ -626,6 +641,15 @@ pub mod protocol {
         Failed { message: String },
     }
 
+    #[repr(u8)]
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub enum SetAgentEffortResponse {
+        Ok,
+        SessionNotFound,
+        AgentNotSpawned,
+        Failed { message: String },
+    }
+
     // r[proto.close-session]
     #[repr(u8)]
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
@@ -761,8 +785,8 @@ pub mod persistence {
 }
 
 pub use agent::{
-    AgentKind, AgentSnapshot, AgentState, PermissionRequest, PlanStep, PlanStepPriority,
-    PlanStepStatus, Role,
+    AgentKind, AgentSnapshot, AgentState, EffortValue, PermissionRequest, PlanStep,
+    PlanStepPriority, PlanStepStatus, Role,
 };
 pub use events::{
     BlockPatch, ContentBlock, PermissionResolution, SessionEvent, SessionEventEnvelope,
@@ -775,7 +799,8 @@ pub use protocol::{
     AgentDiscovery, AutonomyMode, CloseSessionRequest, CloseSessionResponse, CreateSessionRequest,
     CreateSessionResponse, HumanReviewRequest, McpDiffContent, McpEnvVar, McpHeader,
     McpHttpServerConfig, McpServerConfig, McpSseServerConfig, McpStdioServerConfig,
-    McpToolCallResponse, ProjectInfo, SessionDetail, SessionSummary, SetAgentModelResponse,
+    McpToolCallResponse, ProjectInfo, SessionDetail, SessionSummary, SetAgentEffortResponse,
+    SetAgentModelResponse,
 };
 pub use session::{SessionStartupStage, SessionStartupState};
 pub use structured::{

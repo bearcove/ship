@@ -451,6 +451,16 @@ fn log_message(started_at: Instant, message: &SubscribeMessage) {
                         "model changed role={role:?} model_id={model_id:?} available={available_models:?}"
                     )
                 }
+                SessionEvent::AgentEffortChanged {
+                    role,
+                    effort_config_id,
+                    effort_value_id,
+                    ..
+                } => {
+                    format!(
+                        "effort changed role={role:?} config_id={effort_config_id:?} value_id={effort_value_id:?}"
+                    )
+                }
                 SessionEvent::MateGuidanceQueued { .. } => "mate guidance queued".to_owned(),
                 SessionEvent::HumanReviewRequested { .. } => "human review requested".to_owned(),
                 SessionEvent::HumanReviewCleared => "human review cleared".to_owned(),

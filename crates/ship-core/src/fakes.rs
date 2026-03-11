@@ -8,8 +8,8 @@ use futures_util::stream;
 use ship_types::{AgentKind, PersistedSession, Role, SessionEvent, SessionId};
 
 use crate::{
-    AgentDriver, AgentError, AgentHandle, AgentSessionConfig, PromptResponse, SessionStore,
-    StopReason, StoreError, WorktreeError, WorktreeOps,
+    AgentDriver, AgentError, AgentHandle, AgentSessionConfig, AgentSpawnInfo, PromptResponse,
+    SessionStore, StopReason, StoreError, WorktreeError, WorktreeOps,
 };
 
 #[derive(Debug, Clone)]
@@ -109,7 +109,7 @@ impl AgentDriver for FakeAgentDriver {
         kind: AgentKind,
         role: Role,
         config: &AgentSessionConfig,
-    ) -> Result<(AgentHandle, Option<String>, Vec<String>), AgentError> {
+    ) -> Result<AgentSpawnInfo, AgentError> {
         let handle = AgentHandle::new(SessionId::new());
 
         self.inner
@@ -123,7 +123,14 @@ impl AgentDriver for FakeAgentDriver {
                 handle: handle.clone(),
             });
 
-        Ok((handle, None, Vec::new()))
+        Ok(AgentSpawnInfo {
+            handle,
+            model_id: None,
+            available_models: Vec::new(),
+            effort_config_id: None,
+            effort_value_id: None,
+            available_effort_values: Vec::new(),
+        })
     }
 
     async fn prompt(
@@ -200,6 +207,15 @@ impl AgentDriver for FakeAgentDriver {
     }
 
     async fn set_model(&self, _handle: &AgentHandle, _model_id: &str) -> Result<(), AgentError> {
+        Ok(())
+    }
+
+    async fn set_effort(
+        &self,
+        _handle: &AgentHandle,
+        _config_id: &str,
+        _value_id: &str,
+    ) -> Result<(), AgentError> {
         Ok(())
     }
 

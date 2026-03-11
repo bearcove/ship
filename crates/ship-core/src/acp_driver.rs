@@ -11,7 +11,7 @@ use agent_client_protocol::{
 };
 use base64::Engine as _;
 use futures::{Stream, stream};
-use ship_types::{Role, SessionEvent};
+use ship_types::{EffortValue, Role, SessionEvent};
 use tokio::process::Command;
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
@@ -19,12 +19,14 @@ use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use crate::acp_client::ShipAcpClient;
 use crate::mcp::to_acp_mcp_server;
 use crate::{
-    AgentDriver, AgentError, AgentHandle, AgentSessionConfig, PromptResponse, SessionId, StopReason,
+    AgentDriver, AgentError, AgentHandle, AgentSessionConfig, AgentSpawnInfo, PromptResponse,
+    SessionId, StopReason,
 };
 use crate::{SystemBinaryPathProbe, resolve_agent_launcher};
 
 type ModelInfo = (Option<String>, Vec<String>);
-type ReadyResult = Result<ModelInfo, String>;
+type EffortInfo = (Option<String>, Option<String>, Vec<EffortValue>);
+type ReadyResult = Result<(ModelInfo, EffortInfo), String>;
 
 struct AcpHandle {
     command_tx: mpsc::UnboundedSender<DriverCommand>,
@@ -59,6 +61,11 @@ enum DriverCommand {
         model_id: String,
         response: oneshot::Sender<Result<(), AgentError>>,
     },
+    SetEffort {
+        config_id: String,
+        value_id: String,
+        response: oneshot::Sender<Result<(), AgentError>>,
+    },
     Kill {
         response: oneshot::Sender<Result<(), AgentError>>,
     },
@@ -90,7 +97,7 @@ impl AgentDriver for AcpAgentDriver {
         kind: ship_types::AgentKind,
         role: Role,
         config: &AgentSessionConfig,
-    ) -> Result<(AgentHandle, Option<String>, Vec<String>), AgentError> {
+    ) -> Result<AgentSpawnInfo, AgentError> {
         let handle = AgentHandle::new(SessionId::new());
         let (command_tx, command_rx) = mpsc::unbounded_channel::<DriverCommand>();
         let (notifications_tx, notifications_rx) = mpsc::unbounded_channel::<SessionEvent>();
@@ -120,7 +127,10 @@ impl AgentDriver for AcpAgentDriver {
         });
 
         match ready_rx.await {
-            Ok(Ok((model_id, available_models))) => {
+            Ok(Ok((
+                (model_id, available_models),
+                (effort_config_id, effort_value_id, available_effort_values),
+            ))) => {
                 self.handles
                     .lock()
                     .expect("acp handles mutex poisoned")
@@ -133,7 +143,14 @@ impl AgentDriver for AcpAgentDriver {
                             worker_thread: Some(worker_thread),
                         },
                     );
-                Ok((handle, model_id, available_models))
+                Ok(AgentSpawnInfo {
+                    handle,
+                    model_id,
+                    available_models,
+                    effort_config_id,
+                    effort_value_id,
+                    available_effort_values,
+                })
             }
             Ok(Err(message)) => Err(AgentError { message }),
             Err(error) => Err(AgentError {
@@ -315,6 +332,39 @@ impl AgentDriver for AcpAgentDriver {
         })?
     }
 
+    async fn set_effort(
+        &self,
+        handle: &AgentHandle,
+        config_id: &str,
+        value_id: &str,
+    ) -> Result<(), AgentError> {
+        let command_tx = {
+            let handles = self.handles.lock().expect("acp handles mutex poisoned");
+            handles
+                .get(handle)
+                .ok_or_else(|| AgentError {
+                    message: "agent handle not found".to_owned(),
+                })?
+                .command_tx
+                .clone()
+        };
+
+        let (response_tx, response_rx) = oneshot::channel();
+        command_tx
+            .send(DriverCommand::SetEffort {
+                config_id: config_id.to_owned(),
+                value_id: value_id.to_owned(),
+                response: response_tx,
+            })
+            .map_err(|error| AgentError {
+                message: format!("failed to send set effort command: {error}"),
+            })?;
+
+        response_rx.await.map_err(|error| AgentError {
+            message: format!("set effort response channel closed: {error}"),
+        })?
+    }
+
     async fn kill(&self, handle: &AgentHandle) -> Result<(), AgentError> {
         let mut acp_handle = self
             .handles
@@ -435,9 +485,15 @@ async fn run_acp_worker(
         }
         None => (None, Vec::new()),
     };
+    let effort_info = parse_effort_from_config_options(
+        new_session_response
+            .config_options
+            .as_deref()
+            .unwrap_or(&[]),
+    );
     tracing::info!(role = ?role, kind = ?kind, acp_session_id = ?session_id, model_id = ?model_id, "started ACP session");
 
-    let _ = ready_tx.send(Ok((model_id, available_models)));
+    let _ = ready_tx.send(Ok(((model_id, available_models), effort_info)));
 
     while let Some(command) = command_rx.recv().await {
         match command {
@@ -510,6 +566,25 @@ async fn run_acp_worker(
                     .map_err(acp_error);
                 let _ = response.send(result);
             }
+            DriverCommand::SetEffort {
+                config_id,
+                value_id,
+                response,
+            } => {
+                use agent_client_protocol::{
+                    SessionConfigId, SessionConfigValueId, SetSessionConfigOptionRequest,
+                };
+                let result = connection
+                    .set_session_config_option(SetSessionConfigOptionRequest::new(
+                        session_id.clone(),
+                        SessionConfigId::new(config_id.as_str()),
+                        SessionConfigValueId::new(value_id.as_str()),
+                    ))
+                    .await
+                    .map(|_| ())
+                    .map_err(acp_error);
+                let _ = response.send(result);
+            }
             DriverCommand::Kill { response } => {
                 let result = child.start_kill().map_err(|error| AgentError {
                     message: format!("failed to kill ACP process: {error}"),
@@ -524,6 +599,45 @@ async fn run_acp_worker(
     let _ = child.start_kill();
     let _ = child.wait().await;
     Ok(())
+}
+
+fn parse_effort_from_config_options(
+    config_options: &[agent_client_protocol::SessionConfigOption],
+) -> EffortInfo {
+    use agent_client_protocol::{
+        SessionConfigKind, SessionConfigOptionCategory, SessionConfigSelectOptions,
+    };
+    for option in config_options {
+        if matches!(
+            option.category,
+            Some(SessionConfigOptionCategory::ThoughtLevel)
+        ) {
+            if let SessionConfigKind::Select(select) = &option.kind {
+                let config_id = option.id.0.as_ref().to_owned();
+                let value_id = select.current_value.0.as_ref().to_owned();
+                let available = match &select.options {
+                    SessionConfigSelectOptions::Ungrouped(options) => options
+                        .iter()
+                        .map(|opt| EffortValue {
+                            id: opt.value.0.as_ref().to_owned(),
+                            name: opt.name.clone(),
+                        })
+                        .collect(),
+                    SessionConfigSelectOptions::Grouped(groups) => groups
+                        .iter()
+                        .flat_map(|group| group.options.iter())
+                        .map(|opt| EffortValue {
+                            id: opt.value.0.as_ref().to_owned(),
+                            name: opt.name.clone(),
+                        })
+                        .collect(),
+                    _ => Vec::new(),
+                };
+                return (Some(config_id), Some(value_id), available);
+            }
+        }
+    }
+    (None, None, Vec::new())
 }
 
 fn build_initialize_request(role: Role) -> InitializeRequest {

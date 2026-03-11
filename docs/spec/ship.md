@@ -196,6 +196,12 @@ The protocol MUST support a `reply_to_human` operation that takes a session ID
 and a message string. This unblocks a `captain_notify_human` call that is
 waiting for human input.
 
+r[proto.set-agent-effort]
+The protocol MUST support a `set_agent_effort` operation that takes a session
+ID, role, config ID, and value ID. This changes the thinking-effort level of
+the specified agent via the ACP `set_session_config_option` call and emits an
+`AgentEffortChanged` event so all subscribers see the update.
+
 r[proto.retry-agent]
 The protocol MUST support a `retry_agent` operation that takes a session ID
 and a role (captain or mate). It respawns the agent process, reinitializes
@@ -482,6 +488,13 @@ The system MUST emit a `TaskStarted` event when a new task is assigned. The
 payload includes the task ID and task description. On receiving this, the
 frontend MUST clear both block stores. The sequence number does NOT reset —
 it continues from the session's current value.
+
+r[event.agent-effort-changed]
+The system MUST emit an `AgentEffortChanged` event when an agent's thinking
+effort configuration changes — either at spawn time (reflecting the ACP
+session's initial `ThoughtLevel` config) or in response to `set_agent_effort`.
+The payload includes the role, config ID, current value ID, and the full list
+of available effort values with their display names.
 
 r[event.human-review-requested]
 The system MUST emit a `HumanReviewRequested` event when the captain calls
