@@ -2,13 +2,14 @@ import { style } from "@vanilla-extract/css";
 
 export const sidebarRoot = style({
   width: "100%",
+  height: "100%",
   flexShrink: 0,
   display: "flex",
   flexDirection: "column",
   borderRight: "1px solid var(--gray-a5)",
   overflow: "hidden",
   "@media": {
-    "(max-width: 500px)": {
+    "(max-width: 700px)": {
       position: "fixed",
       left: 0,
       top: 0,
