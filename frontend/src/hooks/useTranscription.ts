@@ -126,18 +126,14 @@ export function useTranscription() {
         },
       };
 
-      // Background: receive segments in real-time and update result progressively
+      // Background: receive segments in real-time.
+      // Each segment from the streaming window contains the FULL transcription
+      // so far (cumulative), so we replace rather than accumulate.
       void (async () => {
-        const segments: TranscribeSegment[] = [];
         while (true) {
           const seg = await segRx.recv();
           if (seg === null) break;
-          segments.push(seg);
-          const text = segments
-            .map((s) => s.text)
-            .join("")
-            .trim();
-          setResult({ text, segments: [...segments] });
+          setResult({ text: seg.text.trim(), segments: [seg] });
         }
         await callPromise;
         setState({ tag: "idle" });
