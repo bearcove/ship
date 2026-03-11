@@ -120,15 +120,28 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
   const isDragOver = useDocumentDrop(addImageFiles);
   const transcription = useTranscription();
 
-  // When transcription result arrives, insert text into the composer
+  // Track the text that existed before transcription started, so we can
+  // replace the transcription suffix as new segments arrive in real-time.
+  const preTranscriptionTextRef = useRef<string | null>(null);
   const lastResultRef = useRef(transcription.result);
+
+  // Capture pre-transcription text when recording starts
+  if (transcription.state.tag === "recording" && preTranscriptionTextRef.current === null) {
+    preTranscriptionTextRef.current = text;
+  }
+
+  // Update composer text as segments stream in
   if (transcription.result && transcription.result !== lastResultRef.current) {
     lastResultRef.current = transcription.result;
     if (transcription.result.text) {
-      setText((prev) =>
-        prev ? prev + " " + transcription.result!.text : transcription.result!.text,
-      );
+      const prefix = preTranscriptionTextRef.current ?? "";
+      setText(prefix ? prefix + " " + transcription.result.text : transcription.result.text);
     }
+  }
+
+  // Reset pre-transcription text when we return to idle
+  if (transcription.state.tag === "idle" && preTranscriptionTextRef.current !== null) {
+    preTranscriptionTextRef.current = null;
   }
 
   const { target } = parseTarget(text);

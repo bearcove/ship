@@ -41,6 +41,7 @@ export function useTranscription() {
     mediaStream: MediaStream;
     audioTx: Tx<Uint8Array>;
     stopElapsedTimer: () => void;
+    flushAudio: () => void;
   } | null>(null);
 
   const startRecording = useCallback(async () => {
@@ -71,17 +72,36 @@ export function useTranscription() {
       const client = await getShipClient();
       const callPromise = client.transcribeAudio(audioRx, segTx);
 
-      // Forward audio samples from worklet to roam channel
+      // Buffer audio samples and send in ~100ms batches to avoid flooding
+      // the WebSocket (AudioWorklet fires every ~2.67ms at 48kHz)
       const sourceSampleRate = audioContext.sampleRate;
-      workletNode.port.onmessage = (e: MessageEvent<Float32Array>) => {
-        const resampled = resample(e.data, sourceSampleRate);
+      const BATCH_INTERVAL_MS = 100;
+      let pendingSamples: Float32Array[] = [];
+      let pendingLength = 0;
+
+      const flushAudio = () => {
+        if (pendingLength === 0) return;
+        const merged = new Float32Array(pendingLength);
+        let offset = 0;
+        for (const chunk of pendingSamples) {
+          merged.set(chunk, offset);
+          offset += chunk.length;
+        }
+        pendingSamples = [];
+        pendingLength = 0;
+
+        const resampled = resample(merged, sourceSampleRate);
         const bytes = float32ToBytes(resampled);
-        // Copy the bytes since the underlying buffer may be reused
         const copy = new Uint8Array(bytes.length);
         copy.set(bytes);
-        audioTx.send(copy).catch(() => {
-          // Channel closed, stop recording
-        });
+        audioTx.send(copy).catch(() => {});
+      };
+
+      const batchTimer = setInterval(flushAudio, BATCH_INTERVAL_MS);
+
+      workletNode.port.onmessage = (e: MessageEvent<Float32Array>) => {
+        pendingSamples.push(new Float32Array(e.data));
+        pendingLength += e.data.length;
       };
 
       source.connect(workletNode);
@@ -100,23 +120,26 @@ export function useTranscription() {
         mediaStream,
         audioTx,
         stopElapsedTimer: () => clearInterval(elapsedInterval),
+        flushAudio: () => {
+          clearInterval(batchTimer);
+          flushAudio();
+        },
       };
 
-      // Background: wait for segments from the server
+      // Background: receive segments in real-time and update result progressively
       void (async () => {
         const segments: TranscribeSegment[] = [];
         while (true) {
           const seg = await segRx.recv();
           if (seg === null) break;
           segments.push(seg);
+          const text = segments
+            .map((s) => s.text)
+            .join("")
+            .trim();
+          setResult({ text, segments: [...segments] });
         }
         await callPromise;
-
-        const text = segments
-          .map((s) => s.text)
-          .join("")
-          .trim();
-        setResult({ text, segments });
         setState({ tag: "idle" });
       })();
     } catch (err) {
@@ -133,6 +156,7 @@ export function useTranscription() {
     activeRef.current = null;
 
     active.stopElapsedTimer();
+    active.flushAudio();
 
     // Stop the mic
     for (const track of active.mediaStream.getTracks()) {
