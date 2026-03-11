@@ -191,6 +191,11 @@ r[proto.resolve-permission]
 The protocol MUST support a `resolve_permission` operation to respond to agent
 permission requests.
 
+r[proto.reply-to-human]
+The protocol MUST support a `reply_to_human` operation that takes a session ID
+and a message string. This unblocks a `captain_notify_human` call that is
+waiting for human input.
+
 r[proto.retry-agent]
 The protocol MUST support a `retry_agent` operation that takes a session ID
 and a role (captain or mate). It respawns the agent process, reinitializes
@@ -477,6 +482,16 @@ The system MUST emit a `TaskStarted` event when a new task is assigned. The
 payload includes the task ID and task description. On receiving this, the
 frontend MUST clear both block stores. The sequence number does NOT reset —
 it continues from the session's current value.
+
+r[event.human-review-requested]
+The system MUST emit a `HumanReviewRequested` event when the captain calls
+`captain_notify_human`. The payload includes the captain's message, a unified
+diff of changes since the base branch, and the worktree path. The frontend
+displays this as a blocking review panel.
+
+r[event.human-review-cleared]
+The system MUST emit a `HumanReviewCleared` event when the human replies via
+`reply_to_human`, clearing the pending review state on all subscribers.
 
 r[event.replay-complete]
 After the backend has sent all replayed events to a newly connected
@@ -1226,6 +1241,17 @@ button. Attached images are displayed as thumbnails before sending and can be
 removed individually. On submit, images are sent as vision content alongside
 text. The backend encodes images as base64 and passes them to the ACP agent
 as image content blocks.
+
+## Human Review Panel
+
+r[ui.human-review.panel]
+When a `HumanReviewRequested` event is received, the UI MUST display a
+blocking review panel showing the captain's message, a colored unified diff of
+changes since the base branch, the worktree path (with a copy-to-clipboard
+button), and two actions: Approve (sends `"approved"` via `reply_to_human`)
+and Request Changes (opens a text field to enter feedback, then sends that
+text via `reply_to_human`). The panel is dismissed when `HumanReviewCleared`
+is received.
 
 ## Cost Tracking
 

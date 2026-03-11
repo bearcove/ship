@@ -950,6 +950,11 @@ export const steerReviewCard = style({
   flexShrink: 0,
 });
 
+export const humanReviewCard = style({
+  margin: "var(--space-2) var(--space-4)",
+  flexShrink: 0,
+});
+
 export const permissionCard = style({
   background: "var(--accent-a3)",
   border: "1px solid var(--accent-a6)",

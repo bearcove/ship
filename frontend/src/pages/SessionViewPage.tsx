@@ -7,6 +7,7 @@ import { useSessionState } from "../hooks/useSessionState";
 import { UnifiedFeed } from "../components/UnifiedFeed";
 import { UnifiedComposer } from "../components/UnifiedComposer";
 import { SteerReview } from "../components/SteerReview";
+import { HumanReview } from "../components/HumanReview";
 import {
   agentRail,
   agentStatusBar,
@@ -102,6 +103,7 @@ export function SessionViewPage({
   const captain = eventState.captain ?? session.captain;
   const mate = eventState.mate ?? session.mate;
   const startupState = eventState.startupState ?? session.startup_state;
+  const pendingHumanReview = eventState.pendingHumanReview ?? session.pending_human_review;
   const isReplaying = eventState.phase !== "live";
   const replayLabel = eventState.connected
     ? eventState.replayEventCount > 0
@@ -185,6 +187,7 @@ export function SessionViewPage({
           onDismiss={() => {}}
         />
       )}
+      {pendingHumanReview && <HumanReview sessionId={session.id} review={pendingHumanReview} />}
     </Flex>
   );
 }

@@ -38,6 +38,9 @@ pub trait Ship {
     // r[proto.accept]
     async fn accept(&self, session: SessionId);
 
+    // r[proto.reply-to-human]
+    async fn reply_to_human(&self, session: SessionId, message: String);
+
     // r[proto.cancel]
     async fn cancel(&self, session: SessionId);
 

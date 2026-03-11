@@ -1,5 +1,6 @@
 import type {
   AgentSnapshot,
+  HumanReviewRequest,
   SessionDetail,
   SessionEventEnvelope,
   SessionStartupState,
@@ -36,6 +37,7 @@ export interface SessionViewState {
   replayEventCount: number;
   disconnectReason: string | null;
   connectionAttempt: number;
+  pendingHumanReview: HumanReviewRequest | null;
 }
 
 export function initialSessionViewState(): SessionViewState {
@@ -58,6 +60,7 @@ export function initialSessionViewState(): SessionViewState {
     replayEventCount: 0,
     disconnectReason: null,
     connectionAttempt: 0,
+    pendingHumanReview: null,
   };
 }
 
@@ -361,6 +364,19 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         }
         case "MateGuidanceQueued": {
           return nextState;
+        }
+        case "HumanReviewRequested": {
+          return {
+            ...nextState,
+            pendingHumanReview: {
+              message: ev.message,
+              diff: ev.diff,
+              worktree_path: ev.worktree_path,
+            },
+          };
+        }
+        case "HumanReviewCleared": {
+          return { ...nextState, pendingHumanReview: null };
         }
       }
     }

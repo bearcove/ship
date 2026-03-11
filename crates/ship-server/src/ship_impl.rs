@@ -22,12 +22,12 @@ use ship_service::{CaptainMcp, CaptainMcpDispatcher, MateMcp, MateMcpDispatcher,
 use ship_types::{
     AgentDiscovery, AgentKind, AgentSnapshot, AgentState, AutonomyMode, BlockId,
     CloseSessionRequest, CloseSessionResponse, ContentBlock, CreateSessionRequest,
-    CreateSessionResponse, CurrentTask, McpDiffContent, McpServerConfig, McpStdioServerConfig,
-    McpToolCallResponse, PersistedSession, PlanStep, PlanStepPriority, PlanStepStatus, ProjectInfo,
-    ProjectName, PromptContentPart, Role, SessionConfig, SessionDetail, SessionEvent,
-    SessionEventEnvelope, SessionId, SessionStartupStage, SessionStartupState, SessionSummary,
-    SetAgentModelResponse, SubscribeMessage, TaskId, TaskRecord, TaskStatus, ToolCallKind,
-    ToolTarget,
+    CreateSessionResponse, CurrentTask, HumanReviewRequest, McpDiffContent, McpServerConfig,
+    McpStdioServerConfig, McpToolCallResponse, PersistedSession, PlanStep, PlanStepPriority,
+    PlanStepStatus, ProjectInfo, ProjectName, PromptContentPart, Role, SessionConfig,
+    SessionDetail, SessionEvent, SessionEventEnvelope, SessionId, SessionStartupStage,
+    SessionStartupState, SessionSummary, SetAgentModelResponse, SubscribeMessage, TaskId,
+    TaskRecord, TaskStatus, ToolCallKind, ToolTarget,
 };
 use tokio::process::Command as TokioCommand;
 use tokio::sync::broadcast;
@@ -293,6 +293,7 @@ impl ShipImpl {
                 pending_permissions: HashMap::new(),
                 pending_edits: HashMap::new(),
                 pending_steer: None,
+                pending_human_review: None,
                 events_tx,
                 next_event_seq,
             };
@@ -357,6 +358,7 @@ impl ShipImpl {
             task_history: session.task_history.clone(),
             autonomy_mode: session.config.autonomy_mode,
             pending_steer: session.pending_steer.clone(),
+            pending_human_review: session.pending_human_review.clone(),
             created_at: session.created_at.clone(),
             user_avatar_url,
         }
@@ -377,6 +379,7 @@ impl ShipImpl {
             task_history: Vec::new(),
             autonomy_mode: AutonomyMode::HumanInTheLoop,
             pending_steer: None,
+            pending_human_review: None,
             created_at: String::new(),
             user_avatar_url,
         }
@@ -397,6 +400,8 @@ impl ShipImpl {
             SessionEvent::TaskStarted { .. } => "TaskStarted",
             SessionEvent::AgentModelChanged { .. } => "AgentModelChanged",
             SessionEvent::MateGuidanceQueued { .. } => "MateGuidanceQueued",
+            SessionEvent::HumanReviewRequested { .. } => "HumanReviewRequested",
+            SessionEvent::HumanReviewCleared => "HumanReviewCleared",
         }
     }
 
@@ -410,7 +415,9 @@ impl ShipImpl {
             SessionEvent::SessionStartupChanged { .. }
             | SessionEvent::TaskStatusChanged { .. }
             | SessionEvent::TaskStarted { .. }
-            | SessionEvent::MateGuidanceQueued { .. } => None,
+            | SessionEvent::MateGuidanceQueued { .. }
+            | SessionEvent::HumanReviewRequested { .. }
+            | SessionEvent::HumanReviewCleared => None,
         }
     }
 
@@ -424,7 +431,9 @@ impl ShipImpl {
             | SessionEvent::ContextUpdated { .. }
             | SessionEvent::TaskStarted { .. }
             | SessionEvent::AgentModelChanged { .. }
-            | SessionEvent::MateGuidanceQueued { .. } => None,
+            | SessionEvent::MateGuidanceQueued { .. }
+            | SessionEvent::HumanReviewRequested { .. }
+            | SessionEvent::HumanReviewCleared => None,
         }
     }
 
@@ -438,7 +447,9 @@ impl ShipImpl {
             | SessionEvent::SessionStartupChanged { .. }
             | SessionEvent::ContextUpdated { .. }
             | SessionEvent::AgentModelChanged { .. }
-            | SessionEvent::MateGuidanceQueued { .. } => None,
+            | SessionEvent::MateGuidanceQueued { .. }
+            | SessionEvent::HumanReviewRequested { .. }
+            | SessionEvent::HumanReviewCleared => None,
         }
     }
 
@@ -1252,11 +1263,63 @@ Here is your task:
         Ok("Task cancelled.".to_owned())
     }
 
+    // r[captain.tool.notify-human]
     async fn captain_tool_notify_human(
         &self,
         session_id: &SessionId,
-        _message: String,
+        message: String,
     ) -> Result<String, String> {
+        // Compute the diff and get the worktree path while holding the lock briefly.
+        let (worktree_path, base_branch) = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions
+                .get(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            let worktree_path = session
+                .worktree_path
+                .clone()
+                .ok_or_else(|| "session worktree not ready".to_owned())?;
+            (worktree_path, session.config.base_branch.clone())
+        };
+
+        // git diff base_branch...HEAD — shows everything the session branch adds.
+        let diff = {
+            let output = TokioCommand::new("git")
+                .arg("-C")
+                .arg(&worktree_path)
+                .arg("diff")
+                .arg(format!("{base_branch}...HEAD"))
+                .output()
+                .await
+                .map_err(|e| format!("failed to compute diff: {e}"))?;
+            String::from_utf8_lossy(&output.stdout).into_owned()
+        };
+
+        let review = HumanReviewRequest {
+            message: message.clone(),
+            diff,
+            worktree_path: worktree_path.display().to_string(),
+        };
+
+        {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions
+                .get_mut(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            session.pending_human_review = Some(review.clone());
+            apply_event(
+                session,
+                SessionEvent::HumanReviewRequested {
+                    message: review.message.clone(),
+                    diff: review.diff.clone(),
+                    worktree_path: review.worktree_path.clone(),
+                },
+            );
+        }
+        self.persist_session(session_id)
+            .await
+            .map_err(|e| format!("persist failed: {e}"))?;
+
         let (tx, rx) = tokio::sync::oneshot::channel::<String>();
         {
             let mut ops = self
@@ -1269,10 +1332,22 @@ Here is your task:
             entry.human_reply = Some(tx);
         }
 
-        match rx.await {
-            Ok(reply) => Ok(reply),
-            Err(_) => Err("human reply channel closed".to_owned()),
+        let reply = match rx.await {
+            Ok(reply) => reply,
+            Err(_) => return Err("human reply channel closed".to_owned()),
+        };
+
+        // Clear the pending review state.
+        {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            if let Some(session) = sessions.get_mut(session_id) {
+                session.pending_human_review = None;
+                apply_event(session, SessionEvent::HumanReviewCleared);
+            }
         }
+        let _ = self.persist_session(session_id).await;
+
+        Ok(reply)
     }
 
     // r[captain.tool.read-only]
@@ -4463,6 +4538,7 @@ impl Ship for ShipImpl {
             pending_permissions: HashMap::new(),
             pending_edits: HashMap::new(),
             pending_steer: None,
+            pending_human_review: None,
             events_tx,
             next_event_seq: 0,
         };
@@ -4523,6 +4599,22 @@ impl Ship for ShipImpl {
     async fn accept(&self, session: SessionId) {
         if let Err(error) = self.accept_task(&session, None).await {
             Self::log_error("accept", &error);
+        }
+    }
+
+    // r[proto.reply-to-human]
+    async fn reply_to_human(&self, session: SessionId, message: String) {
+        let tx = self
+            .pending_mcp_ops
+            .lock()
+            .expect("pending_mcp_ops mutex poisoned")
+            .get_mut(&session)
+            .and_then(|ops| ops.human_reply.take());
+
+        if let Some(tx) = tx {
+            let _ = tx.send(message);
+        } else {
+            Self::log_error("reply_to_human", "no pending human reply for session");
         }
     }
 

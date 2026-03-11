@@ -66,7 +66,7 @@ export const projectRow = style({
 
 export const projectName = style({
   flex: 1,
-  fontSize: "var(--font-size-1)",
+  fontSize: "var(--font-size-2)",
   fontWeight: "var(--font-weight-medium)",
   color: "var(--gray-11)",
   overflow: "hidden",
@@ -90,6 +90,7 @@ export const sessionRow = style({
   display: "flex",
   alignItems: "center",
   gap: "var(--space-2)",
+  fontSize: "var(--font-size-2)",
   paddingLeft: "calc(var(--space-3) + 18px)",
   paddingRight: "var(--space-3)",
   paddingTop: "5px",
@@ -111,7 +112,7 @@ export const sessionRow = style({
 
 export const sessionRowTitle = style({
   flex: 1,
-  fontSize: "var(--font-size-1)",
+  fontSize: "var(--font-size-2)",
   color: "var(--gray-12)",
   overflow: "hidden",
   textOverflow: "ellipsis",
@@ -119,13 +120,12 @@ export const sessionRowTitle = style({
 });
 
 export const sessionRowEmpty = style({
+  fontSize: "var(--font-size-2)",
   paddingLeft: "calc(var(--space-3) + 18px)",
   paddingRight: "var(--space-3)",
   paddingTop: "3px",
   paddingBottom: "5px",
-  fontSize: "var(--font-size-1)",
   color: "var(--gray-9)",
-  fontStyle: "italic",
 });
 
 export const sidebarStatusDot = style({

@@ -5,10 +5,10 @@ use std::path::{Path, PathBuf};
 use futures_util::StreamExt;
 use ship_types::{
     AgentSnapshot, AgentState, AutonomyMode, BlockId, BlockPatch, CloseSessionResponse,
-    ContentBlock, CreateSessionRequest, CurrentTask, PermissionRequest, PermissionResolution,
-    PersistedSession, Role, SessionConfig, SessionEvent, SessionEventEnvelope, SessionId,
-    SessionStartupStage, SessionStartupState, SessionSummary, TaskContentRecord, TaskId,
-    TaskRecord, TaskStatus,
+    ContentBlock, CreateSessionRequest, CurrentTask, HumanReviewRequest, PermissionRequest,
+    PermissionResolution, PersistedSession, Role, SessionConfig, SessionEvent,
+    SessionEventEnvelope, SessionId, SessionStartupStage, SessionStartupState, SessionSummary,
+    TaskContentRecord, TaskId, TaskRecord, TaskStatus,
 };
 use tokio::sync::broadcast;
 
@@ -94,6 +94,7 @@ pub struct ActiveSession {
     pub pending_permissions: HashMap<String, PendingPermission>,
     pub pending_edits: HashMap<String, PendingEdit>,
     pub pending_steer: Option<String>,
+    pub pending_human_review: Option<HumanReviewRequest>,
     pub events_tx: broadcast::Sender<SessionEventEnvelope>,
     pub next_event_seq: u64,
 }
@@ -180,6 +181,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             pending_permissions: HashMap::new(),
             pending_edits: HashMap::new(),
             pending_steer: None,
+            pending_human_review: None,
             events_tx,
             next_event_seq: 0,
         };
@@ -1184,6 +1186,20 @@ pub fn apply_event_to_materialized_state(session: &mut ActiveSession, event: &Se
         // Handled by the session manager before apply_event is called;
         // should never reach here.
         SessionEvent::MateGuidanceQueued { .. } => {}
+        SessionEvent::HumanReviewRequested {
+            message,
+            diff,
+            worktree_path,
+        } => {
+            session.pending_human_review = Some(HumanReviewRequest {
+                message: message.clone(),
+                diff: diff.clone(),
+                worktree_path: worktree_path.clone(),
+            });
+        }
+        SessionEvent::HumanReviewCleared => {
+            session.pending_human_review = None;
+        }
     }
 }
 

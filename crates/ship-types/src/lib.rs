@@ -487,6 +487,18 @@ pub mod events {
             role: Role,
             message: String,
         },
+        // r[event.human-review-requested]
+        /// Captain called captain_notify_human; waiting for human to approve/respond.
+        HumanReviewRequested {
+            message: String,
+            /// git diff base_branch...HEAD in the session worktree
+            diff: String,
+            /// Absolute path to the session worktree for manual inspection
+            worktree_path: String,
+        },
+        // r[event.human-review-cleared]
+        /// Human responded; captain is unblocked.
+        HumanReviewCleared,
     }
 
     // r[event.envelope]
@@ -654,6 +666,16 @@ pub mod protocol {
         pub created_at: String,
     }
 
+    // r[event.human-review-requested]
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct HumanReviewRequest {
+        pub message: String,
+        /// git diff base_branch...HEAD at the time of the request
+        pub diff: String,
+        /// Absolute path to the session worktree for manual inspection
+        pub worktree_path: String,
+    }
+
     // r[proto.get-session]
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub struct SessionDetail {
@@ -667,6 +689,7 @@ pub mod protocol {
         pub task_history: Vec<TaskRecord>,
         pub autonomy_mode: AutonomyMode,
         pub pending_steer: Option<String>,
+        pub pending_human_review: Option<HumanReviewRequest>,
         pub created_at: String,
         pub user_avatar_url: Option<String>,
     }
@@ -748,9 +771,9 @@ pub use persistence::{CurrentTask, PersistedSession, SessionConfig, TaskContentR
 pub use prompt::PromptContentPart;
 pub use protocol::{
     AgentDiscovery, AutonomyMode, CloseSessionRequest, CloseSessionResponse, CreateSessionRequest,
-    CreateSessionResponse, McpDiffContent, McpEnvVar, McpHeader, McpHttpServerConfig,
-    McpServerConfig, McpSseServerConfig, McpStdioServerConfig, McpToolCallResponse, ProjectInfo,
-    SessionDetail, SessionSummary, SetAgentModelResponse,
+    CreateSessionResponse, HumanReviewRequest, McpDiffContent, McpEnvVar, McpHeader,
+    McpHttpServerConfig, McpServerConfig, McpSseServerConfig, McpStdioServerConfig,
+    McpToolCallResponse, ProjectInfo, SessionDetail, SessionSummary, SetAgentModelResponse,
 };
 pub use session::{SessionStartupStage, SessionStartupState};
 pub use structured::{

@@ -3,8 +3,8 @@ import { Link, useNavigate } from "react-router-dom";
 import { Box, Flex, IconButton, Select, Spinner, Text, Tooltip } from "@radix-ui/themes";
 import {
   BugIcon,
-  CaretDownIcon,
-  CaretRightIcon,
+  FolderIcon,
+  FolderOpenIcon,
   FolderSimplePlusIcon,
   NoteIcon,
   SpeakerHighIcon,
@@ -157,9 +157,9 @@ function ProjectGroup({
     <Box>
       <div className={projectRow} onClick={toggleCollapsed}>
         {collapsed ? (
-          <CaretRightIcon size={12} style={{ color: "var(--gray-9)", flexShrink: 0 }} />
+          <FolderIcon size={18} style={{ color: "var(--gray-9)", flexShrink: 0 }} />
         ) : (
-          <CaretDownIcon size={12} style={{ color: "var(--gray-9)", flexShrink: 0 }} />
+          <FolderOpenIcon size={18} style={{ color: "var(--gray-9)", flexShrink: 0 }} />
         )}
         <Text size="2" className={projectName}>
           {project.name}

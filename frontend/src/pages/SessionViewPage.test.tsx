@@ -94,6 +94,7 @@ function makeSession(): SessionDetail {
     autonomy_mode: { tag: "HumanInTheLoop" },
     startup_state: { tag: "Ready" },
     pending_steer: null,
+    pending_human_review: null,
     created_at: "2026-01-01T00:00:00Z",
     user_avatar_url: null,
   };
