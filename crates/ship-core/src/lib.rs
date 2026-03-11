@@ -159,6 +159,18 @@ pub trait WorktreeOps: Send + Sync {
         force: bool,
         repo_root: &Path,
     ) -> Result<(), WorktreeError>;
+
+    /// Rebase the worktree's current branch onto `onto_branch`.
+    /// Runs inside the worktree directory so git uses that checkout.
+    /// On conflict, aborts the rebase and returns an error.
+    async fn rebase_onto(
+        &self,
+        worktree_path: &Path,
+        onto_branch: &str,
+    ) -> Result<(), WorktreeError>;
+
+    /// Fast-forward merge `branch` into the repo root's current branch.
+    async fn merge_ff_only(&self, repo_root: &Path, branch: &str) -> Result<(), WorktreeError>;
 }
 
 // r[testability.persistence-trait]

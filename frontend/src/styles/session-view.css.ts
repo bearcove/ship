@@ -717,6 +717,7 @@ export const composerInput = style({
 });
 
 export const composerActions = style({
+  justifyContent: "end",
   flexShrink: 0,
 });
 

@@ -378,6 +378,18 @@ impl WorktreeOps for FakeWorktreeOps {
         inner.branches.retain(|branch| branch != branch_name);
         Ok(())
     }
+
+    async fn rebase_onto(
+        &self,
+        _worktree_path: &Path,
+        _onto_branch: &str,
+    ) -> Result<(), WorktreeError> {
+        Ok(())
+    }
+
+    async fn merge_ff_only(&self, _repo_root: &Path, _branch: &str) -> Result<(), WorktreeError> {
+        Ok(())
+    }
 }
 
 #[derive(Clone, Default)]

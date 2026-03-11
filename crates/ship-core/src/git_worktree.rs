@@ -142,6 +142,57 @@ impl WorktreeOps for GitWorktreeOps {
 
         ensure_success(output)
     }
+
+    async fn rebase_onto(
+        &self,
+        worktree_path: &Path,
+        onto_branch: &str,
+    ) -> Result<(), WorktreeError> {
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(worktree_path)
+            .arg("rebase")
+            .arg(onto_branch)
+            .output()
+            .await
+            .map_err(|error| WorktreeError {
+                message: error.to_string(),
+            })?;
+
+        if output.status.success() {
+            return Ok(());
+        }
+
+        // Abort the failed rebase so the worktree is left clean.
+        let _ = Command::new("git")
+            .arg("-C")
+            .arg(worktree_path)
+            .arg("rebase")
+            .arg("--abort")
+            .output()
+            .await;
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(WorktreeError {
+            message: format!("rebase onto {onto_branch} failed: {}", stderr.trim()),
+        })
+    }
+
+    async fn merge_ff_only(&self, repo_root: &Path, branch: &str) -> Result<(), WorktreeError> {
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(repo_root)
+            .arg("merge")
+            .arg("--ff-only")
+            .arg(branch)
+            .output()
+            .await
+            .map_err(|error| WorktreeError {
+                message: error.to_string(),
+            })?;
+
+        ensure_success(output)
+    }
 }
 
 fn repo_root_for_worktree(path: &Path) -> Result<&Path, WorktreeError> {
