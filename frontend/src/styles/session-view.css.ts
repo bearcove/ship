@@ -1032,3 +1032,16 @@ export const hamburgerBtn = style({
     },
   },
 });
+
+export const floatingHamburger = style({
+  display: "none",
+  "@media": {
+    "(max-width: 700px)": {
+      display: "flex",
+      position: "fixed",
+      top: "var(--space-2)",
+      left: "var(--space-2)",
+      zIndex: 100,
+    },
+  },
+});

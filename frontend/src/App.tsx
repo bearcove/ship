@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { Routes, Route, Link, useMatch } from "react-router-dom";
-import { Flex, Box, Text, IconButton } from "@radix-ui/themes";
-import { List, SpeakerHigh, SpeakerSlash } from "@phosphor-icons/react";
+import { Routes, Route, useMatch } from "react-router-dom";
+import { Flex, Box, IconButton } from "@radix-ui/themes";
+import { List } from "@phosphor-icons/react";
 import { SessionListPage } from "./pages/SessionListPage";
 import { SessionAgentRail, SessionViewPage } from "./pages/SessionViewPage";
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { NotificationPrompt } from "./components/NotificationPrompt";
 import { SessionSidebar } from "./components/SessionSidebar";
-import { useSoundEnabled } from "./context/SoundContext";
 import { useSessionList } from "./hooks/useSessionList";
 import { useProjects } from "./hooks/useProjects";
 import {
@@ -15,7 +14,7 @@ import {
   appColLeft,
   appColCenter,
   appColRight,
-  hamburgerBtn,
+  floatingHamburger,
 } from "./styles/session-view.css";
 
 function readDebugPreference(): boolean {
@@ -39,7 +38,6 @@ export function App() {
   const sessionMatch = useMatch("/sessions/:sessionId");
   const currentSessionId = sessionMatch?.params.sessionId;
   const inSessionView = !!sessionMatch;
-  const { soundEnabled, setSoundEnabled } = useSoundEnabled();
   const allSessions = useSessionList();
   const allProjects = useProjects();
   const [debugMode, setDebugMode] = useState(readDebugPreference);
@@ -51,46 +49,42 @@ export function App() {
 
   const toggleDebug = useCallback(() => setDebugMode((v) => !v), []);
 
+  useEffect(() => {
+    let startX = 0;
+    let startY = 0;
+    function onTouchStart(e: TouchEvent) {
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+    }
+    function onTouchEnd(e: TouchEvent) {
+      const dx = e.changedTouches[0].clientX - startX;
+      const dy = e.changedTouches[0].clientY - startY;
+      if (startX < window.innerWidth / 2 && dx > 60 && Math.abs(dy) < 80) {
+        setSidebarOpen(true);
+      }
+    }
+    window.addEventListener("touchstart", onTouchStart, { passive: true });
+    window.addEventListener("touchend", onTouchEnd, { passive: true });
+    return () => {
+      window.removeEventListener("touchstart", onTouchStart);
+      window.removeEventListener("touchend", onTouchEnd);
+    };
+  }, []);
+
   return (
     <Flex direction="column" style={{ height: "100vh" }}>
       {!inSessionView && (
-        <Box
-          px="4"
-          py="2"
-          style={{
-            borderBottom: "1px solid var(--gray-a5)",
-            flexShrink: 0,
-          }}
+        <IconButton
+          className={floatingHamburger}
+          variant="soft"
+          color="gray"
+          size="2"
+          onClick={() => setSidebarOpen(true)}
+          aria-label="Open sidebar"
         >
-          <Flex align="center" justify="between">
-            <Flex align="center" gap="1">
-              <IconButton
-                className={hamburgerBtn}
-                variant="ghost"
-                size="2"
-                onClick={() => setSidebarOpen(true)}
-                aria-label="Open sidebar"
-              >
-                <List size={18} />
-              </IconButton>
-              <Link to="/" style={{ textDecoration: "none", color: "inherit" }}>
-                <Text size="3" weight="bold">
-                  Ship
-                </Text>
-              </Link>
-            </Flex>
-            <IconButton
-              variant="ghost"
-              size="2"
-              onClick={() => setSoundEnabled(!soundEnabled)}
-              aria-label={soundEnabled ? "Mute sounds" : "Unmute sounds"}
-            >
-              {soundEnabled ? <SpeakerHigh size={18} /> : <SpeakerSlash size={18} />}
-            </IconButton>
-          </Flex>
-        </Box>
+          <List size={18} />
+        </IconButton>
       )}
-
       <ConnectionBanner
         connected={true}
         phase="live"
