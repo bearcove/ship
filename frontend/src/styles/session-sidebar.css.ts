@@ -33,7 +33,7 @@ export const sidebarRoot = style({
 export const sidebarBackdrop = style({
   display: "none",
   "@media": {
-    "(max-width: 500px)": {
+    "(max-width: 700px)": {
       display: "block",
       position: "fixed",
       inset: 0,
