@@ -5092,11 +5092,9 @@ impl Ship for ShipImpl {
         };
 
         // Single task: feed audio, then try_recv segments after each feed.
-        // Each try_recv_segments() batch is a full window result from the sliding
-        // window, so consecutive batches overlap. We deduplicate by tracking the
-        // latest end_ms we've sent and only forwarding segments that start after it.
+        // Each try_recv batch is a snapshot of the current window — send every
+        // segment so the frontend can replace its display in real-time.
         tokio::spawn(async move {
-            let mut sent_up_to_ms: u64 = 0;
             let mut feed_count: u64 = 0;
             let mut total_samples: u64 = 0;
 
@@ -5127,42 +5125,26 @@ impl Ship for ShipImpl {
                             break;
                         }
 
-                        // Check for segments immediately after feeding
-                        let mut seg_count = 0;
                         while let Some(segments) = stream.try_recv_segments() {
-                            seg_count += segments.len();
+                            for seg in &segments {
+                                tracing::info!(
+                                    "transcribe_audio: seg [{:.1}s-{:.1}s]: {}",
+                                    seg.start_seconds(),
+                                    seg.end_seconds(),
+                                    seg.text
+                                );
+                            }
                             for seg in segments {
-                                let start_ms = (seg.start_seconds() * 1000.0) as u64;
-                                let end_ms = (seg.end_seconds() * 1000.0) as u64;
-                                // Skip segments we've already sent (sliding window overlap)
-                                if start_ms < sent_up_to_ms {
-                                    tracing::debug!(
-                                        "transcribe_audio: skipping overlap segment [{start_ms}-{end_ms}ms] (sent_up_to={sent_up_to_ms}ms)"
-                                    );
-                                    continue;
-                                }
                                 let ts = TranscribeSegment {
-                                    start_ms,
-                                    end_ms,
+                                    start_ms: (seg.start_seconds() * 1000.0) as u64,
+                                    end_ms: (seg.end_seconds() * 1000.0) as u64,
                                     text: seg.text.clone(),
                                 };
-                                tracing::info!(
-                                    "transcribe_audio: segment [{}-{}ms]: {}",
-                                    ts.start_ms,
-                                    ts.end_ms,
-                                    ts.text
-                                );
-                                sent_up_to_ms = end_ms;
                                 if segments_out.send(ts).await.is_err() {
                                     let _ = stream.stop().await;
                                     return;
                                 }
                             }
-                        }
-                        if seg_count > 0 {
-                            tracing::debug!(
-                                "transcribe_audio: got {seg_count} segments from try_recv after feed #{feed_count}"
-                            );
                         }
                     }
                     Ok(None) => {
@@ -5176,44 +5158,24 @@ impl Ship for ShipImpl {
                 }
             }
 
-            // Drain segments emitted by queued Feed commands that were processed
-            // between our last try_recv and now. try_recv so we don't block if
-            // there's nothing yet — flush will catch the rest.
-            while let Some(segments) = stream.try_recv_segments() {
-                for seg in segments {
-                    let start_ms = (seg.start_seconds() * 1000.0) as u64;
-                    let end_ms = (seg.end_seconds() * 1000.0) as u64;
-                    if start_ms < sent_up_to_ms {
-                        continue;
-                    }
-                    let ts = TranscribeSegment {
-                        start_ms,
-                        end_ms,
-                        text: seg.text.clone(),
-                    };
-                    sent_up_to_ms = end_ms;
-                    let _ = segments_out.send(ts).await;
-                }
-            }
-
-            // Flush queues behind all pending Feed commands. The background thread
-            // processes them in order, so flush waits for all feeds to complete
-            // (each running process_step), then flushes remaining audio.
+            // Flush remaining audio
             tracing::info!("transcribe_audio: flushing");
             match stream.flush().await {
                 Ok(segments) => {
+                    for seg in &segments {
+                        tracing::info!(
+                            "transcribe_audio: flush seg [{:.1}s-{:.1}s]: {}",
+                            seg.start_seconds(),
+                            seg.end_seconds(),
+                            seg.text
+                        );
+                    }
                     for seg in segments {
-                        let start_ms = (seg.start_seconds() * 1000.0) as u64;
-                        let end_ms = (seg.end_seconds() * 1000.0) as u64;
-                        if start_ms < sent_up_to_ms {
-                            continue;
-                        }
                         let ts = TranscribeSegment {
-                            start_ms,
-                            end_ms,
+                            start_ms: (seg.start_seconds() * 1000.0) as u64,
+                            end_ms: (seg.end_seconds() * 1000.0) as u64,
                             text: seg.text.clone(),
                         };
-                        sent_up_to_ms = end_ms;
                         let _ = segments_out.send(ts).await;
                     }
                 }
@@ -5222,20 +5184,14 @@ impl Ship for ShipImpl {
                 }
             }
 
-            // Drain any segments emitted by the Feed commands that ran before flush
+            // Drain any segments emitted by Feed commands that ran before flush
             while let Some(segments) = stream.try_recv_segments() {
                 for seg in segments {
-                    let start_ms = (seg.start_seconds() * 1000.0) as u64;
-                    let end_ms = (seg.end_seconds() * 1000.0) as u64;
-                    if start_ms < sent_up_to_ms {
-                        continue;
-                    }
                     let ts = TranscribeSegment {
-                        start_ms,
-                        end_ms,
+                        start_ms: (seg.start_seconds() * 1000.0) as u64,
+                        end_ms: (seg.end_seconds() * 1000.0) as u64,
                         text: seg.text.clone(),
                     };
-                    sent_up_to_ms = end_ms;
                     let _ = segments_out.send(ts).await;
                 }
             }
