@@ -5097,6 +5097,8 @@ impl Ship for ShipImpl {
         // latest end_ms we've sent and only forwarding segments that start after it.
         tokio::spawn(async move {
             let mut sent_up_to_ms: u64 = 0;
+            let mut feed_count: u64 = 0;
+            let mut total_samples: u64 = 0;
 
             loop {
                 match audio_in.recv().await {
@@ -5113,18 +5115,30 @@ impl Ship for ShipImpl {
                             .chunks_exact(4)
                             .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
                             .collect();
+                        let n_samples = samples.len();
+                        total_samples += n_samples as u64;
+                        feed_count += 1;
+                        tracing::debug!(
+                            "transcribe_audio: feed #{feed_count} ({n_samples} samples, {total_samples} total = {:.1}s)",
+                            total_samples as f64 / 16000.0
+                        );
                         if stream.feed_audio(samples).await.is_err() {
                             tracing::error!("transcribe_audio: feed_audio failed");
                             break;
                         }
 
                         // Check for segments immediately after feeding
+                        let mut seg_count = 0;
                         while let Some(segments) = stream.try_recv_segments() {
+                            seg_count += segments.len();
                             for seg in segments {
                                 let start_ms = (seg.start_seconds() * 1000.0) as u64;
                                 let end_ms = (seg.end_seconds() * 1000.0) as u64;
                                 // Skip segments we've already sent (sliding window overlap)
                                 if start_ms < sent_up_to_ms {
+                                    tracing::debug!(
+                                        "transcribe_audio: skipping overlap segment [{start_ms}-{end_ms}ms] (sent_up_to={sent_up_to_ms}ms)"
+                                    );
                                     continue;
                                 }
                                 let ts = TranscribeSegment {
@@ -5144,6 +5158,11 @@ impl Ship for ShipImpl {
                                     return;
                                 }
                             }
+                        }
+                        if seg_count > 0 {
+                            tracing::debug!(
+                                "transcribe_audio: got {seg_count} segments from try_recv after feed #{feed_count}"
+                            );
                         }
                     }
                     Ok(None) => {
