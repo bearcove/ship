@@ -124,9 +124,8 @@ export const feedSystemMessage = style({
 });
 
 export const feedSystemMessageText = style({
-  fontSize: "var(--font-size-1)",
+  fontSize: "var(--font-size-2)",
   color: "var(--gray-9)",
-  fontStyle: "italic",
 });
 
 export const feedToolGroupHeader = style({
@@ -963,6 +962,10 @@ globalStyle(`${textBlockRoot} a`, {
 export const textBlockCodeBlock = style({
   overflow: "hidden",
   borderRadius: "var(--radius-2)",
+  fontSize: "var(--font-size-1)",
+  border: "1px solid var(--gray-a3)",
+  padding: "var(--space-1) var(--space-2)",
+  margin: "var(--space-2) 0",
 });
 
 globalStyle(`${textBlockCodeBlock} pre`, {

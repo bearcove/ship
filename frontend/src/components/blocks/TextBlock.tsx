@@ -53,7 +53,11 @@ function MarkdownCodeBlock({ className, code }: { className?: string; code: stri
 
     if (!language) return () => void 0;
 
-    void codeToHtml(code, { lang: language, theme: shikiTheme })
+    void codeToHtml(code, {
+      lang: language,
+      theme: shikiTheme,
+      rootStyle: "background-color: transparent",
+    })
       .then((html) => {
         if (!cancelled) setHighlightedHtml(html);
       })
