@@ -15,8 +15,8 @@ use roam::{
 use ship_core::{
     AcpAgentDriver, ActiveSession, AgentDriver, AgentSessionConfig, GitWorktreeOps,
     JsonSessionStore, PendingEdit, ProjectRegistry, SessionGitNames, SessionStore, WorktreeOps,
-    apply_event, archive_terminal_task, current_task_status, rebuild_materialized_from_event_log,
-    resolve_mcp_servers, set_agent_state, transition_task,
+    apply_event, archive_terminal_task, coalesce_replay_events, current_task_status,
+    rebuild_materialized_from_event_log, resolve_mcp_servers, set_agent_state, transition_task,
 };
 use ship_service::{CaptainMcp, CaptainMcpDispatcher, MateMcp, MateMcpDispatcher, Ship};
 use ship_types::{
@@ -4754,23 +4754,18 @@ impl Ship for ShipImpl {
         }
     }
 
+    // r[event.subscribe.replay]
     async fn subscribe_events(&self, session: SessionId, output: Tx<SubscribeMessage>) {
         tracing::info!(session_id = %session.0, "subscriber connected");
         let session_data = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             sessions.get(&session).map(|active| {
-                let replay = active
-                    .session_event_log
-                    .iter()
-                    .cloned()
-                    .chain(
-                        active
-                            .current_task
-                            .as_ref()
-                            .into_iter()
-                            .flat_map(|task| task.event_log.clone()),
-                    )
-                    .collect::<Vec<_>>();
+                let raw_replay: Vec<SessionEventEnvelope> = active
+                    .current_task
+                    .as_ref()
+                    .map(|task| task.event_log.clone())
+                    .unwrap_or_default();
+                let replay = coalesce_replay_events(&raw_replay);
                 (active.events_tx.subscribe(), replay)
             })
         };

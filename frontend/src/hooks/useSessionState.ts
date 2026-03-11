@@ -315,17 +315,22 @@ function startSubscription(sessionId: string, sub: SessionSubscription) {
           eventKind: next.msg.value.event.tag,
           phase: replaying ? "replaying" : "live",
         });
-        const gap = detectSequenceGap(lastSeenSeq, nextSeq);
-        if (gap) {
-          stopReason = gap;
-          log("warn", "sequence gap detected", {
-            sessionId,
-            expectedSeq: (lastSeenSeq ?? -1) + 1,
-            receivedSeq: nextSeq,
-          });
-          invalidateShipClient(stopReason);
-          sub.signalStop?.(stopReason);
-          continue;
+        // Gap detection only applies to live events — during replay the server
+        // may coalesce BlockPatch events into their BlockAppend, producing
+        // intentional sequence-number gaps that are not a sign of data loss.
+        if (!replaying) {
+          const gap = detectSequenceGap(lastSeenSeq, nextSeq);
+          if (gap) {
+            stopReason = gap;
+            log("warn", "sequence gap detected", {
+              sessionId,
+              expectedSeq: (lastSeenSeq ?? -1) + 1,
+              receivedSeq: nextSeq,
+            });
+            invalidateShipClient(stopReason);
+            sub.signalStop?.(stopReason);
+            continue;
+          }
         }
         lastSeenSeq = nextSeq;
         if (replaying) {
