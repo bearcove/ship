@@ -5082,14 +5082,21 @@ impl Ship for ShipImpl {
             })
             .language("en");
 
-        let mut stream = match whisper_cpp_plus::AsyncWhisperStream::new(ctx, params) {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::error!("failed to create whisper stream: {e}");
-                let _ = segments_out.close(Default::default()).await;
-                return;
-            }
+        let stream_config = whisper_cpp_plus::WhisperStreamConfig {
+            step_ms: 500,
+            length_ms: 5000,
+            ..Default::default()
         };
+
+        let mut stream =
+            match whisper_cpp_plus::AsyncWhisperStream::with_config(ctx, params, stream_config) {
+                Ok(s) => s,
+                Err(e) => {
+                    tracing::error!("failed to create whisper stream: {e}");
+                    let _ = segments_out.close(Default::default()).await;
+                    return;
+                }
+            };
 
         // Single task: feed audio, then try_recv segments after each feed.
         // Each try_recv batch is a snapshot of the current window — send every
