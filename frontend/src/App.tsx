@@ -63,11 +63,6 @@ export function App() {
           }}
         >
           <Flex align="center" justify="between">
-            <Link to="/" style={{ textDecoration: "none", color: "inherit" }}>
-              <Text size="3" weight="bold">
-                Ship
-              </Text>
-            </Link>
             <Flex align="center" gap="1">
               <IconButton
                 className={hamburgerBtn}
@@ -78,15 +73,20 @@ export function App() {
               >
                 <List size={18} />
               </IconButton>
-              <IconButton
-                variant="ghost"
-                size="2"
-                onClick={() => setSoundEnabled(!soundEnabled)}
-                aria-label={soundEnabled ? "Mute sounds" : "Unmute sounds"}
-              >
-                {soundEnabled ? <SpeakerHigh size={18} /> : <SpeakerSlash size={18} />}
-              </IconButton>
+              <Link to="/" style={{ textDecoration: "none", color: "inherit" }}>
+                <Text size="3" weight="bold">
+                  Ship
+                </Text>
+              </Link>
             </Flex>
+            <IconButton
+              variant="ghost"
+              size="2"
+              onClick={() => setSoundEnabled(!soundEnabled)}
+              aria-label={soundEnabled ? "Mute sounds" : "Unmute sounds"}
+            >
+              {soundEnabled ? <SpeakerHigh size={18} /> : <SpeakerSlash size={18} />}
+            </IconButton>
           </Flex>
         </Box>
       )}
