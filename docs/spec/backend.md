@@ -337,8 +337,8 @@ Each session MUST operate in an isolated git worktree.
 
 r[worktree.path]
 Worktrees MUST be created under `.ship/` relative to the repository root using
-an `@{four}` directory name, where `four` is the first 4 characters of the
-session ULID.
+an `@{four}` directory name, where `four` is the 4-character lowercase slug
+derived from ULID characters 10-13 (the random portion).
 
 r[worktree.gitignore]
 The `.ship/` directory entry MUST cover worktree storage; Ship MUST NOT rely on
@@ -350,7 +350,8 @@ starts.
 
 r[worktree.branch-name]
 Each worktree MUST be created on a new branch named `ship-{four}`, where
-`four` is the first 4 characters of the session ULID.
+`four` is the 4-character lowercase slug derived from ULID characters 10-13
+(the random portion).
 
 r[worktree.git-command]
 Worktree creation MUST use `git worktree add` with the `--track` flag pointing

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use ship_core::{JsonSessionStore, SessionStore};
+use ship_core::{JsonSessionStore, SessionGitNames, SessionStore};
 use ship_types::{
     AgentKind, AgentSnapshot, AgentState, AutonomyMode, BlockId, ContentBlock, CurrentTask,
     McpServerConfig, McpStdioServerConfig, PersistedSession, ProjectName, Role, SessionConfig,
@@ -35,13 +35,16 @@ fn make_temp_dir(test_name: &str) -> PathBuf {
 }
 
 fn make_persisted_session(id: &str, description: &str) -> PersistedSession {
+    let id = SessionId(id.to_owned());
+    let branch_name = SessionGitNames::from_session_id(&id).branch_name;
+
     PersistedSession {
-        id: SessionId(id.to_owned()),
+        id,
         created_at: "2026-01-01T00:00:00Z".to_owned(),
         config: SessionConfig {
             project: ProjectName("ship-backend".to_owned()),
             base_branch: "main".to_owned(),
-            branch_name: format!("ship-{}", &id[..4]),
+            branch_name,
             captain_kind: AgentKind::Claude,
             mate_kind: AgentKind::Codex,
             autonomy_mode: AutonomyMode::HumanInTheLoop,
