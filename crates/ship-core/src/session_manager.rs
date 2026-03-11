@@ -779,35 +779,35 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
     }
 
     fn repo_root_for_worktree(worktree_path: &Path) -> Result<&Path, SessionManagerError> {
-        let worktrees_dir = worktree_path.parent().ok_or_else(|| {
-            SessionManagerError::Worktree(format!(
-                "invalid worktree path: {}",
-                worktree_path.display()
-            ))
-        })?;
-        let ship_dir = worktrees_dir.parent().ok_or_else(|| {
-            SessionManagerError::Worktree(format!(
-                "invalid worktree path: {}",
-                worktree_path.display()
-            ))
-        })?;
-        let repo_root = ship_dir.parent().ok_or_else(|| {
-            SessionManagerError::Worktree(format!(
-                "invalid worktree path: {}",
-                worktree_path.display()
-            ))
-        })?;
-
-        if worktrees_dir.file_name().and_then(|name| name.to_str()) != Some("worktrees")
-            || ship_dir.file_name().and_then(|name| name.to_str()) != Some(".ship")
-        {
-            return Err(SessionManagerError::Worktree(format!(
-                "invalid worktree path: {}",
-                worktree_path.display()
-            )));
+        let mut current = worktree_path;
+        loop {
+            let parent = current.parent().ok_or_else(|| {
+                SessionManagerError::Worktree(format!(
+                    "invalid worktree path: {}",
+                    worktree_path.display()
+                ))
+            })?;
+            if parent.file_name().and_then(|n| n.to_str()) == Some(".ship") {
+                return parent.parent().ok_or_else(|| {
+                    SessionManagerError::Worktree(format!(
+                        "invalid worktree path: {}",
+                        worktree_path.display()
+                    ))
+                });
+            }
+            current = parent;
+            if worktree_path
+                .components()
+                .count()
+                .saturating_sub(current.components().count())
+                > 3
+            {
+                return Err(SessionManagerError::Worktree(format!(
+                    "invalid worktree path: {}",
+                    worktree_path.display()
+                )));
+            }
         }
-
-        Ok(repo_root)
     }
 
     async fn cleanup_session_resources(
