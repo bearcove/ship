@@ -465,10 +465,15 @@ export function useSessionState(
 ): SessionViewState {
   const sub = ensureSubscription(sessionId);
 
-  // Hydrate when session detail arrives or changes
+  // Hydrate when session detail arrives or changes.
+  // Update sub.state directly without calling notifyListeners: we are in the
+  // render phase, and notifyListeners would trigger "setState during render".
+  // useSyncExternalStore calls getSnapshot() immediately after this block, so
+  // the updated state is reflected in the return value without an extra render.
   if (session && session !== sub.lastHydratedSession) {
     sub.lastHydratedSession = session;
-    applyAction(sub, sessionId, { type: "hydrate", session });
+    sub.state = sessionReducer(sub.state, { type: "hydrate", session });
+    publishSessionDebug(sessionId, sub.lastHydratedSession, sub.state, sub.debugMessages);
   }
 
   return useSyncExternalStore(sub.subscribe, sub.getSnapshot);
