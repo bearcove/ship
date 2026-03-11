@@ -38,8 +38,10 @@ function closeActiveClient(reason: string) {
 
 async function createShipClient(generation: number): Promise<ShipClientHandle> {
   const attempt = ++connectionAttempt;
-  log("info", "opening websocket client", { attempt, url: "ws://localhost:9140/ws" });
-  const transport = await connectWs("ws://localhost:9140/ws");
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const wsUrl = `${protocol}//${window.location.host}/ws`;
+  log("info", "opening websocket client", { attempt, url: wsUrl });
+  const transport = await connectWs(wsUrl);
   const connection = await helloExchangeInitiator(transport, defaultHello(), {
     keepalive: { pingIntervalMs: 5000, pongTimeoutMs: 10000 },
   });
