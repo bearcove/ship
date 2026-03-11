@@ -1,6 +1,6 @@
 import { Fragment, useState, useRef, useEffect } from "react";
 import { Box, Flex, Spinner, Text } from "@radix-ui/themes";
-import { CaretRight, CaretDown } from "@phosphor-icons/react";
+import { ArrowDown, CaretRight, CaretDown } from "@phosphor-icons/react";
 import type {
   AgentSnapshot,
   ContentBlock,
@@ -39,6 +39,7 @@ import {
   startupFeedBody,
   startupFeedItem,
   feedMessageMeta,
+  scrollToBottomBtn,
   unifiedFeedRoot,
   unifiedFeedScroll,
   unifiedFeedStream,
@@ -404,6 +405,21 @@ export function UnifiedFeed({
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickyScroll = useRef(true);
+  const [atBottom, setAtBottom] = useState(true);
+
+  const humanMsgCount = blocks.filter(
+    (b) => b.block.tag === "Text" && b.block.source.tag === "Human",
+  ).length;
+
+  // Always scroll to bottom when the user sends a message.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    stickyScroll.current = true;
+    setAtBottom(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [humanMsgCount]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -414,7 +430,13 @@ export function UnifiedFeed({
   function handleScroll() {
     const el = scrollRef.current;
     if (!el) return;
-    stickyScroll.current = el.scrollHeight - el.scrollTop - el.clientHeight < 32;
+    const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 32;
+    stickyScroll.current = isAtBottom;
+    setAtBottom(isAtBottom);
+  }
+
+  function scrollToBottom() {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }
 
   const showStartupFeed = startupState?.tag !== "Ready";
@@ -454,6 +476,16 @@ export function UnifiedFeed({
       )}
 
       <Box ref={scrollRef} className={unifiedFeedScroll} onScroll={handleScroll}>
+        {!atBottom && (
+          <button
+            type="button"
+            className={scrollToBottomBtn}
+            onClick={scrollToBottom}
+            aria-label="Scroll to bottom"
+          >
+            <ArrowDown size={16} />
+          </button>
+        )}
         <Box className={unifiedFeedStream}>
           {showStartupFeed && startupState && <StartupFeedState startupState={startupState} />}
 

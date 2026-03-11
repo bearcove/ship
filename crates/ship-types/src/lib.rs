@@ -514,6 +514,11 @@ pub mod events {
         // r[event.human-review-cleared]
         /// Human responded; captain is unblocked.
         HumanReviewCleared,
+        // r[event.session-title-changed]
+        /// Auto-generated session title set after the first user message.
+        SessionTitleChanged {
+            title: String,
+        },
     }
 
     // r[event.envelope]
@@ -682,6 +687,7 @@ pub mod protocol {
         pub id: SessionId,
         pub project: ProjectName,
         pub branch_name: String,
+        pub title: Option<String>,
         pub captain: AgentSnapshot,
         pub mate: AgentSnapshot,
         pub startup_state: SessionStartupState,
@@ -708,6 +714,7 @@ pub mod protocol {
         pub id: SessionId,
         pub project: ProjectName,
         pub branch_name: String,
+        pub title: Option<String>,
         pub captain: AgentSnapshot,
         pub mate: AgentSnapshot,
         pub startup_state: SessionStartupState,

@@ -95,6 +95,7 @@ pub struct ActiveSession {
     pub pending_edits: HashMap<String, PendingEdit>,
     pub pending_steer: Option<String>,
     pub pending_human_review: Option<HumanReviewRequest>,
+    pub title: Option<String>,
     pub events_tx: broadcast::Sender<SessionEventEnvelope>,
     pub next_event_seq: u64,
 }
@@ -188,6 +189,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             pending_edits: HashMap::new(),
             pending_steer: None,
             pending_human_review: None,
+            title: None,
             events_tx,
             next_event_seq: 0,
         };
@@ -415,6 +417,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                 id: session.id.clone(),
                 project: session.config.project.clone(),
                 branch_name: session.config.branch_name.clone(),
+                title: session.title.clone(),
                 captain: session.captain.clone(),
                 mate: session.mate.clone(),
                 startup_state: session.startup_state.clone(),
@@ -1279,6 +1282,10 @@ pub fn apply_event_to_materialized_state(session: &mut ActiveSession, event: &Se
         }
         SessionEvent::HumanReviewCleared => {
             session.pending_human_review = None;
+        }
+        // r[event.session-title-changed]
+        SessionEvent::SessionTitleChanged { title } => {
+            session.title = Some(title.clone());
         }
     }
 }

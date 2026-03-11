@@ -1266,6 +1266,20 @@ and Request Changes (opens a text field to enter feedback, then sends that
 text via `reply_to_human`). The panel is dismissed when `HumanReviewCleared`
 is received.
 
+## Session Titles
+
+r[feature.auto-title]
+When the user sends their first message to a session, Ship MUST automatically
+generate a short title (4–7 words) by prompting a background summarizer agent
+with the user's message text. The summarizer is spawned fresh per session with
+no MCP tools. On success, a `SessionTitleChanged` event is emitted. The
+generated title is shown in the session sidebar in place of the branch name.
+
+r[event.session-title-changed]
+The `SessionTitleChanged { title: String }` event updates the session's title
+in all subscribers. The backend stores the title as part of the session event
+log so it is restored on server restart.
+
 ## Cost Tracking
 
 r[cost.not-tracked]

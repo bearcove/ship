@@ -15,6 +15,30 @@ export const unifiedFeedScroll = style({
   overflowY: "auto",
   display: "flex",
   flexDirection: "column",
+  position: "relative",
+});
+
+export const scrollToBottomBtn = style({
+  position: "absolute",
+  bottom: "var(--space-4)",
+  left: "50%",
+  transform: "translateX(-50%)",
+  width: 36,
+  height: 36,
+  borderRadius: "50%",
+  background: "var(--color-panel-solid)",
+  border: "1px solid var(--gray-a6)",
+  boxShadow: "var(--shadow-3)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  cursor: "pointer",
+  color: "var(--gray-11)",
+  zIndex: 10,
+  transition: "opacity 0.15s",
+  ":hover": {
+    background: "var(--gray-2)",
+  },
 });
 
 export const unifiedFeedStream = style({

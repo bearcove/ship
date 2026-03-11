@@ -68,6 +68,7 @@ function makeSession(): SessionDetail {
     id: "session-1",
     project: "roam",
     branch_name: "feature/breadcrumbs",
+    title: null,
     captain: {
       role: { tag: "Captain" },
       kind: { tag: "Claude" },

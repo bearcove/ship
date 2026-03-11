@@ -187,7 +187,7 @@ function ProjectGroup({
           ) : (
             sessions.map((session) => {
               const isActive = session.id === currentSessionId;
-              const title = session.current_task_title ?? session.branch_name;
+              const title = session.title ?? session.current_task_title ?? session.branch_name;
               return (
                 <Link
                   key={session.id}

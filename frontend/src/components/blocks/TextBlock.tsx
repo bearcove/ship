@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Box, Button, Code, IconButton } from "@radix-ui/themes";
 import ReactMarkdown from "react-markdown";
 import { bundledLanguages, codeToHtml } from "shiki";
@@ -50,7 +50,6 @@ function MarkdownCodeBlock({ className, code }: { className?: string; code: stri
 
   useEffect(() => {
     let cancelled = false;
-    setHighlightedHtml(null);
 
     if (!language) return () => void 0;
 
@@ -58,9 +57,7 @@ function MarkdownCodeBlock({ className, code }: { className?: string; code: stri
       .then((html) => {
         if (!cancelled) setHighlightedHtml(html);
       })
-      .catch(() => {
-        if (!cancelled) setHighlightedHtml(null);
-      });
+      .catch(() => {});
 
     return () => {
       cancelled = true;
@@ -108,30 +105,31 @@ export function TextBlock({ block }: Props) {
 
   const collapsed = isOverflowing && !isExpanded;
 
+  const markdownComponents = useMemo(
+    () => ({
+      code({ children, className }: { children?: React.ReactNode; className?: string }) {
+        const rawCode = String(children ?? "");
+        const isBlock =
+          Boolean(className?.startsWith("language-")) ||
+          rawCode.includes("\n") ||
+          rawCode.endsWith("\n");
+        const code = rawCode.replace(/\n$/, "");
+        if (isBlock) {
+          return <MarkdownCodeBlock className={className} code={code} />;
+        }
+        return <Code size="1">{children}</Code>;
+      },
+    }),
+    [],
+  );
+
   return (
     <Box className={textBlockRoot}>
       <div
         ref={contentRef}
         className={collapsed ? `${bubbleContent} ${bubbleContentCollapsed}` : bubbleContent}
       >
-        <ReactMarkdown
-          components={{
-            code({ children, className }: { children?: React.ReactNode; className?: string }) {
-              const rawCode = String(children ?? "");
-              const isBlock =
-                Boolean(className?.startsWith("language-")) ||
-                rawCode.includes("\n") ||
-                rawCode.endsWith("\n");
-              const code = rawCode.replace(/\n$/, "");
-              if (isBlock) {
-                return <MarkdownCodeBlock className={className} code={code} />;
-              }
-              return <Code size="1">{children}</Code>;
-            },
-          }}
-        >
-          {block.text}
-        </ReactMarkdown>
+        <ReactMarkdown components={markdownComponents}>{block.text}</ReactMarkdown>
       </div>
       {isOverflowing && (
         <Button

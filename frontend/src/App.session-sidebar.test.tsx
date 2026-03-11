@@ -57,6 +57,7 @@ function makeSession(overrides: Partial<SessionSummary> = {}): SessionSummary {
     id: "session-created",
     project: "ship",
     branch_name: "main",
+    title: null,
     captain: {
       role: { tag: "Captain" },
       kind: { tag: "Claude" },

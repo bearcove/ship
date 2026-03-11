@@ -464,6 +464,9 @@ fn log_message(started_at: Instant, message: &SubscribeMessage) {
                 SessionEvent::MateGuidanceQueued { .. } => "mate guidance queued".to_owned(),
                 SessionEvent::HumanReviewRequested { .. } => "human review requested".to_owned(),
                 SessionEvent::HumanReviewCleared => "human review cleared".to_owned(),
+                SessionEvent::SessionTitleChanged { title } => {
+                    format!("session title changed: {title}")
+                }
             };
             println!(
                 "[probe +{:>5}ms] seq={} {}",

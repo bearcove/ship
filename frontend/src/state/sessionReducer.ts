@@ -38,6 +38,7 @@ export interface SessionViewState {
   disconnectReason: string | null;
   connectionAttempt: number;
   pendingHumanReview: HumanReviewRequest | null;
+  title: string | null;
 }
 
 export function initialSessionViewState(): SessionViewState {
@@ -61,6 +62,7 @@ export function initialSessionViewState(): SessionViewState {
     disconnectReason: null,
     connectionAttempt: 0,
     pendingHumanReview: null,
+    title: null,
   };
 }
 
@@ -86,6 +88,7 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         currentTaskTitle: action.session.current_task?.title ?? null,
         currentTaskDescription: action.session.current_task?.description ?? null,
         currentTaskStatus: action.session.current_task?.status ?? null,
+        title: action.session.title ?? null,
       };
 
     // r[event.replay-complete]
@@ -141,6 +144,7 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         currentTaskTitle,
         currentTaskDescription,
         currentTaskStatus,
+        title,
       } = state;
 
       for (const envelope of envelopes) {
@@ -225,6 +229,10 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
             }
             break;
           }
+          // r[event.session-title-changed]
+          case "SessionTitleChanged":
+            title = ev.title;
+            break;
         }
       }
 
@@ -241,6 +249,7 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         currentTaskTitle,
         currentTaskDescription,
         currentTaskStatus,
+        title,
         lastSeq: Number(lastEnvelope.seq),
         lastEventKind: lastEnvelope.event.tag,
         eventCount: state.eventCount + envelopes.length,
@@ -434,6 +443,9 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         case "HumanReviewCleared": {
           return { ...nextState, pendingHumanReview: null };
         }
+        // r[event.session-title-changed]
+        case "SessionTitleChanged":
+          return { ...nextState, title: ev.title };
       }
     }
   }

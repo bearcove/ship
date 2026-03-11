@@ -33,6 +33,44 @@ use tokio::process::Command as TokioCommand;
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 
+fn extract_agent_text(events: Vec<SessionEvent>) -> String {
+    let mut blocks: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut order: Vec<String> = Vec::new();
+    for event in events {
+        match event {
+            SessionEvent::BlockAppend {
+                block_id,
+                block: ContentBlock::Text { text, source },
+                ..
+            } if !matches!(source, ship_types::TextSource::Human) => {
+                blocks.entry(block_id.0.clone()).or_insert_with(|| {
+                    order.push(block_id.0.clone());
+                    String::new()
+                });
+                if let Some(b) = blocks.get_mut(&block_id.0) {
+                    b.push_str(&text);
+                }
+            }
+            SessionEvent::BlockPatch {
+                block_id,
+                patch: ship_types::BlockPatch::TextAppend { text },
+                ..
+            } => {
+                if let Some(b) = blocks.get_mut(&block_id.0) {
+                    b.push_str(&text);
+                }
+            }
+            _ => {}
+        }
+    }
+    order
+        .iter()
+        .filter_map(|id| blocks.get(id))
+        .cloned()
+        .collect::<Vec<_>>()
+        .join("")
+}
+
 fn parts_to_log_text(parts: &[PromptContentPart]) -> String {
     let mut out = String::new();
     for part in parts {
@@ -294,6 +332,7 @@ impl ShipImpl {
                 pending_edits: HashMap::new(),
                 pending_steer: None,
                 pending_human_review: None,
+                title: None,
                 events_tx,
                 next_event_seq,
             };
@@ -326,6 +365,7 @@ impl ShipImpl {
             id: session.id.clone(),
             project: session.config.project.clone(),
             branch_name: session.config.branch_name.clone(),
+            title: session.title.clone(),
             captain: session.captain.clone(),
             mate: session.mate.clone(),
             startup_state: session.startup_state.clone(),
@@ -351,6 +391,7 @@ impl ShipImpl {
             id: session.id.clone(),
             project: session.config.project.clone(),
             branch_name: session.config.branch_name.clone(),
+            title: session.title.clone(),
             captain: session.captain.clone(),
             mate: session.mate.clone(),
             startup_state: session.startup_state.clone(),
@@ -372,6 +413,7 @@ impl ShipImpl {
             id,
             project: ProjectName("unknown".to_owned()),
             branch_name: String::new(),
+            title: None,
             captain: Self::fallback_agent(Role::Captain, AgentKind::Claude),
             mate: Self::fallback_agent(Role::Mate, AgentKind::Codex),
             startup_state: SessionStartupState::Failed {
@@ -406,6 +448,7 @@ impl ShipImpl {
             SessionEvent::MateGuidanceQueued { .. } => "MateGuidanceQueued",
             SessionEvent::HumanReviewRequested { .. } => "HumanReviewRequested",
             SessionEvent::HumanReviewCleared => "HumanReviewCleared",
+            SessionEvent::SessionTitleChanged { .. } => "SessionTitleChanged",
         }
     }
 
@@ -422,7 +465,8 @@ impl ShipImpl {
             | SessionEvent::TaskStarted { .. }
             | SessionEvent::MateGuidanceQueued { .. }
             | SessionEvent::HumanReviewRequested { .. }
-            | SessionEvent::HumanReviewCleared => None,
+            | SessionEvent::HumanReviewCleared
+            | SessionEvent::SessionTitleChanged { .. } => None,
         }
     }
 
@@ -439,7 +483,8 @@ impl ShipImpl {
             | SessionEvent::AgentEffortChanged { .. }
             | SessionEvent::MateGuidanceQueued { .. }
             | SessionEvent::HumanReviewRequested { .. }
-            | SessionEvent::HumanReviewCleared => None,
+            | SessionEvent::HumanReviewCleared
+            | SessionEvent::SessionTitleChanged { .. } => None,
         }
     }
 
@@ -456,7 +501,8 @@ impl ShipImpl {
             | SessionEvent::AgentEffortChanged { .. }
             | SessionEvent::MateGuidanceQueued { .. }
             | SessionEvent::HumanReviewRequested { .. }
-            | SessionEvent::HumanReviewCleared => None,
+            | SessionEvent::HumanReviewCleared
+            | SessionEvent::SessionTitleChanged { .. } => None,
         }
     }
 
@@ -3708,19 +3754,14 @@ Here is your task:
     }
 
     fn repo_root_for_worktree(worktree_path: &std::path::Path) -> Result<&std::path::Path, String> {
-        let worktrees_dir = worktree_path
-            .parent()
-            .ok_or_else(|| format!("invalid worktree path: {}", worktree_path.display()))?;
-        let ship_dir = worktrees_dir
+        let ship_dir = worktree_path
             .parent()
             .ok_or_else(|| format!("invalid worktree path: {}", worktree_path.display()))?;
         let repo_root = ship_dir
             .parent()
             .ok_or_else(|| format!("invalid worktree path: {}", worktree_path.display()))?;
 
-        if worktrees_dir.file_name().and_then(|name| name.to_str()) != Some("worktrees")
-            || ship_dir.file_name().and_then(|name| name.to_str()) != Some(".ship")
-        {
+        if ship_dir.file_name().and_then(|name| name.to_str()) != Some(".ship") {
             return Err(format!(
                 "invalid worktree path: {}",
                 worktree_path.display()
@@ -4023,6 +4064,71 @@ Here is your task:
     ) -> Result<ship_core::StopReason, String> {
         self.prompt_agent(session_id, role, vec![PromptContentPart::Text { text }])
             .await
+    }
+
+    // r[feature.auto-title]
+    async fn generate_session_title(&self, session_id: SessionId, user_message: String) {
+        let (worktree_path, captain_kind) = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let Some(session) = sessions.get(&session_id) else {
+                return;
+            };
+            let Some(worktree_path) = session.worktree_path.clone() else {
+                return;
+            };
+            (worktree_path, session.config.captain_kind)
+        };
+
+        let config = AgentSessionConfig {
+            worktree_path,
+            mcp_servers: vec![],
+        };
+        let spawn_result = self
+            .agent_driver
+            .spawn(captain_kind, Role::Captain, &config)
+            .await;
+        let handle = match spawn_result {
+            Ok(info) => info.handle,
+            Err(error) => {
+                Self::log_error("generate_session_title_spawn", &error.message);
+                return;
+            }
+        };
+
+        let prompt = format!(
+            "Generate a short title (4-7 words) summarizing this coding request. \
+             Reply with ONLY the title — no quotes, no period at the end.\n\n{}",
+            user_message
+        );
+        let _ = self
+            .agent_driver
+            .prompt(&handle, &[PromptContentPart::Text { text: prompt }])
+            .await;
+
+        let events: Vec<SessionEvent> = self.agent_driver.notifications(&handle).collect().await;
+        let _ = self.agent_driver.kill(&handle).await;
+
+        let title = extract_agent_text(events).trim().to_owned();
+        if title.is_empty() {
+            return;
+        }
+
+        let had_title = {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let Some(session) = sessions.get_mut(&session_id) else {
+                return;
+            };
+            if session.title.is_some() {
+                true
+            } else {
+                apply_event(session, SessionEvent::SessionTitleChanged { title });
+                false
+            }
+        };
+
+        if !had_title {
+            let _ = self.persist_session(&session_id).await;
+        }
     }
 
     /// Interrupt the captain (cancel any in-flight prompt) and then send a
@@ -4610,6 +4716,7 @@ impl Ship for ShipImpl {
             pending_edits: HashMap::new(),
             pending_steer: None,
             pending_human_review: None,
+            title: None,
             events_tx,
             next_event_seq: 0,
         };
@@ -4657,6 +4764,23 @@ impl Ship for ShipImpl {
         {
             Self::log_error("prompt_captain_append_human_message", &error);
             return;
+        }
+
+        // r[feature.auto-title]
+        let needs_title = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            sessions
+                .get(&session)
+                .map(|s| s.title.is_none())
+                .unwrap_or(false)
+        };
+        if needs_title {
+            let this = self.clone();
+            let session_id = session.clone();
+            let user_text = parts_to_log_text(&parts);
+            tokio::spawn(async move {
+                this.generate_session_title(session_id, user_text).await;
+            });
         }
 
         let this = self.clone();

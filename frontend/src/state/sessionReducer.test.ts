@@ -98,6 +98,7 @@ describe("sessionReducer event handling", () => {
         autonomy_mode: { tag: "HumanInTheLoop" },
         pending_steer: null,
         pending_human_review: null,
+        title: null,
         created_at: "2026-01-01T00:00:00Z",
         user_avatar_url: null,
       },
