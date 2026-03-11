@@ -13,6 +13,7 @@ export const unifiedFeedRoot = style({
 export const unifiedFeedScroll = style({
   flex: 1,
   overflowY: "auto",
+  overscrollBehavior: "contain",
   display: "flex",
   flexDirection: "column",
   position: "relative",
@@ -668,11 +669,124 @@ export const startupFeedBody = style({
 
 export const composerRoot = style({
   padding: "var(--space-2) var(--space-3) var(--space-3)",
+  paddingBottom: "max(var(--space-3), env(safe-area-inset-bottom, 0px))",
   flexShrink: 0,
+});
+
+export const composerRow = style({
+  display: "flex",
+  alignItems: "flex-end",
+  gap: "var(--space-2)",
 });
 
 export const composerInputWrapper = style({
   position: "relative",
+  flex: 1,
+  minWidth: 0,
+});
+
+export const composerInlineBtn = style({
+  position: "absolute",
+  bottom: 4,
+  zIndex: 2,
+  width: 32,
+  height: 32,
+  borderRadius: "50%",
+  border: "none",
+  cursor: "pointer",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: 0,
+  transition: "background 0.1s, opacity 0.1s",
+  background: "transparent",
+  color: "var(--gray-11)",
+  ":hover": {
+    background: "var(--gray-a3)",
+  },
+  selectors: {
+    "&:disabled": {
+      opacity: 0.3,
+      cursor: "default",
+    },
+    '&[data-variant="solid"]': {
+      background: "var(--accent-9)",
+      color: "var(--accent-contrast)",
+    },
+    '&[data-variant="solid"]:hover': {
+      opacity: 0.85,
+    },
+    '&[data-pos="left"]': {
+      left: 6,
+    },
+    '&[data-pos="right"]': {
+      right: 6,
+    },
+  },
+  "@media": {
+    "(max-width: 700px)": {
+      width: 40,
+      height: 40,
+    },
+  },
+});
+
+export const composerActionBtn = style({
+  flexShrink: 0,
+  width: 36,
+  height: 36,
+  borderRadius: "50%",
+  border: "none",
+  cursor: "pointer",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: 0,
+  transition: "background 0.1s, opacity 0.1s",
+  background: "var(--accent-9)",
+  color: "var(--accent-contrast)",
+  ":hover": {
+    opacity: 0.85,
+  },
+  selectors: {
+    "&:disabled": {
+      opacity: 0.3,
+      cursor: "default",
+    },
+    '&[data-variant="ghost"]': {
+      background: "transparent",
+      color: "var(--gray-11)",
+    },
+    '&[data-variant="ghost"]:hover': {
+      background: "var(--gray-a3)",
+    },
+    '&[data-variant="stop"]': {
+      background: "var(--gray-a4)",
+      color: "var(--gray-12)",
+    },
+    '&[data-variant="stop"]:hover': {
+      background: "var(--gray-a5)",
+    },
+  },
+  "@media": {
+    "(max-width: 700px)": {
+      width: 44,
+      height: 44,
+    },
+  },
+});
+
+export const composerRecordingBar = style({
+  flex: 1,
+  minWidth: 0,
+  display: "flex",
+  alignItems: "center",
+  gap: "var(--space-2)",
+  padding: "var(--space-2) var(--space-3)",
+  borderRadius: 12,
+  border: "1px solid var(--red-a6)",
+  background: "var(--red-a2)",
+  height: 40,
 });
 
 export const pageDropOverlay = style({
@@ -750,9 +864,20 @@ export const attachedImageRemove = style({
 export const composerInput = style({
   resize: "none",
   borderRadius: "12px",
+  paddingLeft: 42,
+  paddingRight: 42,
+  "@media": {
+    "(max-width: 700px)": {
+      paddingLeft: 48,
+      paddingRight: 48,
+    },
+  },
 });
 
-export const composerActions = style({
+export const composerStatusRow = style({
+  display: "flex",
+  alignItems: "center",
+  gap: "var(--space-2)",
   justifyContent: "end",
   flexShrink: 0,
 });
@@ -770,34 +895,33 @@ export const composerActivityDot = style({
   animation: `${composerPulse} 1.5s ease-in-out infinite`,
 });
 
-export const composerListeningIndicator = style({
-  position: "absolute",
-  bottom: 8,
-  right: 12,
+export const composerWaveformBars = style({
+  flex: 1,
   display: "flex",
   alignItems: "center",
-  gap: 4,
-  pointerEvents: "none",
-  zIndex: 1,
+  justifyContent: "center",
+  gap: 2,
+  height: 20,
+  overflow: "hidden",
 });
 
-const listeningBarBounce = keyframes({
-  "0%, 100%": { transform: "scaleY(0.3)" },
+const waveformBounce = keyframes({
+  "0%, 100%": { transform: "scaleY(0.25)" },
   "50%": { transform: "scaleY(1)" },
 });
 
-export const composerListeningBar = style({
+export const composerWaveformBar = style({
   width: 2,
-  height: 12,
+  height: "100%",
   borderRadius: 1,
   background: "var(--red-9)",
-  transformOrigin: "bottom",
-  animation: `${listeningBarBounce} 0.8s ease-in-out infinite`,
+  transformOrigin: "center",
+  animation: `${waveformBounce} 0.6s ease-in-out infinite`,
   selectors: {
-    "&:nth-child(1)": { animationDelay: "0s" },
-    "&:nth-child(2)": { animationDelay: "0.15s" },
-    "&:nth-child(3)": { animationDelay: "0.3s" },
-    "&:nth-child(4)": { animationDelay: "0.45s" },
+    "&:nth-child(2n)": { animationDelay: "0.1s" },
+    "&:nth-child(3n)": { animationDelay: "0.2s" },
+    "&:nth-child(5n)": { animationDelay: "0.3s" },
+    "&:nth-child(7n)": { animationDelay: "0.15s" },
   },
 });
 

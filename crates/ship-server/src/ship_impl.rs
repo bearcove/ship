@@ -5080,11 +5080,16 @@ impl Ship for ShipImpl {
             whisper_cpp_plus::FullParams::new(whisper_cpp_plus::SamplingStrategy::Greedy {
                 best_of: 1,
             })
-            .language("en");
+            .language("en")
+            .single_segment(true)
+            .no_context(true)
+            .no_timestamps(true);
 
+        // 30s window so typical voice inputs never slide. Each hypothesis
+        // replaces the previous one — the client shows the latest as-is.
         let stream_config = whisper_cpp_plus::WhisperStreamConfig {
             step_ms: 500,
-            length_ms: 5000,
+            length_ms: 30000,
             ..Default::default()
         };
 
@@ -5098,9 +5103,6 @@ impl Ship for ShipImpl {
                 }
             };
 
-        // Single task: feed audio, then try_recv segments after each feed.
-        // Each try_recv batch is a snapshot of the current window — send every
-        // segment so the frontend can replace its display in real-time.
         tokio::spawn(async move {
             let mut feed_count: u64 = 0;
             let mut total_samples: u64 = 0;
@@ -5133,24 +5135,26 @@ impl Ship for ShipImpl {
                         }
 
                         while let Some(segments) = stream.try_recv_segments() {
-                            for seg in &segments {
-                                tracing::info!(
-                                    "transcribe_audio: seg [{:.1}s-{:.1}s]: {}",
-                                    seg.start_seconds(),
-                                    seg.end_seconds(),
-                                    seg.text
-                                );
+                            let hypothesis: String = segments
+                                .iter()
+                                .map(|s| s.text.trim())
+                                .collect::<Vec<_>>()
+                                .join(" ");
+
+                            if hypothesis.is_empty() {
+                                continue;
                             }
-                            for seg in segments {
-                                let ts = TranscribeSegment {
-                                    start_ms: (seg.start_seconds() * 1000.0) as u64,
-                                    end_ms: (seg.end_seconds() * 1000.0) as u64,
-                                    text: seg.text.clone(),
-                                };
-                                if segments_out.send(ts).await.is_err() {
-                                    let _ = stream.stop().await;
-                                    return;
-                                }
+
+                            tracing::info!("transcribe_audio: hypothesis: {hypothesis}");
+
+                            let ts = TranscribeSegment {
+                                start_ms: 0,
+                                end_ms: (total_samples as f64 / 16.0) as u64,
+                                text: hypothesis,
+                            };
+                            if segments_out.send(ts).await.is_err() {
+                                let _ = stream.stop().await;
+                                return;
                             }
                         }
                     }
@@ -5165,23 +5169,20 @@ impl Ship for ShipImpl {
                 }
             }
 
-            // Flush remaining audio
             tracing::info!("transcribe_audio: flushing");
             match stream.flush().await {
                 Ok(segments) => {
-                    for seg in &segments {
-                        tracing::info!(
-                            "transcribe_audio: flush seg [{:.1}s-{:.1}s]: {}",
-                            seg.start_seconds(),
-                            seg.end_seconds(),
-                            seg.text
-                        );
-                    }
-                    for seg in segments {
+                    let text: String = segments
+                        .iter()
+                        .map(|s| s.text.trim())
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    if !text.is_empty() {
+                        tracing::info!("transcribe_audio: flush: {text}");
                         let ts = TranscribeSegment {
-                            start_ms: (seg.start_seconds() * 1000.0) as u64,
-                            end_ms: (seg.end_seconds() * 1000.0) as u64,
-                            text: seg.text.clone(),
+                            start_ms: 0,
+                            end_ms: (total_samples as f64 / 16.0) as u64,
+                            text,
                         };
                         let _ = segments_out.send(ts).await;
                     }
@@ -5191,13 +5192,17 @@ impl Ship for ShipImpl {
                 }
             }
 
-            // Drain any segments emitted by Feed commands that ran before flush
             while let Some(segments) = stream.try_recv_segments() {
-                for seg in segments {
+                let text: String = segments
+                    .iter()
+                    .map(|s| s.text.trim())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                if !text.is_empty() {
                     let ts = TranscribeSegment {
-                        start_ms: (seg.start_seconds() * 1000.0) as u64,
-                        end_ms: (seg.end_seconds() * 1000.0) as u64,
-                        text: seg.text.clone(),
+                        start_ms: 0,
+                        end_ms: (total_samples as f64 / 16.0) as u64,
+                        text,
                     };
                     let _ = segments_out.send(ts).await;
                 }

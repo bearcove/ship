@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Box, Button, Flex, Text, TextArea } from "@radix-ui/themes";
-import { Microphone, PaperclipIcon, Robot, Stop, Warning, Waveform } from "@phosphor-icons/react";
+import { Box, Flex, Text, TextArea } from "@radix-ui/themes";
+import { ArrowUp, Microphone, PaperclipIcon, Robot, Stop, Warning } from "@phosphor-icons/react";
 import { getShipClient } from "../api/client";
 import type {
   AgentSnapshot,
@@ -14,13 +14,17 @@ import {
   attachedImageThumb,
   attachedImageThumbList,
   attachedImageThumbWrapper,
-  composerActions,
+  composerActionBtn,
   composerActivityDot,
+  composerInlineBtn,
   composerInput,
   composerInputWrapper,
-  composerListeningBar,
-  composerListeningIndicator,
+  composerRecordingBar,
   composerRoot,
+  composerRow,
+  composerStatusRow,
+  composerWaveformBar,
+  composerWaveformBars,
   fileMentionItem,
   fileMentionPopup,
   pageDropOverlay,
@@ -116,6 +120,7 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
+  const [sendAfterTranscription, setSendAfterTranscription] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const worktreeFiles = useWorktreeFiles(sessionId);
@@ -145,6 +150,17 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
   if (transcription.state.tag === "idle" && preTranscriptionTextRef.current !== null) {
     preTranscriptionTextRef.current = null;
   }
+
+  // Auto-submit when transcription completes after "send" was requested
+  const prevTranscriptionTag = useRef(transcription.state.tag);
+  useEffect(() => {
+    const wasProcessing = prevTranscriptionTag.current !== "idle";
+    prevTranscriptionTag.current = transcription.state.tag;
+    if (wasProcessing && transcription.state.tag === "idle" && sendAfterTranscription) {
+      setSendAfterTranscription(false);
+      void handleSubmit();
+    }
+  }, [transcription.state.tag, sendAfterTranscription]);
 
   const { target } = parseTarget(text);
   const activeAgent = target === "captain" ? captain : mate;
@@ -344,9 +360,43 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
     }
   }
 
+  const hasContent = text.trim().length > 0 || attachedImages.length > 0;
+  const isRecording = transcription.state.tag === "recording";
+  const isProcessing = transcription.state.tag === "processing";
+  const isWorking = captainStateTag === "Working" || mateStateTag === "Working";
+
   return (
     <Flex className={composerRoot} direction="column" gap="2">
       {isDragOver && <div className={pageDropOverlay}>Drop image to attach</div>}
+
+      {(isWorking || mateUnavailable) && (
+        <Flex className={composerStatusRow} align="center" gap="2">
+          <AgentStateChips captain={captain} mate={mate} />
+          {isWorking && (
+            <Flex align="center" gap="1" style={{ marginRight: "auto" }}>
+              <div className={composerActivityDot} />
+              <Text size="2" color="gray">
+                {captainStateTag === "Working" && mateStateTag === "Working"
+                  ? "Both working"
+                  : captainStateTag === "Working"
+                    ? "Captain working"
+                    : "Mate working"}
+              </Text>
+              {activeAgent?.state.tag === "Working" && (
+                <Box asChild style={{ opacity: 0.5, fontSize: "10px", fontFamily: "monospace" }}>
+                  <kbd>esc</kbd>
+                </Box>
+              )}
+            </Flex>
+          )}
+          {mateUnavailable && (
+            <Text size="1" color="gray">
+              No active task
+            </Text>
+          )}
+        </Flex>
+      )}
+
       {attachedImages.length > 0 && (
         <div className={attachedImageThumbList}>
           {attachedImages.map((img) => (
@@ -370,60 +420,6 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
         </div>
       )}
 
-      <div className={composerInputWrapper} data-target={target === "mate" ? "mate" : undefined}>
-        {mentionQuery !== null && totalMentionItems > 0 && (
-          <div className={fileMentionPopup}>
-            {showMateEntry && (
-              <div
-                className={fileMentionItem}
-                data-special="mate"
-                data-selected={selectedIndex === 0}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  insertMention("mate");
-                }}
-              >
-                <Robot size={14} weight="regular" />
-                mate
-              </div>
-            )}
-            {filteredFiles.map((file, index) => (
-              <div
-                key={file}
-                className={fileMentionItem}
-                data-selected={(showMateEntry ? index + 1 : index) === selectedIndex}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  insertMention(file);
-                }}
-              >
-                {file}
-              </div>
-            ))}
-          </div>
-        )}
-        <TextArea
-          ref={textareaRef}
-          className={composerInput}
-          size="3"
-          rows={1}
-          placeholder="Steer the captain…"
-          value={text}
-          onChange={handleTextChange}
-          onKeyDown={handleKeyDown}
-          onPaste={handlePaste}
-          aria-label="Steer input"
-        />
-        {(transcription.state.tag === "recording" || transcription.state.tag === "processing") && (
-          <div className={composerListeningIndicator}>
-            <span className={composerListeningBar} />
-            <span className={composerListeningBar} />
-            <span className={composerListeningBar} />
-            <span className={composerListeningBar} />
-          </div>
-        )}
-      </div>
-
       <input
         ref={fileInputRef}
         type="file"
@@ -436,84 +432,136 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
         }}
       />
 
-      <Flex className={composerActions} align="center" gap="2">
-        <AgentStateChips captain={captain} mate={mate} />
-
-        {(captainStateTag === "Working" || mateStateTag === "Working") && (
-          <Flex align="center" gap="1" style={{ marginRight: "auto" }}>
-            <div className={composerActivityDot} />
-            <Text size="2" color="gray">
-              {captainStateTag === "Working" && mateStateTag === "Working"
-                ? "Both working"
-                : captainStateTag === "Working"
-                  ? "Captain working"
-                  : "Mate working"}
-            </Text>
-            {activeAgent?.state.tag === "Working" && (
-              <Box asChild style={{ opacity: 0.5, fontSize: "10px", fontFamily: "monospace" }}>
-                <kbd>esc</kbd>
-              </Box>
-            )}
-          </Flex>
-        )}
-
-        <Button
-          size="3"
-          variant="ghost"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={loading}
-          title="Attach image"
-        >
-          <PaperclipIcon />
-        </Button>
-        {transcription.state.tag === "idle" ? (
-          <Button
-            size="3"
-            variant="ghost"
-            onClick={() => void transcription.startRecording()}
-            disabled={loading}
-            title="Voice input"
-          >
-            <Microphone />
-          </Button>
-        ) : transcription.state.tag === "recording" ? (
-          <Button
-            size="3"
-            variant="ghost"
-            color="red"
+      {isRecording ? (
+        <div className={composerRow}>
+          <button
+            type="button"
+            className={composerActionBtn}
+            data-variant="stop"
             onClick={() => void transcription.stopRecording()}
             title="Stop recording"
           >
-            <Stop weight="fill" />
-            <Text size="1" color="red">
-              {formatElapsed(transcription.state.elapsed)}
+            <Stop size={18} weight="fill" />
+          </button>
+          <div className={composerRecordingBar}>
+            <Text
+              size="1"
+              color="red"
+              style={{ fontVariantNumeric: "tabular-nums", flexShrink: 0 }}
+            >
+              {formatElapsed(
+                transcription.state.tag === "recording" ? transcription.state.elapsed : 0,
+              )}
             </Text>
-          </Button>
-        ) : transcription.state.tag === "processing" ? (
-          <Button size="3" variant="ghost" disabled>
-            <Waveform />
-            <Text size="1" color="gray">
-              Transcribing...
-            </Text>
-          </Button>
-        ) : null}
-        {mateUnavailable && (
-          <Text size="1" color="gray">
-            No active task — mate unavailable
-          </Text>
-        )}
-        <Button
-          size="2"
-          onClick={() => void handleSubmit()}
-          disabled={(!text.trim() && attachedImages.length === 0) || disableSubmit}
-          loading={loading}
+            <div className={composerWaveformBars}>
+              {Array.from({ length: 24 }, (_, i) => (
+                <span key={i} className={composerWaveformBar} />
+              ))}
+            </div>
+          </div>
+          <button
+            type="button"
+            className={composerActionBtn}
+            onClick={() => {
+              setSendAfterTranscription(true);
+              void transcription.stopRecording();
+            }}
+            disabled={disableSubmit}
+            title="Stop and send"
+          >
+            <ArrowUp size={20} weight="bold" />
+          </button>
+        </div>
+      ) : isProcessing ? (
+        <div
+          className={composerRecordingBar}
+          style={{ borderColor: "var(--gray-a4)", background: "var(--gray-a2)" }}
         >
-          {submitLabel}{" "}
-          <Box asChild style={{ opacity: 0.65, fontSize: "11px", fontFamily: "monospace" }}>
-            <kbd>↵</kbd>
-          </Box>
-        </Button>
-      </Flex>
+          <Text size="1" color="gray">
+            {sendAfterTranscription ? "Sending…" : "Transcribing…"}
+          </Text>
+        </div>
+      ) : (
+        <div className={composerInputWrapper} data-target={target === "mate" ? "mate" : undefined}>
+          {mentionQuery !== null && totalMentionItems > 0 && (
+            <div className={fileMentionPopup}>
+              {showMateEntry && (
+                <div
+                  className={fileMentionItem}
+                  data-special="mate"
+                  data-selected={selectedIndex === 0}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    insertMention("mate");
+                  }}
+                >
+                  <Robot size={14} weight="regular" />
+                  mate
+                </div>
+              )}
+              {filteredFiles.map((file, index) => (
+                <div
+                  key={file}
+                  className={fileMentionItem}
+                  data-selected={(showMateEntry ? index + 1 : index) === selectedIndex}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    insertMention(file);
+                  }}
+                >
+                  {file}
+                </div>
+              ))}
+            </div>
+          )}
+          <button
+            type="button"
+            className={composerInlineBtn}
+            data-pos="left"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={loading}
+            title="Attach image"
+          >
+            <PaperclipIcon size={18} />
+          </button>
+          <TextArea
+            ref={textareaRef}
+            className={composerInput}
+            size="3"
+            rows={1}
+            placeholder="Steer the captain…"
+            value={text}
+            onChange={handleTextChange}
+            onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
+            aria-label="Steer input"
+          />
+          {hasContent ? (
+            <button
+              type="button"
+              className={composerInlineBtn}
+              data-pos="right"
+              data-variant="solid"
+              onClick={() => void handleSubmit()}
+              disabled={disableSubmit || loading}
+              title={submitLabel}
+            >
+              <ArrowUp size={20} weight="bold" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={composerInlineBtn}
+              data-pos="right"
+              onClick={() => void transcription.startRecording()}
+              disabled={loading}
+              title="Voice input"
+            >
+              <Microphone size={20} />
+            </button>
+          )}
+        </div>
+      )}
 
       {error && (
         <Text size="2" color="red">

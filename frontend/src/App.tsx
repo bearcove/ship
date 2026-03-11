@@ -72,7 +72,7 @@ export function App() {
   }, []);
 
   return (
-    <Flex direction="column" style={{ height: "100vh" }}>
+    <Flex direction="column" style={{ height: "100dvh" }}>
       {!inSessionView && (
         <IconButton
           className={floatingHamburger}

@@ -30,10 +30,19 @@ export const monoFontStack =
 export const sansFontStack =
   "'Cabin', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
 
-globalStyle("html, body, #root", {
+globalStyle("html, body", {
+  height: "100dvh",
+  margin: 0,
+  padding: 0,
+  overflow: "hidden",
+  overscrollBehavior: "none",
+});
+
+globalStyle("#root", {
   height: "100%",
   margin: 0,
   padding: 0,
+  overflow: "hidden",
 });
 
 // Fill the browser chrome (iOS status bar, overscroll area) with the app background.
