@@ -1088,18 +1088,26 @@ Continue where you left off — wait for the human to give you direction."
             let session = sessions
                 .get_mut(session_id)
                 .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-            let log_text = parts_to_log_text(parts);
-            apply_event(
-                session,
-                SessionEvent::BlockAppend {
-                    block_id: BlockId::new(),
-                    role,
-                    block: ContentBlock::Text {
-                        text: log_text,
+            for part in parts {
+                let block = match part {
+                    PromptContentPart::Text { text } => ContentBlock::Text {
+                        text: text.clone(),
                         source: ship_types::TextSource::Human,
                     },
-                },
-            );
+                    PromptContentPart::Image { mime_type, data } => ContentBlock::Image {
+                        mime_type: mime_type.clone(),
+                        data: data.clone(),
+                    },
+                };
+                apply_event(
+                    session,
+                    SessionEvent::BlockAppend {
+                        block_id: BlockId::new(),
+                        role: role.clone(),
+                        block,
+                    },
+                );
+            }
         }
 
         self.persist_session(session_id).await
@@ -1126,17 +1134,26 @@ Continue where you left off — wait for the human to give you direction."
             }
 
             let log_text = parts_to_log_text(&parts);
-            apply_event(
-                active,
-                SessionEvent::BlockAppend {
-                    block_id: BlockId::new(),
-                    role: Role::Mate,
-                    block: ContentBlock::Text {
-                        text: log_text.clone(),
+            for part in &parts {
+                let block = match part {
+                    PromptContentPart::Text { text } => ContentBlock::Text {
+                        text: text.clone(),
                         source: ship_types::TextSource::Human,
                     },
-                },
-            );
+                    PromptContentPart::Image { mime_type, data } => ContentBlock::Image {
+                        mime_type: mime_type.clone(),
+                        data: data.clone(),
+                    },
+                };
+                apply_event(
+                    active,
+                    SessionEvent::BlockAppend {
+                        block_id: BlockId::new(),
+                        role: Role::Mate,
+                        block,
+                    },
+                );
+            }
 
             let already_working = status == TaskStatus::Working;
             if already_working {
