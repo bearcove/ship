@@ -1773,6 +1773,17 @@ Here is your task:
             Err(_) => return Err("human reply channel closed".to_owned()),
         };
 
+        // Append the human's reply to the captain feed so it appears in the conversation.
+        let _ = self
+            .append_human_message(
+                session_id,
+                Role::Captain,
+                &[PromptContentPart::Text {
+                    text: reply.clone(),
+                }],
+            )
+            .await;
+
         // Clear the pending review state.
         {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
