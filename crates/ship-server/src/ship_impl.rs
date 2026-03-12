@@ -1793,16 +1793,20 @@ Here is your task:
     }
 
     // r[mate.tool.sandbox]
-    fn sandboxed_sh(cwd: &Path, shell_command: &str) -> Result<tokio::process::Child, String> {
+    fn sandboxed_sh(
+        worktree: &Path,
+        cwd: &Path,
+        shell_command: &str,
+    ) -> Result<tokio::process::Child, String> {
         #[cfg(target_os = "macos")]
         {
             let system_tmpdir = std::env::var("TMPDIR").unwrap_or_else(|_| "/tmp".to_owned());
-            let worktree = cwd.to_string_lossy();
+            let worktree_str = worktree.to_string_lossy();
             let profile = format!(
                 "(version 1)\
                 \n(allow default)\
                 \n(deny file-write* (subpath \"/\"))\
-                \n(allow file-write* (subpath \"{worktree}\"))\
+                \n(allow file-write* (subpath \"{worktree_str}\"))\
                 \n(allow file-write* (subpath \"/private/tmp\"))\
                 \n(allow file-write* (subpath \"/tmp\"))\
                 \n(allow file-write* (subpath \"{system_tmpdir}\"))\
@@ -1822,6 +1826,7 @@ Here is your task:
         }
         #[cfg(not(target_os = "macos"))]
         {
+            let _ = worktree;
             let mut cmd = TokioCommand::new("/bin/sh");
             cmd.arg("-c")
                 .arg(shell_command)
