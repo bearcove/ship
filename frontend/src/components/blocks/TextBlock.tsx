@@ -15,6 +15,7 @@ import {
   textBlockCodeFallback,
   textBlockRoot,
 } from "../../styles/session-view.css";
+import { spinAnimation } from "../../styles/global.css";
 
 type TextBlockType = Extract<ContentBlock, { tag: "Text" }>;
 
@@ -200,7 +201,7 @@ export function TextBlock({ block, speakable }: Props) {
           {speakState === "idle" ? (
             <SpeakerHigh size={12} />
           ) : (
-            <CircleNotch size={12} style={{ animation: "spin 1s linear infinite" }} />
+            <CircleNotch size={12} style={{ animation: `${spinAnimation} 1s linear infinite` }} />
           )}
         </IconButton>
       )}

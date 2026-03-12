@@ -1,4 +1,9 @@
-import { globalStyle, globalFontFace } from "@vanilla-extract/css";
+import { globalStyle, globalFontFace, keyframes } from "@vanilla-extract/css";
+
+export const spinAnimation = keyframes({
+  from: { transform: "rotate(0deg)" },
+  to: { transform: "rotate(360deg)" },
+});
 
 globalFontFace("Maple Mono NF", {
   src: "url('/fonts/MapleMono-NF-Regular.woff2') format('woff2')",

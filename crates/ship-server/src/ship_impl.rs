@@ -5740,11 +5740,15 @@ impl Ship for ShipImpl {
             let result = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
                 let repo_id = "ResembleAI/chatterbox-turbo-ONNX";
                 let revision = "main";
-                let dtype = chatterbox_rs::hf::ModelVariant::Fp16;
+                let dtype_str = "fp16";
 
                 // Download model assets (cached after first download)
-                let paths = chatterbox_rs::hf::download_chatterbox_assets(repo_id, revision, dtype)
-                    .map_err(|e| format!("failed to download chatterbox assets: {e}"))?;
+                let paths = chatterbox_rs::hf::download_chatterbox_assets(
+                    repo_id,
+                    revision,
+                    chatterbox_rs::hf::ModelVariant::Fp16,
+                )
+                .map_err(|e| format!("failed to download chatterbox assets: {e}"))?;
 
                 // Lazy-load the model
                 let mut model_guard = chatterbox_model.lock().expect("chatterbox_model mutex poisoned");
@@ -5768,14 +5772,14 @@ impl Ship for ShipImpl {
                     let cache_dir = chatterbox_rs::voice::voice_cache_dir()
                         .map_err(|e| format!("voice_cache_dir failed: {e}"))?;
                     let voice_name = chatterbox_rs::voice::pick_voice_for_model(
-                        &cache_dir, repo_id, revision, dtype,
+                        &cache_dir, repo_id, revision, dtype_str,
                     ).map_err(|e| format!("pick_voice_for_model failed: {e}"))?;
 
                     if let Some(name) = voice_name {
                         tracing::info!(voice = %name, "speak_text: synthesizing with cached voice profile");
                         let profile = chatterbox_rs::voice::load_voice_profile(&cache_dir, &name)
                             .map_err(|e| format!("load_voice_profile failed: {e}"))?;
-                        model.synthesize_with_voice_profile(&text, repo_id, revision, dtype, &profile, 2048, 1.1)
+                        model.synthesize_with_voice_profile(&text, repo_id, revision, dtype_str, &profile, 2048, 1.1)
                             .map_err(|e| format!("synthesis_with_voice_profile failed: {e}"))?
                     } else {
                         return Err("no voice available: set SHIP_VOICE_WAV or populate cbx voice cache".to_owned());
