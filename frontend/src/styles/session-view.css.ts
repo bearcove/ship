@@ -754,7 +754,10 @@ export const transcriptPreview = style({
   color: "var(--gray-11)",
   padding: "4px 0",
   textAlign: "center",
-  fontStyle: "italic",
+  maxWidth: "65%",
+  margin: "0 auto",
+  maskImage: "linear-gradient(to bottom, transparent 0%, black 30%, black 100%)",
+  WebkitMaskImage: "linear-gradient(to bottom, transparent 0%, black 30%, black 100%)",
   animation: `${transcriptFadeIn} 0.25s ease-out`,
   scrollbarWidth: "none",
   selectors: {
