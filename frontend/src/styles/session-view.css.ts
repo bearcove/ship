@@ -914,6 +914,33 @@ export const attachedImageRemove = style({
   padding: 0,
 });
 
+export const feedImageThumb = style({
+  maxWidth: "160px",
+  maxHeight: "120px",
+  objectFit: "cover",
+  borderRadius: "var(--radius-2)",
+  cursor: "pointer",
+  display: "block",
+});
+
+export const feedImageLightboxOverlay = style({
+  position: "fixed",
+  inset: 0,
+  background: "rgba(0,0,0,0.85)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  zIndex: 1000,
+  cursor: "zoom-out",
+});
+
+export const feedImageLightboxImg = style({
+  maxWidth: "90vw",
+  maxHeight: "90vh",
+  objectFit: "contain",
+  borderRadius: "var(--radius-2)",
+});
+
 export const composerInput = style({
   resize: "none",
   borderRadius: "12px",
