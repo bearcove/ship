@@ -27,6 +27,7 @@ import {
   composerEscHint,
   composerInlineBtn,
   composerInput,
+  composerInputWideRight,
   composerInputWrapper,
   composerOverlay,
   composerRoot,
@@ -428,6 +429,7 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
   const isRecording = transcription.state.tag === "recording";
   const isProcessing = transcription.state.tag === "processing";
   const isWorking = captainStateTag === "Working" || mateStateTag === "Working";
+  const showStopSecondary = isWorking && !isRecording && !isProcessing;
 
   return (
     <Flex className={composerRoot} direction="column" gap="2">
@@ -589,7 +591,9 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
         {/* Textarea — always present, hidden behind overlay when recording/processing */}
         <TextArea
           ref={textareaRef}
-          className={composerInput}
+          className={
+            showStopSecondary ? `${composerInput} ${composerInputWideRight}` : composerInput
+          }
           size="3"
           rows={1}
           placeholder="Steer the captain…"
@@ -623,6 +627,24 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
               {sendAfterTranscription ? "Sending…" : "Transcribing…"}
             </Text>
           </div>
+        )}
+
+        {/* Secondary stop button — visible when agent is working and not recording/processing */}
+        {showStopSecondary && (
+          <button
+            type="button"
+            className={composerInlineBtn}
+            data-pos="right-2"
+            onClick={() => {
+              void (async () => {
+                const client = await getShipClient();
+                await client.stopAgents(sessionId);
+              })();
+            }}
+            title="Stop agent"
+          >
+            <Stop size={20} weight="fill" />
+          </button>
         )}
 
         {/* Right slot */}
@@ -662,21 +684,6 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
             title={submitLabel}
           >
             <ArrowUp size={20} weight="bold" />
-          </button>
-        ) : isWorking ? (
-          <button
-            type="button"
-            className={composerInlineBtn}
-            data-pos="right"
-            onClick={() => {
-              void (async () => {
-                const client = await getShipClient();
-                await client.stopAgents(sessionId);
-              })();
-            }}
-            title="Stop agent"
-          >
-            <Stop size={20} weight="fill" />
           </button>
         ) : (
           <button
