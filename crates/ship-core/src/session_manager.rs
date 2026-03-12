@@ -1085,6 +1085,45 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
 // r[backend.event-pipeline]
 // r[backend.event-log]
 pub fn apply_event(session: &mut ActiveSession, event: SessionEvent) {
+    // Preserve existing plan when transitioning to Working with plan: None.
+    // Activity-only transitions (permission resolved, prompt in progress) should not
+    // clear a plan that was previously set via plan_create or plan_step_complete.
+    let event = match event {
+        SessionEvent::AgentStateChanged {
+            role,
+            state:
+                AgentState::Working {
+                    plan: None,
+                    activity,
+                },
+        } => {
+            let existing_plan = match role {
+                Role::Captain => {
+                    if let AgentState::Working { plan, .. } = &session.captain.state {
+                        plan.clone()
+                    } else {
+                        None
+                    }
+                }
+                Role::Mate => {
+                    if let AgentState::Working { plan, .. } = &session.mate.state {
+                        plan.clone()
+                    } else {
+                        None
+                    }
+                }
+            };
+            SessionEvent::AgentStateChanged {
+                role,
+                state: AgentState::Working {
+                    plan: existing_plan,
+                    activity,
+                },
+            }
+        }
+        other => other,
+    };
+
     if let SessionEvent::AgentStateChanged {
         role,
         state: AgentState::Working {
