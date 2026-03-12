@@ -70,6 +70,9 @@ enum Command {
 
     /// Spin up an in-process server, create a session, and watch events.
     Probe(ProbeArgs),
+
+    /// Listen to the default mic and transcribe speech using Silero VAD + Whisper.
+    Listen(ListenArgs),
 }
 
 #[derive(Debug, facet::Facet)]
@@ -135,6 +138,17 @@ enum ProjectCommand {
 }
 
 #[derive(Debug, facet::Facet)]
+struct ListenArgs {
+    /// Path to whisper model (overrides SHIP_WHISPER_MODEL).
+    #[facet(args::named, default)]
+    whisper_model: Option<String>,
+
+    /// Path to Silero VAD model (overrides SHIP_VAD_MODEL).
+    #[facet(args::named, default)]
+    vad_model: Option<String>,
+}
+
+#[derive(Debug, facet::Facet)]
 struct ProjectAddArgs {
     /// Path to repository.
     #[facet(args::positional)]
@@ -179,6 +193,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Command::Project { command } => run_project(command).await,
         Command::Probe(args) => run_probe(args).await,
+        Command::Listen(args) => run_listen(args).await,
     }
 }
 
@@ -514,6 +529,7 @@ async fn run_serve(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
     ship.load_persisted_sessions().await;
     ship.fetch_github_user_avatar().await;
     ship.configure_whisper_model();
+    ship.configure_vad_model();
     let state = AppState {
         ship: ship.clone(),
         http_client: reqwest::Client::new(),
@@ -1188,6 +1204,201 @@ async fn shutdown_signal() {
         _ = ctrl_c => {}
         _ = terminate => {}
     }
+}
+
+async fn run_listen(args: ListenArgs) -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env().add_directive(Level::INFO.into()))
+        .init();
+
+    // Resolve model paths
+    let whisper_model = args
+        .whisper_model
+        .or_else(|| std::env::var("SHIP_WHISPER_MODEL").ok())
+        .ok_or("whisper model required: pass --whisper-model or set SHIP_WHISPER_MODEL")?;
+    let vad_model = args
+        .vad_model
+        .or_else(|| std::env::var("SHIP_VAD_MODEL").ok())
+        .ok_or("VAD model required: pass --vad-model or set SHIP_VAD_MODEL")?;
+
+    tracing::info!(whisper = %whisper_model, vad = %vad_model, "loading models");
+
+    let whisper_ctx = whisper_cpp_plus::WhisperContext::new(&whisper_model)?;
+    let mut vad = whisper_cpp_plus::enhanced::vad::EnhancedWhisperVadProcessor::new(&vad_model)?;
+    let vad_params = whisper_cpp_plus::enhanced::vad::EnhancedVadParams::default();
+
+    // Set up mic capture via cpal
+    use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+    let host = cpal::default_host();
+    let device = host
+        .default_input_device()
+        .ok_or("no default input device")?;
+    tracing::info!(
+        device = device.name().unwrap_or_default(),
+        "using input device"
+    );
+
+    let config = cpal::StreamConfig {
+        channels: 1,
+        sample_rate: cpal::SampleRate(16000),
+        buffer_size: cpal::BufferSize::Default,
+    };
+
+    let (audio_tx, mut audio_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<f32>>();
+
+    let stream = device.build_input_stream(
+        &config,
+        move |data: &[f32], _: &cpal::InputCallbackInfo| {
+            let _ = audio_tx.send(data.to_vec());
+        },
+        |err| {
+            tracing::error!("audio input error: {err}");
+        },
+        None,
+    )?;
+    stream.play()?;
+    tracing::info!("listening... press Ctrl-C to stop");
+
+    // Sliding window state
+    let mut audio_buf: Vec<f32> = Vec::new();
+    let mut transcribed_segments: Vec<String> = Vec::new();
+    // Track how many samples we've removed from the front of the buffer
+    let mut _buf_offset_samples: usize = 0;
+
+    // Process audio in a loop
+    let mut interval = tokio::time::interval(Duration::from_millis(500));
+    loop {
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                tracing::info!("stopping");
+                break;
+            }
+            Some(samples) = audio_rx.recv() => {
+                audio_buf.extend_from_slice(&samples);
+            }
+            _ = interval.tick() => {
+                if audio_buf.len() < 16000 {
+                    // Need at least 1s of audio for VAD to do anything useful
+                    continue;
+                }
+
+                // Run Silero VAD on the full buffer to find speech segments
+                let chunks = match vad.process_with_aggregation(&audio_buf, &vad_params) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        tracing::warn!("VAD error: {e}");
+                        continue;
+                    }
+                };
+
+                // Print current state
+                let buf_duration = audio_buf.len() as f64 / 16000.0;
+                let chunk_summary: Vec<String> = chunks
+                    .iter()
+                    .map(|c| {
+                        format!(
+                            "{:.1}s-{:.1}s",
+                            c.metadata.original_start,
+                            c.metadata.original_end
+                        )
+                    })
+                    .collect();
+                eprint!(
+                    "\r\x1b[2K[buf: {:.1}s] [vad: {}] [transcribed: {}]",
+                    buf_duration,
+                    if chunk_summary.is_empty() {
+                        "silence".to_owned()
+                    } else {
+                        chunk_summary.join(", ")
+                    },
+                    transcribed_segments.len(),
+                );
+                let _ = std::io::stderr().flush();
+
+                // A segment is "closed" if its end is at least 1s before the buffer tail.
+                // That means we have enough trailing silence to be confident it won't grow.
+                let buf_end_s = audio_buf.len() as f32 / 16000.0;
+                let silence_threshold = 1.0; // 1s of silence after segment = closed
+
+                for chunk in &chunks {
+                    let gap_after = buf_end_s - chunk.metadata.original_end;
+                    if gap_after < silence_threshold {
+                        // Segment might still be growing, skip for now
+                        continue;
+                    }
+
+                    // This segment is closed — transcribe it
+                    let params = whisper_cpp_plus::FullParams::new(
+                        whisper_cpp_plus::SamplingStrategy::Greedy { best_of: 1 },
+                    )
+                    .language("en")
+                    .no_context(true);
+
+                    let state = whisper_ctx.create_state();
+                    match state {
+                        Ok(mut state) => {
+                            if let Err(e) = state.full(params, &chunk.audio) {
+                                tracing::warn!("whisper error: {e}");
+                                continue;
+                            }
+                            let n_segments = state.full_n_segments();
+                            let mut text = String::new();
+                            for i in 0..n_segments {
+                                if let Ok(t) = state.full_get_segment_text(i) {
+                                    let t = t.trim();
+                                    if !t.is_empty() {
+                                        if !text.is_empty() {
+                                            text.push(' ');
+                                        }
+                                        text.push_str(t);
+                                    }
+                                }
+                            }
+                            if !text.is_empty() {
+                                eprintln!();
+                                tracing::info!("transcribed: {text}");
+                                transcribed_segments.push(text);
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("whisper state error: {e}");
+                        }
+                    }
+                }
+
+                // Trim the buffer: remove everything up to the start of the earliest
+                // still-open segment (or the last closed segment's end).
+                let earliest_open_start = chunks
+                    .iter()
+                    .find(|c| (buf_end_s - c.metadata.original_end) < silence_threshold)
+                    .map(|c| c.metadata.sample_offset);
+
+                let trim_to = if let Some(open_start) = earliest_open_start {
+                    // Keep some padding before the open segment
+                    open_start.saturating_sub(8000) // 0.5s padding
+                } else if !chunks.is_empty() {
+                    // All segments closed — keep last 1s as overlap
+                    audio_buf.len().saturating_sub(16000)
+                } else {
+                    // No speech at all — keep last 2s
+                    audio_buf.len().saturating_sub(32000)
+                };
+
+                if trim_to > 0 {
+                    audio_buf.drain(..trim_to);
+                    _buf_offset_samples += trim_to;
+                }
+            }
+        }
+    }
+
+    // Print final result
+    if !transcribed_segments.is_empty() {
+        println!("\n--- Final transcription ---");
+        println!("{}", transcribed_segments.join(" "));
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

@@ -180,11 +180,15 @@ pub struct ShipImpl {
     startup_started_at: Arc<Mutex<HashMap<SessionId, Instant>>>,
     user_avatar_url: Arc<Mutex<Option<String>>>,
     whisper_model_path: Arc<Mutex<Option<PathBuf>>>,
+    vad_model_path: Arc<Mutex<Option<PathBuf>>>,
     global_events_tx: broadcast::Sender<GlobalEvent>,
 }
 
 /// Default whisper model filename to look for.
 const WHISPER_MODEL_FILENAME: &str = "ggml-base.en.bin";
+
+/// Default Silero VAD model filename to look for.
+const VAD_MODEL_FILENAME: &str = "ggml-silero-vad.bin";
 
 impl ShipImpl {
     pub fn new(
@@ -206,6 +210,7 @@ impl ShipImpl {
             startup_started_at: Arc::new(Mutex::new(HashMap::new())),
             user_avatar_url: Arc::new(Mutex::new(None)),
             whisper_model_path: Arc::new(Mutex::new(None)),
+            vad_model_path: Arc::new(Mutex::new(None)),
             global_events_tx,
         }
     }
@@ -243,6 +248,37 @@ impl ShipImpl {
             .whisper_model_path
             .lock()
             .expect("whisper mutex poisoned") = path;
+    }
+
+    /// Configure the Silero VAD model path from env var or default locations.
+    pub fn configure_vad_model(&self) {
+        let path = if let Ok(path) = std::env::var("SHIP_VAD_MODEL") {
+            let p = PathBuf::from(path);
+            if p.exists() {
+                Some(p)
+            } else {
+                tracing::warn!(path = %p.display(), "SHIP_VAD_MODEL path does not exist");
+                None
+            }
+        } else {
+            let candidates = [
+                dirs_next::data_dir().map(|d| d.join("whisper").join(VAD_MODEL_FILENAME)),
+                dirs_next::home_dir()
+                    .map(|d| d.join(".local/share/whisper").join(VAD_MODEL_FILENAME)),
+                Some(PathBuf::from(VAD_MODEL_FILENAME)),
+            ];
+            candidates.into_iter().flatten().find(|p| p.exists())
+        };
+
+        if let Some(ref path) = path {
+            tracing::info!(path = %path.display(), "VAD model found");
+        } else {
+            tracing::info!(
+                "no VAD model found — Silero VAD disabled. Set SHIP_VAD_MODEL or place {VAD_MODEL_FILENAME} in ~/.local/share/whisper/"
+            );
+        }
+
+        *self.vad_model_path.lock().expect("vad mutex poisoned") = path;
     }
 
     #[allow(dead_code)] // called from ship binary; not from ship-startup-probe
