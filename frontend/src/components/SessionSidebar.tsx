@@ -7,7 +7,7 @@ import {
   FolderIcon,
   FolderOpenIcon,
   FolderSimplePlusIcon,
-  NoteIcon,
+  PlusIcon,
   SpeakerHighIcon,
   SpeakerSlashIcon,
 } from "@phosphor-icons/react";
@@ -205,7 +205,7 @@ function ProjectGroup({
               onClick={handleCreate}
               disabled={creating}
             >
-              {creating ? <Spinner size="2" /> : <NoteIcon size={13} />}
+              {creating ? <Spinner size="2" /> : <PlusIcon size={13} />}
             </IconButton>
           </Tooltip>
         </div>
