@@ -771,6 +771,7 @@ fn command_for_launcher(
                 "(allow file-write* (subpath \"{home}/.rustup\"))",
                 // Allow pnpm/npm cache
                 "(allow file-write* (subpath \"{home}/Library/pnpm\"))",
+                "(allow file-write* (subpath \"{home}/Library/Caches/pnpm\"))",
                 "(allow file-write* (subpath \"{home}/.npm\"))",
                 "(allow file-write* (subpath \"{home}/.pnpm-store\"))",
                 // Allow claude plans directory
