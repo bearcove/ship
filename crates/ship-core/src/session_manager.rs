@@ -1246,6 +1246,9 @@ pub fn apply_event_to_materialized_state(session: &mut ActiveSession, event: &Se
                 && task.record.id == *task_id
             {
                 task.record.status = *status;
+                if status.is_terminal() && task.record.completed_at.is_none() {
+                    task.record.completed_at = Some(chrono::Utc::now().to_rfc3339());
+                }
             }
         }
         SessionEvent::TaskStarted {
