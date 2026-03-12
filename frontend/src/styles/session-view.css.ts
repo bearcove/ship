@@ -756,6 +756,15 @@ export const composerInlineBtn = style({
   },
 });
 
+export const composerEscHint = style({
+  display: "inline-flex",
+  "@media": {
+    "(max-width: 700px)": {
+      display: "none",
+    },
+  },
+});
+
 export const pageDropOverlay = style({
   position: "fixed",
   inset: 0,

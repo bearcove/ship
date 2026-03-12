@@ -24,6 +24,7 @@ import {
   attachedImageThumbList,
   attachedImageThumbWrapper,
   composerActivityDot,
+  composerEscHint,
   composerInlineBtn,
   composerInput,
   composerInputWrapper,
@@ -394,7 +395,11 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
                     : "Mate working"}
               </Text>
               {activeAgent?.state.tag === "Working" && (
-                <Box asChild style={{ opacity: 0.5, fontSize: "10px", fontFamily: "monospace" }}>
+                <Box
+                  asChild
+                  className={composerEscHint}
+                  style={{ opacity: 0.5, fontSize: "10px", fontFamily: "monospace" }}
+                >
                   <kbd>esc</kbd>
                 </Box>
               )}
