@@ -5729,6 +5729,83 @@ impl Ship for ShipImpl {
             let _ = segments_out.close(Default::default()).await;
         });
     }
+
+    async fn speak_text(&self, text: String, audio_out: Tx<Vec<u8>>) {
+        tracing::info!(text_len = text.len(), "speak_text: request received");
+
+        let chatterbox_model = Arc::clone(&self.chatterbox_model);
+        let voice_wav_path = Arc::clone(&self.voice_wav_path);
+
+        tokio::spawn(async move {
+            let result = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
+                let repo_id = "ResembleAI/chatterbox-turbo-ONNX";
+                let revision = "main";
+                let dtype = chatterbox_rs::hf::ModelVariant::Fp16;
+
+                // Download model assets (cached after first download)
+                let paths = chatterbox_rs::hf::download_chatterbox_assets(repo_id, revision, dtype)
+                    .map_err(|e| format!("failed to download chatterbox assets: {e}"))?;
+
+                // Lazy-load the model
+                let mut model_guard = chatterbox_model.lock().expect("chatterbox_model mutex poisoned");
+                if model_guard.is_none() {
+                    tracing::info!("speak_text: loading chatterbox model");
+                    let model = chatterbox_rs::chatterbox::Chatterbox::load(&paths)
+                        .map_err(|e| format!("failed to load chatterbox model: {e}"))?;
+                    *model_guard = Some(model);
+                }
+                let model = model_guard.as_mut().expect("model must be Some after loading");
+
+                // Resolve voice and synthesize
+                let voice_path_guard = voice_wav_path.lock().expect("voice_wav_path mutex poisoned");
+                let samples = if let Some(ref wav_path) = *voice_path_guard {
+                    tracing::info!(path = %wav_path.display(), "speak_text: synthesizing with WAV voice");
+                    model.synthesize(&text, wav_path, 2048, 1.1)
+                        .map_err(|e| format!("synthesis failed: {e}"))?
+                } else {
+                    drop(voice_path_guard);
+                    // Try cbx voice cache
+                    let cache_dir = chatterbox_rs::voice::voice_cache_dir()
+                        .map_err(|e| format!("voice_cache_dir failed: {e}"))?;
+                    let voice_name = chatterbox_rs::voice::pick_voice_for_model(
+                        &cache_dir, repo_id, revision, dtype,
+                    ).map_err(|e| format!("pick_voice_for_model failed: {e}"))?;
+
+                    if let Some(name) = voice_name {
+                        tracing::info!(voice = %name, "speak_text: synthesizing with cached voice profile");
+                        let profile = chatterbox_rs::voice::load_voice_profile(&cache_dir, &name)
+                            .map_err(|e| format!("load_voice_profile failed: {e}"))?;
+                        model.synthesize_with_voice_profile(&text, repo_id, revision, dtype, &profile, 2048, 1.1)
+                            .map_err(|e| format!("synthesis_with_voice_profile failed: {e}"))?
+                    } else {
+                        return Err("no voice available: set SHIP_VOICE_WAV or populate cbx voice cache".to_owned());
+                    }
+                };
+
+                tracing::info!(n_samples = samples.len(), "speak_text: synthesis complete");
+
+                // Convert f32 samples to little-endian bytes
+                let bytes: Vec<u8> = samples.iter().flat_map(|s| s.to_le_bytes()).collect();
+                Ok(bytes)
+            })
+            .await;
+
+            match result {
+                Ok(Ok(bytes)) => {
+                    let _ = audio_out.send(bytes).await;
+                    let _ = audio_out.close(Default::default()).await;
+                }
+                Ok(Err(e)) => {
+                    tracing::warn!("speak_text: {e}");
+                    let _ = audio_out.close(Default::default()).await;
+                }
+                Err(e) => {
+                    tracing::error!("speak_text: blocking task panicked: {e}");
+                    let _ = audio_out.close(Default::default()).await;
+                }
+            }
+        });
+    }
 }
 
 pub struct ShipMcpConnectionAcceptor {
