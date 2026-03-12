@@ -4773,6 +4773,23 @@ impl Ship for ShipImpl {
         }
     }
 
+    // r[proto.stop-agents]
+    async fn stop_agents(&self, session: SessionId) {
+        let (captain_handle, mate_handle) = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let Some(active) = sessions.get(&session) else {
+                return;
+            };
+            (active.captain_handle.clone(), active.mate_handle.clone())
+        };
+        if let Some(handle) = captain_handle {
+            let _ = self.agent_driver.cancel(&handle).await;
+        }
+        if let Some(handle) = mate_handle {
+            let _ = self.agent_driver.cancel(&handle).await;
+        }
+    }
+
     async fn resolve_permission(
         &self,
         session: SessionId,
