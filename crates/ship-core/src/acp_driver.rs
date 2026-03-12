@@ -786,7 +786,11 @@ fn command_for_launcher(
             .arg("-p")
             .arg(policy)
             .arg(launcher.program)
-            .args(launcher.args);
+            .args(launcher.args)
+            // Override TMPDIR so rustc/cargo write temp files to /private/tmp
+            // instead of /var/folders/... (a symlink path not covered by the
+            // sandbox policy's literal path matching).
+            .env("TMPDIR", "/private/tmp");
         command
     } else {
         let mut command = Command::new(launcher.program);
