@@ -1,16 +1,11 @@
 import { useEffect, useState } from "react";
-import { getShipClient, invalidateShipClient } from "../api/client";
+import { getShipClient } from "../api/client";
 import type { SessionSummary } from "../generated/ship";
 import { onSessionListChanged } from "./useGlobalEvents";
 
 export async function refreshSessionList(): Promise<SessionSummary[]> {
-  try {
-    const client = await getShipClient();
-    return await client.listSessions();
-  } catch (e) {
-    invalidateShipClient(`listSessions failed: ${e}`);
-    throw e;
-  }
+  const client = await getShipClient();
+  return await client.listSessions();
 }
 
 // r[proto.list-sessions]

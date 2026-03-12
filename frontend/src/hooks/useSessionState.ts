@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { channel } from "@bearcove/roam-core";
 import type { SessionDetail, SessionEventEnvelope, SubscribeMessage } from "../generated/ship";
-import { getShipClient, invalidateShipClient } from "../api/client";
+import { getShipClient } from "../api/client";
 import {
   type SessionViewState,
   initialSessionViewState,
@@ -223,10 +223,10 @@ function startSubscription(sessionId: string, sub: SessionSubscription) {
     log("info", "starting session subscription", {
       sessionId,
       attempt,
-      forceNewClient: sub.retryCount > 0,
+      retrying: sub.retryCount > 0,
     });
 
-    const client = await getShipClient({ forceNew: sub.retryCount > 0 });
+    const client = await getShipClient();
     if (sub.cancelled) return;
 
     const [tx, rx] = channel<SubscribeMessage>();
@@ -365,7 +365,6 @@ function startSubscription(sessionId: string, sub: SessionSubscription) {
       const reason = `subscription setup failed: ${describeError(error)}`;
       const diagnosis = diagnoseDisconnectReason(reason);
       log("warn", "session subscription setup failed", { sessionId, reason });
-      invalidateShipClient(reason);
       sub.debugMessages = [
         ...sub.debugMessages.slice(-199),
         { kind: "disconnect", reason, diagnosis, attempt: sub.retryCount + 1 },

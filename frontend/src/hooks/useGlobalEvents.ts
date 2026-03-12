@@ -1,6 +1,6 @@
 import { channel } from "@bearcove/roam-core";
 import type { GlobalEvent, ProjectInfo, SessionSummary } from "../generated/ship";
-import { getShipClient, invalidateShipClient, onClientReady } from "../api/client";
+import { getShipClient, onClientReady } from "../api/client";
 
 // --- Session list state ---
 let cachedSessions: SessionSummary[] = [];
@@ -38,11 +38,11 @@ function handleGlobalEvent(event: GlobalEvent) {
   }
 }
 
-async function startGlobalSubscription(isRetry: boolean) {
+async function startGlobalSubscription() {
   if (subscriptionActive) return;
   subscriptionActive = true;
   try {
-    const client = await getShipClient({ forceNew: isRetry });
+    const client = await getShipClient();
     const [tx, rx] = channel<GlobalEvent>();
     await client.subscribeGlobalEvents(tx);
 
@@ -51,24 +51,23 @@ async function startGlobalSubscription(isRetry: boolean) {
       if (msg === null) break;
       handleGlobalEvent(msg);
     }
-  } catch (e) {
-    invalidateShipClient(`subscribeGlobalEvents failed: ${e}`);
+  } catch {
   } finally {
     subscriptionActive = false;
     if (retryTimer !== null) clearTimeout(retryTimer);
     retryTimer = setTimeout(() => {
       retryTimer = null;
-      void startGlobalSubscription(true);
+      void startGlobalSubscription();
     }, 3000);
   }
 }
 
 // Start on load
-void startGlobalSubscription(false);
+void startGlobalSubscription();
 
 // Restart on new connection
 onClientReady(() => {
   if (!subscriptionActive) {
-    void startGlobalSubscription(false);
+    void startGlobalSubscription();
   }
 });

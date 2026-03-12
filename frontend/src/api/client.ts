@@ -53,7 +53,12 @@ export function useClientLogs(): ClientLogEntry[] {
   return entries;
 }
 
-function connectWsOpen(url: string): Promise<WsTransport> {
+type OpenWebSocket = {
+  socket: WebSocket;
+  transport: WsTransport;
+};
+
+function connectWsOpen(url: string): Promise<OpenWebSocket> {
   return new Promise((resolve, reject) => {
     log("info", "opening WebSocket", { url });
     const ws = new WebSocket(url);
@@ -63,7 +68,7 @@ function connectWsOpen(url: string): Promise<WsTransport> {
 
     ws.addEventListener("open", () => {
       settled = true;
-      resolve(new WsTransport(ws));
+      resolve({ socket: ws, transport: new WsTransport(ws) });
     });
 
     ws.addEventListener("error", () => {
@@ -89,8 +94,11 @@ type CloseableConnection = {
 
 type ShipClientHandle = {
   attempt: number;
+  generation: number;
   client: ShipClient;
   connection: CloseableConnection;
+  socket: WebSocket;
+  closedByClient: boolean;
 };
 
 let clientPromise: Promise<ShipClientHandle> | null = null;
@@ -122,6 +130,7 @@ function closeActiveClient(reason: string) {
     attempt: activeHandle.attempt,
     reason,
   });
+  activeHandle.closedByClient = true;
   activeHandle.connection.getIo().close();
   activeHandle = null;
 }
@@ -134,14 +143,51 @@ function scheduleRetry() {
   }, 3000);
 }
 
+function handleTransportDeath(
+  handle: ShipClientHandle,
+  kind: "close" | "error",
+  details: Record<string, unknown>,
+) {
+  if (handle.closedByClient) return;
+  if (activeHandle !== handle) return;
+  if (handle.generation !== clientGeneration) return;
+  log("warn", "websocket transport died", {
+    attempt: handle.attempt,
+    kind,
+    ...details,
+  });
+  clientGeneration += 1;
+  activeHandle = null;
+  clientPromise = null;
+  scheduleRetry();
+}
+
 async function createShipClient(generation: number): Promise<ShipClientHandle> {
   const attempt = ++connectionAttempt;
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const wsUrl = `${protocol}//${window.location.host}/ws`;
   log("info", "opening websocket client", { attempt, url: wsUrl });
-  const transport = await connectWsOpen(wsUrl);
+  const { socket, transport } = await connectWsOpen(wsUrl);
   const connection = await helloExchangeInitiator(transport, defaultHello(), {
     keepalive: { pingIntervalMs: 5000, pongTimeoutMs: 10000 },
+  });
+  const handle = {
+    attempt,
+    generation,
+    client: new ShipClient(connection.asCaller()),
+    connection,
+    socket,
+    closedByClient: false,
+  };
+  socket.addEventListener("close", (event) => {
+    handleTransportDeath(handle, "close", {
+      code: event.code,
+      reason: event.reason,
+      wasClean: event.wasClean,
+    });
+  });
+  socket.addEventListener("error", () => {
+    handleTransportDeath(handle, "error", {});
   });
   if (generation !== clientGeneration) {
     log("warn", "closing stale websocket client", {
@@ -149,15 +195,11 @@ async function createShipClient(generation: number): Promise<ShipClientHandle> {
       generation,
       current: clientGeneration,
     });
+    handle.closedByClient = true;
     connection.getIo().close();
     throw new Error("stale websocket client");
   }
   log("info", "websocket client ready", { attempt });
-  const handle = {
-    attempt,
-    client: new ShipClient(connection.asCaller()),
-    connection,
-  };
   activeHandle = handle;
   for (const cb of clientReadyListeners) cb();
   return handle;

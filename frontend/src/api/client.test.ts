@@ -1,14 +1,50 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const connectWs = vi.fn();
 const helloExchangeInitiator = vi.fn();
 const defaultHello = vi.fn(() => ({ tag: "hello" }));
 const ShipClient = vi.fn(function ShipClient(this: { caller: unknown }, caller: unknown) {
   this.caller = caller;
 });
 
+class FakeWebSocket {
+  static instances: FakeWebSocket[] = [];
+
+  readonly url: string;
+  binaryType = "";
+  private listeners = new Map<string, Set<(event: any) => void>>();
+
+  constructor(url: string) {
+    this.url = url;
+    FakeWebSocket.instances.push(this);
+    queueMicrotask(() => {
+      this.dispatch("open", {});
+    });
+  }
+
+  addEventListener(type: string, listener: (event: any) => void) {
+    let listeners = this.listeners.get(type);
+    if (!listeners) {
+      listeners = new Set();
+      this.listeners.set(type, listeners);
+    }
+    listeners.add(listener);
+  }
+
+  removeEventListener(type: string, listener: (event: any) => void) {
+    this.listeners.get(type)?.delete(listener);
+  }
+
+  dispatch(type: string, event: any) {
+    for (const listener of this.listeners.get(type) ?? []) {
+      listener(event);
+    }
+  }
+}
+
 vi.mock("@bearcove/roam-ws", () => ({
-  connectWs,
+  WsTransport: class WsTransport {
+    constructor(readonly socket: FakeWebSocket) {}
+  },
 }));
 
 vi.mock("@bearcove/roam-core", () => ({
@@ -21,7 +57,14 @@ vi.mock("../generated/ship", () => ({
 }));
 
 describe("client lifecycle", () => {
+  beforeEach(() => {
+    vi.stubGlobal("WebSocket", FakeWebSocket);
+    FakeWebSocket.instances = [];
+  });
+
   afterEach(async () => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
     vi.resetModules();
     vi.clearAllMocks();
   });
@@ -29,7 +72,6 @@ describe("client lifecycle", () => {
   it("closes the active websocket client when invalidated", async () => {
     const close = vi.fn();
     const asCaller = vi.fn(() => ({ caller: "one" }));
-    connectWs.mockResolvedValue({});
     helloExchangeInitiator.mockResolvedValue({ getIo: () => ({ close }), asCaller });
 
     const mod = await import("./client");
@@ -43,7 +85,6 @@ describe("client lifecycle", () => {
     const close1 = vi.fn();
     const close2 = vi.fn();
 
-    connectWs.mockResolvedValueOnce({}).mockResolvedValueOnce({});
     helloExchangeInitiator
       .mockResolvedValueOnce({
         getIo: () => ({ close: close1 }),
@@ -62,32 +103,35 @@ describe("client lifecycle", () => {
     expect(close2).not.toHaveBeenCalled();
   });
 
-  it("closes every superseded websocket across reconnect cycles", async () => {
-    const closes = [vi.fn(), vi.fn(), vi.fn()];
+  it("opens a fresh websocket after the transport closes unexpectedly", async () => {
+    const close1 = vi.fn();
+    const close2 = vi.fn();
 
-    connectWs.mockResolvedValue({});
     helloExchangeInitiator
       .mockResolvedValueOnce({
-        getIo: () => ({ close: closes[0] }),
+        getIo: () => ({ close: close1 }),
         asCaller: () => ({ caller: "one" }),
       })
       .mockResolvedValueOnce({
-        getIo: () => ({ close: closes[1] }),
+        getIo: () => ({ close: close2 }),
         asCaller: () => ({ caller: "two" }),
-      })
-      .mockResolvedValueOnce({
-        getIo: () => ({ close: closes[2] }),
-        asCaller: () => ({ caller: "three" }),
       });
 
     const mod = await import("./client");
-    await mod.getShipClient();
-    await mod.getShipClient({ forceNew: true });
-    await mod.getShipClient({ forceNew: true });
-    mod.invalidateShipClient("done");
+    const firstClient = await mod.getShipClient();
+    expect(FakeWebSocket.instances).toHaveLength(1);
 
-    expect(closes[0]).toHaveBeenCalledTimes(1);
-    expect(closes[1]).toHaveBeenCalledTimes(1);
-    expect(closes[2]).toHaveBeenCalledTimes(1);
+    FakeWebSocket.instances[0]!.dispatch("close", {
+      code: 1006,
+      reason: "transport lost",
+      wasClean: false,
+    });
+
+    const secondClient = await mod.getShipClient();
+
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    expect(secondClient).not.toBe(firstClient);
+    expect(close1).not.toHaveBeenCalled();
+    expect(close2).not.toHaveBeenCalled();
   });
 });

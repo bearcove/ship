@@ -18,7 +18,7 @@ type TestRx<T> = {
 };
 
 const apiMocks = vi.hoisted(() => ({
-  invalidateShipClientMock: vi.fn(),
+  getShipClientMock: vi.fn(),
   subscribeEventsMock: vi.fn(),
 }));
 
@@ -63,12 +63,7 @@ vi.mock("@bearcove/roam-core", () => {
 });
 
 vi.mock("../api/client", () => ({
-  getShipClient: async () =>
-    ({
-      subscribeEvents: apiMocks.subscribeEventsMock,
-      listWorktreeFiles: async () => [],
-    }) as Pick<ShipClient, "subscribeEvents" | "listWorktreeFiles">,
-  invalidateShipClient: apiMocks.invalidateShipClientMock,
+  getShipClient: apiMocks.getShipClientMock,
 }));
 
 function SessionStateProbe({
@@ -130,8 +125,12 @@ function taskStarted(seq: bigint, description: string): SessionEventEnvelope {
 }
 
 beforeEach(() => {
+  apiMocks.getShipClientMock.mockReset();
   apiMocks.subscribeEventsMock.mockReset();
-  apiMocks.invalidateShipClientMock.mockReset();
+  apiMocks.getShipClientMock.mockResolvedValue({
+    subscribeEvents: apiMocks.subscribeEventsMock,
+    listWorktreeFiles: async () => [],
+  } as Pick<ShipClient, "subscribeEvents" | "listWorktreeFiles">);
   vi.spyOn(console, "debug").mockImplementation(() => undefined);
   vi.spyOn(console, "info").mockImplementation(() => undefined);
   vi.spyOn(console, "warn").mockImplementation(() => undefined);
@@ -167,7 +166,7 @@ describe("useSessionState subscription lifecycle", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("session-state")).toHaveAttribute("data-connected", "true");
-      expect(apiMocks.invalidateShipClientMock).not.toHaveBeenCalled();
+      expect(apiMocks.getShipClientMock).toHaveBeenCalledTimes(1);
     });
 
     expect(output).not.toBeNull();
@@ -218,7 +217,7 @@ describe("useSessionState subscription lifecycle", () => {
       expect(probe).toHaveAttribute("data-connected", "false");
       expect(probe).toHaveAttribute("data-disconnect-reason", "subscription channel closed");
     });
-    expect(apiMocks.invalidateShipClientMock).toHaveBeenCalledWith("subscription channel closed");
+    expect(apiMocks.getShipClientMock).toHaveBeenCalledTimes(1);
   });
 
   // r[verify event.client.connection-lifecycle]
@@ -247,7 +246,7 @@ describe("useSessionState subscription lifecycle", () => {
     await vi.advanceTimersByTimeAsync(3_100);
 
     expect(apiMocks.subscribeEventsMock).toHaveBeenCalledTimes(1);
-    expect(apiMocks.invalidateShipClientMock).not.toHaveBeenCalled();
+    expect(apiMocks.getShipClientMock).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId("session-state")).toHaveAttribute("data-connected", "true");
     vi.useRealTimers();
   });
@@ -280,6 +279,8 @@ describe("useSessionState subscription lifecycle", () => {
     await waitFor(() => {
       expect(apiMocks.subscribeEventsMock).toHaveBeenCalledTimes(2);
     });
+    expect(apiMocks.getShipClientMock).toHaveBeenNthCalledWith(1);
+    expect(apiMocks.getShipClientMock).toHaveBeenNthCalledWith(2);
 
     expect(outputs).toHaveLength(2);
     await outputs[1]!.send({ tag: "ReplayComplete" });
