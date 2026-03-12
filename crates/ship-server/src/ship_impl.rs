@@ -376,6 +376,8 @@ impl ShipImpl {
                 mate_acp_session_id: persisted.mate_acp_session_id,
                 events_tx,
                 next_event_seq,
+                captain_prompt_gen: 0,
+                mate_prompt_gen: 0,
             };
 
             tracing::info!(session_id = %session_id.0, needs_respawn, "loaded persisted session");
@@ -4791,6 +4793,8 @@ impl Ship for ShipImpl {
             mate_acp_session_id: None,
             events_tx,
             next_event_seq: 0,
+            captain_prompt_gen: 0,
+            mate_prompt_gen: 0,
         };
 
         {
