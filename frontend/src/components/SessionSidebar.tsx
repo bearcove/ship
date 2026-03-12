@@ -120,12 +120,14 @@ function ProjectGroup({
   currentSessionId,
   captainKind,
   mateKind,
+  onClose,
 }: {
   project: ProjectInfo;
   sessions: SessionSummary[];
   currentSessionId?: string;
   captainKind: AgentKind;
   mateKind: AgentKind;
+  onClose?: () => void;
 }) {
   const [collapsed, toggleCollapsed] = useProjectCollapsed(project.name);
   const [creating, setCreating] = useState(false);
@@ -335,6 +337,7 @@ export function SessionSidebar({
               currentSessionId={currentSessionId}
               captainKind={captainKind}
               mateKind={mateKind}
+              onClose={onClose}
             />
           ))}
         </Box>
