@@ -5390,14 +5390,12 @@ impl Ship for ShipImpl {
                 best_of: 1,
             })
             .language("en")
-            .single_segment(true)
-            .no_context(true)
-            .no_timestamps(true);
+            .no_context(true);
 
-        // 30s window so typical voice inputs never slide. Each hypothesis
-        // replaces the previous one — the client shows the latest as-is.
+        // VAD mode (step_ms: 0) detects speech boundaries automatically.
+        // length_ms is the max speech duration before forcing inference.
         let stream_config = whisper_cpp_plus::WhisperStreamConfig {
-            step_ms: 500,
+            step_ms: 0,
             length_ms: 30000,
             ..Default::default()
         };
