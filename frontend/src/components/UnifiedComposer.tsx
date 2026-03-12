@@ -611,7 +611,12 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
             <Text
               size="1"
               color="red"
-              style={{ fontVariantNumeric: "tabular-nums", flexShrink: 0 }}
+              style={{
+                fontVariantNumeric: "tabular-nums",
+                flexShrink: 0,
+                width: "10ch",
+                textAlign: "center",
+              }}
             >
               {formatElapsed(
                 transcription.state.tag === "recording" ? transcription.state.elapsed : 0,
