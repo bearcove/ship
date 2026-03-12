@@ -56,7 +56,7 @@ export function PlanPanel({ steps }: Props) {
                 textDecoration: step.status.tag === "Completed" ? "line-through" : undefined,
               }}
             >
-              {step.description}
+              {step.title || step.description}
             </Text>
           </Flex>
         ))}
