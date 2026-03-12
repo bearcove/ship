@@ -95,6 +95,7 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         currentTaskStartedAt: action.session.current_task?.assigned_at ?? null,
         currentTaskCompletedAt: action.session.current_task?.completed_at ?? null,
         title: action.session.title ?? null,
+        pendingHumanReview: action.session.pending_human_review ?? null,
       };
 
     // r[event.replay-complete]
