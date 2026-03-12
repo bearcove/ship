@@ -147,6 +147,9 @@ function ToolGroup({
 }) {
   const [expanded, setExpanded] = useState(false);
   const count = entries.length;
+  const anyPending = entries.some(
+    (e) => (e.block as Extract<ContentBlock, { tag: "ToolCall" }>).status.tag === "Running",
+  );
 
   return (
     <Box className={feedRowAgent}>
@@ -156,7 +159,13 @@ function ToolGroup({
           className={`${feedToolGroupHeader}${expanded ? ` ${feedToolGroupHeaderExpanded}` : ""}`}
           onClick={() => setExpanded((v) => !v)}
         >
-          {expanded ? <CaretDown size={11} /> : <CaretRight size={11} />}
+          {anyPending ? (
+            <Spinner size="1" />
+          ) : expanded ? (
+            <CaretDown size={11} />
+          ) : (
+            <CaretRight size={11} />
+          )}
           <Text size="1" color="gray">
             {count} tool call{count !== 1 ? "s" : ""}
           </Text>
