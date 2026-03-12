@@ -94,6 +94,8 @@ describe("sessionReducer event handling", () => {
           title: "Investigate replay",
           description: "Investigate replay",
           status: { tag: "Working" },
+          assigned_at: null,
+          completed_at: null,
         },
         task_history: [],
         autonomy_mode: { tag: "HumanInTheLoop" },

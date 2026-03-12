@@ -584,6 +584,8 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                     title: title.clone(),
                     description: description.clone(),
                     status: TaskStatus::Assigned,
+                    assigned_at: Some(chrono::Utc::now().to_rfc3339()),
+                    completed_at: None,
                 },
                 mate_plan: None,
                 pending_mate_guidance: None,

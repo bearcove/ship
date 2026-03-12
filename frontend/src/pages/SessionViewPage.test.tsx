@@ -97,6 +97,8 @@ function makeSession(): SessionDetail {
       title: "Tighten session chrome",
       description: "Tighten the session chrome",
       status: { tag: "ReviewPending" },
+      assigned_at: null,
+      completed_at: null,
     },
     task_history: [],
     autonomy_mode: { tag: "HumanInTheLoop" },
@@ -206,6 +208,8 @@ describe("SessionViewPage UX slice", () => {
         title: "Ship captain workflow",
         description: "Ship the captain-led workflow",
         status: { tag: "SteerPending" },
+        assigned_at: null,
+        completed_at: null,
       },
       pending_steer: "Tell the mate to tighten the review loop.",
     };

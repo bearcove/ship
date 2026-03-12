@@ -4174,6 +4174,8 @@ and the captain will help you find the right approach."
                     title: title.clone(),
                     description: description.clone(),
                     status: TaskStatus::Assigned,
+                    assigned_at: Some(chrono::Utc::now().to_rfc3339()),
+                    completed_at: None,
                 },
                 mate_plan: None,
                 pending_mate_guidance: None,
@@ -5779,6 +5781,8 @@ mod tests {
                     title: "Investigate workflow".to_owned(),
                     description: "Investigate workflow".to_owned(),
                     status: TaskStatus::Assigned,
+                    assigned_at: Some(chrono::Utc::now().to_rfc3339()),
+                    completed_at: None,
                 },
                 mate_plan: Some(vec![PlanStep {
                     description: "Test step".to_owned(),

@@ -88,6 +88,8 @@ fn make_persisted_session(id: &str, description: &str) -> PersistedSession {
                 title: description.to_owned(),
                 description: description.to_owned(),
                 status: TaskStatus::Working,
+                assigned_at: None,
+                completed_at: None,
             },
             mate_plan: None,
             pending_mate_guidance: None,

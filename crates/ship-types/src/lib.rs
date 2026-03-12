@@ -302,6 +302,10 @@ pub mod task {
         pub title: String,
         pub description: String,
         pub status: TaskStatus,
+        #[facet(default)]
+        pub assigned_at: Option<String>,
+        #[facet(default)]
+        pub completed_at: Option<String>,
     }
 }
 
