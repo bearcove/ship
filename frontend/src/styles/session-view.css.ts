@@ -780,6 +780,8 @@ export const composerOverlay = style({
   gap: "var(--space-2)",
   padding: "4px 12px",
   pointerEvents: "none",
+  maskImage: "linear-gradient(to bottom, transparent 0%, black 30%, black 100%)",
+  WebkitMaskImage: "linear-gradient(to bottom, transparent 0%, black 30%, black 100%)",
 });
 
 export const composerInlineBtn = style({
