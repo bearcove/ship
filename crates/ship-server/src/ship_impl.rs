@@ -5394,6 +5394,8 @@ impl Ship for ShipImpl {
 
         // VAD mode (step_ms: 0) detects speech boundaries automatically.
         // length_ms is the max speech duration before forcing inference.
+        // On stream close we inject silence to trigger final processing
+        // instead of calling flush() (which reprocesses the entire window).
         let stream_config = whisper_cpp_plus::WhisperStreamConfig {
             step_ms: 0,
             length_ms: 30000,
