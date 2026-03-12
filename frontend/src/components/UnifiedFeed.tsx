@@ -311,7 +311,7 @@ function SingleBlock({
             <Avatar role={{ tag: "Captain" }} show={showAvatar} />
             <Box className={feedBubbleCol}>
               <Box className={`${feedBubble} ${feedBubbleRelay}`}>
-                <TextBlock block={block as TextBlockType} />
+                <TextBlock block={block as TextBlockType} speakable />
               </Box>
               {isLast && entry.timestamp && (
                 <Text className={feedTimestamp}>{formatTime(entry.timestamp)}</Text>
@@ -340,7 +340,7 @@ function SingleBlock({
           <Avatar role={role} show={showAvatar} />
           <Box className={feedBubbleCol}>
             <Box className={`${feedBubble}${isCaptain ? "" : ` ${feedBubbleMate}`}`}>
-              <TextBlock block={block as TextBlockType} />
+              <TextBlock block={block as TextBlockType} speakable />
             </Box>
             {isLast && entry.timestamp && (
               <Text className={feedTimestamp}>{formatTime(entry.timestamp)}</Text>

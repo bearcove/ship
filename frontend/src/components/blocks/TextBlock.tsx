@@ -4,8 +4,10 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { bundledLanguages, codeToHtml } from "shiki";
 import type { BundledLanguage } from "shiki";
-import { Check, CopySimple } from "@phosphor-icons/react";
+import { Check, CircleNotch, CopySimple, SpeakerHigh } from "@phosphor-icons/react";
+import { channel } from "@bearcove/roam-core";
 import type { ContentBlock } from "../../generated/ship";
+import { getShipClient } from "../../api/client";
 import {
   bubbleContent,
   bubbleCopyBtn,
@@ -18,6 +20,7 @@ type TextBlockType = Extract<ContentBlock, { tag: "Text" }>;
 
 interface Props {
   block: TextBlockType;
+  speakable?: boolean;
 }
 
 function useColorScheme(): "dark" | "light" {
@@ -81,15 +84,83 @@ function MarkdownCodeBlock({ className, code }: { className?: string; code: stri
   );
 }
 
+type SpeakState = "idle" | "loading" | "playing";
+
 // r[ui.block.text]
-export function TextBlock({ block }: Props) {
+export function TextBlock({ block, speakable }: Props) {
   const [copied, setCopied] = useState(false);
+  const [speakState, setSpeakState] = useState<SpeakState>("idle");
 
   const handleCopy = () => {
     void navigator.clipboard.writeText(block.text).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
+  };
+
+  const handleSpeak = async () => {
+    if (speakState !== "idle") return;
+    setSpeakState("loading");
+
+    try {
+      const client = await getShipClient();
+      const [tx, rx] = channel<Uint8Array>();
+
+      const callPromise = client.speakText(block.text, tx);
+
+      // Accumulate all byte chunks until channel closes
+      const chunks: Uint8Array[] = [];
+      while (true) {
+        const chunk = await rx.recv();
+        if (chunk === null) break;
+        chunks.push(chunk);
+      }
+
+      await callPromise;
+
+      if (chunks.length === 0) {
+        console.warn("speak_text: no audio received");
+        setSpeakState("idle");
+        return;
+      }
+
+      // Concatenate chunks
+      const totalBytes = chunks.reduce((sum, c) => sum + c.length, 0);
+      const allBytes = new Uint8Array(totalBytes);
+      let offset = 0;
+      for (const chunk of chunks) {
+        allBytes.set(chunk, offset);
+        offset += chunk.length;
+      }
+
+      // Decode f32 LE samples
+      const sampleCount = allBytes.length / 4;
+      const samples = new Float32Array(sampleCount);
+      const view = new DataView(allBytes.buffer, allBytes.byteOffset, allBytes.byteLength);
+      for (let i = 0; i < sampleCount; i++) {
+        samples[i] = view.getFloat32(i * 4, true);
+      }
+
+      // Play via Web Audio API at 24kHz
+      setSpeakState("playing");
+      const ctx = new AudioContext({ sampleRate: 24000 });
+      const buffer = ctx.createBuffer(1, samples.length, 24000);
+      buffer.copyToChannel(samples, 0);
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      src.connect(ctx.destination);
+
+      await new Promise<void>((resolve) => {
+        src.onended = () => resolve();
+        src.start();
+      });
+
+      await ctx.close();
+      setSpeakState("idle");
+    } catch (err) {
+      console.error("speak_text failed:", err);
+      setSpeakState("idle");
+    }
   };
 
   const markdownComponents = useMemo(
@@ -117,6 +188,22 @@ export function TextBlock({ block }: Props) {
           {block.text}
         </ReactMarkdown>
       </div>
+      {speakable && (
+        <IconButton
+          size="1"
+          variant="ghost"
+          className={bubbleCopyBtn}
+          onClick={() => void handleSpeak()}
+          aria-label="Speak"
+          disabled={speakState !== "idle"}
+        >
+          {speakState === "idle" ? (
+            <SpeakerHigh size={12} />
+          ) : (
+            <CircleNotch size={12} style={{ animation: "spin 1s linear infinite" }} />
+          )}
+        </IconButton>
+      )}
       <IconButton
         size="1"
         variant="ghost"
