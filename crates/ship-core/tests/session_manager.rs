@@ -8,8 +8,8 @@ use ship_core::{
 use ship_types::{
     AgentKind, AgentState, AutonomyMode, BlockId, BlockPatch, CloseSessionResponse, ContentBlock,
     CreateSessionRequest, McpServerConfig, McpStdioServerConfig, PermissionOption,
-    PermissionOptionKind, PlanStep, PlanStepPriority, PlanStepStatus, ProjectName, Role,
-    SessionEvent, SessionEventEnvelope, SessionId, TaskId, TaskStatus, ToolCallKind, ToolTarget,
+    PermissionOptionKind, PlanStep, PlanStepStatus, ProjectName, Role, SessionEvent,
+    SessionEventEnvelope, SessionId, TaskId, TaskStatus, ToolCallKind, ToolTarget,
 };
 use tokio::time::timeout;
 
@@ -80,10 +80,10 @@ fn drain_replay(rx: &mut tokio::sync::broadcast::Receiver<SessionEventEnvelope>)
     }
 }
 
-fn plan_step(description: &str, priority: PlanStepPriority, status: PlanStepStatus) -> PlanStep {
+fn plan_step(title: &str, description: &str, status: PlanStepStatus) -> PlanStep {
     PlanStep {
+        title: title.to_owned(),
         description: description.to_owned(),
-        priority,
         status,
     }
 }
@@ -299,18 +299,18 @@ async fn plan_updates_reuse_block_id_and_replace_the_full_step_list() {
     let first_plan = vec![
         plan_step(
             "Map the ACP shape",
-            PlanStepPriority::High,
+            "Map the ACP shape",
             PlanStepStatus::Pending,
         ),
         plan_step(
             "Remove stale fields",
-            PlanStepPriority::Low,
+            "Remove stale fields",
             PlanStepStatus::InProgress,
         ),
     ];
     let second_plan = vec![plan_step(
-        "Render priority in the UI",
-        PlanStepPriority::Medium,
+        "Render title in the UI",
+        "Render title in the UI",
         PlanStepStatus::Completed,
     )];
 
