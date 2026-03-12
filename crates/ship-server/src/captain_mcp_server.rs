@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use super::worktree_tools::{ToolDefinition, to_sdk_tool};
+use super::worktree_tools::{
+    ToolDefinition, read_file_tool, run_command_tool, to_sdk_tool, web_search_tool,
+};
 use async_trait::async_trait;
 use roam::{ConnectionSettings, MetadataEntry, MetadataFlags, MetadataValue, NoopCaller, Parity};
 use rust_mcp_sdk::mcp_server::{McpServerOptions, ServerHandler, server_runtime};
@@ -364,45 +366,9 @@ skips research and goes straight to execution. Omitting files or plan wastes the
                 "additionalProperties": false,
             }),
         },
-        ToolDefinition {
-            name: "read_file",
-            description: "Read a file in the session worktree. Returns numbered lines. Use offset/limit to page through large files.",
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "path": { "type": "string", "description": "Worktree-relative path." },
-                    "offset": { "type": "integer", "description": "1-based line to start from." },
-                    "limit": { "type": "integer", "description": "Maximum number of lines to return." }
-                },
-                "required": ["path"],
-                "additionalProperties": false,
-            }),
-        },
-        ToolDefinition {
-            name: "run_command",
-            description: "Run a read-only shell command in the session worktree (e.g. rg, fd, git log, cat). Use rg instead of grep, fd instead of find. Write operations are the mate's job.",
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "command": { "type": "string" },
-                    "cwd": { "type": "string", "description": "Worktree-relative subdirectory to run in (optional)." }
-                },
-                "required": ["command"],
-                "additionalProperties": false,
-            }),
-        },
-        ToolDefinition {
-            name: "web_search",
-            description: "Search the web using Kagi FastGPT. Returns an AI-synthesized answer and a list of references.",
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "query": { "type": "string" }
-                },
-                "required": ["query"],
-                "additionalProperties": false,
-            }),
-        },
+        read_file_tool(),
+        run_command_tool(),
+        web_search_tool(),
     ]
 }
 

@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use super::worktree_tools::{ToolDefinition, to_sdk_tool};
+use super::worktree_tools::{
+    ToolDefinition, read_file_tool, run_command_tool, to_sdk_tool, web_search_tool,
+};
 use async_trait::async_trait;
 use roam::{ConnectionSettings, MetadataEntry, MetadataFlags, MetadataValue, NoopCaller, Parity};
 use rust_mcp_sdk::mcp_server::{McpServerOptions, ServerHandler, server_runtime};
@@ -313,33 +315,8 @@ fn server_details() -> InitializeResult {
 
 fn tool_definitions() -> Vec<ToolDefinition> {
     vec![
-        ToolDefinition {
-            name: "run_command",
-            description: "Run a shell command in the current task worktree via sh -c. Use this as a general-purpose escape hatch when no structured tool fits. Some risky commands require captain approval first. Optional cwd is relative to the worktree root.",
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "command": { "type": "string" },
-                    "cwd": { "type": "string" }
-                },
-                "required": ["command"],
-                "additionalProperties": false,
-            }),
-        },
-        ToolDefinition {
-            name: "read_file",
-            description: "Read a text file from the current task worktree with line numbers. Supports optional 1-based offset and line limit.",
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "path": { "type": "string" },
-                    "offset": { "type": "integer", "minimum": 1 },
-                    "limit": { "type": "integer", "minimum": 1 }
-                },
-                "required": ["path"],
-                "additionalProperties": false,
-            }),
-        },
+        run_command_tool(),
+        read_file_tool(),
         ToolDefinition {
             name: "write_file",
             description: "Write a file in the current task worktree. Rust files are syntax-checked with rustfmt and auto-formatted before the write is committed.",
@@ -453,18 +430,7 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                 "additionalProperties": false,
             }),
         },
-        ToolDefinition {
-            name: "web_search",
-            description: "Search the web using Kagi FastGPT. Returns an AI-synthesized answer and a list of references.",
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "query": { "type": "string" }
-                },
-                "required": ["query"],
-                "additionalProperties": false,
-            }),
-        },
+        web_search_tool(),
     ]
 }
 
