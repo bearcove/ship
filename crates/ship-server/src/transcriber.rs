@@ -181,11 +181,12 @@ fn transcribe_audio(
     whisper_ctx: &whisper_cpp_plus::WhisperContext,
     audio: &[f32],
 ) -> Option<String> {
-    let params = whisper_cpp_plus::FullParams::new(whisper_cpp_plus::SamplingStrategy::Greedy {
-        best_of: 1,
-    })
-    .language("en")
-    .no_context(true);
+    let params =
+        whisper_cpp_plus::FullParams::new(whisper_cpp_plus::SamplingStrategy::BeamSearch {
+            beam_size: 5,
+        })
+        .language("en")
+        .no_context(true);
 
     let mut state = match whisper_ctx.create_state() {
         Ok(s) => s,
