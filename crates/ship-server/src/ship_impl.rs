@@ -180,15 +180,11 @@ pub struct ShipImpl {
     startup_started_at: Arc<Mutex<HashMap<SessionId, Instant>>>,
     user_avatar_url: Arc<Mutex<Option<String>>>,
     whisper_model_path: Arc<Mutex<Option<PathBuf>>>,
-    vad_model_path: Arc<Mutex<Option<PathBuf>>>,
     global_events_tx: broadcast::Sender<GlobalEvent>,
 }
 
 /// Default whisper model filename to look for.
 const WHISPER_MODEL_FILENAME: &str = "ggml-base.en.bin";
-
-/// Default Silero VAD model filename to look for.
-const VAD_MODEL_FILENAME: &str = "ggml-silero-vad.bin";
 
 impl ShipImpl {
     pub fn new(
@@ -210,7 +206,6 @@ impl ShipImpl {
             startup_started_at: Arc::new(Mutex::new(HashMap::new())),
             user_avatar_url: Arc::new(Mutex::new(None)),
             whisper_model_path: Arc::new(Mutex::new(None)),
-            vad_model_path: Arc::new(Mutex::new(None)),
             global_events_tx,
         }
     }
@@ -248,37 +243,6 @@ impl ShipImpl {
             .whisper_model_path
             .lock()
             .expect("whisper mutex poisoned") = path;
-    }
-
-    /// Configure the Silero VAD model path from env var or default locations.
-    pub fn configure_vad_model(&self) {
-        let path = if let Ok(path) = std::env::var("SHIP_VAD_MODEL") {
-            let p = PathBuf::from(path);
-            if p.exists() {
-                Some(p)
-            } else {
-                tracing::warn!(path = %p.display(), "SHIP_VAD_MODEL path does not exist");
-                None
-            }
-        } else {
-            let candidates = [
-                dirs_next::data_dir().map(|d| d.join("whisper").join(VAD_MODEL_FILENAME)),
-                dirs_next::home_dir()
-                    .map(|d| d.join(".local/share/whisper").join(VAD_MODEL_FILENAME)),
-                Some(PathBuf::from(VAD_MODEL_FILENAME)),
-            ];
-            candidates.into_iter().flatten().find(|p| p.exists())
-        };
-
-        if let Some(ref path) = path {
-            tracing::info!(path = %path.display(), "VAD model found");
-        } else {
-            tracing::info!(
-                "no VAD model found — Silero VAD disabled. Set SHIP_VAD_MODEL or place {VAD_MODEL_FILENAME} in ~/.local/share/whisper/"
-            );
-        }
-
-        *self.vad_model_path.lock().expect("vad mutex poisoned") = path;
     }
 
     #[allow(dead_code)]
@@ -5411,42 +5375,14 @@ impl Ship for ShipImpl {
             return;
         };
 
-        // Create whisper context and AsyncWhisperStream for real-time transcription
-        let ctx = match whisper_cpp_plus::WhisperContext::new(model_path.to_str().unwrap()) {
-            Ok(ctx) => ctx,
+        let mut transcriber = match crate::transcriber::SpeechTranscriber::new(&model_path) {
+            Ok(t) => t,
             Err(e) => {
-                tracing::error!("failed to create whisper context: {e}");
-                let _ = segments_out.close(Default::default()).await;
+                tracing::error!("failed to create speech transcriber: {e}");
+                // segments_out dropped here, closing the channel
                 return;
             }
         };
-
-        let params =
-            whisper_cpp_plus::FullParams::new(whisper_cpp_plus::SamplingStrategy::Greedy {
-                best_of: 1,
-            })
-            .language("en")
-            .no_context(true);
-
-        // VAD mode (step_ms: 0) detects speech boundaries automatically.
-        // length_ms is the max speech duration before forcing inference.
-        // On stream close we inject silence to trigger final processing
-        // instead of calling flush() (which reprocesses the entire window).
-        let stream_config = whisper_cpp_plus::WhisperStreamConfig {
-            step_ms: 0,
-            length_ms: 30000,
-            ..Default::default()
-        };
-
-        let mut stream =
-            match whisper_cpp_plus::AsyncWhisperStream::with_config(ctx, params, stream_config) {
-                Ok(s) => s,
-                Err(e) => {
-                    tracing::error!("failed to create whisper stream: {e}");
-                    let _ = segments_out.close(Default::default()).await;
-                    return;
-                }
-            };
 
         tokio::spawn(async move {
             let mut feed_count: u64 = 0;
@@ -5474,24 +5410,31 @@ impl Ship for ShipImpl {
                             "transcribe_audio: feed #{feed_count} ({n_samples} samples, {total_samples} total = {:.1}s)",
                             total_samples as f64 / 16000.0
                         );
-                        if stream.feed_audio(samples).await.is_err() {
-                            tracing::error!("transcribe_audio: feed_audio failed");
-                            break;
-                        }
 
-                        // Drain intermediate hypotheses to keep the stream moving,
-                        // but don't send them — the waveform overlay covers the textarea
-                        // and sending fragments causes unwanted vertical resizing.
-                        while let Some(segments) = stream.try_recv_segments() {
-                            let hypothesis: String = segments
-                                .iter()
-                                .map(|s| s.text.trim())
-                                .collect::<Vec<_>>()
-                                .join(" ");
-                            if !hypothesis.is_empty() {
-                                tracing::debug!(
-                                    "transcribe_audio: intermediate hypothesis (not sent): {hypothesis}"
-                                );
+                        for event in transcriber.feed(&samples) {
+                            match event {
+                                crate::transcriber::SpeechEvent::SpeechStarted { sample } => {
+                                    tracing::info!(
+                                        "transcribe_audio: speech started at {:.1}s",
+                                        sample as f64 / 16000.0
+                                    );
+                                }
+                                crate::transcriber::SpeechEvent::SpeechEnded { segment } => {
+                                    tracing::info!(
+                                        "transcribe_audio: transcribed: {}",
+                                        segment.text
+                                    );
+                                    let ts = TranscribeSegment {
+                                        start_ms: (segment.start_sample as f64 / 16.0) as u64,
+                                        end_ms: (segment.end_sample as f64 / 16.0) as u64,
+                                        text: segment.text,
+                                    };
+                                    let _ = segments_out.send(ts).await;
+                                }
+                                crate::transcriber::SpeechEvent::Error(e) => {
+                                    tracing::warn!("transcribe_audio: {e}");
+                                }
+                                crate::transcriber::SpeechEvent::None => {}
                             }
                         }
                     }
@@ -5506,43 +5449,17 @@ impl Ship for ShipImpl {
                 }
             }
 
-            // Inject 5 seconds of silence (80000 samples at 16kHz) to trigger
-            // VAD end-of-speech detection and process the final chunk.
-            tracing::info!("transcribe_audio: injecting silence to trigger final VAD processing");
-            if stream.feed_audio(vec![0.0f32; 80000]).await.is_err() {
-                tracing::error!("transcribe_audio: failed to inject silence");
+            // Flush any in-progress speech
+            if let Some(segment) = transcriber.flush() {
+                tracing::info!("transcribe_audio: final segment: {}", segment.text);
+                let ts = TranscribeSegment {
+                    start_ms: (segment.start_sample as f64 / 16.0) as u64,
+                    end_ms: (segment.end_sample as f64 / 16.0) as u64,
+                    text: segment.text,
+                };
+                let _ = segments_out.send(ts).await;
             }
 
-            // Wait for the VAD to process the silence and produce final segments.
-            // Timeout after 5s in case no speech was detected (e.g. only silence recorded).
-            match tokio::time::timeout(std::time::Duration::from_secs(5), stream.recv_segments())
-                .await
-            {
-                Ok(Some(segments)) => {
-                    let text: String = segments
-                        .iter()
-                        .map(|s| s.text.trim())
-                        .collect::<Vec<_>>()
-                        .join(" ");
-                    if !text.is_empty() {
-                        tracing::info!("transcribe_audio: final segment: {text}");
-                        let ts = TranscribeSegment {
-                            start_ms: 0,
-                            end_ms: (total_samples as f64 / 16.0) as u64,
-                            text,
-                        };
-                        let _ = segments_out.send(ts).await;
-                    }
-                }
-                Ok(None) => {
-                    tracing::info!("transcribe_audio: no final segments (stream ended)");
-                }
-                Err(_) => {
-                    tracing::info!("transcribe_audio: timed out waiting for final segments");
-                }
-            }
-
-            let _ = stream.stop().await;
             let _ = segments_out.close(Default::default()).await;
         });
     }

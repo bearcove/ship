@@ -1,6 +1,7 @@
 mod agent_discovery;
 mod captain_mcp;
 mod ship_impl;
+mod transcriber;
 
 use std::io::Write;
 use std::net::SocketAddr;
@@ -525,7 +526,6 @@ async fn run_serve(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
     ship.load_persisted_sessions().await;
     ship.fetch_github_user_avatar().await;
     ship.configure_whisper_model();
-    ship.configure_vad_model();
     let state = AppState {
         ship: ship.clone(),
         http_client: reqwest::Client::new(),
@@ -1215,20 +1215,7 @@ async fn run_listen(args: ListenArgs) -> Result<(), Box<dyn std::error::Error>> 
 
     tracing::info!(whisper = %whisper_model, "loading models");
 
-    let whisper_ctx = whisper_cpp_plus::WhisperContext::new(&whisper_model)?;
-
-    // Silero VAD via silero-vad-rust (model weights are bundled in the crate)
-    use silero_vad_rust::silero_vad::model::load_silero_vad;
-    use silero_vad_rust::silero_vad::utils_vad::{VadEvent, VadIterator, VadIteratorParams};
-
-    let silero_model = load_silero_vad()?;
-    let vad_params = VadIteratorParams {
-        threshold: 0.5,
-        sampling_rate: 16_000,
-        min_silence_duration_ms: 300,
-        speech_pad_ms: 30,
-    };
-    let mut vad_iter = VadIterator::new(silero_model, vad_params)?;
+    let mut transcriber = transcriber::SpeechTranscriber::new(Path::new(&whisper_model))?;
 
     // Set up mic capture via cpal
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -1302,105 +1289,50 @@ async fn run_listen(args: ListenArgs) -> Result<(), Box<dyn std::error::Error>> 
     stream.play()?;
     tracing::info!("listening... press Ctrl-C to stop");
 
-    // VAD state: accumulate 16kHz mono samples, feed 512-sample chunks to the VAD
-    let mut sample_buf: Vec<f32> = Vec::new();
-    // Audio for the current speech segment (between Start and End events)
-    let mut speech_audio: Vec<f32> = Vec::new();
-    // All accumulated audio since the last speech start (so we can slice it)
-    let mut all_audio: Vec<f32> = Vec::new();
-    let mut speech_start_sample: Option<usize> = None;
-    let mut total_samples: usize = 0;
     let mut transcribed_segments: Vec<String> = Vec::new();
-
-    const VAD_CHUNK_SIZE: usize = 512;
 
     loop {
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {
-                // If speech was in progress, transcribe what we have
-                if speech_start_sample.is_some() && !speech_audio.is_empty() {
-                    if let Some(text) = transcribe_chunk(&whisper_ctx, &speech_audio) {
-                        eprintln!();
-                        tracing::info!("transcribed (final): {text}");
-                        transcribed_segments.push(text);
-                    }
+                if let Some(seg) = transcriber.flush() {
+                    eprintln!();
+                    tracing::info!("transcribed (final): {}", seg.text);
+                    transcribed_segments.push(seg.text);
                 }
                 tracing::info!("stopping");
                 break;
             }
             Some(samples) = audio_rx.recv() => {
-                sample_buf.extend_from_slice(&samples);
-                all_audio.extend_from_slice(&samples);
-
-                // Feed 512-sample chunks to the VAD
-                while sample_buf.len() >= VAD_CHUNK_SIZE {
-                    let chunk: Vec<f32> = sample_buf.drain(..VAD_CHUNK_SIZE).collect();
-                    total_samples += VAD_CHUNK_SIZE;
-
-                    // If we're in a speech segment, accumulate audio
-                    if speech_start_sample.is_some() {
-                        speech_audio.extend_from_slice(&chunk);
-                    }
-
-                    match vad_iter.process_chunk(&chunk, false, 0) {
-                        Ok(Some(VadEvent::Start(pos))) => {
-                            let start_sample = pos as usize;
-                            speech_start_sample = Some(start_sample);
-                            // Grab any audio from the start position that we already
-                            // passed. The start is padded back by speech_pad_ms, so it
-                            // may reference samples before the current chunk.
-                            let offset_in_all = if start_sample < all_audio.len() {
-                                all_audio.len() - (total_samples - start_sample).min(all_audio.len())
-                            } else {
-                                all_audio.len()
-                            };
-                            speech_audio = all_audio[offset_in_all..].to_vec();
-
+                for event in transcriber.feed(&samples) {
+                    match event {
+                        transcriber::SpeechEvent::SpeechStarted { sample } => {
                             eprint!(
                                 "\r\x1b[2K[speech started at {:.1}s]",
-                                start_sample as f64 / 16000.0
+                                sample as f64 / 16000.0
                             );
                             let _ = std::io::stderr().flush();
                         }
-                        Ok(Some(VadEvent::End(pos))) => {
-                            let end_sample = pos as usize;
-                            eprint!(
-                                "\r\x1b[2K[speech ended at {:.1}s, transcribing...]",
-                                end_sample as f64 / 16000.0
-                            );
-                            let _ = std::io::stderr().flush();
-
-                            // Transcribe the speech segment
-                            if !speech_audio.is_empty() {
-                                if let Some(text) = transcribe_chunk(&whisper_ctx, &speech_audio) {
-                                    eprintln!();
-                                    tracing::info!("transcribed: {text}");
-                                    transcribed_segments.push(text);
-                                }
-                            }
-
-                            speech_start_sample = None;
-                            speech_audio.clear();
-                            // Trim all_audio to save memory — we don't need old audio anymore
-                            all_audio.clear();
+                        transcriber::SpeechEvent::SpeechEnded { segment } => {
+                            eprintln!();
+                            tracing::info!("transcribed: {}", segment.text);
+                            transcribed_segments.push(segment.text);
                         }
-                        Ok(None) => {
-                            // Status line
-                            let state = if speech_start_sample.is_some() {
-                                format!("speaking ({:.1}s)", speech_audio.len() as f64 / 16000.0)
+                        transcriber::SpeechEvent::None => {
+                            let state = if transcriber.is_speaking() {
+                                format!("speaking ({:.1}s)", transcriber.speech_duration_secs())
                             } else {
                                 "silence".to_owned()
                             };
                             eprint!(
                                 "\r\x1b[2K[{:.1}s] [{}] [segments: {}]",
-                                total_samples as f64 / 16000.0,
+                                transcriber.total_samples() as f64 / 16000.0,
                                 state,
                                 transcribed_segments.len(),
                             );
                             let _ = std::io::stderr().flush();
                         }
-                        Err(e) => {
-                            tracing::warn!("VAD error: {e}");
+                        transcriber::SpeechEvent::Error(e) => {
+                            tracing::warn!("transcriber error: {e}");
                         }
                     }
                 }
@@ -1415,46 +1347,6 @@ async fn run_listen(args: ListenArgs) -> Result<(), Box<dyn std::error::Error>> 
     }
 
     Ok(())
-}
-
-fn transcribe_chunk(
-    whisper_ctx: &whisper_cpp_plus::WhisperContext,
-    audio: &[f32],
-) -> Option<String> {
-    let params = whisper_cpp_plus::FullParams::new(whisper_cpp_plus::SamplingStrategy::Greedy {
-        best_of: 1,
-    })
-    .language("en")
-    .no_context(true);
-
-    let mut state = match whisper_ctx.create_state() {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::warn!("whisper state error: {e}");
-            return None;
-        }
-    };
-
-    if let Err(e) = state.full(params, audio) {
-        tracing::warn!("whisper error: {e}");
-        return None;
-    }
-
-    let n_segments = state.full_n_segments();
-    let mut text = String::new();
-    for i in 0..n_segments {
-        if let Ok(t) = state.full_get_segment_text(i) {
-            let t = t.trim();
-            if !t.is_empty() {
-                if !text.is_empty() {
-                    text.push(' ');
-                }
-                text.push_str(t);
-            }
-        }
-    }
-
-    if text.is_empty() { None } else { Some(text) }
 }
 
 #[cfg(test)]
