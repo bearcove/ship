@@ -1806,8 +1806,7 @@ Here is your task:
                 \n(allow file-write* (subpath \"/private/tmp\"))\
                 \n(allow file-write* (subpath \"/tmp\"))\
                 \n(allow file-write* (subpath \"{system_tmpdir}\"))\
-                \n(allow file-write* (literal \"/dev/null\"))\
-                \n(deny network*)"
+                \n(allow file-write* (literal \"/dev/null\"))"
             );
             let mut cmd = TokioCommand::new("/usr/bin/sandbox-exec");
             cmd.arg("-p")
