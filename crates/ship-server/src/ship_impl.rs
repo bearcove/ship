@@ -5251,9 +5251,10 @@ impl Ship for ShipImpl {
     async fn subscribe_global_events(&self, output: Tx<GlobalEvent>) {
         // Send current state immediately
         {
-            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
-            let list: Vec<SessionSummary> =
-                sessions.values().map(Self::to_session_summary).collect();
+            let list: Vec<SessionSummary> = {
+                let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                sessions.values().map(Self::to_session_summary).collect()
+            };
             if output
                 .send(GlobalEvent::SessionListChanged { sessions: list })
                 .await
@@ -5286,10 +5287,10 @@ impl Ship for ShipImpl {
                 Err(broadcast::error::RecvError::Lagged(n)) => {
                     tracing::warn!(skipped = n, "global events subscriber lagged");
                     // Re-send current state to catch up
-                    let sessions = self.sessions.lock().expect("sessions mutex poisoned");
-                    let list: Vec<SessionSummary> =
-                        sessions.values().map(Self::to_session_summary).collect();
-                    drop(sessions);
+                    let list: Vec<SessionSummary> = {
+                        let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                        sessions.values().map(Self::to_session_summary).collect()
+                    };
                     if output
                         .send(GlobalEvent::SessionListChanged { sessions: list })
                         .await
