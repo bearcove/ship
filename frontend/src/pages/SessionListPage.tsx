@@ -567,6 +567,15 @@ export function AddProjectDialog({
 
 const LAST_PROJECT_KEY = "ship.lastProject";
 
+function relativeTime(dateString: string): string {
+  const diff = (Date.now() - new Date(dateString).getTime()) / 1000;
+  if (diff < 60) return "just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 518400) return `${Math.floor(diff / 86400)}d ago`;
+  return new Date(dateString).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 // r[ui.session-list.layout]
 function SessionCard({
   session,
@@ -578,60 +587,61 @@ function SessionCard({
   onArchive: (session: SessionSummary, force: boolean) => void;
 }) {
   const diffStats = useWorktreeDiffStats(session.id);
+  const hasActivity =
+    diffStats !== null &&
+    Number(diffStats.lines_added) +
+      Number(diffStats.lines_removed) +
+      Number(diffStats.files_changed) >
+      0;
 
   return (
     <Card className={sessionCard}>
       <Flex direction="column" gap="2">
-        {/* Row 1: project badge, branch, status */}
-        <Flex align="center" gap="2" wrap="wrap">
-          <Badge color="gray" variant="outline" size="1">
-            {session.project}
-          </Badge>
-          <Text size="2" style={{ fontFamily: "monospace", color: "var(--gray-11)" }}>
-            {session.branch_name}
-          </Text>
-          <Flex gap="1" ml="auto" align="center">
-            {session.task_status && (
-              <Badge color={STATUS_COLOR[session.task_status.tag]} size="1">
-                {session.task_status.tag}
-              </Badge>
-            )}
-          </Flex>
+        {/* Row 1: title + status badge */}
+        <Flex align="center" gap="2">
+          {session.title ? (
+            <Text size="3" weight="bold" style={{ lineHeight: 1.4 }}>
+              {session.title}
+            </Text>
+          ) : session.startup_state.tag !== "Ready" ? (
+            <Text size="2" color="gray">
+              {session.startup_state.tag === "Pending"
+                ? "Session startup is queued."
+                : session.startup_state.message}
+            </Text>
+          ) : null}
+          {session.task_status && (
+            <Badge color={STATUS_COLOR[session.task_status.tag]} size="1" ml="auto">
+              {session.task_status.tag}
+            </Badge>
+          )}
         </Flex>
 
-        {/* Row 2: session title (prominent headline) */}
-        {session.title && (
-          <Text size="3" weight="bold" style={{ lineHeight: 1.4 }}>
-            {session.title}
-          </Text>
-        )}
-
-        {/* Row 3: current task title (smaller, below title) */}
+        {/* Row 2: current task title */}
         {session.current_task_title && (
           <Text size="2" color="gray" style={{ lineHeight: 1.4 }}>
             {session.current_task_title}
           </Text>
         )}
-        {!session.current_task_title && !session.title && session.startup_state.tag !== "Ready" && (
-          <Text size="2" color="gray">
-            {session.startup_state.tag === "Pending"
-              ? "Session startup is queued."
-              : session.startup_state.message}
-          </Text>
-        )}
 
-        {/* Row 4: captain/mate, diff stats, timestamp, archive */}
-        <Flex align="center" gap="2">
+        {/* Row 3: metadata footer */}
+        <Flex align="center" gap="2" wrap="wrap">
+          <Badge color="gray" variant="outline" size="1">
+            {session.project}
+          </Badge>
+          <Code variant="ghost" size="1">
+            {session.branch_name}
+          </Code>
           <Text size="1" color="gray">
-            Captain:
+            ·
           </Text>
           <AgentKindLabel kind={session.captain.kind} />
-          <Text size="1" color="gray">
-            Mate:
-          </Text>
           <AgentKindLabel kind={session.mate.kind} />
-          {diffStats && (
-            <Flex align="center" gap="1" ml="auto">
+          {hasActivity && diffStats && (
+            <>
+              <Text size="1" color="gray">
+                ·
+              </Text>
               <Text size="1" style={{ color: "var(--green-11)" }}>
                 +{String(diffStats.lines_added)}
               </Text>
@@ -641,15 +651,10 @@ function SessionCard({
               <Text size="1" color="gray">
                 · {String(diffStats.files_changed)} files
               </Text>
-            </Flex>
+            </>
           )}
-          <Text size="1" color="gray" ml={diffStats ? undefined : "auto"}>
-            {new Date(session.created_at).toLocaleString(undefined, {
-              month: "short",
-              day: "numeric",
-              hour: "numeric",
-              minute: "2-digit",
-            })}
+          <Text size="1" color="gray" ml="auto">
+            {relativeTime(session.created_at)}
           </Text>
           {/* r[proto.archive-session] */}
           <Tooltip content="Archive session">
