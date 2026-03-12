@@ -236,6 +236,7 @@ function ProjectGroup({
                   className={sessionRow}
                   data-active={isActive ? "true" : "false"}
                   aria-current={isActive ? "page" : undefined}
+                  onClick={() => onClose?.()}
                 >
                   <Text size="2" className={sessionRowTitle}>
                     {title}
