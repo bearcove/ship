@@ -769,18 +769,17 @@ export const transcriptPreview = style({
 
 export const composerOverlay = style({
   position: "absolute",
-  inset: 0,
+  top: 0,
+  bottom: 0,
+  left: "50%",
+  transform: "translateX(-50%)",
+  width: "65%",
   zIndex: 1,
   display: "flex",
   alignItems: "center",
   gap: "var(--space-2)",
-  padding: "4px 48px",
+  padding: "4px 12px",
   pointerEvents: "none",
-  "@media": {
-    "(max-width: 700px)": {
-      padding: "4px 56px",
-    },
-  },
 });
 
 export const composerInlineBtn = style({
