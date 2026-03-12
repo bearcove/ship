@@ -5468,28 +5468,15 @@ impl Ship for ShipImpl {
                 }
             }
 
-            tracing::info!("transcribe_audio: flushing");
-            match stream.flush().await {
-                Ok(segments) => {
-                    let text: String = segments
-                        .iter()
-                        .map(|s| s.text.trim())
-                        .collect::<Vec<_>>()
-                        .join(" ");
-                    if !text.is_empty() {
-                        tracing::info!("transcribe_audio: flush: {text}");
-                        let ts = TranscribeSegment {
-                            start_ms: 0,
-                            end_ms: (total_samples as f64 / 16.0) as u64,
-                            text,
-                        };
-                        let _ = segments_out.send(ts).await;
-                    }
-                }
-                Err(e) => {
-                    tracing::error!("whisper flush failed: {e}");
-                }
+            // Inject 5 seconds of silence (80000 samples at 16kHz) to trigger
+            // VAD end-of-speech detection and process the final chunk.
+            tracing::info!("transcribe_audio: injecting silence to trigger final VAD processing");
+            if stream.feed_audio(vec![0.0f32; 80000]).await.is_err() {
+                tracing::error!("transcribe_audio: failed to inject silence");
             }
+
+            // Give the stream a moment to process, then drain all final segments.
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
             while let Some(segments) = stream.try_recv_segments() {
                 let text: String = segments
@@ -5498,6 +5485,7 @@ impl Ship for ShipImpl {
                     .collect::<Vec<_>>()
                     .join(" ");
                 if !text.is_empty() {
+                    tracing::info!("transcribe_audio: final segment: {text}");
                     let ts = TranscribeSegment {
                         start_ms: 0,
                         end_ms: (total_samples as f64 / 16.0) as u64,
