@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ContentBlock } from "../../generated/ship";
 import {
@@ -15,18 +15,16 @@ interface Props {
 
 export function ImageBlock({ block }: Props) {
   const [open, setOpen] = useState(false);
-
-  const objectUrl = useMemo(() => {
-    const bytes = new Uint8Array(block.data);
-    const blob = new Blob([bytes], { type: block.mime_type });
-    return URL.createObjectURL(blob);
-  }, [block.data, block.mime_type]);
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    return () => {
-      URL.revokeObjectURL(objectUrl);
-    };
-  }, [objectUrl]);
+    const blob = new Blob([new Uint8Array(block.data)], { type: block.mime_type });
+    const url = URL.createObjectURL(blob);
+    setObjectUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [block.data, block.mime_type]);
+
+  if (!objectUrl) return null;
 
   return (
     <>
