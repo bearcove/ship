@@ -2882,6 +2882,8 @@ and the captain will help you find the right approach."
     async fn rebase_worktree_on_base(worktree_path: &std::path::Path, base_branch: &str) {
         let worktree_path = worktree_path.to_path_buf();
         let base_branch = base_branch.to_owned();
+        let log_path = worktree_path.clone();
+        let log_base = base_branch.clone();
         let result = tokio::task::spawn_blocking(move || {
             // Fetch latest base branch from origin first
             let _ = Command::new("git")
@@ -2915,15 +2917,15 @@ and the captain will help you find the right approach."
         match result {
             Ok(Ok(())) => {
                 tracing::info!(
-                    worktree = %worktree_path.display(),
-                    base = %base_branch,
+                    worktree = %log_path.display(),
+                    base = %log_base,
                     "rebased worktree onto base branch"
                 );
             }
             Ok(Err(err)) => {
                 tracing::warn!(
-                    worktree = %worktree_path.display(),
-                    base = %base_branch,
+                    worktree = %log_path.display(),
+                    base = %log_base,
                     error = %err,
                     "failed to rebase worktree onto base branch"
                 );
