@@ -121,8 +121,8 @@ export function SessionViewPage({
           title: eventState.currentTaskTitle,
           description: eventState.currentTaskDescription,
           status: eventState.currentTaskStatus,
-          assigned_at: null,
-          completed_at: null,
+          assigned_at: eventState.currentTaskStartedAt,
+          completed_at: eventState.currentTaskCompletedAt,
         }
       : session.current_task;
 

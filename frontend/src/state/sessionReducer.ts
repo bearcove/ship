@@ -29,6 +29,8 @@ export interface SessionViewState {
   currentTaskTitle: string | null;
   currentTaskDescription: string | null;
   currentTaskStatus: TaskStatus | null;
+  currentTaskStartedAt: string | null;
+  currentTaskCompletedAt: string | null;
   connected: boolean;
   phase: "loading" | "replaying" | "live";
   lastSeq: number | null;
@@ -53,6 +55,8 @@ export function initialSessionViewState(): SessionViewState {
     currentTaskTitle: null,
     currentTaskDescription: null,
     currentTaskStatus: null,
+    currentTaskStartedAt: null,
+    currentTaskCompletedAt: null,
     connected: true,
     phase: "loading",
     lastSeq: null,
@@ -88,6 +92,8 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         currentTaskTitle: action.session.current_task?.title ?? null,
         currentTaskDescription: action.session.current_task?.description ?? null,
         currentTaskStatus: action.session.current_task?.status ?? null,
+        currentTaskStartedAt: action.session.current_task?.assigned_at ?? null,
+        currentTaskCompletedAt: action.session.current_task?.completed_at ?? null,
         title: action.session.title ?? null,
       };
 
@@ -144,6 +150,8 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         currentTaskTitle,
         currentTaskDescription,
         currentTaskStatus,
+        currentTaskStartedAt,
+        currentTaskCompletedAt,
         title,
       } = state;
 
@@ -175,6 +183,9 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
             break;
           case "TaskStatusChanged":
             currentTaskStatus = ev.status;
+            if (ev.status.tag === "Accepted" || ev.status.tag === "Cancelled") {
+              currentTaskCompletedAt = envelope.timestamp;
+            }
             break;
           case "ContextUpdated": {
             if (ev.role.tag === "Captain" && captain) {
@@ -189,6 +200,8 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
             currentTaskTitle = ev.title;
             currentTaskDescription = ev.description;
             currentTaskStatus = { tag: "Assigned" };
+            currentTaskStartedAt = envelope.timestamp;
+            currentTaskCompletedAt = null;
             break;
           case "AgentModelChanged": {
             if (ev.role.tag === "Captain" && captain) {
@@ -249,6 +262,8 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         currentTaskTitle,
         currentTaskDescription,
         currentTaskStatus,
+        currentTaskStartedAt,
+        currentTaskCompletedAt,
         title,
         lastSeq: Number(lastEnvelope.seq),
         lastEventKind: lastEnvelope.event.tag,
@@ -336,7 +351,13 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
 
         // r[event.task-status-changed]
         case "TaskStatusChanged":
-          return { ...nextState, currentTaskStatus: ev.status };
+          return {
+            ...nextState,
+            currentTaskStatus: ev.status,
+            ...(ev.status.tag === "Accepted" || ev.status.tag === "Cancelled"
+              ? { currentTaskCompletedAt: envelope.timestamp }
+              : {}),
+          };
 
         // r[event.context-updated]
         case "ContextUpdated": {
@@ -364,6 +385,8 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
             currentTaskTitle: ev.title,
             currentTaskDescription: ev.description,
             currentTaskStatus: { tag: "Assigned" },
+            currentTaskStartedAt: envelope.timestamp,
+            currentTaskCompletedAt: null,
           };
 
         case "AgentModelChanged": {
