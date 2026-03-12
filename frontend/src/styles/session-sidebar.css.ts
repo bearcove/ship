@@ -123,8 +123,8 @@ export const sessionRowTitle = style({
 });
 
 export const sessionRowEmpty = style({
-  fontSize: "var(--font-size-2)",
-  paddingLeft: "calc(var(--space-3) + 18px)",
+  fontSize: "var(--font-size-3)",
+  paddingLeft: "var(--space-3)",
   paddingRight: "var(--space-3)",
   paddingTop: "3px",
   paddingBottom: "5px",
