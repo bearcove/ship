@@ -13,6 +13,7 @@ import { TextBlock } from "./blocks/TextBlock";
 import { ToolCallBlock } from "./blocks/ToolCallBlock";
 import { ErrorBlock } from "./blocks/ErrorBlock";
 import { PermissionBlock } from "./blocks/PermissionBlock";
+import { ImageBlock } from "./blocks/ImageBlock";
 import { getShipClient } from "../api/client";
 import captainAvatar from "../assets/avatars/captain.png";
 import mateAvatar from "../assets/avatars/mate.png";
@@ -375,6 +376,39 @@ function SingleBlock({
 
     case "PlanUpdate":
       return null;
+
+    case "Image": {
+      // User-sent image (captain role, human source) — right side
+      if (role.tag === "Captain") {
+        return (
+          <Box className={feedRowUser}>
+            <Box className={`${feedBubbleCol} ${feedBubbleColUser}`}>
+              <Box className={`${feedBubble} ${feedBubbleUser}`}>
+                <ImageBlock block={block} />
+              </Box>
+              {isLast && entry.timestamp && (
+                <Text className={feedTimestamp}>{formatTime(entry.timestamp)}</Text>
+              )}
+            </Box>
+            <UserAvatar url={userAvatarUrl} />
+          </Box>
+        );
+      }
+      // Mate/relay image — left side, captain avatar
+      return (
+        <Box className={feedRowAgent}>
+          <Avatar role={{ tag: "Captain" }} show={showAvatar} />
+          <Box className={feedBubbleCol}>
+            <Box className={`${feedBubble} ${feedBubbleRelay}`}>
+              <ImageBlock block={block} />
+            </Box>
+            {isLast && entry.timestamp && (
+              <Text className={feedTimestamp}>{formatTime(entry.timestamp)}</Text>
+            )}
+          </Box>
+        </Box>
+      );
+    }
   }
 }
 
