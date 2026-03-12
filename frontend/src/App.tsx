@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Routes, Route, useMatch } from "react-router-dom";
 import { Flex, Box, IconButton } from "@radix-ui/themes";
-import { List } from "@phosphor-icons/react";
+import { List, ListChecks } from "@phosphor-icons/react";
 import { SessionListPage } from "./pages/SessionListPage";
 import { SessionAgentRail, SessionViewPage } from "./pages/SessionViewPage";
 import { ConnectionBanner } from "./components/ConnectionBanner";
@@ -15,6 +15,9 @@ import {
   appColCenter,
   appColRight,
   floatingHamburger,
+  floatingTaskBtn,
+  taskPanelBackdrop,
+  taskPanelRoot,
 } from "./styles/session-view.css";
 
 function readDebugPreference(): boolean {
@@ -42,6 +45,7 @@ export function App() {
   const allProjects = useProjects();
   const [debugMode, setDebugMode] = useState(readDebugPreference);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [taskPanelOpen, setTaskPanelOpen] = useState(false);
 
   useEffect(() => {
     writeDebugPreference(debugMode);
@@ -59,8 +63,17 @@ export function App() {
     function onTouchEnd(e: TouchEvent) {
       const dx = e.changedTouches[0].clientX - startX;
       const dy = e.changedTouches[0].clientY - startY;
+      // Swipe right from left half → open sidebar
       if (startX < window.innerWidth / 2 && dx > 60 && Math.abs(dy) < 80) {
         setSidebarOpen(true);
+      }
+      // Swipe left from right half → open task panel
+      if (startX > window.innerWidth / 2 && dx < -60 && Math.abs(dy) < 80) {
+        setTaskPanelOpen(true);
+      }
+      // Swipe right while task panel is open → close it
+      if (taskPanelOpen && dx > 60 && Math.abs(dy) < 80) {
+        setTaskPanelOpen(false);
       }
     }
     window.addEventListener("touchstart", onTouchStart, { passive: true });
@@ -69,7 +82,7 @@ export function App() {
       window.removeEventListener("touchstart", onTouchStart);
       window.removeEventListener("touchend", onTouchEnd);
     };
-  }, []);
+  }, [taskPanelOpen]);
 
   return (
     <Flex direction="column" style={{ height: "100dvh" }}>
@@ -83,6 +96,18 @@ export function App() {
           aria-label="Open sidebar"
         >
           <List size={18} />
+        </IconButton>
+      )}
+      {inSessionView && currentSessionId && (
+        <IconButton
+          className={floatingTaskBtn}
+          variant="soft"
+          color="gray"
+          size="2"
+          onClick={() => setTaskPanelOpen(true)}
+          aria-label="Open task panel"
+        >
+          <ListChecks size={18} />
         </IconButton>
       )}
       <ConnectionBanner
@@ -126,6 +151,17 @@ export function App() {
           {currentSessionId ? <SessionAgentRail sessionId={currentSessionId} /> : null}
         </Box>
       </Box>
+
+      {inSessionView && currentSessionId && (
+        <>
+          {taskPanelOpen && (
+            <Box className={taskPanelBackdrop} onClick={() => setTaskPanelOpen(false)} />
+          )}
+          <Box className={taskPanelRoot} data-open={taskPanelOpen}>
+            <SessionAgentRail sessionId={currentSessionId} />
+          </Box>
+        </>
+      )}
     </Flex>
   );
 }

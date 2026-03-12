@@ -1196,3 +1196,8 @@ export const taskPanelRoot = style({
     },
   },
 });
+
+// Override agentRail's display:none inside the task panel overlay
+globalStyle(`${taskPanelRoot} .${agentRail}`, {
+  display: "flex",
+});
