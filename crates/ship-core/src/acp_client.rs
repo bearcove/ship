@@ -7,17 +7,17 @@ use std::rc::Rc;
 use agent_client_protocol::{
     Client, ContentBlock, CreateTerminalRequest, CreateTerminalResponse, Error,
     KillTerminalCommandRequest, KillTerminalCommandResponse, PermissionOptionKind,
-    PlanEntryPriority, ReadTextFileRequest, ReadTextFileResponse, ReleaseTerminalRequest,
-    ReleaseTerminalResponse, RequestPermissionOutcome, RequestPermissionRequest,
-    RequestPermissionResponse, Result as AcpResult, SelectedPermissionOutcome, SessionNotification,
-    SessionUpdate, TerminalExitStatus, TerminalOutputRequest, TerminalOutputResponse,
-    ToolCallContent, ToolCallStatus, ToolKind, WaitForTerminalExitRequest,
-    WaitForTerminalExitResponse, WriteTextFileRequest, WriteTextFileResponse,
+    ReadTextFileRequest, ReadTextFileResponse, ReleaseTerminalRequest, ReleaseTerminalResponse,
+    RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
+    Result as AcpResult, SelectedPermissionOutcome, SessionNotification, SessionUpdate,
+    TerminalExitStatus, TerminalOutputRequest, TerminalOutputResponse, ToolCallContent,
+    ToolCallStatus, ToolKind, WaitForTerminalExitRequest, WaitForTerminalExitResponse,
+    WriteTextFileRequest, WriteTextFileResponse,
 };
 use ship_types::{
     AgentState, BlockId, BlockPatch, ContentBlock as ShipContentBlock, JsonEntry,
     JsonValue as ShipJsonValue, PermissionOption, PermissionOptionKind as ShipPermissionOptionKind,
-    PermissionRequest, PlanStep, PlanStepPriority, PlanStepStatus, Role, SessionEvent,
+    PermissionRequest, PlanStep, PlanStepStatus, Role, SessionEvent,
     TerminalExit as ShipTerminalExit, TerminalSnapshot as ShipTerminalSnapshot, TextSource,
     ToolCallContent as ShipToolCallContent, ToolCallError as ShipToolCallError,
     ToolCallKind as ShipToolCallKind, ToolCallLocation as ShipToolCallLocation,
@@ -306,8 +306,8 @@ impl ShipAcpClient {
                             plan.entries
                                 .into_iter()
                                 .map(|entry| PlanStep {
+                                    title: String::new(),
                                     description: entry.content,
-                                    priority: map_plan_priority(entry.priority),
                                     status: map_plan_status(entry.status),
                                 })
                                 .collect(),
@@ -1010,15 +1010,6 @@ fn extract_value<'a>(value: &'a serde_json::Value, keys: &[&str]) -> Option<&'a 
     keys.iter().find_map(|key| object.get(*key))
 }
 
-fn map_plan_priority(priority: PlanEntryPriority) -> PlanStepPriority {
-    match priority {
-        PlanEntryPriority::High => PlanStepPriority::High,
-        PlanEntryPriority::Medium => PlanStepPriority::Medium,
-        PlanEntryPriority::Low => PlanStepPriority::Low,
-        _ => PlanStepPriority::Medium,
-    }
-}
-
 fn map_plan_status(status: agent_client_protocol::PlanEntryStatus) -> PlanStepStatus {
     match status {
         agent_client_protocol::PlanEntryStatus::Pending => PlanStepStatus::Pending,
@@ -1042,9 +1033,9 @@ fn remaining_context_percent(used: u64, size: u64) -> Option<u8> {
 mod tests {
     use super::*;
     use agent_client_protocol::{
-        ContentChunk, PermissionOption as AcpPermissionOption, Plan, PlanEntry, PlanEntryStatus,
-        RequestPermissionRequest, SessionNotification, Terminal, TextContent, ToolCallLocation,
-        ToolCallUpdate, ToolCallUpdateFields, UsageUpdate,
+        ContentChunk, PermissionOption as AcpPermissionOption, Plan, PlanEntry, PlanEntryPriority,
+        PlanEntryStatus, RequestPermissionRequest, SessionNotification, Terminal, TextContent,
+        ToolCallLocation, ToolCallUpdate, ToolCallUpdateFields, UsageUpdate,
     };
     use std::process::Stdio;
     use tokio::process::Command;
@@ -1532,18 +1523,18 @@ mod tests {
                 state: AgentState::Working {
                     plan: Some(vec![
                         PlanStep {
+                            title: String::new(),
                             description: "Fix blocking bug".to_owned(),
-                            priority: PlanStepPriority::High,
                             status: PlanStepStatus::Pending,
                         },
                         PlanStep {
+                            title: String::new(),
                             description: "Refresh snapshots".to_owned(),
-                            priority: PlanStepPriority::Medium,
                             status: PlanStepStatus::InProgress,
                         },
                         PlanStep {
+                            title: String::new(),
                             description: "Polish docs".to_owned(),
-                            priority: PlanStepPriority::Low,
                             status: PlanStepStatus::Completed,
                         },
                     ]),
