@@ -3201,16 +3201,17 @@ and the captain will help you find the right approach."
         step_index: usize,
         summary: String,
     ) -> Result<String, String> {
-        let (step_description, worktree_path, base_branch) = {
+        let (step_description, task_title, worktree_path, base_branch) = {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let session = sessions
                 .get_mut(session_id)
                 .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-            let (updated_plan, step_description) = {
+            let (updated_plan, step_description, task_title) = {
                 let task = session
                     .current_task
                     .as_mut()
                     .ok_or_else(|| "session has no active task".to_owned())?;
+                let task_title = task.record.title.clone();
                 let plan = task
                     .mate_plan
                     .as_mut()
@@ -3221,7 +3222,7 @@ and the captain will help you find the right approach."
                 step.status = PlanStepStatus::Completed;
                 let step_description = step.description.clone();
                 let updated_plan = plan.clone();
-                (updated_plan, step_description)
+                (updated_plan, step_description, task_title)
             };
             set_agent_state(
                 session,
@@ -3234,6 +3235,7 @@ and the captain will help you find the right approach."
             let base = session.config.base_branch.clone();
             (
                 step_description,
+                task_title,
                 Self::current_task_worktree_path(session)?.to_path_buf(),
                 base,
             )
@@ -3241,9 +3243,11 @@ and the captain will help you find the right approach."
 
         self.persist_session(session_id).await?;
 
-        let commit =
-            Self::auto_commit_worktree(&worktree_path, format!("{step_description}: {summary}"))
-                .await?;
+        let commit = Self::auto_commit_worktree(
+            &worktree_path,
+            format!("{task_title}\n\n{step_description}: {summary}"),
+        )
+        .await?;
 
         // Keep the branch up to date with the base branch to avoid
         // misleading diffs when the base branch moves forward.
