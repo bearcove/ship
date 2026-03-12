@@ -69,6 +69,14 @@ function systemInjectionLabel(role: Role): string {
   return role.tag === "Captain" ? "Captain was prompted" : "Mate was assigned a task";
 }
 
+function formatDuration(totalSeconds: number): string {
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const mins = Math.floor(totalSeconds / 60);
+  const secs = totalSeconds % 60;
+  if (secs === 0) return `${mins}m`;
+  return `${mins}m ${secs}s`;
+}
+
 // ─── Feed segmentation ────────────────────────────────────────────────────────
 
 type SingleSegment = { kind: "single"; entry: BlockEntry };
@@ -414,6 +422,7 @@ interface Props {
   blocks: BlockEntry[];
   startupState: SessionStartupState | null;
   taskStatus: TaskStatus | null;
+  taskCompletedDuration: number | null;
   userAvatarUrl?: string | null;
   loading?: boolean;
   loadingLabel?: string;
@@ -428,6 +437,8 @@ export function UnifiedFeed({
   mate,
   blocks,
   startupState,
+  taskStatus,
+  taskCompletedDuration,
   userAvatarUrl = null,
   loading,
   loadingLabel,
@@ -599,6 +610,17 @@ export function UnifiedFeed({
             );
           })}
         </Box>
+
+        {taskCompletedDuration != null &&
+          taskStatus &&
+          (taskStatus.tag === "Accepted" || taskStatus.tag === "Cancelled") && (
+            <Box className={feedSystemMessage}>
+              <Text className={feedSystemMessageText}>
+                Task {taskStatus.tag === "Accepted" ? "completed" : "cancelled"} in{" "}
+                {formatDuration(taskCompletedDuration)}
+              </Text>
+            </Box>
+          )}
 
         <Box className={liveBubblesRow}>
           {captainWorking && <LiveBubble role={{ tag: "Captain" }} />}

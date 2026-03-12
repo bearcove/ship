@@ -111,6 +111,15 @@ export function SessionViewPage({
       ? `Replaying ${eventState.replayEventCount} event${eventState.replayEventCount === 1 ? "" : "s"}…`
       : "Connected — waiting for replay…"
     : "Waiting for reconnect…";
+  const taskCompletedDuration =
+    eventState.currentTaskStartedAt && eventState.currentTaskCompletedAt
+      ? Math.round(
+          (new Date(eventState.currentTaskCompletedAt).getTime() -
+            new Date(eventState.currentTaskStartedAt).getTime()) /
+            1000,
+        )
+      : null;
+
   const liveTask: TaskRecord | null =
     eventState.currentTaskId &&
     eventState.currentTaskTitle &&
@@ -168,6 +177,7 @@ export function SessionViewPage({
             blocks={eventState.unifiedBlocks.blocks}
             startupState={startupState}
             taskStatus={liveTask?.status ?? null}
+            taskCompletedDuration={taskCompletedDuration}
             userAvatarUrl={session.user_avatar_url}
             loading={isReplaying}
             loadingLabel={replayLabel}
