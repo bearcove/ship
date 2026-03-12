@@ -653,23 +653,22 @@ fn build_initialize_request(role: Role) -> InitializeRequest {
 
 // r[captain.capabilities]
 // r[mate.capabilities]
-// We claim support for terminal and filesystem so that the agent routes
-// these requests through our Client implementation, where we reject them
-// with helpful error messages. Setting these to false would cause the
-// agent to fall back to its own built-in tools, bypassing us entirely.
+// Both agents run in sandboxed worktrees. Built-in Read and Terminal are
+// safe — only write_text_file routes through us so we can reject it
+// (writes must go through the write_file MCP tool for rustfmt validation).
 fn captain_client_capabilities() -> ClientCapabilities {
     ClientCapabilities::new()
-        .terminal(true)
+        .terminal(false)
         .fs(FileSystemCapability::new()
-            .read_text_file(true)
+            .read_text_file(false)
             .write_text_file(true))
 }
 
 fn mate_client_capabilities() -> ClientCapabilities {
     ClientCapabilities::new()
-        .terminal(true)
+        .terminal(false)
         .fs(FileSystemCapability::new()
-            .read_text_file(true)
+            .read_text_file(false)
             .write_text_file(true))
 }
 
@@ -903,19 +902,19 @@ mod tests {
 
     // r[verify captain.capabilities]
     #[test]
-    fn captain_claims_terminal_and_fs_so_builtins_route_through_us() {
+    fn captain_uses_own_builtins_except_write() {
         let request = build_initialize_request(Role::Captain);
-        assert!(request.client_capabilities.terminal);
-        assert!(request.client_capabilities.fs.read_text_file);
+        assert!(!request.client_capabilities.terminal);
+        assert!(!request.client_capabilities.fs.read_text_file);
         assert!(request.client_capabilities.fs.write_text_file);
     }
 
     // r[verify mate.capabilities]
     #[test]
-    fn mate_claims_terminal_and_fs_so_builtins_route_through_us() {
+    fn mate_uses_own_builtins_except_write() {
         let request = build_initialize_request(Role::Mate);
-        assert!(request.client_capabilities.terminal);
-        assert!(request.client_capabilities.fs.read_text_file);
+        assert!(!request.client_capabilities.terminal);
+        assert!(!request.client_capabilities.fs.read_text_file);
         assert!(request.client_capabilities.fs.write_text_file);
     }
 }

@@ -87,11 +87,19 @@ impl ShipAcpClient {
 
     // r[captain.capabilities]
     // r[mate.capabilities]
-    // Both agents must only use Ship's MCP tools. Any ACP built-in tool usage
-    // (Read, Write, Edit, Bash, etc.) is rejected outright. We select a Reject
-    // option and silently return — MateGuidanceQueued is emitted separately when
-    // the agent directly calls a blocked tool function (create_terminal, etc.).
+    // Agents run in sandboxed worktrees so most built-in tools are safe.
+    // Only Write/Edit are blocked — they bypass the MCP layer's rustfmt
+    // validation and other structural integrity checks.
     fn blocked_permission_option_id(&self, request: &RequestPermissionRequest) -> Option<String> {
+        let is_write_tool = request
+            .tool_call
+            .fields
+            .kind
+            .as_ref()
+            .is_some_and(|kind| matches!(kind, ToolKind::Edit | ToolKind::Delete));
+        if !is_write_tool {
+            return None;
+        }
         request.options.iter().find_map(|option| {
             matches!(
                 option.kind,
@@ -334,6 +342,25 @@ impl Client for ShipAcpClient {
             ));
         }
 
+        // Auto-approve non-built-in tool permissions (e.g. ExitPlanMode).
+        // There's no human to click approve, so select the first allow option.
+        if let Some(allow_id) = args.options.iter().find_map(|option| {
+            matches!(
+                option.kind,
+                PermissionOptionKind::AllowOnce | PermissionOptionKind::AllowAlways
+            )
+            .then_some(option.option_id.0.to_string())
+        }) {
+            tracing::info!(
+                role = ?self.role,
+                title = ?args.tool_call.fields.title,
+                "auto-approved non-built-in tool permission request"
+            );
+            return Ok(RequestPermissionResponse::new(
+                RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(allow_id)),
+            ));
+        }
+
         let permission_id = args.tool_call.tool_call_id.0.to_string();
         let tool_call_id = args.tool_call.tool_call_id.0.to_string();
         let tool_name = args
@@ -437,29 +464,25 @@ impl Client for ShipAcpClient {
         _args: WriteTextFileRequest,
     ) -> AcpResult<WriteTextFileResponse> {
         tracing::warn!(role = ?self.role, "rejected ACP built-in write_text_file");
-        Err(Error::invalid_params().data(match self.role {
-            Role::Captain => "Built-in file writing is disabled. You do not have direct file access. Delegate work to the mate using captain_assign.",
-            Role::Mate => "Built-in file writing is disabled. Use the write_file MCP tool instead.",
-        }))
+        Err(Error::invalid_params().data(
+            "Built-in file writing is disabled. Use the write_file MCP tool instead (it validates Rust files with rustfmt).",
+        ))
     }
 
+    // read_text_file and create_terminal capabilities are set to false,
+    // so the agent uses its own sandboxed built-ins. These should never
+    // be called, but we keep them as a safety net.
     async fn read_text_file(&self, _args: ReadTextFileRequest) -> AcpResult<ReadTextFileResponse> {
-        tracing::warn!(role = ?self.role, "rejected ACP built-in read_text_file");
-        Err(Error::invalid_params().data(match self.role {
-            Role::Captain => "Built-in file reading is disabled. You do not have direct file access. Delegate work to the mate using captain_assign.",
-            Role::Mate => "Built-in file reading is disabled. Use the read_file MCP tool instead.",
-        }))
+        tracing::warn!(role = ?self.role, "unexpected read_text_file call (capability is false)");
+        Err(Error::invalid_params().data("Unexpected: read_text_file should not be routed here."))
     }
 
     async fn create_terminal(
         &self,
         _args: CreateTerminalRequest,
     ) -> AcpResult<CreateTerminalResponse> {
-        tracing::warn!(role = ?self.role, "rejected ACP built-in create_terminal");
-        Err(Error::invalid_params().data(match self.role {
-            Role::Captain => "Built-in terminal is disabled. You do not have direct command access. Delegate work to the mate using captain_assign.",
-            Role::Mate => "Built-in terminal is disabled. Use the run_command MCP tool instead.",
-        }))
+        tracing::warn!(role = ?self.role, "unexpected create_terminal call (capability is false)");
+        Err(Error::invalid_params().data("Unexpected: create_terminal should not be routed here."))
     }
 
     // r[acp.client.terminal-output]
@@ -1292,7 +1315,7 @@ mod tests {
 
     // r[verify mate.capabilities]
     #[tokio::test(flavor = "current_thread")]
-    async fn mate_builtin_tool_requests_are_silently_rejected() {
+    async fn mate_write_requests_are_rejected() {
         let local = tokio::task::LocalSet::new();
         local
             .run_until(async {
@@ -1308,10 +1331,10 @@ mod tests {
                     ToolCallUpdate::new(
                         "toolu_perm_blocked",
                         ToolCallUpdateFields::new()
-                            .title("Shell Command".to_owned())
-                            .kind(ToolKind::Execute)
+                            .title("Write File".to_owned())
+                            .kind(ToolKind::Edit)
                             .raw_input(serde_json::json!({
-                                "command": "git reset --hard HEAD~1",
+                                "path": "/tmp/worktree/src/lib.rs",
                             })),
                     ),
                     vec![
@@ -1347,7 +1370,59 @@ mod tests {
 
     // r[verify mate.capabilities]
     #[tokio::test(flavor = "current_thread")]
-    async fn mate_read_builtin_is_also_silently_rejected() {
+    async fn non_write_permissions_are_auto_approved() {
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async {
+                let (tx, rx) = mpsc::unbounded_channel();
+                let client = Rc::new(ShipAcpClient::new(
+                    Role::Mate,
+                    PathBuf::from("/tmp/worktree"),
+                    tx,
+                ));
+
+                let request = RequestPermissionRequest::new(
+                    "session-1",
+                    ToolCallUpdate::new(
+                        "toolu_plan",
+                        ToolCallUpdateFields::new()
+                            .title("ExitPlanMode".to_owned())
+                            .kind(ToolKind::Think),
+                    ),
+                    vec![
+                        AcpPermissionOption::new(
+                            "allow-once",
+                            "Allow once",
+                            PermissionOptionKind::AllowOnce,
+                        ),
+                        AcpPermissionOption::new(
+                            "reject-once",
+                            "Reject once",
+                            PermissionOptionKind::RejectOnce,
+                        ),
+                    ],
+                );
+
+                let response = client
+                    .request_permission(request)
+                    .await
+                    .expect("permission request should succeed");
+
+                assert_eq!(
+                    response.outcome,
+                    RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
+                        "allow-once",
+                    ))
+                );
+
+                assert!(rx.is_empty());
+            })
+            .await;
+    }
+
+    // r[verify mate.capabilities]
+    #[tokio::test(flavor = "current_thread")]
+    async fn mate_read_builtin_is_auto_approved() {
         let local = tokio::task::LocalSet::new();
         local
             .run_until(async {
@@ -1391,7 +1466,7 @@ mod tests {
                 assert_eq!(
                     response.outcome,
                     RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
-                        "reject-once",
+                        "allow-once",
                     ))
                 );
 

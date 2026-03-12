@@ -5029,10 +5029,17 @@ impl Ship for ShipImpl {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             Self::resolve_session(&sessions, &session).map(|active| {
                 let raw_replay: Vec<SessionEventEnvelope> = active
-                    .current_task
-                    .as_ref()
-                    .map(|task| task.event_log.clone())
-                    .unwrap_or_default();
+                    .session_event_log
+                    .iter()
+                    .cloned()
+                    .chain(
+                        active
+                            .current_task
+                            .as_ref()
+                            .into_iter()
+                            .flat_map(|task| task.event_log.clone()),
+                    )
+                    .collect();
                 let replay = coalesce_replay_events(&raw_replay);
                 (active.events_tx.subscribe(), replay)
             })
