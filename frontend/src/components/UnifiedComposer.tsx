@@ -49,6 +49,52 @@ interface AttachedImage {
   name: string;
 }
 
+const SUPPORTED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+
+async function convertToSupportedFormat(
+  file: File,
+): Promise<{ data: Uint8Array; mimeType: string; objectUrl: string }> {
+  if (SUPPORTED_IMAGE_TYPES.has(file.type)) {
+    const buffer = await file.arrayBuffer();
+    return {
+      data: new Uint8Array(buffer),
+      mimeType: file.type,
+      objectUrl: URL.createObjectURL(file),
+    };
+  }
+
+  // Unsupported format (e.g. HEIC) — decode via Image element and re-encode as PNG
+  const srcUrl = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error(`Failed to decode image: ${file.name}`));
+      el.src = srcUrl;
+    });
+
+    const canvas = document.createElement("canvas");
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas 2D context unavailable");
+    ctx.drawImage(img, 0, 0);
+
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((b) => {
+        if (b) resolve(b);
+        else reject(new Error("Canvas toBlob failed"));
+      }, "image/png");
+    });
+
+    const buffer = await blob.arrayBuffer();
+    const objectUrl = URL.createObjectURL(blob);
+    return { data: new Uint8Array(buffer), mimeType: "image/png", objectUrl };
+  } finally {
+    URL.revokeObjectURL(srcUrl);
+  }
+}
+
 interface Props {
   sessionId: string;
   captain: AgentSnapshot | null;
