@@ -614,8 +614,8 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
               style={{
                 fontVariantNumeric: "tabular-nums",
                 flexShrink: 0,
-                width: "10ch",
-                textAlign: "center",
+                width: "4ch",
+                textAlign: "left",
               }}
             >
               {formatElapsed(
