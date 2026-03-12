@@ -12,7 +12,7 @@ use rust_mcp_sdk::schema::{
 use rust_mcp_sdk::{McpServer, StdioTransport, ToMcpServerHandler, TransportOptions};
 use serde_json::{Value, json};
 use ship_service::CaptainMcpClient;
-use ship_types::{AssignFileRef, CaptainAssignExtras, SessionId};
+use ship_types::{AssignFileRef, CaptainAssignExtras, PlanStepInput, SessionId};
 
 pub struct CaptainMcpServerArgs {
     pub session_id: SessionId,
@@ -85,7 +85,12 @@ impl ServerHandler for CaptainMcpHandler {
                     .and_then(Value::as_array)
                     .map(|arr| {
                         arr.iter()
-                            .filter_map(|v| v.as_str().map(ToOwned::to_owned))
+                            .filter_map(|v| {
+                                let title = v.get("title").and_then(Value::as_str)?.to_owned();
+                                let description =
+                                    v.get("description").and_then(Value::as_str)?.to_owned();
+                                Some(PlanStepInput { title, description })
+                            })
                             .collect::<Vec<_>>()
                     })
                     .unwrap_or_default();
@@ -297,8 +302,16 @@ skips research and goes straight to execution. Omitting files or plan wastes the
                     },
                     "plan": {
                         "type": "array",
-                        "description": "Pre-built plan steps. If supplied, the mate skips research and planning and goes directly to execution. Each item is a step description string.",
-                        "items": { "type": "string" }
+                        "description": "Pre-built plan steps. If supplied, the mate skips research and planning and goes directly to execution.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "title": { "type": "string", "description": "Short summary of the step (like a commit subject line)." },
+                                "description": { "type": "string", "description": "Longer explanation of what the step involves." }
+                            },
+                            "required": ["title", "description"],
+                            "additionalProperties": false
+                        }
                     }
                 },
                 "required": ["title", "description"],
