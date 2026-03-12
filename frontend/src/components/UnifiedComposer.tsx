@@ -196,16 +196,33 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
     preTranscriptionTextRef.current = null;
   }
 
-  // Auto-submit when transcription completes after "send" was requested
+  // When transcription returns to idle, commit the final text and optionally auto-submit
   const prevTranscriptionTag = useRef(transcription.state.tag);
   useEffect(() => {
     const wasProcessing = prevTranscriptionTag.current !== "idle";
     prevTranscriptionTag.current = transcription.state.tag;
-    if (wasProcessing && transcription.state.tag === "idle" && sendAfterTranscription) {
+    if (!wasProcessing || transcription.state.tag !== "idle") return;
+
+    const prefix = preTranscriptionTextRef.current ?? "";
+    const finalText = transcription.result?.text
+      ? prefix
+        ? prefix + " " + transcription.result.text
+        : transcription.result.text
+      : prefix;
+
+    if (sendAfterTranscription) {
       setSendAfterTranscription(false);
-      void handleSubmit();
+      const trimmed = finalText.trim();
+      if (trimmed || attachedImages.length > 0) {
+        const { target: to, content } = parseTarget(trimmed);
+        void sendNow(content, to).then((success) => {
+          if (success) setText("");
+        });
+      }
+    } else {
+      setText(finalText);
     }
-  }, [transcription.state.tag, sendAfterTranscription]);
+  }, [transcription.state.tag]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const { target } = parseTarget(text);
   const activeAgent = target === "captain" ? captain : mate;
