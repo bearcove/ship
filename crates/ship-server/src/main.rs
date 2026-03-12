@@ -1391,10 +1391,7 @@ mod tests {
     fn resolve_listen_addr_defaults_to_loopback() {
         let _env_guard = ShipListenEnvGuard::set(None);
         let addrs = resolve_listen_addrs(None).expect("default listen addresses should parse");
-        assert!(
-            addrs.iter().any(|a| a.ip().is_loopback()),
-            "expected at least one loopback address, got: {addrs:?}"
-        );
+        assert_eq!(addrs, vec!["127.0.0.1:9140".parse::<SocketAddr>().unwrap()]);
     }
 
     // r[verify server.listen]
