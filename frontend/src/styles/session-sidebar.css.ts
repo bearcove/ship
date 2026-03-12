@@ -105,13 +105,15 @@ export const sessionRow = style({
   color: "inherit",
   selectors: {
     '&[data-active="true"]': {
-      background: "var(--accent-a3)",
+      background: "var(--accent-a5)",
+      borderLeft: "3px solid var(--accent-9)",
+      paddingLeft: "calc(var(--space-3) - 3px)",
     },
     "&:hover": {
       background: "var(--gray-a3)",
     },
     '&[data-active="true"]:hover': {
-      background: "var(--accent-a4)",
+      background: "var(--accent-a6)",
     },
   },
 });
