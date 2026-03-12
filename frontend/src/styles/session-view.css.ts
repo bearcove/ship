@@ -741,6 +741,21 @@ export const composerInputWrapper = style({
   minWidth: 0,
 });
 
+export const transcriptPreview = style({
+  maxHeight: "4.5em",
+  overflowY: "auto",
+  fontSize: "var(--font-size-2)",
+  lineHeight: "var(--line-height-2)",
+  color: "var(--gray-11)",
+  padding: "4px 0",
+  scrollbarWidth: "none",
+  selectors: {
+    "&::-webkit-scrollbar": {
+      display: "none",
+    },
+  },
+});
+
 export const composerOverlay = style({
   position: "absolute",
   inset: 0,
