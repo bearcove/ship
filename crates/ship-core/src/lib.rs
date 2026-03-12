@@ -70,6 +70,8 @@ pub struct AgentError {
 pub struct AgentSessionConfig {
     pub worktree_path: PathBuf,
     pub mcp_servers: Vec<McpServerConfig>,
+    /// ACP session ID from a previous run, used for session resume
+    pub resume_session_id: Option<String>,
 }
 
 impl fmt::Display for AgentError {
@@ -114,6 +116,8 @@ pub struct AgentSpawnInfo {
     pub effort_config_id: Option<String>,
     pub effort_value_id: Option<String>,
     pub available_effort_values: Vec<EffortValue>,
+    /// The ACP session ID, for persisting and later resuming
+    pub acp_session_id: String,
 }
 
 // r[testability.agent-trait]

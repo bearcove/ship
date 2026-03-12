@@ -369,6 +369,8 @@ impl ShipImpl {
                 pending_human_review: None,
                 title: None,
                 archived_at: None,
+                captain_acp_session_id: persisted.captain_acp_session_id,
+                mate_acp_session_id: persisted.mate_acp_session_id,
                 events_tx,
                 next_event_seq,
             };
@@ -1156,6 +1158,7 @@ the human briefly and wait for them to describe what they'd like to work on."
                 servers.push(mate_ship_mcp);
                 servers
             },
+            resume_session_id: None,
         };
 
         let mate_spawn = self
@@ -3357,10 +3360,15 @@ and the captain will help you find the right approach."
 
         let stage = SessionStartupStage::StartingCaptain;
         let _ = self.set_startup_stage(&session_id, stage).await;
-        let (captain_kind, mate_kind) = {
+        let (captain_kind, mate_kind, captain_resume_id, mate_resume_id) = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let session = sessions.get(&session_id).expect("session exists");
-            (session.config.captain_kind, session.config.mate_kind)
+            (
+                session.config.captain_kind,
+                session.config.mate_kind,
+                session.captain_acp_session_id.clone(),
+                session.mate_acp_session_id.clone(),
+            )
         };
         let captain_config = AgentSessionConfig {
             worktree_path: worktree_path.clone(),
@@ -3369,6 +3377,7 @@ and the captain will help you find the right approach."
                 servers.push(captain_ship_mcp);
                 servers
             },
+            resume_session_id: captain_resume_id,
         };
         let mate_config = AgentSessionConfig {
             worktree_path: worktree_path.clone(),
@@ -3377,6 +3386,7 @@ and the captain will help you find the right approach."
                 servers.push(mate_ship_mcp);
                 servers
             },
+            resume_session_id: mate_resume_id,
         };
         let captain_started_at = Instant::now();
         let mate_started_at = Instant::now();
@@ -3419,6 +3429,8 @@ and the captain will help you find the right approach."
             if let Some(session) = sessions.get_mut(&session_id) {
                 session.captain_handle = Some(captain_spawn.handle);
                 session.mate_handle = Some(mate_spawn.handle);
+                session.captain_acp_session_id = Some(captain_spawn.acp_session_id);
+                session.mate_acp_session_id = Some(mate_spawn.acp_session_id);
                 apply_event(
                     session,
                     ship_types::SessionEvent::AgentModelChanged {
@@ -3571,6 +3583,8 @@ and the captain will help you find the right approach."
                 current_task: session.current_task.clone(),
                 task_history: session.task_history.clone(),
                 archived_at: session.archived_at.clone(),
+                captain_acp_session_id: session.captain_acp_session_id.clone(),
+                mate_acp_session_id: session.mate_acp_session_id.clone(),
             }
         };
 
@@ -3822,6 +3836,7 @@ and the captain will help you find the right approach."
         let config = AgentSessionConfig {
             worktree_path,
             mcp_servers: vec![],
+            resume_session_id: None,
         };
         let spawn_result = self
             .agent_driver
@@ -4492,6 +4507,8 @@ impl Ship for ShipImpl {
             pending_human_review: None,
             title: None,
             archived_at: None,
+            captain_acp_session_id: None,
+            mate_acp_session_id: None,
             events_tx,
             next_event_seq: 0,
         };

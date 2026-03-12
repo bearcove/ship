@@ -848,6 +848,12 @@ pub mod persistence {
         // r[proto.archive-session]
         #[facet(default)]
         pub archived_at: Option<String>,
+        /// ACP session ID for the captain agent (used for session resume)
+        #[facet(default)]
+        pub captain_acp_session_id: Option<String>,
+        /// ACP session ID for the mate agent (used for session resume)
+        #[facet(default)]
+        pub mate_acp_session_id: Option<String>,
     }
 }
 

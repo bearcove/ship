@@ -111,6 +111,8 @@ fn make_persisted_session(id: &str, description: &str) -> PersistedSession {
         }),
         task_history: Vec::new(),
         archived_at: None,
+        captain_acp_session_id: None,
+        mate_acp_session_id: None,
     }
 }
 

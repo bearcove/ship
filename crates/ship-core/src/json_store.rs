@@ -66,6 +66,8 @@ impl From<LegacyPersistedSession> for PersistedSession {
             current_task: value.current_task,
             task_history: value.task_history,
             archived_at: None,
+            captain_acp_session_id: None,
+            mate_acp_session_id: None,
         }
     }
 }

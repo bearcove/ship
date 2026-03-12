@@ -7,7 +7,8 @@ use std::sync::{Arc, Mutex};
 use agent_client_protocol::{
     Agent, CancelNotification, ClientCapabilities, ClientSideConnection, ContentBlock, Error,
     FileSystemCapability, ImageContent, Implementation, InitializeRequest, NewSessionRequest,
-    PromptRequest, ProtocolVersion, StopReason as AcpStopReason, TextContent,
+    NewSessionResponse, PromptRequest, ProtocolVersion, ResumeSessionRequest,
+    StopReason as AcpStopReason, TextContent,
 };
 use base64::Engine as _;
 use futures::{Stream, stream};
@@ -26,7 +27,8 @@ use crate::{SystemBinaryPathProbe, resolve_agent_launcher};
 
 type ModelInfo = (Option<String>, Vec<String>);
 type EffortInfo = (Option<String>, Option<String>, Vec<EffortValue>);
-type ReadyResult = Result<(ModelInfo, EffortInfo), String>;
+/// (model_info, effort_info, acp_session_id)
+type ReadyResult = Result<(ModelInfo, EffortInfo, String), String>;
 
 struct AcpHandle {
     command_tx: mpsc::UnboundedSender<DriverCommand>,
@@ -130,6 +132,7 @@ impl AgentDriver for AcpAgentDriver {
             Ok(Ok((
                 (model_id, available_models),
                 (effort_config_id, effort_value_id, available_effort_values),
+                acp_session_id,
             ))) => {
                 self.handles
                     .lock()
@@ -150,6 +153,7 @@ impl AgentDriver for AcpAgentDriver {
                     effort_config_id,
                     effort_value_id,
                     available_effort_values,
+                    acp_session_id,
                 })
             }
             Ok(Err(message)) => Err(AgentError { message }),
@@ -461,39 +465,75 @@ async fn run_acp_worker(
 
     let initialize_request = build_initialize_request(role);
 
-    connection
+    let init_response = connection
         .initialize(initialize_request)
         .await
         .map_err(acp_error)?;
     tracing::debug!(role = ?role, kind = ?kind, "initialized ACP connection");
 
-    tracing::info!(role = ?role, kind = ?kind, "starting ACP session creation");
-    let new_session_response = connection
-        .new_session(build_new_session_request(&config))
-        .await
-        .map_err(acp_error)?;
-    let session_id = new_session_response.session_id;
-    let (model_id, available_models) = match new_session_response.models.as_ref() {
-        Some(m) => {
-            let current = m.current_model_id.0.as_ref().to_owned();
-            let available = m
-                .available_models
-                .iter()
-                .map(|info| info.model_id.0.as_ref().to_owned())
-                .collect();
-            (Some(current), available)
-        }
-        None => (None, Vec::new()),
-    };
-    let effort_info = parse_effort_from_config_options(
-        new_session_response
-            .config_options
-            .as_deref()
-            .unwrap_or(&[]),
-    );
-    tracing::info!(role = ?role, kind = ?kind, acp_session_id = ?session_id, model_id = ?model_id, "started ACP session");
+    let agent_supports_resume = init_response
+        .agent_capabilities
+        .session_capabilities
+        .resume
+        .is_some();
 
-    let _ = ready_tx.send(Ok(((model_id, available_models), effort_info)));
+    // Try to resume an existing session if we have a stored ACP session ID
+    // and the agent supports it. Otherwise create a new session.
+    let resume_id = config.resume_session_id.clone();
+    let (session_id, model_id, available_models, effort_info) = if let Some(prev_id) =
+        resume_id.filter(|_| agent_supports_resume)
+    {
+        tracing::info!(
+            role = ?role, kind = ?kind, prev_session_id = %prev_id,
+            "resuming ACP session"
+        );
+        let acp_session_id = agent_client_protocol::SessionId::new(Arc::from(prev_id.as_str()));
+        let resume_req = ResumeSessionRequest::new(acp_session_id.clone(), &config.worktree_path)
+            .mcp_servers(config.mcp_servers.iter().map(to_acp_mcp_server).collect());
+        match connection.resume_session(resume_req).await {
+            Ok(_resume_response) => {
+                tracing::info!(
+                    role = ?role, kind = ?kind, acp_session_id = %prev_id,
+                    "resumed ACP session"
+                );
+                (acp_session_id, None, Vec::new(), (None, None, Vec::new()))
+            }
+            Err(error) => {
+                tracing::warn!(
+                    role = ?role, kind = ?kind, prev_session_id = %prev_id,
+                    %error, "session resume failed, falling back to new session"
+                );
+                let resp = connection
+                    .new_session(build_new_session_request(&config))
+                    .await
+                    .map_err(acp_error)?;
+                let (mid, models) = extract_model_info(&resp);
+                let effort =
+                    parse_effort_from_config_options(resp.config_options.as_deref().unwrap_or(&[]));
+                (resp.session_id, mid, models, effort)
+            }
+        }
+    } else {
+        tracing::info!(role = ?role, kind = ?kind, "creating new ACP session");
+        let resp = connection
+            .new_session(build_new_session_request(&config))
+            .await
+            .map_err(acp_error)?;
+        let (mid, models) = extract_model_info(&resp);
+        let effort =
+            parse_effort_from_config_options(resp.config_options.as_deref().unwrap_or(&[]));
+        (resp.session_id, mid, models, effort)
+    };
+
+    let (effort_config_id, effort_value_id, available_effort_values) = effort_info;
+    let acp_session_id_str = session_id.0.as_ref().to_owned();
+    tracing::info!(role = ?role, kind = ?kind, acp_session_id = ?session_id, model_id = ?model_id, "ACP session ready");
+
+    let _ = ready_tx.send(Ok((
+        (model_id, available_models),
+        (effort_config_id, effort_value_id, available_effort_values),
+        acp_session_id_str,
+    )));
 
     while let Some(command) = command_rx.recv().await {
         match command {
@@ -599,6 +639,21 @@ async fn run_acp_worker(
     let _ = child.start_kill();
     let _ = child.wait().await;
     Ok(())
+}
+
+fn extract_model_info(resp: &NewSessionResponse) -> (Option<String>, Vec<String>) {
+    match resp.models.as_ref() {
+        Some(m) => {
+            let current = m.current_model_id.0.as_ref().to_owned();
+            let available = m
+                .available_models
+                .iter()
+                .map(|info| info.model_id.0.as_ref().to_owned())
+                .collect();
+            (Some(current), available)
+        }
+        None => (None, Vec::new()),
+    }
 }
 
 fn parse_effort_from_config_options(
@@ -718,6 +773,8 @@ fn command_for_launcher(
                 "(allow file-write* (subpath \"{home}/Library/pnpm\"))",
                 "(allow file-write* (subpath \"{home}/.npm\"))",
                 "(allow file-write* (subpath \"{home}/.pnpm-store\"))",
+                // Allow claude plans directory
+                "(allow file-write* (subpath \"{home}/.claude/plans\"))",
             ),
             worktree = real_worktree.display(),
             home = home,
@@ -785,7 +842,7 @@ mod tests {
     use std::sync::atomic::AtomicU64;
     use std::sync::{Arc, Mutex};
 
-    use agent_client_protocol::{ClientCapabilities, McpServer};
+    use agent_client_protocol::McpServer;
     use ship_types::{
         AgentKind, McpEnvVar, McpHeader, McpHttpServerConfig, McpServerConfig, McpSseServerConfig,
         McpStdioServerConfig, Role,
@@ -794,7 +851,7 @@ mod tests {
 
     use super::{
         AcpAgentDriver, AcpHandle, build_initialize_request, build_new_session_request,
-        captain_client_capabilities, command_for_launcher, mate_client_capabilities,
+        command_for_launcher,
     };
     use crate::{
         AgentDriver, AgentHandle, AgentLauncher, AgentSessionConfig, BinaryPathProbe, SessionId,
@@ -935,6 +992,7 @@ mod tests {
                     }],
                 }),
             ],
+            resume_session_id: None,
         };
 
         let request = build_new_session_request(&config);

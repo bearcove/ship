@@ -88,8 +88,9 @@ impl ShipAcpClient {
     // r[captain.capabilities]
     // r[mate.capabilities]
     // Agents run in sandboxed worktrees so most built-in tools are safe.
-    // Only Write/Edit are blocked — they bypass the MCP layer's rustfmt
-    // validation and other structural integrity checks.
+    // Edit/Delete of code files (.rs, .ts, .tsx, .js, .jsx) are blocked —
+    // they bypass the MCP layer's rustfmt validation and structural integrity
+    // checks. Non-code files (e.g. .md plans) are allowed through.
     fn blocked_permission_option_id(&self, request: &RequestPermissionRequest) -> Option<String> {
         let is_write_tool = request
             .tool_call
@@ -100,6 +101,22 @@ impl ShipAcpClient {
         if !is_write_tool {
             return None;
         }
+
+        let targets_code_file = request
+            .tool_call
+            .fields
+            .locations
+            .as_deref()
+            .unwrap_or(&[])
+            .iter()
+            .any(|loc| {
+                let ext = loc.path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                matches!(ext, "rs" | "ts" | "tsx" | "js" | "jsx")
+            });
+        if !targets_code_file {
+            return None;
+        }
+
         request.options.iter().find_map(|option| {
             matches!(
                 option.kind,
@@ -457,16 +474,22 @@ impl Client for ShipAcpClient {
     // r[acp.client.fs-write]
     // r[captain.capabilities]
     // r[mate.capabilities]
-    // Both agents must use Ship's MCP tools exclusively. ACP built-in file
-    // and terminal operations are disabled.
+    // Code files (.rs, .ts, .tsx) must go through the MCP write_file tool
+    // (which validates Rust files with rustfmt). Other files (e.g. .md plans)
+    // are allowed through the built-in write.
     async fn write_text_file(
         &self,
-        _args: WriteTextFileRequest,
+        args: WriteTextFileRequest,
     ) -> AcpResult<WriteTextFileResponse> {
-        tracing::warn!(role = ?self.role, "rejected ACP built-in write_text_file");
-        Err(Error::invalid_params().data(
-            "Built-in file writing is disabled. Use the write_file MCP tool instead (it validates Rust files with rustfmt).",
-        ))
+        let ext = args.path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        if matches!(ext, "rs" | "ts" | "tsx" | "js" | "jsx") {
+            tracing::warn!(role = ?self.role, path = %args.path.display(), "rejected ACP built-in write_text_file for code file");
+            return Err(Error::invalid_params().data(
+                "Built-in file writing is disabled for code files. Use the write_file MCP tool instead (it validates Rust files with rustfmt).",
+            ));
+        }
+        tracing::info!(role = ?self.role, path = %args.path.display(), "allowing ACP built-in write_text_file");
+        Ok(WriteTextFileResponse::new())
     }
 
     // read_text_file and create_terminal capabilities are set to false,
@@ -1020,8 +1043,8 @@ mod tests {
     use super::*;
     use agent_client_protocol::{
         ContentChunk, PermissionOption as AcpPermissionOption, Plan, PlanEntry, PlanEntryStatus,
-        RequestPermissionRequest, SessionNotification, Terminal, TextContent, ToolCallUpdate,
-        ToolCallUpdateFields, UsageUpdate,
+        RequestPermissionRequest, SessionNotification, Terminal, TextContent, ToolCallLocation,
+        ToolCallUpdate, ToolCallUpdateFields, UsageUpdate,
     };
     use std::process::Stdio;
     use tokio::process::Command;
@@ -1270,6 +1293,7 @@ mod tests {
                     tx,
                 ));
 
+                // Edit on a code file → blocked
                 let request = RequestPermissionRequest::new(
                     "session-1",
                     ToolCallUpdate::new(
@@ -1277,6 +1301,7 @@ mod tests {
                         ToolCallUpdateFields::new()
                             .title("Write File".to_owned())
                             .kind(ToolKind::Edit)
+                            .locations(vec![ToolCallLocation::new("/tmp/worktree/src/lib.rs")])
                             .raw_input(serde_json::json!({
                                 "path": "/tmp/worktree/src/lib.rs",
                             })),
@@ -1326,6 +1351,7 @@ mod tests {
                     tx,
                 ));
 
+                // Edit on a code file → blocked
                 let request = RequestPermissionRequest::new(
                     "session-1",
                     ToolCallUpdate::new(
@@ -1333,6 +1359,7 @@ mod tests {
                         ToolCallUpdateFields::new()
                             .title("Write File".to_owned())
                             .kind(ToolKind::Edit)
+                            .locations(vec![ToolCallLocation::new("/tmp/worktree/src/lib.rs")])
                             .raw_input(serde_json::json!({
                                 "path": "/tmp/worktree/src/lib.rs",
                             })),

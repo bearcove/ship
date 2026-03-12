@@ -124,12 +124,13 @@ impl AgentDriver for FakeAgentDriver {
             });
 
         Ok(AgentSpawnInfo {
-            handle,
+            handle: handle.clone(),
             model_id: None,
             available_models: Vec::new(),
             effort_config_id: None,
             effort_value_id: None,
             available_effort_values: Vec::new(),
+            acp_session_id: "fake-acp-session".to_owned(),
         })
     }
 

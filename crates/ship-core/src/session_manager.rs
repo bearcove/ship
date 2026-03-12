@@ -97,6 +97,8 @@ pub struct ActiveSession {
     pub pending_human_review: Option<HumanReviewRequest>,
     pub title: Option<String>,
     pub archived_at: Option<String>,
+    pub captain_acp_session_id: Option<String>,
+    pub mate_acp_session_id: Option<String>,
     pub events_tx: broadcast::Sender<SessionEventEnvelope>,
     pub next_event_seq: u64,
 }
@@ -191,6 +193,8 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             pending_human_review: None,
             title: None,
             archived_at: None,
+            captain_acp_session_id: None,
+            mate_acp_session_id: None,
             events_tx,
             next_event_seq: 0,
         };
@@ -215,7 +219,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         .await?;
 
         let session_git_names = SessionGitNames::from_session_id(session_id);
-        let (base_branch, captain_kind, mate_kind, mcp_servers) = {
+        let (base_branch, captain_kind, mate_kind, mcp_servers, captain_acp_id, mate_acp_id) = {
             let session = self
                 .sessions
                 .get(session_id)
@@ -225,6 +229,8 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                 session.config.captain_kind,
                 session.config.mate_kind,
                 session.config.mcp_servers.clone(),
+                session.captain_acp_session_id.clone(),
+                session.mate_acp_session_id.clone(),
             )
         };
 
@@ -249,9 +255,15 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         }
         self.persist_session(session_id).await?;
 
-        let agent_session_config = AgentSessionConfig {
+        let captain_config = AgentSessionConfig {
             worktree_path: worktree_path.clone(),
             mcp_servers: mcp_servers.clone(),
+            resume_session_id: captain_acp_id,
+        };
+        let mate_config = AgentSessionConfig {
+            worktree_path: worktree_path.clone(),
+            mcp_servers: mcp_servers.clone(),
+            resume_session_id: mate_acp_id,
         };
 
         self.set_startup_state(
@@ -264,7 +276,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         .await?;
         let captain_spawn = self
             .agent_driver
-            .spawn(captain_kind, Role::Captain, &agent_session_config)
+            .spawn(captain_kind, Role::Captain, &captain_config)
             .await
             .map_err(|error| SessionManagerError::Agent(error.message))?;
         {
@@ -273,11 +285,22 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                 .get_mut(session_id)
                 .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
             session.captain_handle = Some(captain_spawn.handle);
-            session.captain.model_id = captain_spawn.model_id;
-            session.captain.available_models = captain_spawn.available_models;
-            session.captain.effort_config_id = captain_spawn.effort_config_id;
-            session.captain.effort_value_id = captain_spawn.effort_value_id;
-            session.captain.available_effort_values = captain_spawn.available_effort_values;
+            session.captain_acp_session_id = Some(captain_spawn.acp_session_id);
+            if captain_spawn.model_id.is_some() {
+                session.captain.model_id = captain_spawn.model_id;
+            }
+            if !captain_spawn.available_models.is_empty() {
+                session.captain.available_models = captain_spawn.available_models;
+            }
+            if captain_spawn.effort_config_id.is_some() {
+                session.captain.effort_config_id = captain_spawn.effort_config_id;
+            }
+            if captain_spawn.effort_value_id.is_some() {
+                session.captain.effort_value_id = captain_spawn.effort_value_id;
+            }
+            if !captain_spawn.available_effort_values.is_empty() {
+                session.captain.available_effort_values = captain_spawn.available_effort_values;
+            }
         }
         self.persist_session(session_id).await?;
 
@@ -291,7 +314,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         .await?;
         let mate_spawn = self
             .agent_driver
-            .spawn(mate_kind, Role::Mate, &agent_session_config)
+            .spawn(mate_kind, Role::Mate, &mate_config)
             .await
             .map_err(|error| SessionManagerError::Agent(error.message))?;
         {
@@ -300,11 +323,22 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                 .get_mut(session_id)
                 .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
             session.mate_handle = Some(mate_spawn.handle);
-            session.mate.model_id = mate_spawn.model_id;
-            session.mate.available_models = mate_spawn.available_models;
-            session.mate.effort_config_id = mate_spawn.effort_config_id;
-            session.mate.effort_value_id = mate_spawn.effort_value_id;
-            session.mate.available_effort_values = mate_spawn.available_effort_values;
+            session.mate_acp_session_id = Some(mate_spawn.acp_session_id);
+            if mate_spawn.model_id.is_some() {
+                session.mate.model_id = mate_spawn.model_id;
+            }
+            if !mate_spawn.available_models.is_empty() {
+                session.mate.available_models = mate_spawn.available_models;
+            }
+            if mate_spawn.effort_config_id.is_some() {
+                session.mate.effort_config_id = mate_spawn.effort_config_id;
+            }
+            if mate_spawn.effort_value_id.is_some() {
+                session.mate.effort_value_id = mate_spawn.effort_value_id;
+            }
+            if !mate_spawn.available_effort_values.is_empty() {
+                session.mate.available_effort_values = mate_spawn.available_effort_values;
+            }
         }
         self.set_startup_state(session_id, SessionStartupState::Ready)
             .await
@@ -1028,6 +1062,8 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             current_task: session.current_task.clone(),
             task_history: session.task_history.clone(),
             archived_at: session.archived_at.clone(),
+            captain_acp_session_id: session.captain_acp_session_id.clone(),
+            mate_acp_session_id: session.mate_acp_session_id.clone(),
         };
 
         self.store
