@@ -340,6 +340,7 @@ pub mod events {
     use crate::TaskId;
     use crate::agent::{AgentState, EffortValue, PlanStep, Role};
     use crate::ids::BlockId;
+    use crate::protocol::{ProjectInfo, SessionSummary};
     use crate::session::SessionStartupState;
     use crate::structured::{JsonValue, TerminalSnapshot, ToolCallError, ToolCallKind, ToolTarget};
     use crate::task::TaskStatus;
@@ -558,6 +559,14 @@ pub mod events {
     pub enum SubscribeMessage {
         Event(SessionEventEnvelope),
         ReplayComplete,
+    }
+
+    // r[proto.subscribe-global-events]
+    #[repr(u8)]
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub enum GlobalEvent {
+        SessionListChanged { sessions: Vec<SessionSummary> },
+        ProjectListChanged { projects: Vec<ProjectInfo> },
     }
 }
 
@@ -876,8 +885,9 @@ pub use agent::{
     PermissionRequest, PlanStep, PlanStepInput, PlanStepStatus, Role,
 };
 pub use events::{
-    BlockPatch, ContentBlock, PermissionResolution, SessionEvent, SessionEventEnvelope,
-    SubscribeMessage, TextSource, ToolCallContent, ToolCallLocation, ToolCallStatus,
+    BlockPatch, ContentBlock, GlobalEvent, PermissionResolution, SessionEvent,
+    SessionEventEnvelope, SubscribeMessage, TextSource, ToolCallContent, ToolCallLocation,
+    ToolCallStatus,
 };
 pub use ids::{BlockId, ProjectName, SessionId, TaskId};
 pub use persistence::{CurrentTask, PersistedSession, SessionConfig, TaskContentRecord};

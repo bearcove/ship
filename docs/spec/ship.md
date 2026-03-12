@@ -179,6 +179,15 @@ r[proto.list-sessions]
 The protocol MUST support a `list_sessions` operation that returns summaries
 of all active sessions.
 
+r[proto.subscribe-global-events]
+The protocol MUST support a `subscribe_global_events` operation that streams
+`GlobalEvent` values to the client. On connect, the server MUST immediately
+send the current session list and project list as initial state. Subsequently,
+it MUST push updates whenever the session list or project list changes.
+`GlobalEvent` is a wire-level enum with variants:
+- `SessionListChanged { sessions: Vec<SessionSummary> }` — full session list
+- `ProjectListChanged { projects: Vec<ProjectInfo> }` — full project list
+
 r[proto.steer]
 The protocol MUST support a `steer` operation where the human explicitly sends
 or approves new direction for the mate. This is the backend entrypoint that
