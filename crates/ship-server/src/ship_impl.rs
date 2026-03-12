@@ -4224,7 +4224,7 @@ and the captain will help you find the right approach."
             })
             .sum();
         tracing::info!(session_id = %session_id.0, role = ?role, text_len, "starting agent prompt");
-        let handle = {
+        let (handle, prompt_gen) = {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let session = sessions
                 .get_mut(session_id)
@@ -4247,11 +4247,12 @@ and the captain will help you find the right approach."
                     session.mate_prompt_gen
                 }
             };
-            match role {
+            let handle = match role {
                 Role::Captain => session.captain_handle.clone(),
                 Role::Mate => session.mate_handle.clone(),
             }
-            .ok_or_else(|| format!("{role:?} agent not ready"))?
+            .ok_or_else(|| format!("{role:?} agent not ready"))?;
+            (handle, prompt_gen)
         };
 
         self.persist_session(session_id).await?;
