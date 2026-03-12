@@ -143,3 +143,14 @@ export const sidebarStatusDot = style({
 export const sessionRowArchiveBtn = style({
   flexShrink: 0,
 });
+
+export const sessionGroupLabel = style({
+  fontSize: "var(--font-size-1)",
+  textTransform: "uppercase",
+  letterSpacing: "0.05em",
+  color: "var(--gray-9)",
+  paddingTop: "var(--space-3)",
+  paddingLeft: "var(--space-3)",
+  paddingRight: "var(--space-3)",
+  paddingBottom: "var(--space-1)",
+});
