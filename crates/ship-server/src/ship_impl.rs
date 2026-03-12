@@ -367,7 +367,7 @@ impl ShipImpl {
                 pending_edits: HashMap::new(),
                 pending_steer: None,
                 pending_human_review: None,
-                title: None,
+                title: persisted.title.clone(),
                 archived_at: None,
                 captain_acp_session_id: persisted.captain_acp_session_id,
                 mate_acp_session_id: persisted.mate_acp_session_id,
