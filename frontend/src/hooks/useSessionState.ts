@@ -82,13 +82,6 @@ function publishSessionDebug(
   };
 }
 
-export function detectSequenceGap(lastSeenSeq: number | null, nextSeq: number): string | null {
-  if (lastSeenSeq === null || nextSeq === lastSeenSeq + 1) {
-    return null;
-  }
-  return `sequence gap detected: expected ${lastSeenSeq + 1}, received ${nextSeq}`;
-}
-
 export type DisconnectDiagnosis = "real-disconnect" | "expected-reconnect" | "cleanup" | "other";
 
 export function diagnoseDisconnectReason(reason: string): DisconnectDiagnosis {
@@ -98,10 +91,7 @@ export function diagnoseDisconnectReason(reason: string): DisconnectDiagnosis {
   if (reason === "subscription cleanup") {
     return "cleanup";
   }
-  if (
-    reason.startsWith("subscription setup failed:") ||
-    reason.startsWith("sequence gap detected:")
-  ) {
+  if (reason.startsWith("subscription setup failed:")) {
     return "expected-reconnect";
   }
   return "other";
@@ -250,7 +240,6 @@ function startSubscription(sessionId: string, sub: SessionSubscription) {
     log("info", "subscription setup complete", { sessionId, attempt });
 
     let stopReason: string | null = null;
-    let lastSeenSeq = sub.state.lastSeq;
     let replayBuffer: SessionEventEnvelope[] = [];
     let replaying = true;
 
@@ -314,24 +303,6 @@ function startSubscription(sessionId: string, sub: SessionSubscription) {
           eventKind: next.msg.value.event.tag,
           phase: replaying ? "replaying" : "live",
         });
-        // Gap detection only applies to live events — during replay the server
-        // may coalesce BlockPatch events into their BlockAppend, producing
-        // intentional sequence-number gaps that are not a sign of data loss.
-        if (!replaying) {
-          const gap = detectSequenceGap(lastSeenSeq, nextSeq);
-          if (gap) {
-            stopReason = gap;
-            log("warn", "sequence gap detected", {
-              sessionId,
-              expectedSeq: (lastSeenSeq ?? -1) + 1,
-              receivedSeq: nextSeq,
-            });
-            invalidateShipClient(stopReason);
-            sub.signalStop?.(stopReason);
-            continue;
-          }
-        }
-        lastSeenSeq = nextSeq;
         if (replaying) {
           replayBuffer.push(next.msg.value);
         } else {
