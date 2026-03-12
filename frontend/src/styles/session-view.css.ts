@@ -175,6 +175,11 @@ const bubblePulse = keyframes({
   "50%": { opacity: 1 },
 });
 
+const transcriptFadeIn = keyframes({
+  from: { opacity: 0, transform: "translateY(6px)" },
+  to: { opacity: 1, transform: "translateY(0)" },
+});
+
 export const liveBubblesRow = style({
   display: "flex",
   flexDirection: "column",
