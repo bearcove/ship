@@ -12,7 +12,7 @@ use rust_mcp_sdk::schema::{
 use rust_mcp_sdk::{McpServer, StdioTransport, ToMcpServerHandler, TransportOptions};
 use serde_json::{Value, json};
 use ship_service::MateMcpClient;
-use ship_types::{McpToolCallResponse, SessionId};
+use ship_types::{McpToolCallResponse, PlanStepInput, SessionId};
 
 pub struct MateMcpServerArgs {
     pub session_id: SessionId,
@@ -161,9 +161,18 @@ impl ServerHandler for MateMcpHandler {
                 };
                 let steps = steps
                     .iter()
-                    .map(|value| value.as_str().map(ToOwned::to_owned))
+                    .map(|value| {
+                        let title = value.get("title").and_then(Value::as_str)?.to_owned();
+                        let description =
+                            value.get("description").and_then(Value::as_str)?.to_owned();
+                        Some(PlanStepInput { title, description })
+                    })
                     .collect::<Option<Vec<_>>>()
-                    .ok_or_else(|| call_tool_rpc_error("steps must be strings"))?;
+                    .ok_or_else(|| {
+                        call_tool_rpc_error(
+                            "each step must be an object with title and description",
+                        )
+                    })?;
                 self.client
                     .set_plan(steps)
                     .await
@@ -391,7 +400,15 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                 "properties": {
                     "steps": {
                         "type": "array",
-                        "items": { "type": "string" },
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "title": { "type": "string", "description": "Short summary of the step (like a commit subject line)." },
+                                "description": { "type": "string", "description": "Longer explanation of what the step involves." }
+                            },
+                            "required": ["title", "description"],
+                            "additionalProperties": false
+                        },
                         "minItems": 1
                     }
                 },
