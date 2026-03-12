@@ -95,7 +95,6 @@ fn parts_to_log_text(parts: &[PromptContentPart]) -> String {
 }
 
 const FILE_MENTION_LINE_LIMIT: usize = 200;
-const MAX_WORKTREE_FILES: usize = 5000;
 
 const PLAN_REQUIRED_MESSAGE: &str = "\
 Before you can write files, run commands, or make edits, you need to lay out \
@@ -2458,6 +2457,7 @@ and the captain will help you find the right approach."
     async fn list_worktree_files_impl(
         &self,
         session_id: &SessionId,
+        query: &str,
     ) -> Result<Vec<String>, String> {
         let worktree_path = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
@@ -2466,18 +2466,19 @@ and the captain will help you find the right approach."
                 .ok_or_else(|| format!("session not found: {}", session_id.0))?;
             Self::current_task_worktree_path(session)?.to_path_buf()
         };
-        let output = TokioCommand::new(Self::fd_program())
-            .args(["--type", "f"])
+        let mut cmd = TokioCommand::new(Self::fd_program());
+        if query.is_empty() {
+            cmd.args(["--type", "f"]);
+        } else {
+            cmd.args(["--type", "f", query]);
+        }
+        let output = cmd
             .current_dir(&worktree_path)
             .output()
             .await
             .map_err(|e| format!("fd failed: {e}"))?;
         let stdout = String::from_utf8_lossy(&output.stdout);
-        Ok(stdout
-            .lines()
-            .take(MAX_WORKTREE_FILES)
-            .map(|s| s.to_owned())
-            .collect())
+        Ok(stdout.lines().take(10).map(|s| s.to_owned()).collect())
     }
 
     // r[mate.tool.read-file]
@@ -5434,8 +5435,8 @@ impl Ship for ShipImpl {
     // r[event.subscribe.roam-channel]
     // r[sharing.event-broadcast]
     // r[ui.composer.file-mention]
-    async fn list_worktree_files(&self, session: SessionId) -> Vec<String> {
-        match self.list_worktree_files_impl(&session).await {
+    async fn list_worktree_files(&self, session: SessionId, query: String) -> Vec<String> {
+        match self.list_worktree_files_impl(&session, &query).await {
             Ok(files) => files,
             Err(error) => {
                 Self::log_error("list_worktree_files", &error);

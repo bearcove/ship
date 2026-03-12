@@ -38,7 +38,6 @@ import {
   transcriptPreview,
 } from "../styles/session-view.css";
 import { Waveform } from "./Waveform";
-import { useWorktreeFiles } from "../hooks/useWorktreeFiles";
 import { useWorktreeDiffStats } from "../hooks/useWorktreeDiffStats";
 import { useDocumentDrop } from "../hooks/useDocumentDrop";
 import { useTranscription } from "../hooks/useTranscription";
@@ -181,7 +180,7 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const transcriptPreviewRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const worktreeFiles = useWorktreeFiles(sessionId);
+  const [fileMatches, setFileMatches] = useState<string[]>([]);
   const isDragOver = useDocumentDrop(addImageFiles);
   const transcription = useTranscription();
 
@@ -240,12 +239,24 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
     target === "mate" && (taskStatus === null || !ACTIVE_TASK_STATUS_TAGS.has(taskStatus.tag));
   const disableSubmit = agentCantSend || (!startupReady && target === "mate") || mateUnavailable;
 
-  const filteredFiles =
-    mentionQuery !== null
-      ? worktreeFiles
-          .filter((f) => f.toLowerCase().includes(mentionQuery.toLowerCase()))
-          .slice(0, 10)
-      : [];
+  useEffect(() => {
+    if (mentionQuery === null) {
+      setFileMatches([]);
+      return;
+    }
+    let active = true;
+    async function fetchFiles() {
+      const client = await getShipClient();
+      const list = await client.listWorktreeFiles(sessionId, mentionQuery ?? "");
+      if (active) setFileMatches(list);
+    }
+    void fetchFiles();
+    return () => {
+      active = false;
+    };
+  }, [sessionId, mentionQuery]);
+
+  const filteredFiles = fileMatches;
 
   // r[ui.composer.file-mention]
   function getAtMentionQuery(value: string, cursorPos: number): string | null {

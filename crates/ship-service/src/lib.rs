@@ -88,7 +88,7 @@ pub trait Ship {
     async fn archive_session(&self, req: ArchiveSessionRequest) -> ArchiveSessionResponse;
 
     // r[ui.composer.file-mention]
-    async fn list_worktree_files(&self, session: SessionId) -> Vec<String>;
+    async fn list_worktree_files(&self, session: SessionId, query: String) -> Vec<String>;
 
     async fn get_worktree_diff_stats(&self, session: SessionId) -> Option<WorktreeDiffStats>;
 
