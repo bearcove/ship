@@ -101,6 +101,8 @@ pub struct ActiveSession {
     pub mate_acp_session_id: Option<String>,
     pub events_tx: broadcast::Sender<SessionEventEnvelope>,
     pub next_event_seq: u64,
+    pub captain_prompt_gen: u64,
+    pub mate_prompt_gen: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -197,6 +199,8 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             mate_acp_session_id: None,
             events_tx,
             next_event_seq: 0,
+            captain_prompt_gen: 0,
+            mate_prompt_gen: 0,
         };
 
         self.sessions.insert(session_id.clone(), session);
