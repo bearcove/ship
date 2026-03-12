@@ -600,6 +600,25 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
           >
             <ArrowUp size={20} weight="bold" />
           </button>
+        ) : isWorking ? (
+          <button
+            type="button"
+            className={composerInlineBtn}
+            data-pos="right"
+            onClick={() => {
+              void (async () => {
+                const client = await getShipClient();
+                if (captainStateTag === "Working") {
+                  await client.interruptCaptain(sessionId);
+                } else {
+                  await client.cancel(sessionId);
+                }
+              })();
+            }}
+            title="Stop agent"
+          >
+            <Stop size={20} weight="fill" />
+          </button>
         ) : (
           <button
             type="button"
