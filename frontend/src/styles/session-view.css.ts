@@ -818,6 +818,9 @@ export const composerInlineBtn = style({
     '&[data-pos="right"]': {
       right: 6,
     },
+    '&[data-pos="right-2"]': {
+      right: 44,
+    },
   },
   "@media": {
     "(max-width: 700px)": {
@@ -918,6 +921,15 @@ export const composerInput = style({
     "(max-width: 700px)": {
       paddingLeft: 48,
       paddingRight: 48,
+    },
+  },
+});
+
+export const composerInputWideRight = style({
+  paddingRight: 80,
+  "@media": {
+    "(max-width: 700px)": {
+      paddingRight: 88,
     },
   },
 });
