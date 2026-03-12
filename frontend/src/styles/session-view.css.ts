@@ -420,6 +420,54 @@ export const agentStatusBarAvatar = style({
   maskImage: "radial-gradient(circle, black 64%, transparent 64%)",
 });
 
+export const sessionTopBar = style({
+  display: "flex",
+  alignItems: "center",
+  gap: "var(--space-2)",
+  padding: "var(--space-2) var(--space-3)",
+  borderBottom: "1px solid var(--gray-a4)",
+  flexShrink: 0,
+});
+
+export const sessionTopBarLeft = style({
+  display: "flex",
+  alignItems: "center",
+  gap: "var(--space-2)",
+  flex: 1,
+  minWidth: 0,
+  overflow: "hidden",
+});
+
+export const sessionTopBarBreadcrumb = style({
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+});
+
+export const sessionTopBarRight = style({
+  display: "flex",
+  alignItems: "center",
+  gap: "var(--space-3)",
+  flexShrink: 0,
+  "@media": {
+    "(max-width: 699px)": { display: "none" },
+    "(min-width: 980px)": { display: "none" },
+  },
+});
+
+export const sessionTopBarAgentSection = style({
+  display: "flex",
+  alignItems: "center",
+  gap: "var(--space-1)",
+});
+
+export const sessionTopBarDivider = style({
+  width: 1,
+  height: 16,
+  background: "var(--gray-a5)",
+  flexShrink: 0,
+});
+
 export const agentHeader = style({
   display: "flex",
   flexDirection: "column",
