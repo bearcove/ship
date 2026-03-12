@@ -675,32 +675,7 @@ fn resolve_listen_addrs(
         return Ok(vec![addr.parse::<SocketAddr>()?]);
     }
 
-    // Enumerate every non-wildcard, non-link-local interface address on port 9140.
-    let port = 9140u16;
-    let mut addrs: Vec<SocketAddr> = if_addrs::get_if_addrs()?
-        .into_iter()
-        .filter_map(|iface| {
-            let ip = iface.ip();
-            match ip {
-                std::net::IpAddr::V4(v4) if v4.is_unspecified() || v4.is_link_local() => None,
-                std::net::IpAddr::V6(v6) if v6.is_unspecified() => None,
-                // Skip link-local IPv6 (fe80::/10) — scope IDs make them unreliable to bind.
-                std::net::IpAddr::V6(v6) if (v6.segments()[0] & 0xffc0) == 0xfe80 => None,
-                _ => Some(SocketAddr::new(ip, port)),
-            }
-        })
-        .collect();
-
-    // Stable order: loopback first, then the rest sorted by string representation.
-    addrs.sort_by_key(|a| (!a.ip().is_loopback(), a.to_string()));
-    addrs.dedup();
-
-    if addrs.is_empty() {
-        // Fallback: at minimum bind loopback.
-        addrs.push("[::1]:9140".parse()?);
-    }
-
-    Ok(addrs)
+    Ok(vec!["127.0.0.1:9140".parse()?])
 }
 
 // r[dev-proxy.vite-port]
