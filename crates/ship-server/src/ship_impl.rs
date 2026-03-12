@@ -23,9 +23,9 @@ use ship_types::{
     AgentDiscovery, AgentKind, AgentSnapshot, AgentState, ArchiveSessionRequest,
     ArchiveSessionResponse, AutonomyMode, BlockId, CaptainAssignExtras, CloseSessionRequest,
     CloseSessionResponse, ContentBlock, CreateSessionRequest, CreateSessionResponse, CurrentTask,
-    HumanReviewRequest, McpDiffContent, McpServerConfig, McpStdioServerConfig, McpToolCallResponse,
-    PersistedSession, PlanStep, PlanStepInput, PlanStepStatus, ProjectInfo, ProjectName,
-    PromptContentPart, Role, ServerInfo, SessionConfig, SessionDetail, SessionEvent,
+    GlobalEvent, HumanReviewRequest, McpDiffContent, McpServerConfig, McpStdioServerConfig,
+    McpToolCallResponse, PersistedSession, PlanStep, PlanStepInput, PlanStepStatus, ProjectInfo,
+    ProjectName, PromptContentPart, Role, ServerInfo, SessionConfig, SessionDetail, SessionEvent,
     SessionEventEnvelope, SessionId, SessionStartupStage, SessionStartupState, SessionSummary,
     SetAgentEffortResponse, SetAgentModelResponse, SubscribeMessage, TaskId, TaskRecord,
     TaskStatus, ToolCallKind, ToolTarget, TranscribeSegment, WorktreeDiffStats,
@@ -180,6 +180,7 @@ pub struct ShipImpl {
     startup_started_at: Arc<Mutex<HashMap<SessionId, Instant>>>,
     user_avatar_url: Arc<Mutex<Option<String>>>,
     whisper_model_path: Arc<Mutex<Option<PathBuf>>>,
+    global_events_tx: broadcast::Sender<GlobalEvent>,
 }
 
 /// Default whisper model filename to look for.
@@ -191,6 +192,7 @@ impl ShipImpl {
         sessions_dir: std::path::PathBuf,
         agent_discovery: AgentDiscovery,
     ) -> Self {
+        let (global_events_tx, _) = broadcast::channel(256);
         Self {
             registry: Arc::new(tokio::sync::Mutex::new(registry)),
             agent_discovery,
@@ -204,6 +206,7 @@ impl ShipImpl {
             startup_started_at: Arc::new(Mutex::new(HashMap::new())),
             user_avatar_url: Arc::new(Mutex::new(None)),
             whisper_model_path: Arc::new(Mutex::new(None)),
+            global_events_tx,
         }
     }
 
@@ -776,6 +779,7 @@ impl ShipImpl {
                 },
             );
         }
+        self.notify_session_list_changed();
 
         self.persist_session(session_id).await
     }
@@ -3993,6 +3997,7 @@ and the captain will help you find the right approach."
 
         if !had_title {
             let _ = self.persist_session(&session_id).await;
+            self.notify_session_list_changed();
         }
     }
 
@@ -4211,6 +4216,7 @@ and the captain will help you find the right approach."
                 },
             );
         }
+        self.notify_session_list_changed();
 
         self.persist_session(session_id).await?;
 
@@ -4433,6 +4439,22 @@ and the captain will help you find the right approach."
             }
         }
     }
+
+    fn notify_session_list_changed(&self) {
+        let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+        let list: Vec<SessionSummary> = sessions.values().map(Self::to_session_summary).collect();
+        let _ = self
+            .global_events_tx
+            .send(GlobalEvent::SessionListChanged { sessions: list });
+    }
+
+    async fn notify_project_list_changed(&self) {
+        let registry = self.registry.lock().await;
+        let projects: Vec<ProjectInfo> = registry.list();
+        let _ = self
+            .global_events_tx
+            .send(GlobalEvent::ProjectListChanged { projects });
+    }
 }
 
 impl Ship for ShipImpl {
@@ -4455,21 +4477,25 @@ impl Ship for ShipImpl {
     }
 
     async fn add_project(&self, path: String) -> ProjectInfo {
-        let mut registry = self.registry.lock().await;
-        match registry.add(&path).await {
-            Ok(project) => project,
-            Err(error) => ProjectInfo {
-                name: ProjectName(
-                    path.rsplit('/')
-                        .find(|segment| !segment.is_empty())
-                        .unwrap_or("project")
-                        .to_owned(),
-                ),
-                path,
-                valid: false,
-                invalid_reason: Some(error.to_string()),
-            },
-        }
+        let result = {
+            let mut registry = self.registry.lock().await;
+            match registry.add(&path).await {
+                Ok(project) => project,
+                Err(error) => ProjectInfo {
+                    name: ProjectName(
+                        path.rsplit('/')
+                            .find(|segment| !segment.is_empty())
+                            .unwrap_or("project")
+                            .to_owned(),
+                    ),
+                    path,
+                    valid: false,
+                    invalid_reason: Some(error.to_string()),
+                },
+            }
+        };
+        self.notify_project_list_changed().await;
+        result
     }
 
     async fn list_branches(&self, project: ProjectName) -> Vec<String> {
@@ -4611,6 +4637,7 @@ impl Ship for ShipImpl {
                 .remove(&session_id);
             return CreateSessionResponse::Failed { message: error };
         }
+        self.notify_session_list_changed();
 
         self.startup_started_at
             .lock()
@@ -5019,6 +5046,7 @@ impl Ship for ShipImpl {
             .lock()
             .expect("sessions mutex poisoned")
             .remove(&req.id);
+        self.notify_session_list_changed();
 
         CloseSessionResponse::Closed
     }
@@ -5108,6 +5136,7 @@ impl Ship for ShipImpl {
             .lock()
             .expect("sessions mutex poisoned")
             .remove(&req.id);
+        self.notify_session_list_changed();
 
         ArchiveSessionResponse::Archived
     }
@@ -5210,6 +5239,62 @@ impl Ship for ShipImpl {
             return;
         };
         Self::spawn_event_subscription(session, receiver, replay, output);
+    }
+
+    // r[proto.subscribe-global-events]
+    async fn subscribe_global_events(&self, output: Tx<GlobalEvent>) {
+        // Send current state immediately
+        {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let list: Vec<SessionSummary> =
+                sessions.values().map(Self::to_session_summary).collect();
+            if output
+                .send(GlobalEvent::SessionListChanged { sessions: list })
+                .await
+                .is_err()
+            {
+                return;
+            }
+        }
+        {
+            let registry = self.registry.lock().await;
+            let projects: Vec<ProjectInfo> = registry.list();
+            if output
+                .send(GlobalEvent::ProjectListChanged { projects })
+                .await
+                .is_err()
+            {
+                return;
+            }
+        }
+
+        // Stream live updates
+        let mut rx = self.global_events_tx.subscribe();
+        loop {
+            match rx.recv().await {
+                Ok(event) => {
+                    if output.send(event).await.is_err() {
+                        break;
+                    }
+                }
+                Err(broadcast::error::RecvError::Lagged(n)) => {
+                    tracing::warn!(skipped = n, "global events subscriber lagged");
+                    // Re-send current state to catch up
+                    let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                    let list: Vec<SessionSummary> =
+                        sessions.values().map(Self::to_session_summary).collect();
+                    drop(sessions);
+                    if output
+                        .send(GlobalEvent::SessionListChanged { sessions: list })
+                        .await
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+                Err(broadcast::error::RecvError::Closed) => break,
+            }
+        }
     }
 
     async fn transcribe_audio(
