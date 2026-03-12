@@ -281,7 +281,7 @@ impl ShipImpl {
         *self.vad_model_path.lock().expect("vad mutex poisoned") = path;
     }
 
-    #[allow(dead_code)] // called from ship binary; not from ship-startup-probe
+    #[allow(dead_code)]
     pub async fn fetch_github_user_avatar(&self) {
         let output = TokioCommand::new("gh")
             .args(["api", "/user"])
@@ -328,7 +328,7 @@ impl ShipImpl {
     }
 
     // r[resilience.server-restart]
-    #[allow(dead_code)] // called from ship binary; not from ship-startup-probe
+    #[allow(dead_code)]
     pub async fn load_persisted_sessions(&self) {
         let sessions_list = match self.store.list_sessions().await {
             Ok(list) => list,

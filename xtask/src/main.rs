@@ -40,7 +40,7 @@ fn print_usage() {
 }
 
 fn install(workspace_root: &Path) {
-    let binaries = ["ship", "ship-startup-probe"];
+    let binaries = ["ship"];
 
     println!("Building ship binaries...");
     let status = Command::new("cargo")
@@ -101,25 +101,20 @@ fn install(workspace_root: &Path) {
             }
         }
 
-        // Verify the installed binary works. ship-startup-probe is a long-running
-        // server process with no --version flag, so skip verification for it.
-        if binary_name == "ship" {
-            let output = Command::new(&dst)
-                .arg("--version")
-                .output()
-                .unwrap_or_else(|_| panic!("Failed to run {} --version", binary_name));
+        // Verify the installed binary works.
+        let output = Command::new(&dst)
+            .arg("--version")
+            .output()
+            .unwrap_or_else(|_| panic!("Failed to run {} --version", binary_name));
 
-            if !output.status.success() {
-                eprintln!("Error: {} --version failed", binary_name);
-                eprintln!("stderr: {}", String::from_utf8_lossy(&output.stderr));
-                std::process::exit(1);
-            }
-
-            let version = String::from_utf8_lossy(&output.stdout);
-            println!("Installed: {}", version.trim());
-        } else {
-            println!("Installed {}", binary_name);
+        if !output.status.success() {
+            eprintln!("Error: {} --version failed", binary_name);
+            eprintln!("stderr: {}", String::from_utf8_lossy(&output.stderr));
+            std::process::exit(1);
         }
+
+        let version = String::from_utf8_lossy(&output.stdout);
+        println!("Installed: {}", version.trim());
     }
 }
 

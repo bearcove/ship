@@ -142,10 +142,6 @@ struct ListenArgs {
     /// Path to whisper model (overrides SHIP_WHISPER_MODEL).
     #[facet(args::named, default)]
     whisper_model: Option<String>,
-
-    /// Path to Silero VAD model (overrides SHIP_VAD_MODEL).
-    #[facet(args::named, default)]
-    vad_model: Option<String>,
 }
 
 #[derive(Debug, facet::Facet)]
@@ -1211,21 +1207,28 @@ async fn run_listen(args: ListenArgs) -> Result<(), Box<dyn std::error::Error>> 
         .with_env_filter(EnvFilter::from_default_env().add_directive(Level::INFO.into()))
         .init();
 
-    // Resolve model paths
+    // Resolve whisper model path
     let whisper_model = args
         .whisper_model
         .or_else(|| std::env::var("SHIP_WHISPER_MODEL").ok())
         .ok_or("whisper model required: pass --whisper-model or set SHIP_WHISPER_MODEL")?;
-    let vad_model = args
-        .vad_model
-        .or_else(|| std::env::var("SHIP_VAD_MODEL").ok())
-        .ok_or("VAD model required: pass --vad-model or set SHIP_VAD_MODEL")?;
 
-    tracing::info!(whisper = %whisper_model, vad = %vad_model, "loading models");
+    tracing::info!(whisper = %whisper_model, "loading models");
 
     let whisper_ctx = whisper_cpp_plus::WhisperContext::new(&whisper_model)?;
-    let mut vad = whisper_cpp_plus::enhanced::vad::EnhancedWhisperVadProcessor::new(&vad_model)?;
-    let vad_params = whisper_cpp_plus::enhanced::vad::EnhancedVadParams::default();
+
+    // Silero VAD via silero-vad-rust (model weights are bundled in the crate)
+    use silero_vad_rust::silero_vad::model::load_silero_vad;
+    use silero_vad_rust::silero_vad::utils_vad::{VadEvent, VadIterator, VadIteratorParams};
+
+    let silero_model = load_silero_vad()?;
+    let vad_params = VadIteratorParams {
+        threshold: 0.5,
+        sampling_rate: 16_000,
+        min_silence_duration_ms: 300,
+        speech_pad_ms: 30,
+    };
+    let mut vad_iter = VadIterator::new(silero_model, vad_params)?;
 
     // Set up mic capture via cpal
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -1238,9 +1241,19 @@ async fn run_listen(args: ListenArgs) -> Result<(), Box<dyn std::error::Error>> 
         "using input device"
     );
 
+    // Use the device's default config — the mic may not support 1ch/16kHz directly.
+    let default_config = device.default_input_config()?;
+    let native_sample_rate = default_config.sample_rate().0;
+    let native_channels = default_config.channels();
+    tracing::info!(
+        sample_rate = native_sample_rate,
+        channels = native_channels,
+        "native input config"
+    );
+
     let config = cpal::StreamConfig {
-        channels: 1,
-        sample_rate: cpal::SampleRate(16000),
+        channels: native_channels,
+        sample_rate: default_config.sample_rate(),
         buffer_size: cpal::BufferSize::Default,
     };
 
@@ -1249,7 +1262,37 @@ async fn run_listen(args: ListenArgs) -> Result<(), Box<dyn std::error::Error>> 
     let stream = device.build_input_stream(
         &config,
         move |data: &[f32], _: &cpal::InputCallbackInfo| {
-            let _ = audio_tx.send(data.to_vec());
+            // Downmix to mono if needed
+            let mono: Vec<f32> = if native_channels == 1 {
+                data.to_vec()
+            } else {
+                data.chunks_exact(native_channels as usize)
+                    .map(|frame| frame.iter().sum::<f32>() / native_channels as f32)
+                    .collect()
+            };
+
+            // Resample to 16kHz if needed
+            if native_sample_rate == 16000 {
+                let _ = audio_tx.send(mono);
+            } else {
+                let ratio = 16000.0 / native_sample_rate as f64;
+                let out_len = (mono.len() as f64 * ratio) as usize;
+                let mut resampled = Vec::with_capacity(out_len);
+                for i in 0..out_len {
+                    let src_idx = i as f64 / ratio;
+                    let idx = src_idx as usize;
+                    let frac = src_idx - idx as f64;
+                    let sample = if idx + 1 < mono.len() {
+                        mono[idx] as f64 * (1.0 - frac) + mono[idx + 1] as f64 * frac
+                    } else if idx < mono.len() {
+                        mono[idx] as f64
+                    } else {
+                        0.0
+                    };
+                    resampled.push(sample as f32);
+                }
+                let _ = audio_tx.send(resampled);
+            }
         },
         |err| {
             tracing::error!("audio input error: {err}");
@@ -1259,134 +1302,107 @@ async fn run_listen(args: ListenArgs) -> Result<(), Box<dyn std::error::Error>> 
     stream.play()?;
     tracing::info!("listening... press Ctrl-C to stop");
 
-    // Sliding window state
-    let mut audio_buf: Vec<f32> = Vec::new();
+    // VAD state: accumulate 16kHz mono samples, feed 512-sample chunks to the VAD
+    let mut sample_buf: Vec<f32> = Vec::new();
+    // Audio for the current speech segment (between Start and End events)
+    let mut speech_audio: Vec<f32> = Vec::new();
+    // All accumulated audio since the last speech start (so we can slice it)
+    let mut all_audio: Vec<f32> = Vec::new();
+    let mut speech_start_sample: Option<usize> = None;
+    let mut total_samples: usize = 0;
     let mut transcribed_segments: Vec<String> = Vec::new();
-    // Track how many samples we've removed from the front of the buffer
-    let mut _buf_offset_samples: usize = 0;
 
-    // Process audio in a loop
-    let mut interval = tokio::time::interval(Duration::from_millis(500));
+    const VAD_CHUNK_SIZE: usize = 512;
+
     loop {
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {
+                // If speech was in progress, transcribe what we have
+                if speech_start_sample.is_some() && !speech_audio.is_empty() {
+                    if let Some(text) = transcribe_chunk(&whisper_ctx, &speech_audio) {
+                        eprintln!();
+                        tracing::info!("transcribed (final): {text}");
+                        transcribed_segments.push(text);
+                    }
+                }
                 tracing::info!("stopping");
                 break;
             }
             Some(samples) = audio_rx.recv() => {
-                audio_buf.extend_from_slice(&samples);
-            }
-            _ = interval.tick() => {
-                if audio_buf.len() < 16000 {
-                    // Need at least 1s of audio for VAD to do anything useful
-                    continue;
-                }
+                sample_buf.extend_from_slice(&samples);
+                all_audio.extend_from_slice(&samples);
 
-                // Run Silero VAD on the full buffer to find speech segments
-                let chunks = match vad.process_with_aggregation(&audio_buf, &vad_params) {
-                    Ok(c) => c,
-                    Err(e) => {
-                        tracing::warn!("VAD error: {e}");
-                        continue;
-                    }
-                };
+                // Feed 512-sample chunks to the VAD
+                while sample_buf.len() >= VAD_CHUNK_SIZE {
+                    let chunk: Vec<f32> = sample_buf.drain(..VAD_CHUNK_SIZE).collect();
+                    total_samples += VAD_CHUNK_SIZE;
 
-                // Print current state
-                let buf_duration = audio_buf.len() as f64 / 16000.0;
-                let chunk_summary: Vec<String> = chunks
-                    .iter()
-                    .map(|c| {
-                        format!(
-                            "{:.1}s-{:.1}s",
-                            c.metadata.original_start,
-                            c.metadata.original_end
-                        )
-                    })
-                    .collect();
-                eprint!(
-                    "\r\x1b[2K[buf: {:.1}s] [vad: {}] [transcribed: {}]",
-                    buf_duration,
-                    if chunk_summary.is_empty() {
-                        "silence".to_owned()
-                    } else {
-                        chunk_summary.join(", ")
-                    },
-                    transcribed_segments.len(),
-                );
-                let _ = std::io::stderr().flush();
-
-                // A segment is "closed" if its end is at least 1s before the buffer tail.
-                // That means we have enough trailing silence to be confident it won't grow.
-                let buf_end_s = audio_buf.len() as f32 / 16000.0;
-                let silence_threshold = 1.0; // 1s of silence after segment = closed
-
-                for chunk in &chunks {
-                    let gap_after = buf_end_s - chunk.metadata.original_end;
-                    if gap_after < silence_threshold {
-                        // Segment might still be growing, skip for now
-                        continue;
+                    // If we're in a speech segment, accumulate audio
+                    if speech_start_sample.is_some() {
+                        speech_audio.extend_from_slice(&chunk);
                     }
 
-                    // This segment is closed — transcribe it
-                    let params = whisper_cpp_plus::FullParams::new(
-                        whisper_cpp_plus::SamplingStrategy::Greedy { best_of: 1 },
-                    )
-                    .language("en")
-                    .no_context(true);
+                    match vad_iter.process_chunk(&chunk, false, 0) {
+                        Ok(Some(VadEvent::Start(pos))) => {
+                            let start_sample = pos as usize;
+                            speech_start_sample = Some(start_sample);
+                            // Grab any audio from the start position that we already
+                            // passed. The start is padded back by speech_pad_ms, so it
+                            // may reference samples before the current chunk.
+                            let offset_in_all = if start_sample < all_audio.len() {
+                                all_audio.len() - (total_samples - start_sample).min(all_audio.len())
+                            } else {
+                                all_audio.len()
+                            };
+                            speech_audio = all_audio[offset_in_all..].to_vec();
 
-                    let state = whisper_ctx.create_state();
-                    match state {
-                        Ok(mut state) => {
-                            if let Err(e) = state.full(params, &chunk.audio) {
-                                tracing::warn!("whisper error: {e}");
-                                continue;
-                            }
-                            let n_segments = state.full_n_segments();
-                            let mut text = String::new();
-                            for i in 0..n_segments {
-                                if let Ok(t) = state.full_get_segment_text(i) {
-                                    let t = t.trim();
-                                    if !t.is_empty() {
-                                        if !text.is_empty() {
-                                            text.push(' ');
-                                        }
-                                        text.push_str(t);
-                                    }
+                            eprint!(
+                                "\r\x1b[2K[speech started at {:.1}s]",
+                                start_sample as f64 / 16000.0
+                            );
+                            let _ = std::io::stderr().flush();
+                        }
+                        Ok(Some(VadEvent::End(pos))) => {
+                            let end_sample = pos as usize;
+                            eprint!(
+                                "\r\x1b[2K[speech ended at {:.1}s, transcribing...]",
+                                end_sample as f64 / 16000.0
+                            );
+                            let _ = std::io::stderr().flush();
+
+                            // Transcribe the speech segment
+                            if !speech_audio.is_empty() {
+                                if let Some(text) = transcribe_chunk(&whisper_ctx, &speech_audio) {
+                                    eprintln!();
+                                    tracing::info!("transcribed: {text}");
+                                    transcribed_segments.push(text);
                                 }
                             }
-                            if !text.is_empty() {
-                                eprintln!();
-                                tracing::info!("transcribed: {text}");
-                                transcribed_segments.push(text);
-                            }
+
+                            speech_start_sample = None;
+                            speech_audio.clear();
+                            // Trim all_audio to save memory — we don't need old audio anymore
+                            all_audio.clear();
+                        }
+                        Ok(None) => {
+                            // Status line
+                            let state = if speech_start_sample.is_some() {
+                                format!("speaking ({:.1}s)", speech_audio.len() as f64 / 16000.0)
+                            } else {
+                                "silence".to_owned()
+                            };
+                            eprint!(
+                                "\r\x1b[2K[{:.1}s] [{}] [segments: {}]",
+                                total_samples as f64 / 16000.0,
+                                state,
+                                transcribed_segments.len(),
+                            );
+                            let _ = std::io::stderr().flush();
                         }
                         Err(e) => {
-                            tracing::warn!("whisper state error: {e}");
+                            tracing::warn!("VAD error: {e}");
                         }
                     }
-                }
-
-                // Trim the buffer: remove everything up to the start of the earliest
-                // still-open segment (or the last closed segment's end).
-                let earliest_open_start = chunks
-                    .iter()
-                    .find(|c| (buf_end_s - c.metadata.original_end) < silence_threshold)
-                    .map(|c| c.metadata.sample_offset);
-
-                let trim_to = if let Some(open_start) = earliest_open_start {
-                    // Keep some padding before the open segment
-                    open_start.saturating_sub(8000) // 0.5s padding
-                } else if !chunks.is_empty() {
-                    // All segments closed — keep last 1s as overlap
-                    audio_buf.len().saturating_sub(16000)
-                } else {
-                    // No speech at all — keep last 2s
-                    audio_buf.len().saturating_sub(32000)
-                };
-
-                if trim_to > 0 {
-                    audio_buf.drain(..trim_to);
-                    _buf_offset_samples += trim_to;
                 }
             }
         }
@@ -1399,6 +1415,46 @@ async fn run_listen(args: ListenArgs) -> Result<(), Box<dyn std::error::Error>> 
     }
 
     Ok(())
+}
+
+fn transcribe_chunk(
+    whisper_ctx: &whisper_cpp_plus::WhisperContext,
+    audio: &[f32],
+) -> Option<String> {
+    let params = whisper_cpp_plus::FullParams::new(whisper_cpp_plus::SamplingStrategy::Greedy {
+        best_of: 1,
+    })
+    .language("en")
+    .no_context(true);
+
+    let mut state = match whisper_ctx.create_state() {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!("whisper state error: {e}");
+            return None;
+        }
+    };
+
+    if let Err(e) = state.full(params, audio) {
+        tracing::warn!("whisper error: {e}");
+        return None;
+    }
+
+    let n_segments = state.full_n_segments();
+    let mut text = String::new();
+    for i in 0..n_segments {
+        if let Ok(t) = state.full_get_segment_text(i) {
+            let t = t.trim();
+            if !t.is_empty() {
+                if !text.is_empty() {
+                    text.push(' ');
+                }
+                text.push_str(t);
+            }
+        }
+    }
+
+    if text.is_empty() { None } else { Some(text) }
 }
 
 #[cfg(test)]

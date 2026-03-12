@@ -122,7 +122,7 @@ Both agents have ACP built-in tools (Bash, Read, Write, Edit) disabled:
 - `ship-types` (`crates/ship-types/src/lib.rs`) — shared types: SessionEvent, TaskRecord, AgentState, ContentBlock, etc.
 - `ship-service` (`crates/ship-service/src/lib.rs`) — RPC service trait definitions (roam)
 - `ship-core` (`crates/ship-core/`) — session manager, ACP client/driver, git worktree ops
-- `ship-server` (`crates/ship-server/`) — RPC server impl, captain/mate MCP servers, startup probe
+- `ship-server` (`crates/ship-server/`) — RPC server impl, captain/mate MCP servers, `listen` subcommand
 - `frontend/` — React + Radix Themes UI, generated TypeScript bindings in `frontend/src/generated/`
 
 ### Generated code flow

@@ -41,3 +41,5 @@ similar = "2"
 whisper-cpp-plus = { version = "0.1.4", features = ["metal", "async", "tokio"] }
 dirs-next = "2.0.0"
 cpal = "0.15"
+silero-vad-rust = "6.2.1"
+ort = { workspace = true }
