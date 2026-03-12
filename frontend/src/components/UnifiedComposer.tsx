@@ -183,22 +183,12 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
   const transcription = useTranscription();
 
   // Track the text that existed before transcription started, so we can
-  // replace the transcription suffix as new segments arrive in real-time.
+  // prepend it to the final transcription result.
   const preTranscriptionTextRef = useRef<string | null>(null);
-  const lastResultRef = useRef(transcription.result);
 
   // Capture pre-transcription text when recording starts
   if (transcription.state.tag === "recording" && preTranscriptionTextRef.current === null) {
     preTranscriptionTextRef.current = text;
-  }
-
-  // Update composer text as segments stream in
-  if (transcription.result && transcription.result !== lastResultRef.current) {
-    lastResultRef.current = transcription.result;
-    if (transcription.result.text) {
-      const prefix = preTranscriptionTextRef.current ?? "";
-      setText(prefix ? prefix + " " + transcription.result.text : transcription.result.text);
-    }
   }
 
   // Reset pre-transcription text when we return to idle
