@@ -4859,8 +4859,22 @@ impl Ship for ShipImpl {
             });
         }
 
+        let captain_needs_restart = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            sessions
+                .get(&session)
+                .map(|s| s.captain_handle.is_none())
+                .unwrap_or(false)
+        };
+
         let this = self.clone();
         tokio::spawn(async move {
+            if captain_needs_restart {
+                if let Err(error) = this.restart_captain(&session).await {
+                    Self::log_error("prompt_captain restart_captain", &error);
+                    return;
+                }
+            }
             if let Err(error) = this.interrupt_captain_with_parts(&session, parts).await {
                 Self::log_error("prompt_captain", &error);
             }
