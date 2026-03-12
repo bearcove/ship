@@ -11,33 +11,87 @@ import { SteerReview } from "../components/SteerReview";
 import { HumanReview } from "../components/HumanReview";
 import {
   agentRail,
-  agentStatusBar,
-  agentStatusBarAvatar,
-  agentStatusBarItem,
   hamburgerBtn,
   sessionFeedColumn,
+  sessionTopBar,
+  sessionTopBarAgentSection,
+  sessionTopBarBreadcrumb,
+  sessionTopBarDivider,
+  sessionTopBarLeft,
+  sessionTopBarRight,
   sessionViewRoot,
 } from "../styles/session-view.css";
 import { AgentHeader } from "../components/AgentHeader";
 import { AgentModelPicker } from "../components/AgentModelPicker";
+import { AgentEffortPicker } from "../components/AgentEffortPicker";
 import captainAvatar from "../assets/avatars/captain.png";
 import mateAvatar from "../assets/avatars/mate.png";
 import type { AgentSnapshot, TaskRecord } from "../generated/ship";
 
-function AgentStatusBarItem({
+function SessionTopBar({
   sessionId,
-  agent,
-  avatarSrc,
+  project,
+  title,
+  branchName,
+  captain,
+  mate,
+  onOpenSidebar,
 }: {
   sessionId: string;
-  agent: AgentSnapshot;
-  avatarSrc: string;
+  project: string;
+  title: string | null;
+  branchName: string;
+  captain: AgentSnapshot | null;
+  mate: AgentSnapshot | null;
+  onOpenSidebar: () => void;
 }) {
+  const displayTitle = title ?? branchName;
   return (
-    <Flex className={agentStatusBarItem}>
-      <img src={avatarSrc} alt={agent.role.tag} className={agentStatusBarAvatar} />
-      <AgentModelPicker sessionId={sessionId} agent={agent} />
-    </Flex>
+    <div className={sessionTopBar}>
+      <div className={sessionTopBarLeft}>
+        <IconButton
+          className={hamburgerBtn}
+          variant="ghost"
+          color="gray"
+          size="2"
+          onClick={onOpenSidebar}
+          aria-label="Open sidebar"
+        >
+          <List size={18} />
+        </IconButton>
+        <Link to="/" style={{ color: "var(--gray-11)", display: "flex", alignItems: "center" }}>
+          <ArrowLeft size={18} />
+        </Link>
+        <div className={sessionTopBarBreadcrumb}>
+          <Text size="2" color="gray">
+            {project}
+          </Text>
+          <Text size="2" color="gray">
+            {" / "}
+          </Text>
+          <Text size="2" color="gray">
+            {displayTitle}
+          </Text>
+        </div>
+      </div>
+      {(captain ?? mate) && (
+        <div className={sessionTopBarRight}>
+          {captain && (
+            <div className={sessionTopBarAgentSection}>
+              <AgentModelPicker sessionId={sessionId} agent={captain} />
+              <AgentEffortPicker sessionId={sessionId} agent={captain} />
+            </div>
+          )}
+          {captain && mate && <div className={sessionTopBarDivider} />}
+          {mate && (
+            <div className={sessionTopBarAgentSection}>
+              <AgentModelPicker sessionId={sessionId} agent={mate} />
+              <AgentEffortPicker sessionId={sessionId} agent={mate} />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -139,37 +193,15 @@ export function SessionViewPage({
     <Flex className={sessionViewRoot}>
       <Flex style={{ flex: 1, overflow: "hidden", minHeight: 0 }}>
         <Box className={sessionFeedColumn}>
-          {(captain ?? mate) && (
-            <Flex className={agentStatusBar}>
-              <IconButton
-                className={hamburgerBtn}
-                variant="ghost"
-                color="gray"
-                size="2"
-                onClick={onOpenSidebar}
-                aria-label="Open sidebar"
-              >
-                <List size={18} />
-              </IconButton>
-              <Link
-                to="/"
-                className={hamburgerBtn}
-                style={{ color: "var(--gray-11)", alignItems: "center" }}
-              >
-                <ArrowLeft size={18} />
-              </Link>
-              {captain && (
-                <AgentStatusBarItem
-                  sessionId={session.id}
-                  agent={captain}
-                  avatarSrc={captainAvatar}
-                />
-              )}
-              {mate && (
-                <AgentStatusBarItem sessionId={session.id} agent={mate} avatarSrc={mateAvatar} />
-              )}
-            </Flex>
-          )}
+          <SessionTopBar
+            sessionId={session.id}
+            project={session.project}
+            title={eventState.title ?? session.title}
+            branchName={session.branch_name}
+            captain={captain ?? null}
+            mate={mate ?? null}
+            onOpenSidebar={onOpenSidebar}
+          />
           <UnifiedFeed
             sessionId={session.id}
             captain={captain}
