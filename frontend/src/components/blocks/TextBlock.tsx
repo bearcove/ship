@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Box, Code, IconButton } from "@radix-ui/themes";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { bundledLanguages, codeToHtml } from "shiki";
 import type { BundledLanguage } from "shiki";
 import { Check, CopySimple } from "@phosphor-icons/react";
@@ -112,7 +113,9 @@ export function TextBlock({ block }: Props) {
   return (
     <Box className={textBlockRoot}>
       <div className={bubbleContent}>
-        <ReactMarkdown components={markdownComponents}>{block.text}</ReactMarkdown>
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+          {block.text}
+        </ReactMarkdown>
       </div>
       <IconButton
         size="1"

@@ -1085,6 +1085,24 @@ globalStyle(`${textBlockRoot} blockquote`, {
   color: "var(--gray-11)",
 });
 
+globalStyle(`${textBlockRoot} table`, {
+  borderCollapse: "collapse",
+  width: "100%",
+  margin: "var(--space-2) 0",
+  fontSize: "var(--font-size-2)",
+});
+
+globalStyle(`${textBlockRoot} :where(th, td)`, {
+  border: "1px solid var(--gray-a5)",
+  padding: "var(--space-1) var(--space-2)",
+  textAlign: "left",
+});
+
+globalStyle(`${textBlockRoot} th`, {
+  background: "var(--gray-a3)",
+  fontWeight: "var(--font-weight-medium)",
+});
+
 export const textBlockCodeBlock = style({
   overflow: "hidden",
   borderRadius: "var(--radius-2)",
