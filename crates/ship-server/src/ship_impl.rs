@@ -5249,59 +5249,65 @@ impl Ship for ShipImpl {
 
     // r[proto.subscribe-global-events]
     async fn subscribe_global_events(&self, output: Tx<GlobalEvent>) {
-        // Send current state immediately
-        {
-            let list: Vec<SessionSummary> = {
-                let sessions = self.sessions.lock().expect("sessions mutex poisoned");
-                sessions.values().map(Self::to_session_summary).collect()
-            };
-            if output
-                .send(GlobalEvent::SessionListChanged { sessions: list })
-                .await
-                .is_err()
-            {
-                return;
-            }
-        }
-        {
-            let registry = self.registry.lock().await;
-            let projects: Vec<ProjectInfo> = registry.list();
-            if output
-                .send(GlobalEvent::ProjectListChanged { projects })
-                .await
-                .is_err()
-            {
-                return;
-            }
-        }
+        let sessions = Arc::clone(&self.sessions);
+        let registry = Arc::clone(&self.registry);
+        let global_events_tx = self.global_events_tx.clone();
 
-        // Stream live updates
-        let mut rx = self.global_events_tx.subscribe();
-        loop {
-            match rx.recv().await {
-                Ok(event) => {
-                    if output.send(event).await.is_err() {
-                        break;
-                    }
+        tokio::spawn(async move {
+            // Send current state immediately
+            {
+                let list: Vec<SessionSummary> = {
+                    let sessions = sessions.lock().expect("sessions mutex poisoned");
+                    sessions.values().map(Self::to_session_summary).collect()
+                };
+                if output
+                    .send(GlobalEvent::SessionListChanged { sessions: list })
+                    .await
+                    .is_err()
+                {
+                    return;
                 }
-                Err(broadcast::error::RecvError::Lagged(n)) => {
-                    tracing::warn!(skipped = n, "global events subscriber lagged");
-                    // Re-send current state to catch up
-                    let list: Vec<SessionSummary> = {
-                        let sessions = self.sessions.lock().expect("sessions mutex poisoned");
-                        sessions.values().map(Self::to_session_summary).collect()
-                    };
-                    if output
-                        .send(GlobalEvent::SessionListChanged { sessions: list })
-                        .await
-                        .is_err()
-                    {
-                        break;
-                    }
-                }
-                Err(broadcast::error::RecvError::Closed) => break,
             }
-        }
+            {
+                let reg = registry.lock().await;
+                let projects: Vec<ProjectInfo> = reg.list();
+                if output
+                    .send(GlobalEvent::ProjectListChanged { projects })
+                    .await
+                    .is_err()
+                {
+                    return;
+                }
+            }
+
+            // Stream live updates
+            let mut rx = global_events_tx.subscribe();
+            loop {
+                match rx.recv().await {
+                    Ok(event) => {
+                        if output.send(event).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        tracing::warn!(skipped = n, "global events subscriber lagged");
+                        // Re-send current state to catch up
+                        let list: Vec<SessionSummary> = {
+                            let sessions = sessions.lock().expect("sessions mutex poisoned");
+                            sessions.values().map(Self::to_session_summary).collect()
+                        };
+                        if output
+                            .send(GlobalEvent::SessionListChanged { sessions: list })
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        });
     }
 
     async fn transcribe_audio(
