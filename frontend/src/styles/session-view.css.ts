@@ -753,6 +753,9 @@ export const transcriptPreview = style({
   lineHeight: "var(--line-height-2)",
   color: "var(--gray-11)",
   padding: "4px 0",
+  textAlign: "center",
+  fontStyle: "italic",
+  animation: `${transcriptFadeIn} 0.25s ease-out`,
   scrollbarWidth: "none",
   selectors: {
     "&::-webkit-scrollbar": {
