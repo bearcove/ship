@@ -5050,17 +5050,9 @@ impl Ship for ShipImpl {
                 }
             }
             Role::Captain => {
-                // Captain retry: just re-run the bootstrap prompt.
                 let this = self.clone();
                 tokio::spawn(async move {
-                    if let Err(error) = this
-                        .prompt_agent_text(
-                            &session,
-                            Role::Captain,
-                            Self::captain_bootstrap_prompt(),
-                        )
-                        .await
-                    {
+                    if let Err(error) = this.restart_captain(&session).await {
                         Self::log_error("retry_agent captain", &error);
                     }
                 });
