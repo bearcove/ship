@@ -698,13 +698,6 @@ async fn spawn_vite_dev_server(
     vite_addr: SocketAddr,
 ) -> Result<tokio::process::Child, Box<dyn std::error::Error>> {
     let frontend_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../frontend");
-    // When there's a LAN address, bind Vite on all interfaces so mobile HMR works.
-    // Axum still connects to Vite via loopback (vite_addr).
-    let vite_bind_host = if hmr_addr.ip().is_loopback() {
-        vite_addr.ip().to_string()
-    } else {
-        "0.0.0.0".to_owned()
-    };
     let mut child = tokio::process::Command::new("pnpm");
     child
         .arg("exec")
@@ -713,7 +706,7 @@ async fn spawn_vite_dev_server(
         .arg("false")
         .arg("--strictPort")
         .arg("--host")
-        .arg(vite_bind_host)
+        .arg(vite_addr.ip().to_string())
         .arg("--port")
         .arg(vite_addr.port().to_string())
         .env("SHIP_VITE_HMR_HOST", vite_hmr_host(hmr_addr))
