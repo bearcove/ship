@@ -434,6 +434,10 @@ pub mod events {
             options: Option<Vec<crate::structured::PermissionOption>>,
             resolution: Option<PermissionResolution>,
         },
+        Image {
+            mime_type: String,
+            data: Vec<u8>,
+        },
     }
 
     // r[event.patch]
