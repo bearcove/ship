@@ -206,6 +206,12 @@ The protocol MUST support an `interrupt_captain` operation that cancels any
 in-flight captain response without affecting task state. This is used by the
 UI when the user presses Escape while the captain is working.
 
+r[proto.stop-agents]
+The protocol MUST support a `stop_agents` operation that cancels both the
+captain and mate agents without affecting task state. The task remains intact
+so the user can retry or continue. This is used by the UI stop button and
+Escape key.
+
 r[proto.resolve-permission]
 The protocol MUST support a `resolve_permission` operation to respond to agent
 permission requests.
