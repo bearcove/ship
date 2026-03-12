@@ -24,7 +24,7 @@ use ship_types::{
     ArchiveSessionResponse, AutonomyMode, BlockId, CaptainAssignExtras, CloseSessionRequest,
     CloseSessionResponse, ContentBlock, CreateSessionRequest, CreateSessionResponse, CurrentTask,
     HumanReviewRequest, McpDiffContent, McpServerConfig, McpStdioServerConfig, McpToolCallResponse,
-    PersistedSession, PlanStep, PlanStepPriority, PlanStepStatus, ProjectInfo, ProjectName,
+    PersistedSession, PlanStep, PlanStepInput, PlanStepStatus, ProjectInfo, ProjectName,
     PromptContentPart, Role, ServerInfo, SessionConfig, SessionDetail, SessionEvent,
     SessionEventEnvelope, SessionId, SessionStartupStage, SessionStartupState, SessionSummary,
     SetAgentEffortResponse, SetAgentModelResponse, SubscribeMessage, TaskId, TaskRecord,
@@ -1603,18 +1603,27 @@ Here is your task:
                     PlanStepStatus::Completed => "[x]",
                     _ => "[ ]",
                 };
-                format!("{marker} Step {}: {}", index + 1, step.description)
+                if step.title.is_empty() {
+                    format!("{marker} Step {}: {}", index + 1, step.description)
+                } else {
+                    format!(
+                        "{marker} Step {}: {} — {}",
+                        index + 1,
+                        step.title,
+                        step.description
+                    )
+                }
             })
             .collect::<Vec<_>>()
             .join("\n")
     }
 
-    fn build_plan_steps(steps: Vec<String>) -> Vec<PlanStep> {
+    fn build_plan_steps(steps: Vec<PlanStepInput>) -> Vec<PlanStep> {
         steps
             .into_iter()
-            .map(|description| PlanStep {
-                description,
-                priority: PlanStepPriority::Medium,
+            .map(|input| PlanStep {
+                title: input.title,
+                description: input.description,
                 status: PlanStepStatus::Pending,
             })
             .collect()
@@ -3053,7 +3062,7 @@ and the captain will help you find the right approach."
     async fn mate_tool_set_plan(
         &self,
         session_id: &SessionId,
-        steps: Vec<String>,
+        steps: Vec<PlanStepInput>,
     ) -> Result<String, String> {
         if steps.is_empty() {
             return Err("set_plan requires at least one step".to_owned());
@@ -5619,7 +5628,7 @@ impl MateMcp for MateMcpSessionService {
     }
 
     // r[mate.tool.plan-create]
-    async fn set_plan(&self, steps: Vec<String>) -> McpToolCallResponse {
+    async fn set_plan(&self, steps: Vec<PlanStepInput>) -> McpToolCallResponse {
         Self::response(self.ship.mate_tool_set_plan(&self.session_id, steps).await)
     }
 
@@ -5686,7 +5695,7 @@ mod tests {
     use ship_service::Ship;
     use ship_types::{
         AgentDiscovery, AgentKind, ContentBlock, CreateSessionRequest, CreateSessionResponse,
-        CurrentTask, McpServerConfig, McpStdioServerConfig, PlanStep, PlanStepPriority,
+        CurrentTask, McpServerConfig, McpStdioServerConfig, PlanStep, PlanStepInput,
         PlanStepStatus, ProjectName, PromptContentPart, SessionEvent, SessionEventEnvelope,
         SessionId, SessionStartupState, SubscribeMessage, TaskId, TaskRecord, TaskStatus,
     };
@@ -5788,8 +5797,8 @@ mod tests {
                     completed_at: None,
                 },
                 mate_plan: Some(vec![PlanStep {
+                    title: "Test step".to_owned(),
                     description: "Test step".to_owned(),
-                    priority: PlanStepPriority::Medium,
                     status: PlanStepStatus::Pending,
                 }]),
                 pending_mate_guidance: None,
@@ -6264,7 +6273,16 @@ mod tests {
         // set_plan stores the plan and notifies the captain non-blocking on first call.
         ship.mate_tool_set_plan(
             &session_id,
-            vec!["Set up types".to_owned(), "Implement handler".to_owned()],
+            vec![
+                PlanStepInput {
+                    title: "Set up types".to_owned(),
+                    description: "Set up types".to_owned(),
+                },
+                PlanStepInput {
+                    title: "Implement handler".to_owned(),
+                    description: "Implement handler".to_owned(),
+                },
+            ],
         )
         .await
         .expect("set_plan should succeed");

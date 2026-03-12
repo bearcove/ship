@@ -2,9 +2,9 @@ use roam::{Rx, Tx};
 use ship_types::{
     AgentDiscovery, ArchiveSessionRequest, ArchiveSessionResponse, CaptainAssignExtras,
     CloseSessionRequest, CloseSessionResponse, CreateSessionRequest, CreateSessionResponse,
-    McpToolCallResponse, ProjectInfo, ProjectName, PromptContentPart, Role, ServerInfo,
-    SessionDetail, SessionId, SessionSummary, SetAgentEffortResponse, SetAgentModelResponse,
-    SubscribeMessage, TranscribeSegment, WorktreeDiffStats,
+    McpToolCallResponse, PlanStepInput, ProjectInfo, ProjectName, PromptContentPart, Role,
+    ServerInfo, SessionDetail, SessionId, SessionSummary, SetAgentEffortResponse,
+    SetAgentModelResponse, SubscribeMessage, TranscribeSegment, WorktreeDiffStats,
 };
 
 // r[backend.rpc]
@@ -172,7 +172,7 @@ pub trait MateMcp {
     async fn mate_send_update(&self, message: String) -> McpToolCallResponse;
 
     // r[mate.tool.plan-create]
-    async fn set_plan(&self, steps: Vec<String>) -> McpToolCallResponse;
+    async fn set_plan(&self, steps: Vec<PlanStepInput>) -> McpToolCallResponse;
 
     // r[mate.tool.plan-step-complete]
     async fn plan_step_complete(&self, step_index: u64, summary: String) -> McpToolCallResponse;
