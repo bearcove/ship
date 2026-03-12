@@ -1143,3 +1143,56 @@ export const floatingHamburger = style({
     },
   },
 });
+
+export const floatingTaskBtn = style({
+  display: "none",
+  "@media": {
+    "(max-width: 700px)": {
+      display: "flex",
+      position: "fixed",
+      top: "var(--space-2)",
+      right: "var(--space-2)",
+      zIndex: 100,
+    },
+  },
+});
+
+export const taskPanelBackdrop = style({
+  display: "none",
+  "@media": {
+    "(max-width: 700px)": {
+      display: "block",
+      position: "fixed",
+      inset: 0,
+      zIndex: 199,
+      background: "rgba(0,0,0,0.4)",
+    },
+  },
+});
+
+export const taskPanelRoot = style({
+  display: "none",
+  "@media": {
+    "(max-width: 700px)": {
+      display: "flex",
+      flexDirection: "column",
+      position: "fixed",
+      right: 0,
+      top: 0,
+      bottom: 0,
+      width: 300,
+      zIndex: 200,
+      background: "var(--color-background)",
+      transform: "translateX(100%)",
+      transition: "transform 0.2s ease",
+      borderLeft: "1px solid var(--gray-a6)",
+      boxShadow: "-4px 0 16px rgba(0,0,0,0.2)",
+      overflowY: "auto",
+    },
+  },
+  selectors: {
+    '&[data-open="true"]': {
+      transform: "translateX(0)",
+    },
+  },
+});
