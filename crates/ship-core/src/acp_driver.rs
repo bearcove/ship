@@ -416,7 +416,7 @@ async fn run_acp_worker(
         }
     })?;
 
-    let mut command = command_for_launcher(launcher);
+    let mut command = command_for_launcher(launcher, &config.worktree_path);
 
     let mut child = command
         .current_dir(&config.worktree_path)
@@ -672,10 +672,69 @@ fn mate_client_capabilities() -> ClientCapabilities {
             .write_text_file(true))
 }
 
-fn command_for_launcher(launcher: crate::AgentLauncher) -> Command {
-    let mut command = Command::new(launcher.program);
-    command.args(launcher.args);
-    command
+// r[acp.sandbox]
+// On macOS, wrap the agent command with sandbox-exec to restrict file writes
+// to the worktree directory only. This is the actual security boundary —
+// the agent process cannot write outside its worktree.
+fn command_for_launcher(
+    launcher: crate::AgentLauncher,
+    worktree_path: &std::path::Path,
+) -> Command {
+    if cfg!(target_os = "macos") {
+        // Resolve symlinks (macOS /tmp -> /private/tmp)
+        let real_worktree = worktree_path
+            .canonicalize()
+            .unwrap_or_else(|_| worktree_path.to_path_buf());
+
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/nobody".to_owned());
+
+        let policy = format!(
+            concat!(
+                "(version 1)",
+                "(deny default)",
+                // Allow all reads — agents need system libs, node_modules, etc.
+                "(allow file-read*)",
+                // Allow process operations (fork, exec, signal)
+                "(allow process*)",
+                // Allow system/kernel operations
+                "(allow sysctl*)",
+                "(allow mach*)",
+                "(allow signal)",
+                "(allow ipc*)",
+                // Allow network (MCP servers, HTTP, etc.)
+                "(allow network*)",
+                // Allow writes to the worktree
+                "(allow file-write* (subpath \"{worktree}\"))",
+                // Allow writes to /dev (stdout/stderr/null/tty)
+                "(allow file-write* (subpath \"/dev\"))",
+                // Allow writes to tmp (node needs this)
+                "(allow file-write* (subpath \"/private/tmp\"))",
+                // Allow writes to per-user temp dir
+                "(allow file-write* (subpath \"/private/var/folders\"))",
+                // Allow cargo install, rustup toolchain management
+                "(allow file-write* (subpath \"{home}/.cargo\"))",
+                "(allow file-write* (subpath \"{home}/.rustup\"))",
+                // Allow pnpm/npm cache
+                "(allow file-write* (subpath \"{home}/Library/pnpm\"))",
+                "(allow file-write* (subpath \"{home}/.npm\"))",
+                "(allow file-write* (subpath \"{home}/.pnpm-store\"))",
+            ),
+            worktree = real_worktree.display(),
+            home = home,
+        );
+
+        let mut command = Command::new("sandbox-exec");
+        command
+            .arg("-p")
+            .arg(policy)
+            .arg(launcher.program)
+            .args(launcher.args);
+        command
+    } else {
+        let mut command = Command::new(launcher.program);
+        command.args(launcher.args);
+        command
+    }
 }
 
 // r[acp.mcp.passthrough]
@@ -773,13 +832,21 @@ mod tests {
         )
         .expect("claude launcher should resolve");
 
-        let command = command_for_launcher(launcher);
+        let worktree = std::path::PathBuf::from("/tmp/test-worktree");
+        let command = command_for_launcher(launcher, &worktree);
+        let args: Vec<_> = command.as_std().get_args().collect();
 
-        assert_eq!(command.as_std().get_program(), "pnpx");
-        assert_eq!(
-            command.as_std().get_args().collect::<Vec<_>>(),
-            vec!["@zed-industries/claude-agent-acp"]
-        );
+        if cfg!(target_os = "macos") {
+            assert_eq!(command.as_std().get_program(), "sandbox-exec");
+            // sandbox-exec -p <policy> pnpx @zed-industries/claude-agent-acp
+            assert_eq!(args[0], "-p");
+            // args[1] is the policy string
+            assert_eq!(args[2], "pnpx");
+            assert_eq!(args[3], "@zed-industries/claude-agent-acp");
+        } else {
+            assert_eq!(command.as_std().get_program(), "pnpx");
+            assert_eq!(args, vec!["@zed-industries/claude-agent-acp"]);
+        }
     }
 
     // r[verify acp.binary.codex]
@@ -795,21 +862,47 @@ mod tests {
         )
         .expect("codex launcher should resolve");
 
-        let command = command_for_launcher(launcher);
+        let worktree = std::path::PathBuf::from("/tmp/test-worktree");
+        let command = command_for_launcher(launcher, &worktree);
+        let args: Vec<_> = command.as_std().get_args().collect();
 
-        assert_eq!(command.as_std().get_program(), "codex-acp");
-        assert_eq!(command.as_std().get_args().count(), 0);
+        if cfg!(target_os = "macos") {
+            assert_eq!(command.as_std().get_program(), "sandbox-exec");
+            assert_eq!(args[0], "-p");
+            assert_eq!(args[2], "codex-acp");
+        } else {
+            assert_eq!(command.as_std().get_program(), "codex-acp");
+            assert_eq!(args.len(), 0);
+        }
     }
 
+    // r[verify acp.sandbox]
     #[test]
-    fn command_builder_preserves_launcher_program_and_args() {
-        let command = command_for_launcher(AgentLauncher::new("pnpx", &["pkg", "--flag"]));
+    fn command_builder_wraps_with_sandbox_on_macos() {
+        let worktree = std::path::PathBuf::from("/tmp/test-worktree");
+        let command =
+            command_for_launcher(AgentLauncher::new("pnpx", &["pkg", "--flag"]), &worktree);
+        let args: Vec<_> = command.as_std().get_args().collect();
 
-        assert_eq!(command.as_std().get_program(), "pnpx");
-        assert_eq!(
-            command.as_std().get_args().collect::<Vec<_>>(),
-            vec!["pkg", "--flag"]
-        );
+        if cfg!(target_os = "macos") {
+            assert_eq!(command.as_std().get_program(), "sandbox-exec");
+            assert_eq!(args[0], "-p");
+            let policy = args[1].to_str().unwrap();
+            assert!(
+                policy.contains("deny default"),
+                "policy should deny by default"
+            );
+            assert!(
+                policy.contains("file-write*"),
+                "policy should have write rules"
+            );
+            assert_eq!(args[2], "pnpx");
+            assert_eq!(args[3], "pkg");
+            assert_eq!(args[4], "--flag");
+        } else {
+            assert_eq!(command.as_std().get_program(), "pnpx");
+            assert_eq!(args, vec!["pkg", "--flag"]);
+        }
     }
 
     // r[verify acp.mcp.passthrough]

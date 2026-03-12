@@ -79,6 +79,11 @@ r[acp.terminals]
 The backend MUST support managed command execution with exit codes through ACP
 terminal facilities.
 
+r[acp.sandbox]
+On macOS, agent processes MUST be launched inside a sandbox-exec sandbox that
+denies all file writes except to the worktree directory and essential system
+paths (temp dirs, cargo/rustup, package manager caches).
+
 ## Views
 
 ### Session List
