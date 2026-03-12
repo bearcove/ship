@@ -493,6 +493,12 @@ export type TranscribeAudioRequest = [
 ];
 export type TranscribeAudioResponse = void;
 
+export type SpeakTextRequest = [
+  string, // text
+  Tx<Uint8Array>, // audio_out
+];
+export type SpeakTextResponse = void;
+
 // Caller interface for Ship
 export interface ShipCaller {
   listProjects(): CallBuilder<ProjectInfo[]>;
@@ -526,6 +532,8 @@ export interface ShipCaller {
    * Server sends back transcribed segments via `segments_out`.
    */
   transcribeAudio(audioIn: Rx<Uint8Array>, segmentsOut: Tx<TranscribeSegment>): CallBuilder<void>;
+  /** Synthesize text to speech and stream 24kHz mono f32 LE PCM bytes. */
+  speakText(text: string, audioOut: Tx<Uint8Array>): CallBuilder<void>;
 }
 
 // Client implementation for Ship
@@ -932,6 +940,30 @@ export class ShipClient implements ShipCaller {
     });
   }
 
+  /** Synthesize text to speech and stream 24kHz mono f32 LE PCM bytes. */
+  speakText(text: string, audioOut: Tx<Uint8Array>): CallBuilder<void> {
+    const descriptor = ship_descriptor.methods[26];
+    // Bind any Tx/Rx channels in arguments and collect channel IDs
+    const channels = bindChannels(
+      descriptor.args.elements,
+      [text, audioOut],
+      this.caller.getChannelAllocator(),
+      this.caller.getChannelRegistry(),
+      ship_descriptor.schema_registry,
+    );
+    return new CallBuilder(async (metadata) => {
+      const value = await this.caller.call({
+        method: "Ship.speakText",
+        args: { text, audioOut },
+        descriptor,
+        schemaRegistry: ship_descriptor.schema_registry,
+        channels,
+        metadata,
+      });
+      return value as void;
+    });
+  }
+
 }
 
 /**
@@ -973,6 +1005,7 @@ export interface ShipHandler {
   subscribeEvents(session: SessionId, output: Tx<SubscribeMessage>): Promise<void> | void;
   subscribeGlobalEvents(output: Tx<GlobalEvent>): Promise<void> | void;
   transcribeAudio(audioIn: Rx<Uint8Array>, segmentsOut: Tx<TranscribeSegment>): Promise<void> | void;
+  speakText(text: string, audioOut: Tx<Uint8Array>): Promise<void> | void;
 }
 
 // Dispatcher for Ship
@@ -1165,6 +1198,14 @@ export class ShipDispatcher implements ChannelingDispatcher {
       try {
         const result = await this.handler.transcribeAudio(args[0] as Rx<Uint8Array>, args[1] as Tx<TranscribeSegment>);
         (args[1] as { close(): void }).close(); // close segmentsOut before reply
+        call.reply(result);
+      } catch {
+        call.replyInternalError();
+      }
+    } else if (method.id === 0x84c1af5ddfa87120n) {
+      try {
+        const result = await this.handler.speakText(args[0] as string, args[1] as Tx<Uint8Array>);
+        (args[1] as { close(): void }).close(); // close audioOut before reply
         call.reply(result);
       } catch {
         call.replyInternalError();
@@ -1396,6 +1437,12 @@ export const ship_descriptor: ServiceDescriptor = {
       name: 'transcribeAudio',
       id: 0x2bb0ea74ec8d7c79n,
       args: { kind: 'tuple', elements: [{ kind: 'rx', element: { kind: 'bytes' } }, { kind: 'tx', element: { kind: 'ref', name: 'TranscribeSegment' } }] },
+      result: { kind: 'enum', variants: [{ name: 'Ok', fields: { kind: 'struct', fields: {} } }, { name: 'Err', fields: { kind: 'enum', variants: [{ name: 'User', fields: null }, { name: 'UnknownMethod', fields: null }, { name: 'InvalidPayload', fields: null }, { name: 'Cancelled', fields: null }] } }] },
+    },
+    {
+      name: 'speakText',
+      id: 0x84c1af5ddfa87120n,
+      args: { kind: 'tuple', elements: [{ kind: 'string' }, { kind: 'tx', element: { kind: 'bytes' } }] },
       result: { kind: 'enum', variants: [{ name: 'Ok', fields: { kind: 'struct', fields: {} } }, { name: 'Err', fields: { kind: 'enum', variants: [{ name: 'User', fields: null }, { name: 'UnknownMethod', fields: null }, { name: 'InvalidPayload', fields: null }, { name: 'Cancelled', fields: null }] } }] },
     },
   ],

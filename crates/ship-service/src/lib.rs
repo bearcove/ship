@@ -102,6 +102,9 @@ pub trait Ship {
     /// Client sends 16kHz mono f32 PCM audio as raw bytes via `audio_in`.
     /// Server sends back transcribed segments via `segments_out`.
     async fn transcribe_audio(&self, audio_in: Rx<Vec<u8>>, segments_out: Tx<TranscribeSegment>);
+
+    /// Synthesize text to speech and stream 24kHz mono f32 LE PCM bytes.
+    async fn speak_text(&self, text: String, audio_out: Tx<Vec<u8>>);
 }
 
 // r[captain.tool.implementation]
