@@ -875,7 +875,11 @@ Continue where you left off — wait for the human to give you direction."
             .to_owned()
     }
 
-    async fn restart_captain(&self, session_id: &SessionId) -> Result<(), String> {
+    async fn restart_captain(
+        &self,
+        session_id: &SessionId,
+        send_bootstrap: bool,
+    ) -> Result<(), String> {
         // 1. Kill old handle if any
         let old_handle = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
@@ -991,14 +995,25 @@ Continue where you left off — wait for the human to give you direction."
         }
         let _ = self.persist_session(session_id).await;
 
-        // 7. Send appropriate bootstrap prompt
-        let prompt = if was_resumed {
-            Self::captain_resume_prompt()
-        } else {
-            Self::captain_bootstrap_prompt()
-        };
-        self.prompt_agent_text(session_id, Role::Captain, prompt)
-            .await?;
+        // 7. Discard replayed notifications from load_session.
+        // When the agent loads a previous session, it replays all historical
+        // events as notifications. We already have those in our event log,
+        // so drain and discard them to avoid duplicates.
+        if was_resumed {
+            self.discard_queued_notifications(session_id, Role::Captain)
+                .await;
+        }
+
+        // 8. Send bootstrap prompt (skipped when a user prompt is about to follow)
+        if send_bootstrap {
+            let prompt = if was_resumed {
+                Self::captain_resume_prompt()
+            } else {
+                Self::captain_bootstrap_prompt()
+            };
+            self.prompt_agent_text(session_id, Role::Captain, prompt)
+                .await?;
+        }
 
         Ok(())
     }
@@ -3961,6 +3976,30 @@ and the captain will help you find the right approach."
         ))
     }
 
+    async fn discard_queued_notifications(&self, session_id: &SessionId, role: Role) {
+        let handle = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            sessions.get(session_id).and_then(|s| match role {
+                Role::Captain => s.captain_handle.clone(),
+                Role::Mate => s.mate_handle.clone(),
+            })
+        };
+        if let Some(handle) = handle {
+            use futures_util::StreamExt;
+            let mut stream = self.agent_driver.notifications(&handle);
+            let mut count = 0u64;
+            while let Some(_event) = stream.next().await {
+                count += 1;
+            }
+            if count > 0 {
+                tracing::info!(
+                    session_id = %session_id.0, role = ?role, count,
+                    "discarded replayed notifications from loaded session"
+                );
+            }
+        }
+    }
+
     async fn drain_notifications(&self, session_id: &SessionId, role: Role) -> Result<(), String> {
         let handle = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
@@ -4891,7 +4930,7 @@ impl Ship for ShipImpl {
         let this = self.clone();
         tokio::spawn(async move {
             if captain_needs_restart {
-                if let Err(error) = this.restart_captain(&session).await {
+                if let Err(error) = this.restart_captain(&session, false).await {
                     Self::log_error("prompt_captain restart_captain", &error);
                     return;
                 }
@@ -5087,7 +5126,7 @@ impl Ship for ShipImpl {
             Role::Captain => {
                 let this = self.clone();
                 tokio::spawn(async move {
-                    if let Err(error) = this.restart_captain(&session).await {
+                    if let Err(error) = this.restart_captain(&session, true).await {
                         Self::log_error("retry_agent captain", &error);
                     }
                 });

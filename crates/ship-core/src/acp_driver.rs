@@ -6,8 +6,8 @@ use std::sync::{Arc, Mutex};
 
 use agent_client_protocol::{
     Agent, CancelNotification, ClientCapabilities, ClientSideConnection, ContentBlock, Error,
-    FileSystemCapability, ImageContent, Implementation, InitializeRequest, NewSessionRequest,
-    NewSessionResponse, PromptRequest, ProtocolVersion, ResumeSessionRequest,
+    FileSystemCapability, ImageContent, Implementation, InitializeRequest, LoadSessionRequest,
+    NewSessionRequest, NewSessionResponse, PromptRequest, ProtocolVersion, ResumeSessionRequest,
     StopReason as AcpStopReason, TextContent,
 };
 use base64::Engine as _;
@@ -478,25 +478,50 @@ async fn run_acp_worker(
         .session_capabilities
         .resume
         .is_some();
+    let agent_supports_load = init_response.agent_capabilities.load_session;
 
-    // Try to resume an existing session if we have a stored ACP session ID
-    // and the agent supports it. Otherwise create a new session.
+    // Try to reconnect to a previous session if we have a stored ACP session ID.
+    // Two mechanisms: resume (in-process reconnect) and load (reload from disk).
     let resume_id = config.resume_session_id.clone();
+    tracing::info!(
+        role = ?role, kind = ?kind,
+        agent_supports_resume,
+        agent_supports_load,
+        has_resume_id = resume_id.is_some(),
+        "session resume/load check"
+    );
+    let can_reconnect = agent_supports_resume || agent_supports_load;
     let (session_id, model_id, available_models, effort_info, was_resumed) = if let Some(prev_id) =
-        resume_id.filter(|_| agent_supports_resume)
+        resume_id.filter(|_| can_reconnect)
     {
-        tracing::info!(
-            role = ?role, kind = ?kind, prev_session_id = %prev_id,
-            "resuming ACP session"
-        );
         let acp_session_id = agent_client_protocol::SessionId::new(Arc::from(prev_id.as_str()));
-        let resume_req = ResumeSessionRequest::new(acp_session_id.clone(), &config.worktree_path)
-            .mcp_servers(config.mcp_servers.iter().map(to_acp_mcp_server).collect());
-        match connection.resume_session(resume_req).await {
-            Ok(_resume_response) => {
+        let mcp_servers: Vec<_> = config.mcp_servers.iter().map(to_acp_mcp_server).collect();
+
+        // Prefer resume (lightweight, in-process) over load (re-reads from disk).
+        let reconnect_result = if agent_supports_resume {
+            tracing::info!(
+                role = ?role, kind = ?kind, prev_session_id = %prev_id,
+                "resuming ACP session"
+            );
+            let resume_req =
+                ResumeSessionRequest::new(acp_session_id.clone(), &config.worktree_path)
+                    .mcp_servers(mcp_servers);
+            connection.resume_session(resume_req).await.map(|_| ())
+        } else {
+            tracing::info!(
+                role = ?role, kind = ?kind, prev_session_id = %prev_id,
+                "loading ACP session"
+            );
+            let load_req = LoadSessionRequest::new(acp_session_id.clone(), &config.worktree_path)
+                .mcp_servers(mcp_servers);
+            connection.load_session(load_req).await.map(|_| ())
+        };
+
+        match reconnect_result {
+            Ok(()) => {
                 tracing::info!(
                     role = ?role, kind = ?kind, acp_session_id = %prev_id,
-                    "resumed ACP session"
+                    "reconnected to ACP session"
                 );
                 (
                     acp_session_id,
@@ -509,7 +534,7 @@ async fn run_acp_worker(
             Err(error) => {
                 tracing::warn!(
                     role = ?role, kind = ?kind, prev_session_id = %prev_id,
-                    %error, "session resume failed, falling back to new session"
+                    %error, "session reconnect failed, falling back to new session"
                 );
                 let resp = connection
                     .new_session(build_new_session_request(&config))
@@ -786,8 +811,8 @@ fn command_for_launcher(
                 "(allow file-write* (subpath \"{home}/Library/Caches/pnpm\"))",
                 "(allow file-write* (subpath \"{home}/.npm\"))",
                 "(allow file-write* (subpath \"{home}/.pnpm-store\"))",
-                // Allow claude plans directory
-                "(allow file-write* (subpath \"{home}/.claude/plans\"))",
+                // Allow claude state, plans, logs, etc.
+                "(allow file-write* (subpath \"{home}/.claude\"))",
                 // Allow codex models cache
                 "(allow file-write* (subpath \"{home}/.codex\"))",
             ),
