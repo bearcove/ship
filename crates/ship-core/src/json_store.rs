@@ -65,6 +65,7 @@ impl From<LegacyPersistedSession> for PersistedSession {
             session_event_log: Vec::new(),
             current_task: value.current_task,
             task_history: value.task_history,
+            title: None,
             archived_at: None,
             captain_acp_session_id: None,
             mate_acp_session_id: None,
