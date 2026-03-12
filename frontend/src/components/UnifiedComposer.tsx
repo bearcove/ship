@@ -36,6 +36,7 @@ import {
 } from "../styles/session-view.css";
 import { Waveform } from "./Waveform";
 import { useWorktreeFiles } from "../hooks/useWorktreeFiles";
+import { useWorktreeDiffStats } from "../hooks/useWorktreeDiffStats";
 import { useDocumentDrop } from "../hooks/useDocumentDrop";
 import { useTranscription } from "../hooks/useTranscription";
 
@@ -120,6 +121,7 @@ function formatElapsed(ms: number): string {
 // r[ui.composer.image-attach]
 // r[view.agent-panel.activity]
 export function UnifiedComposer({ sessionId, captain, mate, startupState, taskStatus }: Props) {
+  const diffStats = useWorktreeDiffStats(sessionId);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -378,11 +380,11 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
     <Flex className={composerRoot} direction="column" gap="2">
       {isDragOver && <div className={pageDropOverlay}>Drop image to attach</div>}
 
-      {(isWorking || mateUnavailable) && (
+      {(isWorking || mateUnavailable || diffStats) && (
         <Flex className={composerStatusRow} align="center" gap="2">
           <AgentStateChips captain={captain} mate={mate} />
           {isWorking && (
-            <Flex align="center" gap="1" style={{ marginRight: "auto" }}>
+            <Flex align="center" gap="1">
               <div className={composerActivityDot} />
               <Text size="2" color="gray">
                 {captainStateTag === "Working" && mateStateTag === "Working"
@@ -402,6 +404,37 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
             <Text size="1" color="gray">
               No active task
             </Text>
+          )}
+          {diffStats && (
+            <Flex
+              align="center"
+              gap="2"
+              style={{ marginLeft: "auto", fontFamily: "var(--code-font-family)" }}
+            >
+              <Text
+                size="1"
+                color="gray"
+                style={{
+                  fontFamily: "var(--code-font-family)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  maxWidth: 140,
+                }}
+              >
+                {diffStats.branch_name}
+              </Text>
+              {diffStats.files_changed > 0n && (
+                <>
+                  <Text size="1" style={{ color: "var(--green-10)" }}>
+                    +{String(diffStats.lines_added)}
+                  </Text>
+                  <Text size="1" style={{ color: "var(--red-10)" }}>
+                    &minus;{String(diffStats.lines_removed)}
+                  </Text>
+                </>
+              )}
+            </Flex>
           )}
         </Flex>
       )}

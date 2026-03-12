@@ -272,8 +272,9 @@ fn tool_definitions() -> Vec<ToolDefinition> {
             name: "captain_assign",
             description: "Assign a task to the mate. The mate will start working on it immediately. \
 Set keep=true to reuse the mate's existing context; omit or set false to restart the mate with a fresh context (default). \
-Use files to inline specific file contents into the mate's prompt so it can start work without re-reading them. \
-Use plan to supply a pre-built step list — the mate will skip research and go straight to execution.",
+IMPORTANT: Always pass files and plan. Every file you read during research must be listed in files — the mate \
+receives the contents directly and skips re-reading them. Your step-by-step plan must be passed via plan — the mate \
+skips research and goes straight to execution. Omitting files or plan wastes the mate's time and context window.",
             input_schema: json!({
                 "type": "object",
                 "properties": {

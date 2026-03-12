@@ -376,6 +376,20 @@ export const agentRail = style({
   },
 });
 
+export const planPanel = style({
+  padding: "var(--space-3)",
+  borderTop: "1px solid var(--gray-a4)",
+});
+
+export const planStepRow = style({
+  minWidth: 0,
+});
+
+export const planStepText = style({
+  lineHeight: 1.4,
+  minWidth: 0,
+});
+
 export const agentStatusBar = style({
   display: "none",
   "@media": {

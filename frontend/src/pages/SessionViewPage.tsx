@@ -4,9 +4,9 @@ import { Box, Callout, Flex, IconButton, Spinner, Text } from "@radix-ui/themes"
 import { ArrowLeft, List, Warning } from "@phosphor-icons/react";
 import { useSession } from "../hooks/useSession";
 import { useSessionState } from "../hooks/useSessionState";
-import { useWorktreeDiffStats } from "../hooks/useWorktreeDiffStats";
 import { UnifiedFeed } from "../components/UnifiedFeed";
 import { UnifiedComposer } from "../components/UnifiedComposer";
+import { PlanPanel } from "../components/PlanPanel";
 import { SteerReview } from "../components/SteerReview";
 import { HumanReview } from "../components/HumanReview";
 import {
@@ -57,7 +57,6 @@ export function SessionViewPage({
   const { session, error } = useSession(sessionId ?? "");
   // r[event.client.hydration-sequence]: Step 2/3 — event subscription + replay
   const eventState = useSessionState(sessionId ?? "", session);
-  const diffStats = useWorktreeDiffStats(sessionId ?? "");
 
   // r[ui.keys.nav]
   useEffect(() => {
@@ -179,38 +178,6 @@ export function SessionViewPage({
             startupState={startupState}
             taskStatus={liveTask?.status ?? null}
           />
-          {diffStats && (
-            <Flex
-              align="center"
-              justify="center"
-              gap="3"
-              py="1"
-              style={{
-                flexShrink: 0,
-                fontSize: "var(--font-size-1)",
-                color: "var(--gray-10)",
-                fontFamily: "var(--code-font-family)",
-              }}
-            >
-              <Text size="1" color="gray" style={{ fontFamily: "var(--code-font-family)" }}>
-                {diffStats.branch_name}
-              </Text>
-              {diffStats.files_changed > 0n && (
-                <>
-                  <Text size="1" color="gray">
-                    {String(diffStats.files_changed)}{" "}
-                    {diffStats.files_changed === 1n ? "file" : "files"}
-                  </Text>
-                  <Text size="1" style={{ color: "var(--green-10)" }}>
-                    +{String(diffStats.lines_added)}
-                  </Text>
-                  <Text size="1" style={{ color: "var(--red-10)" }}>
-                    &minus;{String(diffStats.lines_removed)}
-                  </Text>
-                </>
-              )}
-            </Flex>
-          )}
         </Box>
       </Flex>
 
@@ -239,10 +206,31 @@ export function SessionAgentRail({ sessionId }: { sessionId: string }) {
 
   if (!(captain ?? mate)) return null;
 
+  const matePlan = mate?.state.tag === "Working" ? mate.state.plan : null;
+  const hasTask = eventState.currentTaskStatus !== null;
+  const hasPlan = matePlan && matePlan.length > 0;
+
   return (
     <Box className={agentRail}>
       {captain && <AgentHeader sessionId={sessionId} agent={captain} avatarSrc={captainAvatar} />}
       {mate && <AgentHeader sessionId={sessionId} agent={mate} avatarSrc={mateAvatar} />}
+      {hasPlan ? (
+        <PlanPanel steps={matePlan} />
+      ) : (
+        <Flex
+          align="center"
+          justify="center"
+          direction="column"
+          gap="1"
+          py="4"
+          px="3"
+          style={{ flex: 1, opacity: 0.5 }}
+        >
+          <Text size="1" color="gray" align="center">
+            {hasTask ? "No plan yet" : "No active task"}
+          </Text>
+        </Flex>
+      )}
     </Box>
   );
 }
