@@ -2874,6 +2874,69 @@ and the captain will help you find the right approach."
         .map_err(|error| format!("git auto-commit task failed: {error}"))?
     }
 
+    /// Best-effort rebase of the worktree branch onto the base branch.
+    /// This keeps the branch current so `git diff <base>` doesn't show
+    /// false deletions when the base branch moves forward.
+    /// Failures are logged but not propagated — a failed rebase is aborted
+    /// and work continues on the un-rebased branch.
+    async fn rebase_worktree_on_base(worktree_path: &std::path::Path, base_branch: &str) {
+        let worktree_path = worktree_path.to_path_buf();
+        let base_branch = base_branch.to_owned();
+        let result = tokio::task::spawn_blocking(move || {
+            // Fetch latest base branch from origin first
+            let _ = Command::new("git")
+                .arg("-C")
+                .arg(&worktree_path)
+                .args(["fetch", "origin", &base_branch])
+                .output();
+
+            let rebase = Command::new("git")
+                .arg("-C")
+                .arg(&worktree_path)
+                .args(["rebase", &format!("origin/{base_branch}")])
+                .output()
+                .map_err(|e| format!("git rebase failed to start: {e}"))?;
+
+            if rebase.status.success() {
+                Ok(())
+            } else {
+                // Abort the failed rebase so the worktree is clean
+                let _ = Command::new("git")
+                    .arg("-C")
+                    .arg(&worktree_path)
+                    .args(["rebase", "--abort"])
+                    .output();
+                let stderr = String::from_utf8_lossy(&rebase.stderr).trim().to_owned();
+                Err(format!("rebase failed (aborted): {stderr}"))
+            }
+        })
+        .await;
+
+        match result {
+            Ok(Ok(())) => {
+                tracing::info!(
+                    worktree = %worktree_path.display(),
+                    base = %base_branch,
+                    "rebased worktree onto base branch"
+                );
+            }
+            Ok(Err(err)) => {
+                tracing::warn!(
+                    worktree = %worktree_path.display(),
+                    base = %base_branch,
+                    error = %err,
+                    "failed to rebase worktree onto base branch"
+                );
+            }
+            Err(err) => {
+                tracing::warn!(
+                    error = %err,
+                    "rebase task panicked"
+                );
+            }
+        }
+    }
+
     // r[task.progress]
     async fn notify_captain_progress(
         &self,
@@ -3107,7 +3170,7 @@ and the captain will help you find the right approach."
         step_index: usize,
         summary: String,
     ) -> Result<String, String> {
-        let (step_description, worktree_path) = {
+        let (step_description, worktree_path, base_branch) = {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let session = sessions
                 .get_mut(session_id)
@@ -3137,9 +3200,11 @@ and the captain will help you find the right approach."
                     activity: Some(format!("Completed step: {step_description}")),
                 },
             );
+            let base = session.config.base_branch.clone();
             (
                 step_description,
                 Self::current_task_worktree_path(session)?.to_path_buf(),
+                base,
             )
         };
 
@@ -3148,6 +3213,10 @@ and the captain will help you find the right approach."
         let commit =
             Self::auto_commit_worktree(&worktree_path, format!("{step_description}: {summary}"))
                 .await?;
+
+        // Keep the branch up to date with the base branch to avoid
+        // misleading diffs when the base branch moves forward.
+        Self::rebase_worktree_on_base(&worktree_path, &base_branch).await;
 
         if let Some(commit) = commit {
             let commit_summary = Self::commit_summary(Some(&commit));
@@ -5053,9 +5122,26 @@ impl Ship for ShipImpl {
             (path, branch, base)
         };
 
-        // Total diff vs base branch (includes committed + uncommitted changes)
+        // Find the merge-base so we only see changes on this branch,
+        // not changes that landed on the base branch since we branched.
+        let merge_base_output = TokioCommand::new("git")
+            .args(["merge-base", "HEAD", &base_branch])
+            .current_dir(&worktree_path)
+            .output()
+            .await
+            .ok()?;
+        let merge_base = String::from_utf8_lossy(&merge_base_output.stdout)
+            .trim()
+            .to_owned();
+        let diff_target = if merge_base.is_empty() {
+            base_branch.clone()
+        } else {
+            merge_base
+        };
+
+        // Total diff vs merge-base (includes committed + uncommitted changes)
         let output = TokioCommand::new("git")
-            .args(["diff", "--numstat", &base_branch])
+            .args(["diff", "--numstat", &diff_target])
             .current_dir(&worktree_path)
             .output()
             .await
