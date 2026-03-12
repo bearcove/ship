@@ -404,20 +404,12 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
       }
       return;
     }
-    if (e.key === "Escape") {
-      if (captainStateTag === "Working") {
-        e.preventDefault();
-        void (async () => {
-          const client = await getShipClient();
-          await client.interruptCaptain(sessionId);
-        })();
-      } else if (mateStateTag === "Working") {
-        e.preventDefault();
-        void (async () => {
-          const client = await getShipClient();
-          await client.cancel(sessionId);
-        })();
-      }
+    if (e.key === "Escape" && (captainStateTag === "Working" || mateStateTag === "Working")) {
+      e.preventDefault();
+      void (async () => {
+        const client = await getShipClient();
+        await client.stopAgents(sessionId);
+      })();
     }
   }
 
@@ -662,11 +654,7 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
             onClick={() => {
               void (async () => {
                 const client = await getShipClient();
-                if (captainStateTag === "Working") {
-                  await client.interruptCaptain(sessionId);
-                } else {
-                  await client.cancel(sessionId);
-                }
+                await client.stopAgents(sessionId);
               })();
             }}
             title="Stop agent"
