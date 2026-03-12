@@ -178,6 +178,7 @@ function ProjectGroup({
       }
       await refreshSessionList();
       navigate(`/sessions/${result.slug}`);
+      onClose?.();
     } finally {
       setCreating(false);
     }
