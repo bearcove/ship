@@ -4237,6 +4237,16 @@ and the captain will help you find the right approach."
                     activity: Some("Prompt in progress".to_owned()),
                 },
             );
+            let prompt_gen = match role {
+                Role::Captain => {
+                    session.captain_prompt_gen += 1;
+                    session.captain_prompt_gen
+                }
+                Role::Mate => {
+                    session.mate_prompt_gen += 1;
+                    session.mate_prompt_gen
+                }
+            };
             match role {
                 Role::Captain => session.captain_handle.clone(),
                 Role::Mate => session.mate_handle.clone(),
@@ -4277,11 +4287,17 @@ and the captain will help you find the right approach."
             let session = sessions
                 .get_mut(session_id)
                 .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-            match response.stop_reason {
-                ship_core::StopReason::ContextExhausted => {
-                    set_agent_state(session, role, AgentState::ContextExhausted)
+            let current_gen = match role {
+                Role::Captain => session.captain_prompt_gen,
+                Role::Mate => session.mate_prompt_gen,
+            };
+            if current_gen == prompt_gen {
+                match response.stop_reason {
+                    ship_core::StopReason::ContextExhausted => {
+                        set_agent_state(session, role, AgentState::ContextExhausted)
+                    }
+                    _ => set_agent_state(session, role, AgentState::Idle),
                 }
-                _ => set_agent_state(session, role, AgentState::Idle),
             }
         }
 
