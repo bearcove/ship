@@ -74,6 +74,9 @@ enum Command {
 
     /// Listen to the default mic and transcribe speech using Silero VAD + Whisper.
     Listen(ListenArgs),
+
+    /// Synthesize speech from text using Qwen3-TTS.
+    Speak(SpeakArgs),
 }
 
 #[derive(Debug, facet::Facet)]
@@ -146,6 +149,21 @@ struct ListenArgs {
 }
 
 #[derive(Debug, facet::Facet)]
+struct SpeakArgs {
+    /// Text to speak.
+    #[facet(args::positional)]
+    text: String,
+
+    /// Path to reference voice WAV (5-20s of clear speech).
+    #[facet(args::named)]
+    voice_wav: String,
+
+    /// Output WAV file instead of playing audio.
+    #[facet(args::named, default)]
+    output: Option<String>,
+}
+
+#[derive(Debug, facet::Facet)]
 struct ProjectAddArgs {
     /// Path to repository.
     #[facet(args::positional)]
@@ -191,6 +209,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Command::Project { command } => run_project(command).await,
         Command::Probe(args) => run_probe(args).await,
         Command::Listen(args) => run_listen(args).await,
+        Command::Speak(args) => run_speak(args).await,
     }
 }
 
@@ -1313,6 +1332,100 @@ async fn run_listen(args: ListenArgs) -> Result<(), Box<dyn std::error::Error>> 
         println!("\n--- Final transcription ---");
         println!("{}", transcribed_segments.join(" "));
     }
+
+    Ok(())
+}
+
+async fn run_speak(args: SpeakArgs) -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env().add_directive(Level::INFO.into()))
+        .init();
+
+    let repo_id = "ResembleAI/chatterbox-turbo-ONNX";
+    let revision = "main";
+
+    tracing::info!("downloading chatterbox model assets");
+    let paths = chatterbox_rs::hf::download_chatterbox_assets(
+        repo_id,
+        revision,
+        chatterbox_rs::hf::ModelVariant::Fp16,
+    )?;
+
+    tracing::info!("loading chatterbox model");
+    let mut model = chatterbox_rs::chatterbox::Chatterbox::load(&paths)?;
+
+    tracing::info!(text = %args.text, voice = %args.voice_wav, "synthesizing");
+    let started = Instant::now();
+
+    let voice_path = Path::new(&args.voice_wav);
+    let samples = model.synthesize(&args.text, voice_path, 2048, 1.1)?;
+
+    let duration_secs = samples.len() as f64 / chatterbox_rs::audio::TARGET_SAMPLE_RATE as f64;
+    let elapsed_secs = started.elapsed().as_secs_f64();
+    tracing::info!(
+        duration_secs = format!("{:.2}", duration_secs),
+        elapsed_secs = format!("{:.2}", elapsed_secs),
+        rtf = format!("{:.2}", elapsed_secs / duration_secs),
+        "synthesis complete"
+    );
+
+    if let Some(output_path) = args.output {
+        chatterbox_rs::audio::write_wav_f32_mono_24k(Path::new(&output_path), &samples)?;
+        tracing::info!(path = %output_path, "saved WAV");
+        return Ok(());
+    }
+
+    // Play through speakers using cpal
+    use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+    let host = cpal::default_host();
+    let output_device = host
+        .default_output_device()
+        .ok_or("no default output device")?;
+    tracing::info!(
+        device = output_device.name().unwrap_or_default(),
+        "playing audio"
+    );
+
+    let config = cpal::StreamConfig {
+        channels: 1,
+        sample_rate: cpal::SampleRate(chatterbox_rs::audio::TARGET_SAMPLE_RATE),
+        buffer_size: cpal::BufferSize::Default,
+    };
+
+    let sample_idx = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let sample_idx_playback = sample_idx.clone();
+    let total_samples = samples.len();
+    let (done_tx, done_rx) = tokio::sync::oneshot::channel::<()>();
+    let done_tx = std::sync::Mutex::new(Some(done_tx));
+
+    let stream = output_device.build_output_stream(
+        &config,
+        move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+            let start = sample_idx_playback.load(std::sync::atomic::Ordering::Relaxed);
+            let end = (start + data.len()).min(total_samples);
+            let count = end - start;
+            if count > 0 {
+                data[..count].copy_from_slice(&samples[start..end]);
+            }
+            for s in data[count..].iter_mut() {
+                *s = 0.0;
+            }
+            sample_idx_playback.store(end, std::sync::atomic::Ordering::Relaxed);
+            if end >= total_samples {
+                if let Some(tx) = done_tx.lock().unwrap().take() {
+                    let _ = tx.send(());
+                }
+            }
+        },
+        |err| {
+            tracing::error!("audio output error: {err}");
+        },
+        None,
+    )?;
+
+    stream.play()?;
+    let _ = done_rx.await;
+    sleep(Duration::from_millis(200)).await;
 
     Ok(())
 }

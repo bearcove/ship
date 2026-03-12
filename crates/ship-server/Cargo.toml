@@ -42,3 +42,5 @@ dirs-next = "2.0.0"
 cpal = "0.15"
 silero-vad-rust = "6.2.1"
 ort = { workspace = true }
+anyhow = "1"
+chatterbox-rs = { git = "https://github.com/bearcove/cbx.git" }
