@@ -28,7 +28,7 @@ use ship_types::{
     PromptContentPart, Role, ServerInfo, SessionConfig, SessionDetail, SessionEvent,
     SessionEventEnvelope, SessionId, SessionStartupStage, SessionStartupState, SessionSummary,
     SetAgentEffortResponse, SetAgentModelResponse, SubscribeMessage, TaskId, TaskRecord,
-    TaskStatus, ToolCallKind, ToolTarget, TranscribeSegment,
+    TaskStatus, ToolCallKind, ToolTarget, TranscribeSegment, WorktreeDiffStats,
 };
 use similar::TextDiff;
 use tokio::process::Command as TokioCommand;
@@ -5037,6 +5037,45 @@ impl Ship for ShipImpl {
                 vec![]
             }
         }
+    }
+
+    async fn get_worktree_diff_stats(&self, session: SessionId) -> Option<WorktreeDiffStats> {
+        let (worktree_path, branch_name, base_branch) = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get(&session)?;
+            let path = session.worktree_path.as_ref()?.clone();
+            let branch = session.config.branch_name.clone();
+            let base = session.config.base_branch.clone();
+            (path, branch, base)
+        };
+
+        // Total diff vs base branch (includes committed + uncommitted changes)
+        let output = TokioCommand::new("git")
+            .args(["diff", "--numstat", &base_branch])
+            .current_dir(&worktree_path)
+            .output()
+            .await
+            .ok()?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let mut lines_added: u64 = 0;
+        let mut lines_removed: u64 = 0;
+        let mut files_changed: u64 = 0;
+        for line in stdout.lines() {
+            let parts: Vec<&str> = line.split('\t').collect();
+            if parts.len() >= 3 {
+                lines_added += parts[0].parse::<u64>().unwrap_or(0);
+                lines_removed += parts[1].parse::<u64>().unwrap_or(0);
+                files_changed += 1;
+            }
+        }
+
+        Some(WorktreeDiffStats {
+            branch_name,
+            lines_added,
+            lines_removed,
+            files_changed,
+        })
     }
 
     // r[event.subscribe.replay]

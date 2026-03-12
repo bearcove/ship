@@ -464,14 +464,18 @@ export function UnifiedFeed({
   const captainWorking = captain?.state.tag === "Working";
   const mateWorking = mate?.state.tag === "Working";
 
+  const MAX_RENDERED_BLOCKS = 80;
+  const truncated = blocks.length > MAX_RENDERED_BLOCKS;
+  const visibleBlocks = truncated ? blocks.slice(blocks.length - MAX_RENDERED_BLOCKS) : blocks;
+
   let lastUnresolvedPermBlockId: string | undefined;
-  for (const entry of blocks) {
+  for (const entry of visibleBlocks) {
     if (entry.block.tag === "Permission" && !entry.block.resolution) {
       lastUnresolvedPermBlockId = entry.blockId;
     }
   }
 
-  const segments = buildSegments(blocks);
+  const segments = buildSegments(visibleBlocks);
 
   // Determine which segments show the avatar: only the first in a consecutive
   // run from the same agent role.
@@ -509,6 +513,14 @@ export function UnifiedFeed({
         )}
         <Box className={unifiedFeedStream}>
           {showStartupFeed && startupState && <StartupFeedState startupState={startupState} />}
+
+          {truncated && (
+            <Flex align="center" justify="center" py="2">
+              <Text size="1" color="gray">
+                Showing last {MAX_RENDERED_BLOCKS} of {blocks.length} blocks
+              </Text>
+            </Flex>
+          )}
 
           {segments.map((seg, idx) => {
             const showAvatar = showAvatarAt.has(idx);

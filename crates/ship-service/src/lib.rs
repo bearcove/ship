@@ -4,7 +4,7 @@ use ship_types::{
     CloseSessionRequest, CloseSessionResponse, CreateSessionRequest, CreateSessionResponse,
     McpToolCallResponse, ProjectInfo, ProjectName, PromptContentPart, Role, ServerInfo,
     SessionDetail, SessionId, SessionSummary, SetAgentEffortResponse, SetAgentModelResponse,
-    SubscribeMessage, TranscribeSegment,
+    SubscribeMessage, TranscribeSegment, WorktreeDiffStats,
 };
 
 // r[backend.rpc]
@@ -86,6 +86,8 @@ pub trait Ship {
 
     // r[ui.composer.file-mention]
     async fn list_worktree_files(&self, session: SessionId) -> Vec<String>;
+
+    async fn get_worktree_diff_stats(&self, session: SessionId) -> Option<WorktreeDiffStats>;
 
     // r[event.subscribe.roam-channel]
     async fn subscribe_events(&self, session: SessionId, output: Tx<SubscribeMessage>);

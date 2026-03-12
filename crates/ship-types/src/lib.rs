@@ -770,6 +770,14 @@ pub mod protocol {
         pub created_at: String,
         pub user_avatar_url: Option<String>,
     }
+
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct WorktreeDiffStats {
+        pub branch_name: String,
+        pub lines_added: u64,
+        pub lines_removed: u64,
+        pub files_changed: u64,
+    }
 }
 
 pub mod prompt {
@@ -874,6 +882,7 @@ pub use protocol::{
     HumanReviewRequest, McpDiffContent, McpEnvVar, McpHeader, McpHttpServerConfig, McpServerConfig,
     McpSseServerConfig, McpStdioServerConfig, McpToolCallResponse, ProjectInfo, ServerInfo,
     SessionDetail, SessionSummary, SetAgentEffortResponse, SetAgentModelResponse,
+    WorktreeDiffStats,
 };
 pub use session::{SessionStartupStage, SessionStartupState};
 pub use structured::{
