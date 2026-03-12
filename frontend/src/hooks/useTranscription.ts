@@ -135,13 +135,17 @@ export function useTranscription() {
       };
 
       // Background: receive segments in real-time.
-      // Each segment from the streaming window contains the FULL transcription
-      // so far (cumulative), so we replace rather than accumulate.
+      // With VAD, each speech block produces independent segments that must
+      // be accumulated. Within a single block the text is cumulative, so we
+      // replace per-block but append across blocks.
       void (async () => {
+        const allSegments: TranscribeSegment[] = [];
         while (true) {
           const seg = await segRx.recv();
           if (seg === null) break;
-          setResult({ text: seg.text.trim(), segments: [seg] });
+          allSegments.push(seg);
+          const fullText = allSegments.map((s) => s.text.trim()).join(" ");
+          setResult({ text: fullText, segments: [...allSegments] });
         }
         await callPromise;
         setState({ tag: "idle" });
