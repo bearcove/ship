@@ -377,6 +377,10 @@ export type SubscribeMessage =
   | { tag: 'Event'; value: SessionEventEnvelope }
   | { tag: 'ReplayComplete' };
 
+export type GlobalEvent =
+  | { tag: 'SessionListChanged'; sessions: SessionSummary[] }
+  | { tag: 'ProjectListChanged'; projects: ProjectInfo[] };
+
 export interface TranscribeSegment {
   start_ms: bigint;
   end_ms: bigint;
@@ -473,6 +477,9 @@ export type SubscribeEventsRequest = [
 ];
 export type SubscribeEventsResponse = void;
 
+export type SubscribeGlobalEventsRequest = [Tx<GlobalEvent>];
+export type SubscribeGlobalEventsResponse = void;
+
 export type TranscribeAudioRequest = [
   Rx<Uint8Array>, // audio_in
   Tx<TranscribeSegment>, // segments_out
@@ -504,6 +511,7 @@ export interface ShipCaller {
   listWorktreeFiles(session: SessionId): CallBuilder<string[]>;
   getWorktreeDiffStats(session: SessionId): CallBuilder<WorktreeDiffStats | null>;
   subscribeEvents(session: SessionId, output: Tx<SubscribeMessage>): CallBuilder<void>;
+  subscribeGlobalEvents(output: Tx<GlobalEvent>): CallBuilder<void>;
   /**
    * Stream audio for speech-to-text transcription.
    * Client sends 16kHz mono f32 PCM audio as raw bytes via `audio_in`.
@@ -851,13 +859,36 @@ export class ShipClient implements ShipCaller {
     });
   }
 
+  subscribeGlobalEvents(output: Tx<GlobalEvent>): CallBuilder<void> {
+    const descriptor = ship_descriptor.methods[23];
+    // Bind any Tx/Rx channels in arguments and collect channel IDs
+    const channels = bindChannels(
+      descriptor.args.elements,
+      [output],
+      this.caller.getChannelAllocator(),
+      this.caller.getChannelRegistry(),
+      ship_descriptor.schema_registry,
+    );
+    return new CallBuilder(async (metadata) => {
+      const value = await this.caller.call({
+        method: "Ship.subscribeGlobalEvents",
+        args: { output },
+        descriptor,
+        schemaRegistry: ship_descriptor.schema_registry,
+        channels,
+        metadata,
+      });
+      return value as void;
+    });
+  }
+
   /**
    * Stream audio for speech-to-text transcription.
    * Client sends 16kHz mono f32 PCM audio as raw bytes via `audio_in`.
    * Server sends back transcribed segments via `segments_out`.
    */
   transcribeAudio(audioIn: Rx<Uint8Array>, segmentsOut: Tx<TranscribeSegment>): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[23];
+    const descriptor = ship_descriptor.methods[24];
     // Bind any Tx/Rx channels in arguments and collect channel IDs
     const channels = bindChannels(
       descriptor.args.elements,
@@ -917,6 +948,7 @@ export interface ShipHandler {
   listWorktreeFiles(session: SessionId): Promise<string[]> | string[];
   getWorktreeDiffStats(session: SessionId): Promise<WorktreeDiffStats | null> | WorktreeDiffStats | null;
   subscribeEvents(session: SessionId, output: Tx<SubscribeMessage>): Promise<void> | void;
+  subscribeGlobalEvents(output: Tx<GlobalEvent>): Promise<void> | void;
   transcribeAudio(audioIn: Rx<Uint8Array>, segmentsOut: Tx<TranscribeSegment>): Promise<void> | void;
 }
 
@@ -1091,6 +1123,14 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
+    } else if (method.id === 0xdf7ead2566be53acn) {
+      try {
+        const result = await this.handler.subscribeGlobalEvents(args[0] as Tx<GlobalEvent>);
+        (args[0] as { close(): void }).close(); // close output before reply
+        call.reply(result);
+      } catch {
+        call.replyInternalError();
+      }
     } else if (method.id === 0x2bb0ea74ec8d7c79n) {
       try {
         const result = await this.handler.transcribeAudio(args[0] as Rx<Uint8Array>, args[1] as Tx<TranscribeSegment>);
@@ -1163,6 +1203,7 @@ const ship_schema_registry: SchemaRegistry = new Map<string, Schema>([
   ["SessionEvent", { kind: 'enum', variants: [{ name: 'BlockAppend', fields: { 'block_id': { kind: 'string' }, 'role': { kind: 'ref', name: 'Role' }, 'block': { kind: 'ref', name: 'ContentBlock' } } }, { name: 'BlockPatch', fields: { 'block_id': { kind: 'string' }, 'role': { kind: 'ref', name: 'Role' }, 'patch': { kind: 'ref', name: 'BlockPatch' } } }, { name: 'AgentStateChanged', fields: { 'role': { kind: 'ref', name: 'Role' }, 'state': { kind: 'ref', name: 'AgentState' } } }, { name: 'SessionStartupChanged', fields: { 'state': { kind: 'ref', name: 'SessionStartupState' } } }, { name: 'TaskStatusChanged', fields: { 'task_id': { kind: 'string' }, 'status': { kind: 'ref', name: 'TaskStatus' } } }, { name: 'ContextUpdated', fields: { 'role': { kind: 'ref', name: 'Role' }, 'remaining_percent': { kind: 'u8' } } }, { name: 'TaskStarted', fields: { 'task_id': { kind: 'string' }, 'title': { kind: 'string' }, 'description': { kind: 'string' } } }, { name: 'AgentModelChanged', fields: { 'role': { kind: 'ref', name: 'Role' }, 'model_id': { kind: 'option', inner: { kind: 'string' } }, 'available_models': { kind: 'vec', element: { kind: 'string' } } } }, { name: 'AgentEffortChanged', fields: { 'role': { kind: 'ref', name: 'Role' }, 'effort_config_id': { kind: 'option', inner: { kind: 'string' } }, 'effort_value_id': { kind: 'option', inner: { kind: 'string' } }, 'available_effort_values': { kind: 'vec', element: { kind: 'ref', name: 'EffortValue' } } } }, { name: 'MateGuidanceQueued', fields: { 'role': { kind: 'ref', name: 'Role' }, 'message': { kind: 'string' } } }, { name: 'HumanReviewRequested', fields: { 'message': { kind: 'string' }, 'diff': { kind: 'string' }, 'worktree_path': { kind: 'string' } } }, { name: 'HumanReviewCleared', fields: null }, { name: 'SessionTitleChanged', fields: { 'title': { kind: 'string' } } }] }],
   ["SessionEventEnvelope", { kind: 'struct', fields: { 'seq': { kind: 'u64' }, 'timestamp': { kind: 'string' }, 'event': { kind: 'ref', name: 'SessionEvent' } } }],
   ["SubscribeMessage", { kind: 'enum', variants: [{ name: 'Event', fields: { kind: 'ref', name: 'SessionEventEnvelope' } }, { name: 'ReplayComplete', fields: null }] }],
+  ["GlobalEvent", { kind: 'enum', variants: [{ name: 'SessionListChanged', fields: { 'sessions': { kind: 'vec', element: { kind: 'ref', name: 'SessionSummary' } } } }, { name: 'ProjectListChanged', fields: { 'projects': { kind: 'vec', element: { kind: 'ref', name: 'ProjectInfo' } } } }] }],
   ["TranscribeSegment", { kind: 'struct', fields: { 'start_ms': { kind: 'u64' }, 'end_ms': { kind: 'u64' }, 'text': { kind: 'string' } } }],
 ]);
 
@@ -1307,6 +1348,12 @@ export const ship_descriptor: ServiceDescriptor = {
       name: 'subscribeEvents',
       id: 0x525fdefefed33dbdn,
       args: { kind: 'tuple', elements: [{ kind: 'string' }, { kind: 'tx', element: { kind: 'ref', name: 'SubscribeMessage' } }] },
+      result: { kind: 'enum', variants: [{ name: 'Ok', fields: { kind: 'struct', fields: {} } }, { name: 'Err', fields: { kind: 'enum', variants: [{ name: 'User', fields: null }, { name: 'UnknownMethod', fields: null }, { name: 'InvalidPayload', fields: null }, { name: 'Cancelled', fields: null }] } }] },
+    },
+    {
+      name: 'subscribeGlobalEvents',
+      id: 0xdf7ead2566be53acn,
+      args: { kind: 'tuple', elements: [{ kind: 'tx', element: { kind: 'ref', name: 'GlobalEvent' } }] },
       result: { kind: 'enum', variants: [{ name: 'Ok', fields: { kind: 'struct', fields: {} } }, { name: 'Err', fields: { kind: 'enum', variants: [{ name: 'User', fields: null }, { name: 'UnknownMethod', fields: null }, { name: 'InvalidPayload', fields: null }, { name: 'Cancelled', fields: null }] } }] },
     },
     {

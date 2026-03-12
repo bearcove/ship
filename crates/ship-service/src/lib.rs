@@ -2,8 +2,8 @@ use roam::{Rx, Tx};
 use ship_types::{
     AgentDiscovery, ArchiveSessionRequest, ArchiveSessionResponse, CaptainAssignExtras,
     CloseSessionRequest, CloseSessionResponse, CreateSessionRequest, CreateSessionResponse,
-    McpToolCallResponse, PlanStepInput, ProjectInfo, ProjectName, PromptContentPart, Role,
-    ServerInfo, SessionDetail, SessionId, SessionSummary, SetAgentEffortResponse,
+    GlobalEvent, McpToolCallResponse, PlanStepInput, ProjectInfo, ProjectName, PromptContentPart,
+    Role, ServerInfo, SessionDetail, SessionId, SessionSummary, SetAgentEffortResponse,
     SetAgentModelResponse, SubscribeMessage, TranscribeSegment, WorktreeDiffStats,
 };
 
@@ -91,6 +91,9 @@ pub trait Ship {
 
     // r[event.subscribe.roam-channel]
     async fn subscribe_events(&self, session: SessionId, output: Tx<SubscribeMessage>);
+
+    // r[proto.subscribe-global-events]
+    async fn subscribe_global_events(&self, output: Tx<GlobalEvent>);
 
     /// Stream audio for speech-to-text transcription.
     /// Client sends 16kHz mono f32 PCM audio as raw bytes via `audio_in`.
