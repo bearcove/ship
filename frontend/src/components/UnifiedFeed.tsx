@@ -126,6 +126,9 @@ function segmentAgentRole(seg: FeedSegment): Role | null {
     if (role.tag === "Captain") return null; // real user message → right side, no avatar
     return { tag: "Captain" }; // captain relaying to mate → left side, captain avatar
   }
+  if (block.tag === "Image" && role.tag === "Captain") {
+    return null; // user-sent image → right side, no avatar
+  }
   return role;
 }
 

@@ -17,7 +17,8 @@ export function ImageBlock({ block }: Props) {
   const [open, setOpen] = useState(false);
 
   const objectUrl = useMemo(() => {
-    const blob = new Blob([block.data.buffer as ArrayBuffer], { type: block.mime_type });
+    const bytes = new Uint8Array(block.data);
+    const blob = new Blob([bytes], { type: block.mime_type });
     return URL.createObjectURL(blob);
   }, [block.data, block.mime_type]);
 
