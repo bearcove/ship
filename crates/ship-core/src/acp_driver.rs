@@ -776,6 +776,8 @@ fn command_for_launcher(
                 "(allow file-write* (subpath \"{home}/.pnpm-store\"))",
                 // Allow claude plans directory
                 "(allow file-write* (subpath \"{home}/.claude/plans\"))",
+                // Allow codex models cache
+                "(allow file-write* (subpath \"{home}/.codex\"))",
             ),
             worktree = real_worktree.display(),
             home = home,
