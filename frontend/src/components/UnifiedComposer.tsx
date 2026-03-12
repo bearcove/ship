@@ -193,11 +193,6 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
     preTranscriptionTextRef.current = text;
   }
 
-  // Reset pre-transcription text when we return to idle
-  if (transcription.state.tag === "idle" && preTranscriptionTextRef.current !== null) {
-    preTranscriptionTextRef.current = null;
-  }
-
   // When transcription returns to idle, commit the final text and optionally auto-submit
   const prevTranscriptionTag = useRef(transcription.state.tag);
   useEffect(() => {
@@ -206,6 +201,8 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
     if (!wasProcessing || transcription.state.tag !== "idle") return;
 
     const prefix = preTranscriptionTextRef.current ?? "";
+    preTranscriptionTextRef.current = null;
+
     const finalText = transcription.result?.text
       ? prefix
         ? prefix + " " + transcription.result.text
