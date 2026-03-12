@@ -545,6 +545,7 @@ async fn run_serve(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
     ship.load_persisted_sessions().await;
     ship.fetch_github_user_avatar().await;
     ship.configure_whisper_model();
+    ship.configure_chatterbox();
     let state = AppState {
         ship: ship.clone(),
         http_client: reqwest::Client::new(),
