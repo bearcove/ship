@@ -1063,6 +1063,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             session_event_log: session.session_event_log.clone(),
             current_task: session.current_task.clone(),
             task_history: session.task_history.clone(),
+            title: session.title.clone(),
             archived_at: session.archived_at.clone(),
             captain_acp_session_id: session.captain_acp_session_id.clone(),
             mate_acp_session_id: session.mate_acp_session_id.clone(),
