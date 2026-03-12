@@ -857,6 +857,8 @@ pub mod persistence {
         pub session_event_log: Vec<SessionEventEnvelope>,
         pub current_task: Option<CurrentTask>,
         pub task_history: Vec<TaskRecord>,
+        #[facet(default)]
+        pub title: Option<String>,
         // r[proto.archive-session]
         #[facet(default)]
         pub archived_at: Option<String>,
