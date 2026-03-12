@@ -1034,6 +1034,9 @@ the human briefly and wait for them to describe what they'd like to work on."
         session_id: &SessionId,
         summary: Option<String>,
     ) -> Result<(), String> {
+        // First lock: validate status and extract worktree info for the merge.
+        // Do NOT transition or archive the task yet — if the merge fails, the
+        // task must remain intact so the captain can retry.
         let (worktree_path, base_branch, branch_name) = {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let active = sessions
@@ -1046,6 +1049,40 @@ the human briefly and wait for them to describe what they'd like to work on."
             {
                 return Err("invalid task transition".to_owned());
             }
+
+            let worktree_path = active
+                .worktree_path
+                .clone()
+                .ok_or_else(|| "session worktree not ready".to_owned())?;
+            (
+                worktree_path,
+                active.config.base_branch.clone(),
+                active.config.branch_name.clone(),
+            )
+        };
+
+        // Rebase the session branch onto the base branch, then fast-forward
+        // merge so the work lands on main with no merge commits.
+        let repo_root = Self::repo_root_for_worktree(&worktree_path)
+            .map_err(|error| error.to_string())?
+            .to_path_buf();
+
+        self.worktree_ops
+            .rebase_onto(&worktree_path, &base_branch)
+            .await
+            .map_err(|error| format!("rebase failed: {}", error.message))?;
+
+        self.worktree_ops
+            .merge_ff_only(&repo_root, &branch_name)
+            .await
+            .map_err(|error| format!("fast-forward merge failed: {}", error.message))?;
+
+        // Second lock: merge succeeded, now transition and archive the task.
+        {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let active = sessions
+                .get_mut(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
 
             if let Some(summary) = summary {
                 apply_event(
@@ -1063,35 +1100,9 @@ the human briefly and wait for them to describe what they'd like to work on."
 
             transition_task(active, TaskStatus::Accepted).map_err(|error| error.to_string())?;
             archive_terminal_task(active);
-
-            let worktree_path = active
-                .worktree_path
-                .clone()
-                .ok_or_else(|| "session worktree not ready".to_owned())?;
-            (
-                worktree_path,
-                active.config.base_branch.clone(),
-                active.config.branch_name.clone(),
-            )
-        };
+        }
 
         self.persist_session(session_id).await?;
-
-        // Rebase the session branch onto the base branch, then fast-forward
-        // merge so the work lands on main with no merge commits.
-        let repo_root = Self::repo_root_for_worktree(&worktree_path)
-            .map_err(|error| error.to_string())?
-            .to_path_buf();
-
-        self.worktree_ops
-            .rebase_onto(&worktree_path, &base_branch)
-            .await
-            .map_err(|error| format!("rebase failed: {}", error.message))?;
-
-        self.worktree_ops
-            .merge_ff_only(&repo_root, &branch_name)
-            .await
-            .map_err(|error| format!("fast-forward merge failed: {}", error.message))?;
 
         Ok(())
     }
