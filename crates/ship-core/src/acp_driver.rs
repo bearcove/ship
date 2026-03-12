@@ -762,9 +762,12 @@ fn command_for_launcher(
                 "(allow file-write* (subpath \"{worktree}\"))",
                 // Allow writes to /dev (stdout/stderr/null/tty)
                 "(allow file-write* (subpath \"/dev\"))",
-                // Allow writes to tmp (node needs this)
+                // Allow writes to temp dirs. sandbox-exec matches literal paths
+                // without resolving symlinks, so we need both the symlink and
+                // resolved paths: /tmp -> /private/tmp, /var -> /private/var.
+                "(allow file-write* (subpath \"/tmp\"))",
                 "(allow file-write* (subpath \"/private/tmp\"))",
-                // Allow writes to per-user temp dir
+                "(allow file-write* (subpath \"/var/folders\"))",
                 "(allow file-write* (subpath \"/private/var/folders\"))",
                 // Allow cargo install, rustup toolchain management
                 "(allow file-write* (subpath \"{home}/.cargo\"))",
