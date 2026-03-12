@@ -5477,23 +5477,32 @@ impl Ship for ShipImpl {
                 tracing::error!("transcribe_audio: failed to inject silence");
             }
 
-            // Give the stream a moment to process, then drain all final segments.
-            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-
-            while let Some(segments) = stream.try_recv_segments() {
-                let text: String = segments
-                    .iter()
-                    .map(|s| s.text.trim())
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                if !text.is_empty() {
-                    tracing::info!("transcribe_audio: final segment: {text}");
-                    let ts = TranscribeSegment {
-                        start_ms: 0,
-                        end_ms: (total_samples as f64 / 16.0) as u64,
-                        text,
-                    };
-                    let _ = segments_out.send(ts).await;
+            // Wait for the VAD to process the silence and produce final segments.
+            // Timeout after 5s in case no speech was detected (e.g. only silence recorded).
+            match tokio::time::timeout(std::time::Duration::from_secs(5), stream.recv_segments())
+                .await
+            {
+                Ok(Some(segments)) => {
+                    let text: String = segments
+                        .iter()
+                        .map(|s| s.text.trim())
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    if !text.is_empty() {
+                        tracing::info!("transcribe_audio: final segment: {text}");
+                        let ts = TranscribeSegment {
+                            start_ms: 0,
+                            end_ms: (total_samples as f64 / 16.0) as u64,
+                            text,
+                        };
+                        let _ = segments_out.send(ts).await;
+                    }
+                }
+                Ok(None) => {
+                    tracing::info!("transcribe_audio: no final segments (stream ended)");
+                }
+                Err(_) => {
+                    tracing::info!("transcribe_audio: timed out waiting for final segments");
                 }
             }
 
