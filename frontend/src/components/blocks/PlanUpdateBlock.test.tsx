@@ -10,23 +10,23 @@ const block = {
   tag: "PlanUpdate",
   steps: [
     {
-      description: "Queue the UI patch",
-      priority: { tag: "High" },
+      title: "Queue the UI patch",
+      description: "Queue the UI patch for review",
       status: { tag: "Pending" },
     },
     {
-      description: "Render the sticky plan",
-      priority: { tag: "Medium" },
+      title: "Render the sticky plan",
+      description: "Render the sticky plan component",
       status: { tag: "InProgress" },
     },
     {
-      description: "Ship the component tests",
-      priority: { tag: "Low" },
+      title: "Ship the component tests",
+      description: "Ship the component tests to CI",
       status: { tag: "Completed" },
     },
     {
-      description: "Handle regressions",
-      priority: { tag: "High" },
+      title: "Handle regressions",
+      description: "Handle regressions from the rollout",
       status: { tag: "Failed" },
     },
   ],
@@ -36,7 +36,7 @@ const block = {
 // r[verify frontend.test.rtl]
 describe("PlanUpdateBlock", () => {
   // r[verify ui.block.plan.layout]
-  it("renders a compact ordered list with the plan step badges and status icons", () => {
+  it("renders a compact ordered list with the plan steps and status icons", () => {
     renderWithTheme(<PlanUpdateBlock block={block} />);
 
     const planList = screen.getByRole("list");
@@ -50,19 +50,15 @@ describe("PlanUpdateBlock", () => {
     expect(items[0].style.paddingInlineStart).toBe("var(--space-1)");
 
     expect(within(items[0]).getByText("Queue the UI patch")).toBeInTheDocument();
-    expect(within(items[0]).getByText("high")).toBeInTheDocument();
     expect(within(items[0]).getByLabelText("Pending")).toBeInTheDocument();
 
     expect(within(items[1]).getByText("Render the sticky plan")).toBeInTheDocument();
-    expect(within(items[1]).getByText("medium")).toBeInTheDocument();
     expect(within(items[1]).getByLabelText("In progress")).toBeInTheDocument();
 
     expect(within(items[2]).getByText("Ship the component tests")).toBeInTheDocument();
-    expect(within(items[2]).getByText("low")).toBeInTheDocument();
     expect(within(items[2]).getByLabelText("Completed")).toBeInTheDocument();
 
     expect(within(items[3]).getByText("Handle regressions")).toBeInTheDocument();
-    expect(within(items[3]).getAllByText("high")).toHaveLength(1);
     expect(within(items[3]).getByLabelText("Failed")).toBeInTheDocument();
   });
 });

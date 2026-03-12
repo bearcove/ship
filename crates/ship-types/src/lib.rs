@@ -81,14 +81,6 @@ pub mod agent {
     // r[agent-state.plan-step]
     #[repr(u8)]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, facet::Facet)]
-    pub enum PlanStepPriority {
-        High,
-        Medium,
-        Low,
-    }
-
-    #[repr(u8)]
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, facet::Facet)]
     pub enum PlanStepStatus {
         Pending,
         InProgress,
@@ -98,9 +90,17 @@ pub mod agent {
 
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub struct PlanStep {
+        #[facet(default)]
+        pub title: String,
         pub description: String,
-        pub priority: PlanStepPriority,
         pub status: PlanStepStatus,
+    }
+
+    /// Input for creating a plan step (used by captain_assign and set_plan).
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct PlanStepInput {
+        pub title: String,
+        pub description: String,
     }
 
     // r[captain.tool.assign.files]
@@ -119,7 +119,7 @@ pub mod agent {
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub struct CaptainAssignExtras {
         pub files: Vec<AssignFileRef>,
-        pub plan: Vec<String>,
+        pub plan: Vec<PlanStepInput>,
     }
 
     // r[approval.request.content]
@@ -873,7 +873,7 @@ pub mod persistence {
 
 pub use agent::{
     AgentKind, AgentSnapshot, AgentState, AssignFileRef, CaptainAssignExtras, EffortValue,
-    PermissionRequest, PlanStep, PlanStepPriority, PlanStepStatus, Role,
+    PermissionRequest, PlanStep, PlanStepInput, PlanStepStatus, Role,
 };
 pub use events::{
     BlockPatch, ContentBlock, PermissionResolution, SessionEvent, SessionEventEnvelope,
