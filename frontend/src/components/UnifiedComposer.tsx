@@ -351,8 +351,11 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
       }
     }
     if (e.key === "Enter" && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
-      e.preventDefault();
-      void handleSubmit();
+      const isTouchDevice = window.matchMedia("(pointer: coarse)").matches;
+      if (!isTouchDevice) {
+        e.preventDefault();
+        void handleSubmit();
+      }
       return;
     }
     if (e.key === "Escape") {
