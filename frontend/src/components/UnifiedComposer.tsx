@@ -34,6 +34,7 @@ import {
   fileMentionItem,
   fileMentionPopup,
   pageDropOverlay,
+  transcriptPreview,
 } from "../styles/session-view.css";
 import { Waveform } from "./Waveform";
 import { useWorktreeFiles } from "../hooks/useWorktreeFiles";
@@ -177,6 +178,7 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
   const [sendAfterTranscription, setSendAfterTranscription] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const transcriptPreviewRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const worktreeFiles = useWorktreeFiles(sessionId);
   const isDragOver = useDocumentDrop(addImageFiles);
@@ -311,6 +313,11 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
     el.style.height = newHeight + "px";
     el.style.overflowY = contentHeight > maxHeight ? "auto" : "hidden";
   }, [text]);
+
+  useEffect(() => {
+    const el = transcriptPreviewRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [transcription.result]);
 
   function handleTextChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     const newText = e.target.value;
@@ -526,6 +533,12 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
           e.target.value = "";
         }}
       />
+
+      {isRecording && transcription.result && (
+        <div ref={transcriptPreviewRef} className={transcriptPreview}>
+          {transcription.result.text}
+        </div>
+      )}
 
       <div className={composerInputWrapper} data-target={target === "mate" ? "mate" : undefined}>
         {mentionQuery !== null && totalMentionItems > 0 && (
