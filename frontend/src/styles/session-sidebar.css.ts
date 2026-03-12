@@ -118,11 +118,8 @@ export const sessionRow = style({
 
 export const sessionRowTitle = style({
   flex: 1,
-  fontSize: "var(--font-size-2)",
+  fontSize: "var(--font-size-3)",
   color: "var(--gray-12)",
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "nowrap",
 });
 
 export const sessionRowEmpty = style({
