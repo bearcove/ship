@@ -118,6 +118,8 @@ pub struct AgentSpawnInfo {
     pub available_effort_values: Vec<EffortValue>,
     /// The ACP session ID, for persisting and later resuming
     pub acp_session_id: String,
+    /// Whether the ACP session was resumed from a previous run
+    pub was_resumed: bool,
 }
 
 // r[testability.agent-trait]

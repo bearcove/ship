@@ -131,6 +131,7 @@ impl AgentDriver for FakeAgentDriver {
             effort_value_id: None,
             available_effort_values: Vec::new(),
             acp_session_id: "fake-acp-session".to_owned(),
+            was_resumed: false,
         })
     }
 

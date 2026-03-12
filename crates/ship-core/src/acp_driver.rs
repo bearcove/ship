@@ -27,8 +27,8 @@ use crate::{SystemBinaryPathProbe, resolve_agent_launcher};
 
 type ModelInfo = (Option<String>, Vec<String>);
 type EffortInfo = (Option<String>, Option<String>, Vec<EffortValue>);
-/// (model_info, effort_info, acp_session_id)
-type ReadyResult = Result<(ModelInfo, EffortInfo, String), String>;
+/// (model_info, effort_info, acp_session_id, was_resumed)
+type ReadyResult = Result<(ModelInfo, EffortInfo, String, bool), String>;
 
 struct AcpHandle {
     command_tx: mpsc::UnboundedSender<DriverCommand>,
@@ -133,6 +133,7 @@ impl AgentDriver for AcpAgentDriver {
                 (model_id, available_models),
                 (effort_config_id, effort_value_id, available_effort_values),
                 acp_session_id,
+                was_resumed,
             ))) => {
                 self.handles
                     .lock()
@@ -154,6 +155,7 @@ impl AgentDriver for AcpAgentDriver {
                     effort_value_id,
                     available_effort_values,
                     acp_session_id,
+                    was_resumed,
                 })
             }
             Ok(Err(message)) => Err(AgentError { message }),
@@ -480,7 +482,7 @@ async fn run_acp_worker(
     // Try to resume an existing session if we have a stored ACP session ID
     // and the agent supports it. Otherwise create a new session.
     let resume_id = config.resume_session_id.clone();
-    let (session_id, model_id, available_models, effort_info) = if let Some(prev_id) =
+    let (session_id, model_id, available_models, effort_info, was_resumed) = if let Some(prev_id) =
         resume_id.filter(|_| agent_supports_resume)
     {
         tracing::info!(
@@ -496,7 +498,13 @@ async fn run_acp_worker(
                     role = ?role, kind = ?kind, acp_session_id = %prev_id,
                     "resumed ACP session"
                 );
-                (acp_session_id, None, Vec::new(), (None, None, Vec::new()))
+                (
+                    acp_session_id,
+                    None,
+                    Vec::new(),
+                    (None, None, Vec::new()),
+                    true,
+                )
             }
             Err(error) => {
                 tracing::warn!(
@@ -510,7 +518,7 @@ async fn run_acp_worker(
                 let (mid, models) = extract_model_info(&resp);
                 let effort =
                     parse_effort_from_config_options(resp.config_options.as_deref().unwrap_or(&[]));
-                (resp.session_id, mid, models, effort)
+                (resp.session_id, mid, models, effort, false)
             }
         }
     } else {
@@ -522,7 +530,7 @@ async fn run_acp_worker(
         let (mid, models) = extract_model_info(&resp);
         let effort =
             parse_effort_from_config_options(resp.config_options.as_deref().unwrap_or(&[]));
-        (resp.session_id, mid, models, effort)
+        (resp.session_id, mid, models, effort, false)
     };
 
     let (effort_config_id, effort_value_id, available_effort_values) = effort_info;
@@ -533,6 +541,7 @@ async fn run_acp_worker(
         (model_id, available_models),
         (effort_config_id, effort_value_id, available_effort_values),
         acp_session_id_str,
+        was_resumed,
     )));
 
     while let Some(command) = command_rx.recv().await {
