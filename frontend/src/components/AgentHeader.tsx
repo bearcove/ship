@@ -4,6 +4,7 @@ import type { AgentSnapshot } from "../generated/ship";
 import { AgentKindIcon } from "./AgentKindIcon";
 import { AgentModelPicker } from "./AgentModelPicker";
 import { AgentEffortPicker } from "./AgentEffortPicker";
+import { getShipClient } from "../api/client";
 import {
   agentHeader,
   agentHeaderAvatar,
@@ -27,6 +28,11 @@ interface Props {
 // r[ui.agent-header.layout]
 // r[view.agent-panel.state]
 export function AgentHeader({ sessionId, agent, avatarSrc }: Props) {
+  async function handleRetry() {
+    const client = await getShipClient();
+    await client.retryAgent(sessionId, agent.role);
+  }
+
   const contextPct = agent.context_remaining_percent;
   const normalizedContextPct = contextPct === null ? null : Math.max(0, Math.min(contextPct, 100));
   const contextLow = normalizedContextPct !== null && normalizedContextPct < 20;
@@ -101,7 +107,15 @@ export function AgentHeader({ sessionId, agent, avatarSrc }: Props) {
             <Warning size={14} />
           </Callout.Icon>
           <Callout.Text>Context window exhausted — agent cannot continue.</Callout.Text>
-          <Button size="1" color="red" variant="soft" mt="2">
+          <Button
+            size="1"
+            color="red"
+            variant="soft"
+            mt="2"
+            onClick={() => {
+              void handleRetry();
+            }}
+          >
             <ArrowsClockwise size={12} />
             Rotate Agent
           </Button>
@@ -115,7 +129,15 @@ export function AgentHeader({ sessionId, agent, avatarSrc }: Props) {
             <Warning size={14} />
           </Callout.Icon>
           <Callout.Text>{agent.state.message}</Callout.Text>
-          <Button size="1" color="red" variant="soft" mt="2">
+          <Button
+            size="1"
+            color="red"
+            variant="soft"
+            mt="2"
+            onClick={() => {
+              void handleRetry();
+            }}
+          >
             <ArrowsClockwise size={12} />
             Retry Agent
           </Button>
