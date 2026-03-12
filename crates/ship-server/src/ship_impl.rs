@@ -867,6 +867,140 @@ the human briefly and wait for them to describe what they'd like to work on."
             .to_owned()
     }
 
+    fn captain_resume_prompt() -> String {
+        "This session has been resumed. You have your full conversation history available. \
+Continue where you left off — wait for the human to give you direction."
+            .to_owned()
+    }
+
+    async fn restart_captain(&self, session_id: &SessionId) -> Result<(), String> {
+        // 1. Kill old handle if any
+        let old_handle = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            sessions
+                .get(session_id)
+                .and_then(|s| s.captain_handle.clone())
+        };
+        if let Some(handle) = old_handle {
+            let _ = self.agent_driver.kill(&handle).await;
+        }
+
+        // 2. Ensure worktree_path is set. If not, compute it from session ID + project.
+        let worktree_path = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions
+                .get(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            session.worktree_path.clone()
+        };
+
+        let worktree_path = if let Some(p) = worktree_path {
+            p
+        } else {
+            let (project, base_branch) = {
+                let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                let s = sessions
+                    .get(session_id)
+                    .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+                (s.config.project.clone(), s.config.base_branch.clone())
+            };
+            let repo_root = self.resolve_project_root(&project).await?;
+            let git_names = SessionGitNames::from_session_id(session_id);
+            let path = repo_root.join(".ship").join(&git_names.worktree_dir);
+            if path.exists() {
+                {
+                    let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                    if let Some(s) = sessions.get_mut(session_id) {
+                        s.worktree_path = Some(path.clone());
+                    }
+                }
+                let _ = self.persist_session(session_id).await;
+                path
+            } else {
+                let p = self
+                    .worktree_ops
+                    .create_worktree(
+                        &git_names.branch_name,
+                        &git_names.worktree_dir,
+                        &base_branch,
+                        &repo_root,
+                    )
+                    .await
+                    .map_err(|e| e.message)?;
+                {
+                    let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                    if let Some(s) = sessions.get_mut(session_id) {
+                        s.worktree_path = Some(p.clone());
+                    }
+                }
+                let _ = self.persist_session(session_id).await;
+                p
+            }
+        };
+
+        // 3. Install captain MCP server
+        let captain_ship_mcp = self.install_captain_mcp_server(session_id).await?;
+
+        // 4. Get stored ACP session ID and other config
+        let (captain_kind, captain_acp_id, extra_servers) = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let s = sessions
+                .get(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            (
+                s.config.captain_kind,
+                s.captain_acp_session_id.clone(),
+                s.config.mcp_servers.clone(),
+            )
+        };
+
+        let captain_config = AgentSessionConfig {
+            worktree_path,
+            mcp_servers: {
+                let mut servers = extra_servers;
+                servers.push(captain_ship_mcp);
+                servers
+            },
+            resume_session_id: captain_acp_id,
+        };
+
+        // 5. Spawn captain
+        let captain_spawn = self
+            .agent_driver
+            .spawn(captain_kind, Role::Captain, &captain_config)
+            .await
+            .map_err(|e| e.message)?;
+
+        let was_resumed = captain_spawn.was_resumed;
+
+        // 6. Update session
+        {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            if let Some(s) = sessions.get_mut(session_id) {
+                s.captain_handle = Some(captain_spawn.handle);
+                s.captain_acp_session_id = Some(captain_spawn.acp_session_id);
+                if captain_spawn.model_id.is_some() {
+                    s.captain.model_id = captain_spawn.model_id;
+                }
+                if !captain_spawn.available_models.is_empty() {
+                    s.captain.available_models = captain_spawn.available_models;
+                }
+            }
+        }
+        let _ = self.persist_session(session_id).await;
+
+        // 7. Send appropriate bootstrap prompt
+        let prompt = if was_resumed {
+            Self::captain_resume_prompt()
+        } else {
+            Self::captain_bootstrap_prompt()
+        };
+        self.prompt_agent_text(session_id, Role::Captain, prompt)
+            .await?;
+
+        Ok(())
+    }
+
     // r[captain.tool.transport]
     // r[session.agent.captain]
     async fn install_captain_mcp_server(
