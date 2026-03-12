@@ -179,6 +179,8 @@ pub struct ShipImpl {
     startup_started_at: Arc<Mutex<HashMap<SessionId, Instant>>>,
     user_avatar_url: Arc<Mutex<Option<String>>>,
     whisper_model_path: Arc<Mutex<Option<PathBuf>>>,
+    chatterbox_model: Arc<Mutex<Option<chatterbox_rs::chatterbox::Chatterbox>>>,
+    voice_wav_path: Arc<Mutex<Option<PathBuf>>>,
     global_events_tx: broadcast::Sender<GlobalEvent>,
 }
 
@@ -205,6 +207,8 @@ impl ShipImpl {
             startup_started_at: Arc::new(Mutex::new(HashMap::new())),
             user_avatar_url: Arc::new(Mutex::new(None)),
             whisper_model_path: Arc::new(Mutex::new(None)),
+            chatterbox_model: Arc::new(Mutex::new(None)),
+            voice_wav_path: Arc::new(Mutex::new(None)),
             global_events_tx,
         }
     }
@@ -242,6 +246,28 @@ impl ShipImpl {
             .whisper_model_path
             .lock()
             .expect("whisper mutex poisoned") = path;
+    }
+
+    /// Configure the chatterbox voice WAV path from the SHIP_VOICE_WAV env var.
+    pub fn configure_chatterbox(&self) {
+        let path = if let Ok(path) = std::env::var("SHIP_VOICE_WAV") {
+            let p = PathBuf::from(path);
+            if p.exists() {
+                tracing::info!(path = %p.display(), "chatterbox voice WAV found");
+                Some(p)
+            } else {
+                tracing::warn!(path = %p.display(), "SHIP_VOICE_WAV path does not exist");
+                None
+            }
+        } else {
+            tracing::info!("SHIP_VOICE_WAV not set — will use cbx voice cache if available");
+            None
+        };
+
+        *self
+            .voice_wav_path
+            .lock()
+            .expect("voice_wav_path mutex poisoned") = path;
     }
 
     #[allow(dead_code)]
