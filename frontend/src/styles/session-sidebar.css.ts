@@ -96,7 +96,7 @@ export const sessionRow = style({
   display: "flex",
   alignItems: "center",
   gap: "var(--space-2)",
-  fontSize: "var(--font-size-3)",
+  fontSize: "var(--font-size-2)",
   paddingLeft: "var(--space-3)",
   paddingRight: "var(--space-3)",
   paddingTop: "5px",
@@ -120,12 +120,12 @@ export const sessionRow = style({
 
 export const sessionRowTitle = style({
   flex: 1,
-  fontSize: "var(--font-size-3)",
+  fontSize: "var(--font-size-2)",
   color: "var(--gray-12)",
 });
 
 export const sessionRowEmpty = style({
-  fontSize: "var(--font-size-3)",
+  fontSize: "var(--font-size-2)",
   paddingLeft: "var(--space-3)",
   paddingRight: "var(--space-3)",
   paddingTop: "3px",
