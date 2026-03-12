@@ -1822,6 +1822,7 @@ Here is your task:
         #[cfg(target_os = "macos")]
         {
             let system_tmpdir = std::env::var("TMPDIR").unwrap_or_else(|_| "/tmp".to_owned());
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/nobody".to_owned());
             let worktree_str = worktree.to_string_lossy();
             let profile = format!(
                 "(version 1)\
@@ -1831,6 +1832,7 @@ Here is your task:
                 \n(allow file-write* (subpath \"/private/tmp\"))\
                 \n(allow file-write* (subpath \"/tmp\"))\
                 \n(allow file-write* (subpath \"{system_tmpdir}\"))\
+                \n(allow file-write* (subpath \"{home}/Library/Caches\"))\
                 \n(allow file-write* (literal \"/dev/null\"))"
             );
             let mut cmd = TokioCommand::new("/usr/bin/sandbox-exec");
