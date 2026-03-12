@@ -1309,7 +1309,7 @@ Continue where you left off — wait for the human to give you direction."
     }
 
     async fn restart_mate(&self, session_id: &SessionId) -> Result<(), String> {
-        let (old_handle, mate_kind, worktree_path, extra_servers) = {
+        let (old_handle, mate_kind, worktree_path, mate_acp_id, extra_servers) = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let session = sessions
                 .get(session_id)
@@ -1322,6 +1322,7 @@ Continue where you left off — wait for the human to give you direction."
                 session.mate_handle.clone(),
                 session.config.mate_kind,
                 worktree_path,
+                session.mate_acp_session_id.clone(),
                 session.config.mcp_servers.clone(),
             )
         };
@@ -1338,7 +1339,7 @@ Continue where you left off — wait for the human to give you direction."
                 servers.push(mate_ship_mcp);
                 servers
             },
-            resume_session_id: None,
+            resume_session_id: mate_acp_id,
         };
 
         let mate_spawn = self
@@ -1347,16 +1348,26 @@ Continue where you left off — wait for the human to give you direction."
             .await
             .map_err(|error| error.message)?;
 
+        let was_resumed = mate_spawn.was_resumed;
+
         {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             if let Some(session) = sessions.get_mut(session_id) {
                 session.mate_handle = Some(mate_spawn.handle);
+                session.mate_acp_session_id = Some(mate_spawn.acp_session_id);
                 session.mate.model_id = mate_spawn.model_id;
                 session.mate.available_models = mate_spawn.available_models;
                 session.mate.effort_config_id = mate_spawn.effort_config_id;
                 session.mate.effort_value_id = mate_spawn.effort_value_id;
                 session.mate.available_effort_values = mate_spawn.available_effort_values;
             }
+        }
+        let _ = self.persist_session(session_id).await;
+
+        // Discard replayed notifications from load_session to prevent duplicates
+        if was_resumed {
+            self.discard_queued_notifications(session_id, Role::Mate)
+                .await;
         }
 
         Ok(())
