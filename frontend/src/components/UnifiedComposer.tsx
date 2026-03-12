@@ -634,7 +634,7 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
           >
             <X size={18} />
           </button>
-        ) : hasContent ? (
+        ) : text.trim().length > 0 ? (
           <button
             type="button"
             className={composerInlineBtn}
