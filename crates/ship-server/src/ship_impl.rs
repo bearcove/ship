@@ -2087,7 +2087,7 @@ and the captain will help you find the right approach."
             Self::current_task_worktree_path(session)?.to_path_buf()
         };
 
-        let resolved_cwd = tokio::task::spawn_blocking(move || {
+        let (canonical_worktree, resolved_cwd) = tokio::task::spawn_blocking(move || {
             let canonical_worktree = fs::canonicalize(&worktree_path).map_err(|error| {
                 format!(
                     "Failed to resolve worktree path {}: {error}",
@@ -2095,18 +2095,20 @@ and the captain will help you find the right approach."
                 )
             })?;
 
-            match relative_cwd {
+            let resolved_cwd = match relative_cwd {
                 Some(relative_cwd) => {
-                    Self::resolve_worktree_directory(&canonical_worktree, &relative_cwd)
+                    Self::resolve_worktree_directory(&canonical_worktree, &relative_cwd)?
                 }
-                None => Ok(canonical_worktree),
-            }
+                None => canonical_worktree.clone(),
+            };
+
+            Ok::<(PathBuf, PathBuf), String>((canonical_worktree, resolved_cwd))
         })
         .await
         .map_err(|error| format!("run_command path resolution failed: {error}"))??;
 
         let shell_command = format!("exec 2>&1; {}", command);
-        let child = Self::sandboxed_sh(&resolved_cwd, &shell_command)?;
+        let child = Self::sandboxed_sh(&canonical_worktree, &resolved_cwd, &shell_command)?;
 
         let output = match tokio::time::timeout(RUN_COMMAND_TIMEOUT, child.wait_with_output()).await
         {
