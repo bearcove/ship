@@ -146,7 +146,7 @@ function ProjectGroup({
       if (result.tag === "Archived") {
         setArchiveConfirm(null);
         await refreshSessionList();
-        if (currentSessionId === session.id) {
+        if (currentSessionId === session.slug) {
           navigate("/");
         }
       } else if (result.tag === "RequiresConfirmation") {
