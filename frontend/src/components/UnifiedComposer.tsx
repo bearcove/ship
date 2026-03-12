@@ -333,22 +333,18 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
   function addImageFiles(files: FileList | File[]) {
     for (const file of Array.from(files)) {
       if (!file.type.startsWith("image/")) continue;
-      const reader = new FileReader();
-      reader.onload = () => {
-        const data = new Uint8Array(reader.result as ArrayBuffer);
-        const objectUrl = URL.createObjectURL(file);
+      void convertToSupportedFormat(file).then(({ data, mimeType, objectUrl }) => {
         setAttachedImages((prev) => [
           ...prev,
           {
             id: `${Date.now()}-${Math.random()}`,
-            mimeType: file.type,
+            mimeType,
             data,
             objectUrl,
             name: file.name || "pasted image",
           },
         ]);
-      };
-      reader.readAsArrayBuffer(file);
+      });
     }
   }
 
