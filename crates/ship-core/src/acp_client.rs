@@ -304,10 +304,21 @@ impl ShipAcpClient {
                 let plan_vec: Vec<PlanStep> = plan
                     .entries
                     .into_iter()
-                    .map(|entry| PlanStep {
-                        title: String::new(),
-                        description: entry.content,
-                        status: map_plan_status(entry.status),
+                    .map(|entry| {
+                        let started_at = if matches!(
+                            entry.status,
+                            agent_client_protocol::PlanEntryStatus::InProgress
+                        ) {
+                            Some(chrono::Utc::now().to_rfc3339())
+                        } else {
+                            None
+                        };
+                        PlanStep {
+                            title: String::new(),
+                            description: entry.content,
+                            status: map_plan_status(entry.status),
+                            started_at,
+                        }
                     })
                     .collect();
                 *self.last_plan.borrow_mut() = Some(plan_vec.clone());
@@ -1501,7 +1512,7 @@ mod tests {
     #[test]
     fn plan_updates_map_priority_and_status() {
         let client = make_client();
-        let events = client.map_session_update(SessionUpdate::Plan(Plan::new(vec![
+        let mut events = client.map_session_update(SessionUpdate::Plan(Plan::new(vec![
             PlanEntry::new(
                 "Fix blocking bug",
                 PlanEntryPriority::High,
@@ -1519,6 +1530,24 @@ mod tests {
             ),
         ])));
 
+        // Clear started_at on InProgress steps before comparing (timestamp is non-deterministic)
+        for event in &mut events {
+            if let SessionEvent::AgentStateChanged {
+                state:
+                    AgentState::Working {
+                        plan: Some(steps), ..
+                    },
+                ..
+            } = event
+            {
+                for step in steps.iter_mut() {
+                    if step.status == PlanStepStatus::InProgress {
+                        step.started_at = None;
+                    }
+                }
+            }
+        }
+
         assert_eq!(
             events,
             vec![SessionEvent::AgentStateChanged {
@@ -1529,16 +1558,19 @@ mod tests {
                             title: String::new(),
                             description: "Fix blocking bug".to_owned(),
                             status: PlanStepStatus::Pending,
+                            started_at: None,
                         },
                         PlanStep {
                             title: String::new(),
                             description: "Refresh snapshots".to_owned(),
                             status: PlanStepStatus::InProgress,
+                            started_at: None,
                         },
                         PlanStep {
                             title: String::new(),
                             description: "Polish docs".to_owned(),
                             status: PlanStepStatus::Completed,
+                            started_at: None,
                         },
                     ]),
                     activity: Some("ACP plan update".to_owned()),
