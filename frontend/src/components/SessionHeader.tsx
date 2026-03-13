@@ -216,9 +216,10 @@ export function SessionHeader({
 }: Props) {
   const hasActivePlan = !!matePlan && matePlan.length > 0;
   const [expanded, setExpanded] = useState(hasActivePlan);
+  const activePlan = hasActivePlan ? matePlan! : planSteps;
   const inProgressStep =
-    matePlan?.find((s) => s.status.tag === "InProgress") ??
-    matePlan?.find((s) => s.status.tag === "Pending") ??
+    activePlan.find((s) => s.status.tag === "InProgress") ??
+    activePlan.find((s) => s.status.tag === "Pending") ??
     null;
   const [newSessionOpen, setNewSessionOpen] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
@@ -230,12 +231,12 @@ export function SessionHeader({
   const history = useMemo(() => [...taskHistory].reverse(), [taskHistory]);
 
   const progressDots =
-    planSteps.length > 0 ? (
+    activePlan.length > 0 ? (
       <div
         className={sessionHeaderProgressFlex}
-        aria-label={`${planSteps.filter((s) => s.status.tag === "Completed").length} of ${planSteps.length} steps done`}
+        aria-label={`${activePlan.filter((s) => s.status.tag === "Completed").length} of ${activePlan.length} steps done`}
       >
-        {planSteps.map((step, i) => (
+        {activePlan.map((step, i) => (
           <span
             key={i}
             className={sessionHeaderDot}
