@@ -10,6 +10,18 @@ import { ErrorBlock } from "./blocks/ErrorBlock";
 import { PermissionBlock } from "./blocks/PermissionBlock";
 import { ImageBlock } from "./blocks/ImageBlock";
 import { getShipClient } from "../api/client";
+import { encode } from "gpt-tokenizer";
+
+const tokenCache = new Map<string, number>();
+
+function countTokens(text: string): number {
+  const cached = tokenCache.get(text);
+  if (cached !== undefined) return cached;
+  const count = encode(text).length;
+  tokenCache.set(text, count);
+  return count;
+}
+
 import {
   feedBubble,
   feedBubbleCol,
@@ -556,21 +568,19 @@ export function UnifiedFeed({
       }
     }
     const turnBlocks = visibleBlocks.slice(lastCaptainMsgIdx + 1);
-    let thinkingChars = 0;
     for (const b of turnBlocks) {
       if (b.role.tag !== "Captain") continue;
       if (b.block.tag === "Text" && b.block.source.tag === "AgentThought") {
-        thinkingChars += b.block.text.length;
+        thinkingTokens += countTokens(b.block.text);
       } else if (b.block.tag === "ToolCall") {
         if (b.block.status.tag === "Success") toolsOk++;
         else if (b.block.status.tag === "Failure") toolsFailed++;
-        thinkingChars += b.block.arguments.length;
+        thinkingTokens += countTokens(b.block.arguments);
         if (b.block.raw_output != null) {
-          thinkingChars += JSON.stringify(b.block.raw_output).length;
+          thinkingTokens += countTokens(JSON.stringify(b.block.raw_output));
         }
       }
     }
-    thinkingTokens = Math.ceil(thinkingChars / 4);
   }
 
   let mateThinkingTokens = 0;
@@ -590,21 +600,19 @@ export function UnifiedFeed({
       }
     }
     const mateTurnBlocks = visibleBlocks.slice(lastMateMsgIdx + 1);
-    let mateThinkingChars = 0;
     for (const b of mateTurnBlocks) {
       if (b.role.tag !== "Mate") continue;
       if (b.block.tag === "Text" && b.block.source.tag === "AgentThought") {
-        mateThinkingChars += b.block.text.length;
+        mateThinkingTokens += countTokens(b.block.text);
       } else if (b.block.tag === "ToolCall") {
         if (b.block.status.tag === "Success") mateToolsOk++;
         else if (b.block.status.tag === "Failure") mateToolsFailed++;
-        mateThinkingChars += b.block.arguments.length;
+        mateThinkingTokens += countTokens(b.block.arguments);
         if (b.block.raw_output != null) {
-          mateThinkingChars += JSON.stringify(b.block.raw_output).length;
+          mateThinkingTokens += countTokens(JSON.stringify(b.block.raw_output));
         }
       }
     }
-    mateThinkingTokens = Math.ceil(mateThinkingChars / 4);
   }
 
   let lastUnresolvedPermBlockId: string | undefined;
