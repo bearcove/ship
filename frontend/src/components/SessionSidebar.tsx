@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Box, Flex, IconButton, Select, Text, Tooltip } from "@radix-ui/themes";
+import { Box, Flex, IconButton, Select, Spinner, Text, Tooltip } from "@radix-ui/themes";
 import {
+  Archive,
   BugIcon,
   FolderSimplePlusIcon,
   SpeakerHighIcon,
@@ -11,11 +12,13 @@ import type { AgentKind, ProjectInfo, SessionSummary, TaskStatus } from "../gene
 import { useSoundEnabled } from "../context/SoundContext";
 import { useAgentDiscovery } from "../hooks/useAgentDiscovery";
 import { useAgentKindPrefs } from "../hooks/useAgentKindPrefs";
-import { AddProjectDialog } from "../pages/SessionListPage";
-import { useClientLogs } from "../api/client";
+import { AddProjectDialog, ArchiveSessionDialog } from "../pages/SessionListPage";
+import { getShipClient, useClientLogs } from "../api/client";
+import { refreshSessionList } from "../hooks/useSessionList";
 import { QrCodeButton } from "./QrCodeButton";
 import {
   sessionRow,
+  sessionRowArchiveBtn,
   sessionRowEmpty,
   sessionRowTitle,
   sidebarBackdrop,
@@ -95,10 +98,14 @@ function SessionRow({
   session,
   currentSessionId,
   onClose,
+  onArchive,
+  archivingId,
 }: {
   session: SessionSummary;
   currentSessionId?: string;
   onClose?: () => void;
+  onArchive: (session: SessionSummary, force: boolean) => void;
+  archivingId: string | null;
 }) {
   const isActive = session.slug === currentSessionId;
   const title = session.title ?? session.current_task_title ?? session.branch_name;
@@ -141,6 +148,22 @@ function SessionRow({
           )}
         </Text>
       </Flex>
+      <Tooltip content="Archive session">
+        <IconButton
+          size="1"
+          variant="ghost"
+          color="gray"
+          className={sessionRowArchiveBtn}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onArchive(session, false);
+          }}
+          aria-label="Archive session"
+        >
+          {archivingId === session.id ? <Spinner size="1" /> : <Archive size={14} />}
+        </IconButton>
+      </Tooltip>
     </Link>
   );
 }
@@ -169,6 +192,34 @@ export function SessionSidebar({
   const discovery = useAgentDiscovery();
   const { captainKind, setCaptainKind, mateKind, setMateKind } = useAgentKindPrefs();
   const clientLogs = useClientLogs();
+
+  const [archivingId, setArchivingId] = useState<string | null>(null);
+  const [archiveConfirm, setArchiveConfirm] = useState<{
+    session: SessionSummary;
+    unmergedCommits: string[];
+  } | null>(null);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
+
+  async function handleArchive(session: SessionSummary, force: boolean) {
+    setArchivingId(session.id);
+    setArchiveError(null);
+    try {
+      const client = await getShipClient();
+      const result = await client.archiveSession({ id: session.id, force });
+      if (result.tag === "Archived") {
+        setArchiveConfirm(null);
+        await refreshSessionList();
+      } else if (result.tag === "RequiresConfirmation") {
+        setArchiveConfirm({ session, unmergedCommits: result.unmerged_commits });
+      } else if (result.tag === "Failed") {
+        setArchiveError(result.message);
+      }
+    } catch (e) {
+      setArchiveError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setArchivingId(null);
+    }
+  }
 
   return (
     <>
@@ -208,6 +259,8 @@ export function SessionSidebar({
                 session={session}
                 currentSessionId={currentSessionId}
                 onClose={onClose}
+                onArchive={handleArchive}
+                archivingId={archivingId}
               />
             ))
           )}
@@ -280,6 +333,16 @@ export function SessionSidebar({
         </Flex>
 
         <AddProjectDialog open={addProjectOpen} onOpenChange={setAddProjectOpen} />
+
+        {archiveConfirm && (
+          <ArchiveSessionDialog
+            session={archiveConfirm.session}
+            unmergedCommits={archiveConfirm.unmergedCommits}
+            onConfirm={() => handleArchive(archiveConfirm.session, true)}
+            onCancel={() => setArchiveConfirm(null)}
+            archiving={archivingId === archiveConfirm.session.id}
+          />
+        )}
       </Box>
     </>
   );
