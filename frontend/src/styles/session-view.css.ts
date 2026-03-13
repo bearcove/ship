@@ -1237,6 +1237,10 @@ export const feedBubbleWithActions = style({
   minWidth: 0,
 });
 
+export const feedBubbleWithActionsUser = style({
+  justifyContent: "flex-end",
+});
+
 globalStyle(`${feedBubbleWithActions}:hover ${bubbleActions}`, {
   opacity: 1,
 });
