@@ -50,14 +50,31 @@ export const unifiedFeedStream = style({
   paddingBottom: "var(--space-2)",
 });
 
+export const agentAvatarWrapper = style({
+  position: "relative",
+  flexShrink: 0,
+  alignSelf: "flex-start",
+});
+
+export const agentAvatarBadge = style({
+  position: "absolute",
+  bottom: -2,
+  right: -2,
+  width: 14,
+  height: 14,
+  borderRadius: "50%",
+  background: "var(--color-background)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+});
+
 export const agentAvatar = style({
   width: 40,
   height: 40,
   borderRadius: "50%",
-  flexShrink: 0,
   objectFit: "cover",
   maskImage: "radial-gradient(circle, black 64%, transparent 64%)",
-  alignSelf: "flex-start",
 });
 
 export const agentAvatarSpacer = style({
