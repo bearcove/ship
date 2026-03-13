@@ -87,6 +87,7 @@ export const feedRowAgent = style({
   justifyContent: "flex-start",
   alignItems: "flex-start",
   gap: "var(--space-2)",
+  width: "100%",
 });
 
 export const feedRowUser = style({
@@ -706,9 +707,9 @@ export const feedTimestamp = style({
 });
 
 export const feedBubbleCol = style({
-  display: "inline-flex",
+  display: "flex",
   flexDirection: "column",
-  maxWidth: "72%",
+  width: "100%",
 });
 
 export const feedBubbleColUser = style({
