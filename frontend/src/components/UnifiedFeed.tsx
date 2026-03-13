@@ -121,7 +121,12 @@ function UserAvatar({ url }: { url: string | null }) {
 
 function CommitDiffView({ diff }: { diff: string }) {
   return (
-    <Box className={taskRecapDiff} style={{ marginTop: "var(--space-1)" }}>
+    <Box
+      className={taskRecapDiff}
+      data-testid="task-recap-diff"
+      data-diff-flow="inline"
+      style={{ marginTop: "var(--space-1)" }}
+    >
       <Box className={taskRecapDiffInner}>
         {diff.split("\n").map((line, index) => {
           if (line.startsWith("+") && !line.startsWith("+++"))
@@ -160,7 +165,11 @@ function TaskRecapBlock({
   const { commits, stats } = block;
 
   return (
-    <Box className={taskRecapBoundary}>
+    <Box
+      className={taskRecapBoundary}
+      data-testid="task-recap-boundary"
+      data-feed-boundary="phase-break"
+    >
       <Flex className={taskRecapHeader} align="start" justify="between" gap="3">
         <Box style={{ minWidth: 0 }}>
           <Text className={taskRecapEyebrow}>Phase break</Text>
