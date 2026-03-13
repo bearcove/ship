@@ -564,6 +564,10 @@ export function UnifiedFeed({
       } else if (b.block.tag === "ToolCall") {
         if (b.block.status.tag === "Success") toolsOk++;
         else if (b.block.status.tag === "Failure") toolsFailed++;
+        thinkingChars += b.block.arguments.length;
+        if (b.block.raw_output != null) {
+          thinkingChars += JSON.stringify(b.block.raw_output).length;
+        }
       }
     }
     thinkingTokens = Math.ceil(thinkingChars / 4);
@@ -594,6 +598,10 @@ export function UnifiedFeed({
       } else if (b.block.tag === "ToolCall") {
         if (b.block.status.tag === "Success") mateToolsOk++;
         else if (b.block.status.tag === "Failure") mateToolsFailed++;
+        mateThinkingChars += b.block.arguments.length;
+        if (b.block.raw_output != null) {
+          mateThinkingChars += JSON.stringify(b.block.raw_output).length;
+        }
       }
     }
     mateThinkingTokens = Math.ceil(mateThinkingChars / 4);
