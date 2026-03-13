@@ -98,8 +98,8 @@ export const feedRowUser = style({
 });
 
 export const userAvatar = style({
-  width: 40,
-  height: 40,
+  width: 28,
+  height: 28,
   borderRadius: "50%",
   flexShrink: 0,
   objectFit: "cover",
@@ -107,7 +107,7 @@ export const userAvatar = style({
 });
 
 export const userAvatarSpacer = style({
-  width: 40,
+  width: 28,
   flexShrink: 0,
 });
 

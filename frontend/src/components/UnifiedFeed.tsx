@@ -37,6 +37,8 @@ import {
   unifiedFeedRoot,
   unifiedFeedScroll,
   unifiedFeedStream,
+  userAvatar,
+  userAvatarSpacer,
 } from "../styles/session-view.css";
 
 type TextBlockType = Extract<ContentBlock, { tag: "Text" }>;
@@ -98,6 +100,13 @@ function segmentAgentRole(seg: FeedSegment): Role | null {
   return role;
 }
 
+// ─── User avatar ──────────────────────────────────────────────────────────────
+
+function UserAvatar({ url }: { url: string | null }) {
+  if (!url) return <div className={userAvatarSpacer} />;
+  return <img src={url} className={userAvatar} alt="You" />;
+}
+
 // ─── Single block ─────────────────────────────────────────────────────────────
 
 function SingleBlock({
@@ -106,12 +115,14 @@ function SingleBlock({
   lastUnresolvedPermBlockId,
   agentForBlock,
   isLast,
+  userAvatarUrl,
 }: {
   entry: BlockEntry;
   sessionId: string;
   lastUnresolvedPermBlockId: string | undefined;
   agentForBlock: AgentSnapshot | null;
   isLast: boolean;
+  userAvatarUrl: string | null;
 }) {
   const { block, blockId, role } = entry;
   const isCaptain = role.tag === "Captain";
@@ -144,6 +155,7 @@ function SingleBlock({
                 <Text className={feedTimestamp}>{formatTime(entry.timestamp)}</Text>
               )}
             </Box>
+            <UserAvatar url={userAvatarUrl} />
           </Box>
         );
       }
@@ -222,6 +234,7 @@ function SingleBlock({
                 <Text className={feedTimestamp}>{formatTime(entry.timestamp)}</Text>
               )}
             </Box>
+            <UserAvatar url={userAvatarUrl} />
           </Box>
         );
       }
@@ -344,6 +357,7 @@ export function UnifiedFeed({
   startupState,
   taskStatus,
   taskCompletedDuration,
+  userAvatarUrl = null,
   loading,
   loadingLabel,
   debugMode = false,
@@ -452,6 +466,7 @@ export function UnifiedFeed({
                   lastUnresolvedPermBlockId={lastUnresolvedPermBlockId}
                   agentForBlock={agentForBlock}
                   isLast={idx === segments.length - 1}
+                  userAvatarUrl={userAvatarUrl}
                 />
                 {debugMode && (
                   <Box
