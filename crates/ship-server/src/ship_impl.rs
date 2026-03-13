@@ -1292,7 +1292,7 @@ Continue where you left off — wait for the human to give you direction."
                 .ok()
                 .filter(|o| o.status.success());
 
-            let commits: Vec<CommitSummary> = log_output
+            let mut commits: Vec<CommitSummary> = log_output
                 .map(|o| {
                     String::from_utf8_lossy(&o.stdout)
                         .lines()
@@ -1302,11 +1302,26 @@ Continue where you left off — wait for the human to give you direction."
                             CommitSummary {
                                 hash: hash.to_owned(),
                                 subject: subject.to_owned(),
+                                diff: None,
                             }
                         })
                         .collect()
                 })
                 .unwrap_or_default();
+
+            for commit in &mut commits {
+                commit.diff = TokioCommand::new("git")
+                    .args(["show", "--format=", &commit.hash])
+                    .current_dir(&repo_root)
+                    .output()
+                    .await
+                    .ok()
+                    .filter(|o| o.status.success())
+                    .map(|o| {
+                        let raw = String::from_utf8_lossy(&o.stdout);
+                        raw.trim_start_matches('\n').to_owned()
+                    });
+            }
 
             let stats = if !commits.is_empty() {
                 TokioCommand::new("git")
