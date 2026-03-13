@@ -46,7 +46,7 @@ function resolveLanguage(className?: string): BundledLanguage | null {
   return language in bundledLanguages ? (language as BundledLanguage) : null;
 }
 
-function MarkdownCodeBlock({ className, code }: { className?: string; code: string }) {
+export function MarkdownCodeBlock({ className, code }: { className?: string; code: string }) {
   const [highlightedHtml, setHighlightedHtml] = useState<string | null>(null);
   const language = resolveLanguage(className);
   const colorScheme = useColorScheme();

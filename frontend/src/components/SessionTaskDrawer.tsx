@@ -5,6 +5,7 @@ import { Badge, Box, Code, Flex, Text } from "@radix-ui/themes";
 import { CaretDown, CaretRight } from "@phosphor-icons/react";
 import type { TaskRecord, TaskStatus, WorktreeDiffStats } from "../generated/ship";
 import { taskDescriptionRoot } from "../styles/session-view.css";
+import { MarkdownCodeBlock } from "./blocks/TextBlock";
 
 const STATUS_COLOR = {
   Assigned: "blue",
@@ -27,16 +28,20 @@ function TaskStatusBadge({ status }: { status: TaskStatus }) {
   );
 }
 
+const titleMdComponents: React.ComponentProps<typeof ReactMarkdown>["components"] = {
+  p: ({ children }) => <>{children}</>,
+};
+
 const mdComponents: React.ComponentProps<typeof ReactMarkdown>["components"] = {
   code({ children, className }: { children?: React.ReactNode; className?: string }) {
+    const rawCode = String(children ?? "");
     const isBlock =
-      Boolean(className?.startsWith("language-")) || String(children ?? "").includes("\n");
+      Boolean(className?.startsWith("language-")) ||
+      rawCode.includes("\n") ||
+      rawCode.endsWith("\n");
+    const code = rawCode.replace(/\n$/, "");
     if (isBlock) {
-      return (
-        <pre>
-          <code>{children}</code>
-        </pre>
-      );
+      return <MarkdownCodeBlock className={className} code={code} />;
     }
     return <Code size="1">{children}</Code>;
   },
@@ -44,11 +49,9 @@ const mdComponents: React.ComponentProps<typeof ReactMarkdown>["components"] = {
 
 function TaskListItem({
   task,
-  label,
   defaultExpanded = false,
 }: {
   task: TaskRecord;
-  label: string;
   defaultExpanded?: boolean;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
@@ -89,16 +92,18 @@ function TaskListItem({
         )}
         <Flex direction="column" gap="1" style={{ minWidth: 0, flex: 1 }}>
           <Flex align="center" gap="2" wrap="wrap">
-            <Text size="1" color="gray">
-              {label}
+            <Text
+              size="1"
+              weight="medium"
+              as="div"
+              style={{ lineHeight: 1.35, flex: 1, minWidth: 0 }}
+            >
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={titleMdComponents}>
+                {task.title}
+              </ReactMarkdown>
             </Text>
             <TaskStatusBadge status={task.status} />
           </Flex>
-          <Text size="2" weight="medium" as="div" style={{ lineHeight: 1.35 }}>
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-              {task.title}
-            </ReactMarkdown>
-          </Text>
         </Flex>
       </button>
 
@@ -275,37 +280,26 @@ export function SessionTaskDrawer({
             )}
           </Flex>
 
-          <Flex direction="column" gap="1">
-            <Text size="1" weight="bold" color="gray">
-              Active
-            </Text>
+          <Flex direction="column">
             {liveTask ? (
-              <TaskListItem task={liveTask} label="Current task" defaultExpanded={true} />
+              <TaskListItem task={liveTask} defaultExpanded={true} />
             ) : (
-              <Text size="2" color="gray" style={{ paddingTop: "var(--space-2)" }}>
+              <Text size="1" color="gray" style={{ paddingTop: "var(--space-2)" }}>
                 No active task
               </Text>
             )}
-          </Flex>
-
-          <Flex direction="column" gap="1">
-            <Text size="1" weight="bold" color="gray">
-              History
-            </Text>
-            {history.length > 0 ? (
-              history.map((task) => (
-                <TaskListItem
-                  key={task.id}
-                  task={task}
-                  label="Previous task"
-                  defaultExpanded={false}
-                />
-              ))
-            ) : (
-              <Text size="2" color="gray" style={{ paddingTop: "var(--space-2)" }}>
-                No completed tasks yet
+            {history.length > 0 && (
+              <Text
+                size="1"
+                color="gray"
+                style={{ padding: "var(--space-1) 0 var(--space-1) calc(11px + var(--space-2))" }}
+              >
+                {history.length} previous {history.length === 1 ? "step" : "steps"}
               </Text>
             )}
+            {history.map((task) => (
+              <TaskListItem key={task.id} task={task} defaultExpanded={false} />
+            ))}
           </Flex>
         </Box>
       )}
