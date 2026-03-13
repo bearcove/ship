@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentSnapshot } from "../generated/ship";
 import { renderWithTheme } from "../test/render";
@@ -12,12 +12,14 @@ import {
 import { AgentHeader } from "./AgentHeader";
 
 const apiMocks = vi.hoisted(() => ({
-  setAgentModel: vi.fn(async () => ({})),
+  setAgentModel: vi.fn(async () => ({ tag: "Ok" })),
+  setAgentEffort: vi.fn(async () => ({ tag: "Ok" })),
 }));
 
 vi.mock("../api/client", () => ({
   getShipClient: async () => ({
     setAgentModel: apiMocks.setAgentModel,
+    setAgentEffort: apiMocks.setAgentEffort,
   }),
 }));
 
@@ -42,6 +44,7 @@ function renderHeader(agent: AgentSnapshot, avatarSrc?: string) {
 
 beforeEach(() => {
   apiMocks.setAgentModel.mockClear();
+  apiMocks.setAgentEffort.mockClear();
 });
 
 // r[verify frontend.test.vitest]
@@ -97,6 +100,60 @@ describe("AgentHeader", () => {
 
     expect(screen.getByText("gpt-5")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "gpt-5" })).not.toBeInTheDocument();
+  });
+
+  // r[verify ui.agent-header.layout]
+  it("renders dedicated effort separately from slash-suffixed model ids in the mixed Codex shape", () => {
+    const { container } = renderHeader(
+      makeAgent({
+        kind: { tag: "Codex" },
+        model_id: "gpt-5-codex/high",
+        available_models: ["gpt-5-codex/high", "gpt-5/high"],
+        effort_config_id: "reasoning.effort",
+        effort_value_id: "low",
+        available_effort_values: [
+          { id: "low", name: "Low" },
+          { id: "high", name: "High" },
+        ],
+      }),
+    );
+
+    const controlRows = container.querySelectorAll<HTMLElement>(`.${agentHeaderControlRow}`);
+    expect(controlRows).toHaveLength(2);
+    expect(within(controlRows[0]!).getByText("gpt-5-codex")).toBeInTheDocument();
+    expect(within(controlRows[0]!).queryByText("high")).not.toBeInTheDocument();
+    expect(within(controlRows[1]!).getByText("Low")).toBeInTheDocument();
+  });
+
+  // r[verify ui.agent-header.layout]
+  it("keeps the dedicated effort value when switching models in the mixed Codex shape", async () => {
+    renderHeader(
+      makeAgent({
+        kind: { tag: "Codex" },
+        model_id: "gpt-5-codex/high",
+        available_models: ["gpt-5-codex/high", "gpt-5/high", "gpt-5-codex/low", "gpt-5/low"],
+        effort_config_id: "reasoning.effort",
+        effort_value_id: "low",
+        available_effort_values: [
+          { id: "low", name: "Low" },
+          { id: "high", name: "High" },
+        ],
+      }),
+    );
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "gpt-5-codex" }), {
+      button: 0,
+      ctrlKey: false,
+    });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "gpt-5" }));
+
+    await waitFor(() => {
+      expect(apiMocks.setAgentModel).toHaveBeenCalledWith(
+        "session-1",
+        { tag: "Captain" },
+        "gpt-5/low",
+      );
+    });
   });
 
   // r[verify ui.agent-header.context-bar]
