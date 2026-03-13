@@ -4,14 +4,17 @@ import type { AgentSnapshot } from "../generated/ship";
 import { renderWithTheme } from "../test/render";
 import { AgentEffortPicker } from "./AgentEffortPicker";
 
-const apiMocks = vi.hoisted(() => ({
-  setAgentEffort: vi.fn(async () => ({ tag: "Ok" })),
-}));
+const apiMocks = vi.hoisted(() => {
+  const setAgentEffort = vi.fn(async () => ({ tag: "Ok" }));
+  const getShipClient = vi.fn(async () => ({
+    setAgentEffort,
+  }));
+
+  return { getShipClient, setAgentEffort };
+});
 
 vi.mock("../api/client", () => ({
-  getShipClient: async () => ({
-    setAgentEffort: apiMocks.setAgentEffort,
-  }),
+  getShipClient: apiMocks.getShipClient,
 }));
 
 function makeAgent(overrides: Partial<AgentSnapshot> = {}): AgentSnapshot {
@@ -37,7 +40,12 @@ function renderPicker(agent: AgentSnapshot) {
 }
 
 beforeEach(() => {
-  apiMocks.setAgentEffort.mockClear();
+  apiMocks.setAgentEffort.mockReset();
+  apiMocks.setAgentEffort.mockImplementation(async () => ({ tag: "Ok" }));
+  apiMocks.getShipClient.mockReset();
+  apiMocks.getShipClient.mockImplementation(async () => ({
+    setAgentEffort: apiMocks.setAgentEffort,
+  }));
 });
 
 // r[verify frontend.test.vitest]
@@ -63,6 +71,23 @@ describe("AgentEffortPicker", () => {
 
     expect(screen.getByText("High")).toBeInTheDocument();
     expect(screen.queryByText("Low")).not.toBeInTheDocument();
+  });
+
+  it("rolls back the optimistic label and shows an error when the effort RPC throws", async () => {
+    apiMocks.setAgentEffort.mockRejectedValueOnce(new Error("transport lost"));
+
+    renderPicker(makeAgent());
+
+    fireEvent.pointerDown(screen.getByText("Low"), {
+      button: 0,
+      ctrlKey: false,
+    });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "High" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Low")).toBeInTheDocument();
+    });
+    expect(screen.getByText("transport lost")).toBeInTheDocument();
   });
 
   it("updates the displayed effort when the agent snapshot changes", () => {

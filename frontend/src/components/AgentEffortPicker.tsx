@@ -37,25 +37,30 @@ export function AgentEffortPicker({
     const previousEffortId = currentEffortId;
     setSelectedEffortId(valueId);
 
-    const client = await getShipClient();
-    const result = await client.setAgentEffort(sessionId, agent.role, currentConfigId, valueId);
-    if (result.tag === "AgentNotSpawned") {
+    try {
+      const client = await getShipClient();
+      const result = await client.setAgentEffort(sessionId, agent.role, currentConfigId, valueId);
+      if (result.tag === "AgentNotSpawned") {
+        setSelectedEffortId(previousEffortId);
+        setError("Agent not running");
+        return;
+      }
+      if (result.tag === "SessionNotFound") {
+        setSelectedEffortId(previousEffortId);
+        setError("Session not found");
+        return;
+      }
+      if (result.tag === "Failed") {
+        setSelectedEffortId(previousEffortId);
+        setError(result.message);
+        return;
+      }
+      if (result.tag === "Ok") {
+        setError(null);
+      }
+    } catch (error) {
       setSelectedEffortId(previousEffortId);
-      setError("Agent not running");
-      return;
-    }
-    if (result.tag === "SessionNotFound") {
-      setSelectedEffortId(previousEffortId);
-      setError("Session not found");
-      return;
-    }
-    if (result.tag === "Failed") {
-      setSelectedEffortId(previousEffortId);
-      setError(result.message);
-      return;
-    }
-    if (result.tag === "Ok") {
-      setError(null);
+      setError(error instanceof Error ? error.message : "Failed to update effort");
     }
   }
 
