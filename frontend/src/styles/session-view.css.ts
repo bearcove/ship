@@ -722,6 +722,7 @@ export const sessionHeaderRow2 = style({
   padding: "var(--space-2) var(--space-3) var(--space-3) var(--space-3)",
   width: "100%",
   border: 0,
+  borderTop: "1px solid var(--gray-a3)",
   background: "transparent",
   color: "inherit",
   textAlign: "left",

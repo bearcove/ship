@@ -45,6 +45,7 @@ import {
   sessionHeaderPanelInner,
   sessionHeaderProgressFlex,
   sessionHeaderRoot,
+  sessionHeaderRow1,
   sessionHeaderRow2,
   sessionHeaderRow2Title,
   sessionHeaderSectionLabel,
@@ -220,25 +221,20 @@ export function SessionHeader({
   return (
     <>
       <div className={sessionHeaderRoot}>
-        {/* Combined header row: title + menu + in-progress step + expand toggle */}
-        <button
-          type="button"
-          aria-expanded={expanded}
-          aria-controls={contentId}
-          className={sessionHeaderRow2}
-          onClick={() => setExpanded((v) => !v)}
-        >
+        {/* Row 1: title + menu (clickable) */}
+        <div className={sessionHeaderRow1} onClick={() => setExpanded((v) => !v)}>
           <Text size="3" weight="medium" className={sessionHeaderTitle}>
             {displayTitle}
           </Text>
-          {inProgressStep && (
-            <Text size="1" color="gray" className={sessionHeaderRow2Title}>
-              {inProgressStep.title || inProgressStep.description}
-            </Text>
-          )}
           <DropdownMenu.Root>
             <DropdownMenu.Trigger>
-              <IconButton variant="ghost" color="gray" size="2" aria-label="Session menu">
+              <IconButton
+                variant="ghost"
+                color="gray"
+                size="2"
+                aria-label="Session menu"
+                onClick={(e) => e.stopPropagation()}
+              >
                 <DotsThree size={18} weight="bold" />
               </IconButton>
             </DropdownMenu.Trigger>
@@ -254,6 +250,15 @@ export function SessionHeader({
               </DropdownMenu.Item>
             </DropdownMenu.Content>
           </DropdownMenu.Root>
+        </div>
+
+        {/* Row 2: in-progress step + progress + diff badge + chevron (clickable) */}
+        <div className={sessionHeaderRow2} onClick={() => setExpanded((v) => !v)}>
+          {inProgressStep && (
+            <Text size="1" color="gray" className={sessionHeaderRow2Title}>
+              {inProgressStep.title || inProgressStep.description}
+            </Text>
+          )}
           {progressDots}
           {diffBadge}
           {expanded ? (
@@ -261,7 +266,7 @@ export function SessionHeader({
           ) : (
             <CaretRight size={11} className={sessionHeaderCaret} />
           )}
-        </button>
+        </div>
 
         {/* Expanded panel */}
         <div id={contentId} className={sessionHeaderExpanded} data-open={expanded}>
