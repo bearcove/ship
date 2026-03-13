@@ -2022,6 +2022,8 @@ Here is your task:
                 \n(allow file-write* (subpath \"{worktree_str}\"))\
                 \n(allow file-write* (subpath \"/private/tmp\"))\
                 \n(allow file-write* (subpath \"/tmp\"))\
+                \n(allow file-write* (subpath \"/var/folders\"))\
+                \n(allow file-write* (subpath \"/private/var/folders\"))\
                 \n(allow file-write* (subpath \"{system_tmpdir}\"))\
                 \n(allow file-write* (subpath \"{home}/Library/Caches\"))\
                 \n(allow file-write* (literal \"/dev/null\"))"
