@@ -339,9 +339,12 @@ export function SessionHeader({
 
         {/* Row 2: in-progress step + progress + diff badge + chevron */}
         <div className={sessionHeaderRow2} onClick={() => setExpanded((v) => !v)}>
-          <Text size="1" color="gray" className={sessionHeaderRow2Title}>
-            {inProgressStep?.title || inProgressStep?.description || "No plan yet"}
-          </Text>
+          <Flex align="center" gap="1" className={sessionHeaderRow2Title} style={{ minWidth: 0 }}>
+            {inProgressStep?.status.tag === "InProgress" && <Spinner size="1" flexShrink="0" />}
+            <Text size="1" color="gray" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {inProgressStep?.title || inProgressStep?.description || "No plan yet"}
+            </Text>
+          </Flex>
           <Flex align="center" gap="2">
             {progressDots}
             {diffBadge}
