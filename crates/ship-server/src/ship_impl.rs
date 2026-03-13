@@ -179,8 +179,7 @@ pub struct ShipImpl {
     startup_started_at: Arc<Mutex<HashMap<SessionId, Instant>>>,
     user_avatar_url: Arc<Mutex<Option<String>>>,
     whisper_model_path: Arc<Mutex<Option<PathBuf>>>,
-    chatterbox_model: Arc<Mutex<Option<chatterbox_rs::chatterbox::Chatterbox>>>,
-    voice_wav_path: Arc<Mutex<Option<PathBuf>>>,
+    kyutai_model: Arc<Mutex<Option<crate::kyutai_tts::KyutaiTtsModel>>>,
     global_events_tx: broadcast::Sender<GlobalEvent>,
 }
 
@@ -207,8 +206,7 @@ impl ShipImpl {
             startup_started_at: Arc::new(Mutex::new(HashMap::new())),
             user_avatar_url: Arc::new(Mutex::new(None)),
             whisper_model_path: Arc::new(Mutex::new(None)),
-            chatterbox_model: Arc::new(Mutex::new(None)),
-            voice_wav_path: Arc::new(Mutex::new(None)),
+            kyutai_model: Arc::new(Mutex::new(None)),
             global_events_tx,
         }
     }
@@ -246,28 +244,6 @@ impl ShipImpl {
             .whisper_model_path
             .lock()
             .expect("whisper mutex poisoned") = path;
-    }
-
-    /// Configure the chatterbox voice WAV path from the SHIP_VOICE_WAV env var.
-    pub fn configure_chatterbox(&self) {
-        let path = if let Ok(path) = std::env::var("SHIP_VOICE_WAV") {
-            let p = PathBuf::from(path);
-            if p.exists() {
-                tracing::info!(path = %p.display(), "chatterbox voice WAV found");
-                Some(p)
-            } else {
-                tracing::warn!(path = %p.display(), "SHIP_VOICE_WAV path does not exist");
-                None
-            }
-        } else {
-            tracing::info!("SHIP_VOICE_WAV not set — will use cbx voice cache if available");
-            None
-        };
-
-        *self
-            .voice_wav_path
-            .lock()
-            .expect("voice_wav_path mutex poisoned") = path;
     }
 
     #[allow(dead_code)]
@@ -5733,80 +5709,37 @@ impl Ship for ShipImpl {
     async fn speak_text(&self, text: String, audio_out: Tx<Vec<u8>>) {
         tracing::info!(text_len = text.len(), "speak_text: request received");
 
-        let chatterbox_model = Arc::clone(&self.chatterbox_model);
-        let voice_wav_path = Arc::clone(&self.voice_wav_path);
+        let kyutai_model = Arc::clone(&self.kyutai_model);
 
         tokio::spawn(async move {
-            let result = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
-                let repo_id = "ResembleAI/chatterbox-turbo-ONNX";
-                let revision = "main";
-                let dtype_str = "fp16";
-
-                // Download model assets (cached after first download)
-                let paths = chatterbox_rs::hf::download_chatterbox_assets(
-                    repo_id,
-                    revision,
-                    chatterbox_rs::hf::ModelVariant::Fp16,
-                )
-                .map_err(|e| format!("failed to download chatterbox assets: {e}"))?;
-
-                // Lazy-load the model
-                let mut model_guard = chatterbox_model.lock().expect("chatterbox_model mutex poisoned");
+            let result = tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+                // Lazy-load model on first call
+                let mut model_guard = kyutai_model.lock().expect("kyutai_model mutex poisoned");
                 if model_guard.is_none() {
-                    tracing::info!("speak_text: loading chatterbox model");
-                    let model = chatterbox_rs::chatterbox::Chatterbox::load(&paths)
-                        .map_err(|e| format!("failed to load chatterbox model: {e}"))?;
+                    tracing::info!("speak_text: loading Kyutai TTS model");
+                    let model = crate::kyutai_tts::KyutaiTtsModel::load()?;
                     *model_guard = Some(model);
                 }
-                let model = model_guard.as_mut().expect("model must be Some after loading");
+                let model = model_guard
+                    .as_mut()
+                    .expect("model must be Some after loading");
 
-                // Resolve voice and synthesize
-                let voice_path_guard = voice_wav_path.lock().expect("voice_wav_path mutex poisoned");
-                let samples = if let Some(ref wav_path) = *voice_path_guard {
-                    tracing::info!(path = %wav_path.display(), "speak_text: synthesizing with WAV voice");
-                    model.synthesize(&text, wav_path, 2048, 1.1)
-                        .map_err(|e| format!("synthesis failed: {e}"))?
-                } else {
-                    drop(voice_path_guard);
-                    // Try cbx voice cache
-                    let cache_dir = chatterbox_rs::voice::voice_cache_dir()
-                        .map_err(|e| format!("voice_cache_dir failed: {e}"))?;
-                    let voice_name = chatterbox_rs::voice::pick_voice_for_model(
-                        &cache_dir, repo_id, revision, dtype_str,
-                    ).map_err(|e| format!("pick_voice_for_model failed: {e}"))?;
+                let handle = tokio::runtime::Handle::current();
+                model.speak(&text, |bytes| {
+                    handle.block_on(async {
+                        let _ = audio_out.send(bytes).await;
+                    });
+                })?;
 
-                    if let Some(name) = voice_name {
-                        tracing::info!(voice = %name, "speak_text: synthesizing with cached voice profile");
-                        let profile = chatterbox_rs::voice::load_voice_profile(&cache_dir, &name)
-                            .map_err(|e| format!("load_voice_profile failed: {e}"))?;
-                        model.synthesize_with_voice_profile(&text, repo_id, revision, dtype_str, &profile, 2048, 1.1)
-                            .map_err(|e| format!("synthesis_with_voice_profile failed: {e}"))?
-                    } else {
-                        return Err("no voice available: set SHIP_VOICE_WAV or populate cbx voice cache".to_owned());
-                    }
-                };
-
-                tracing::info!(n_samples = samples.len(), "speak_text: synthesis complete");
-
-                // Convert f32 samples to little-endian bytes
-                let bytes: Vec<u8> = samples.iter().flat_map(|s| s.to_le_bytes()).collect();
-                Ok(bytes)
+                handle.block_on(async {
+                    let _ = audio_out.close(Default::default()).await;
+                });
+                Ok(())
             })
             .await;
 
-            match result {
-                Ok(Ok(bytes)) => {
-                    let _ = audio_out.send(bytes).await;
-                    let _ = audio_out.close(Default::default()).await;
-                }
-                Ok(Err(e)) => {
-                    tracing::warn!("speak_text: {e}");
-                    let _ = audio_out.close(Default::default()).await;
-                }
-                Err(e) => {
-                    tracing::error!("speak_text: blocking task panicked: {e}");
-                    let _ = audio_out.close(Default::default()).await;
-                }
+            if let Err(e) = result {
+                tracing::error!("speak_text: blocking task panicked: {e}");
             }
         });
     }
