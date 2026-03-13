@@ -428,7 +428,6 @@ function SingleBlock({
         return (
           <Box className={feedRowUser}>
             <Box className={`${feedBubbleWithActions} ${feedBubbleWithActionsUser}`}>
-              <BubbleActions block={block as TextBlockType} />
               <Box className={`${feedBubbleCol} ${feedBubbleColUser}`}>
                 <Box className={`${feedBubble} ${feedBubbleUser}`}>
                   <TextBlock block={block as TextBlockType} />
@@ -437,6 +436,7 @@ function SingleBlock({
                   <Text className={feedTimestamp}>{formatTime(entry.timestamp)}</Text>
                 )}
               </Box>
+              <BubbleActions block={block as TextBlockType} speakable />
             </Box>
           </Box>
         );

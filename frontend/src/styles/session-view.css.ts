@@ -790,6 +790,113 @@ export const sessionHeaderBranchMeta = style({
   flexWrap: "wrap",
 });
 
+export const sessionHeaderCaret = style({
+  color: "var(--gray-10)",
+  flexShrink: 0,
+});
+
+export const sessionHeaderProgressFlex = style({
+  display: "flex",
+  alignItems: "center",
+  gap: "var(--space-1)",
+  flexShrink: 0,
+});
+
+export const sessionHeaderDot = style({
+  width: 7,
+  height: 7,
+  borderRadius: "999px",
+  background: "var(--gray-6)",
+  flexShrink: 0,
+  selectors: {
+    '&[data-complete="true"]': {
+      background: "var(--accent-9)",
+    },
+  },
+});
+
+export const sessionHeaderDiffFlex = style({
+  display: "flex",
+  alignItems: "center",
+  gap: "var(--space-1)",
+  flexShrink: 0,
+});
+
+export const sessionHeaderDiffAdd = style({
+  color: "var(--green-10)",
+  fontFamily: "var(--code-font-family)",
+});
+
+export const sessionHeaderDiffRemove = style({
+  color: "var(--red-10)",
+  fontFamily: "var(--code-font-family)",
+});
+
+export const sessionHeaderStepIconWrap = style({
+  paddingTop: 2,
+  display: "flex",
+  flexShrink: 0,
+});
+
+export const sessionHeaderStepText = style({
+  color: "var(--gray-12)",
+  selectors: {
+    '&[data-status="Completed"]': {
+      color: "var(--gray-9)",
+      textDecoration: "line-through",
+    },
+    '&[data-status="Failed"]': {
+      color: "var(--red-11)",
+    },
+  },
+});
+
+export const sessionHeaderHistoryItem = style({
+  borderTop: "1px solid var(--gray-a4)",
+  minWidth: 0,
+  display: "flex",
+  flexDirection: "column",
+});
+
+export const sessionHeaderHistoryBtn = style({
+  display: "flex",
+  alignItems: "flex-start",
+  gap: "var(--space-2)",
+  width: "100%",
+  padding: "var(--space-2) 0",
+  border: 0,
+  background: "transparent",
+  color: "inherit",
+  textAlign: "left",
+  cursor: "pointer",
+});
+
+export const sessionHeaderHistoryTitleRow = style({
+  flex: 1,
+  minWidth: 0,
+  display: "flex",
+  alignItems: "center",
+  gap: "var(--space-2)",
+  flexWrap: "wrap",
+});
+
+export const sessionHeaderHistoryTitle = style({
+  flex: 1,
+  minWidth: 0,
+  lineHeight: 1.35,
+});
+
+export const sessionHeaderHistoryBody = style({
+  paddingLeft: "calc(11px + var(--space-2))",
+  paddingBottom: "var(--space-2)",
+});
+
+export const sessionHeaderHistoryCaret = style({
+  color: "var(--gray-10)",
+  flexShrink: 0,
+  marginTop: 3,
+});
+
 export const agentHeader = style({
   display: "flex",
   flexDirection: "column",

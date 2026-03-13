@@ -1,5 +1,5 @@
 import { useId, useMemo, useState } from "react";
-import { Box, Badge, Code, DropdownMenu, Flex, IconButton, Spinner, Text } from "@radix-ui/themes";
+import { Badge, Code, DropdownMenu, Flex, IconButton, Spinner, Text } from "@radix-ui/themes";
 import {
   Archive,
   CaretDown,
@@ -24,35 +24,50 @@ import { AgentModelPicker } from "./AgentModelPicker";
 import { AgentEffortPicker } from "./AgentEffortPicker";
 import { MarkdownCodeBlock } from "./blocks/TextBlock";
 import {
+  feedBubble,
   planStepRow,
   planStepText,
   sessionHeaderAgentLabel,
   sessionHeaderAgentRow,
   sessionHeaderBranchMeta,
+  sessionHeaderCaret,
+  sessionHeaderHistoryCaret,
+  sessionHeaderDiffAdd,
+  sessionHeaderDiffFlex,
+  sessionHeaderDiffRemove,
+  sessionHeaderDot,
   sessionHeaderExpanded,
+  sessionHeaderHistoryBody,
+  sessionHeaderHistoryBtn,
+  sessionHeaderHistoryItem,
+  sessionHeaderHistoryTitle,
+  sessionHeaderHistoryTitleRow,
   sessionHeaderPanelInner,
+  sessionHeaderProgressFlex,
   sessionHeaderRoot,
   sessionHeaderRow1,
   sessionHeaderRow2,
   sessionHeaderRow2Title,
   sessionHeaderSectionLabel,
+  sessionHeaderStepIconWrap,
+  sessionHeaderStepText,
   sessionHeaderTitle,
   taskDescriptionRoot,
 } from "../styles/session-view.css";
 import { NewSessionDialog } from "../pages/SessionListPage";
 
-// ─── small helpers ────────────────────────────────────────────────────────────
+// ─── helpers ──────────────────────────────────────────────────────────────────
 
 function StepIcon({ status }: { status: PlanStepStatus }) {
   switch (status.tag) {
     case "Pending":
-      return <Circle size={12} style={{ color: "var(--gray-8)", flexShrink: 0 }} />;
+      return <Circle size={12} color="var(--gray-8)" />;
     case "InProgress":
       return <Spinner size="1" />;
     case "Completed":
-      return <CheckCircle size={12} weight="fill" style={{ color: "var(--green-9)", flexShrink: 0 }} />;
+      return <CheckCircle size={12} weight="fill" color="var(--green-9)" />;
     case "Failed":
-      return <XCircle size={12} weight="fill" style={{ color: "var(--red-9)", flexShrink: 0 }} />;
+      return <XCircle size={12} weight="fill" color="var(--red-9)" />;
   }
 }
 
@@ -67,7 +82,7 @@ const STATUS_COLOR = {
 
 function TaskStatusBadge({ status }: { status: TaskStatus }) {
   return (
-    <Badge color={STATUS_COLOR[status.tag]} size="1" variant="soft" style={{ flexShrink: 0 }}>
+    <Badge color={STATUS_COLOR[status.tag]} size="1" variant="soft">
       {status.tag}
     </Badge>
   );
@@ -93,64 +108,39 @@ function HistoryItem({ task }: { task: TaskRecord }) {
   const bodyId = useId();
 
   return (
-    <Flex direction="column" style={{ borderTop: "1px solid var(--gray-a4)", minWidth: 0 }}>
+    <div className={sessionHeaderHistoryItem}>
       <button
         type="button"
         id={headerId}
         aria-expanded={expanded}
         aria-controls={bodyId}
+        className={sessionHeaderHistoryBtn}
         onClick={() => setExpanded((v) => !v)}
-        style={{
-          display: "flex",
-          alignItems: "flex-start",
-          gap: "var(--space-2)",
-          width: "100%",
-          padding: "var(--space-2) 0",
-          border: 0,
-          background: "transparent",
-          color: "inherit",
-          textAlign: "left",
-          cursor: "pointer",
-        }}
       >
         {expanded ? (
-          <CaretDown size={11} style={{ color: "var(--gray-10)", flexShrink: 0, marginTop: 3 }} />
+          <CaretDown size={11} className={sessionHeaderHistoryCaret} />
         ) : (
-          <CaretRight size={11} style={{ color: "var(--gray-10)", flexShrink: 0, marginTop: 3 }} />
+          <CaretRight size={11} className={sessionHeaderHistoryCaret} />
         )}
-        <Flex align="center" gap="2" style={{ flex: 1, minWidth: 0, flexWrap: "wrap" }}>
-          <Text size="1" weight="medium" style={{ flex: 1, minWidth: 0, lineHeight: 1.35 }}>
+        <div className={sessionHeaderHistoryTitleRow}>
+          <Text size="1" weight="medium" className={sessionHeaderHistoryTitle}>
             <ReactMarkdown remarkPlugins={[remarkGfm]} components={titleMdComponents}>
               {task.title}
             </ReactMarkdown>
           </Text>
           <TaskStatusBadge status={task.status} />
-        </Flex>
+        </div>
       </button>
       {expanded && (
-        <Box
-          id={bodyId}
-          role="region"
-          aria-labelledby={headerId}
-          style={{ paddingLeft: "calc(11px + var(--space-2))", paddingBottom: "var(--space-2)" }}
-        >
-          <Box
-            style={{
-              background: "var(--gray-a2)",
-              border: "1px solid var(--gray-a4)",
-              borderRadius: "var(--radius-3)",
-              padding: "var(--space-3)",
-            }}
-          >
-            <div className={taskDescriptionRoot}>
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-                {task.description}
-              </ReactMarkdown>
-            </div>
-          </Box>
-        </Box>
+        <div id={bodyId} role="region" aria-labelledby={headerId} className={sessionHeaderHistoryBody}>
+          <div className={`${feedBubble} ${taskDescriptionRoot}`}>
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+              {task.description}
+            </ReactMarkdown>
+          </div>
+        </div>
       )}
-    </Flex>
+    </div>
   );
 }
 
@@ -197,54 +187,36 @@ export function SessionHeader({
 
   const progressDots =
     planSteps.length > 0 ? (
-      <Flex
-        align="center"
-        gap="1"
+      <div
+        className={sessionHeaderProgressFlex}
         aria-label={`${planSteps.filter((s) => s.status.tag === "Completed").length} of ${planSteps.length} steps done`}
-        style={{ flexShrink: 0 }}
       >
         {planSteps.map((step, i) => (
           <span
             key={i}
-            style={{
-              width: 7,
-              height: 7,
-              borderRadius: "999px",
-              background:
-                step.status.tag === "Completed" ? "var(--accent-9)" : "var(--gray-6)",
-              flexShrink: 0,
-            }}
+            className={sessionHeaderDot}
+            data-complete={step.status.tag === "Completed" ? "true" : "false"}
           />
         ))}
-      </Flex>
+      </div>
     ) : null;
 
   const diffBadge = diffStats ? (
-    <Flex align="center" gap="1" style={{ flexShrink: 0 }}>
-      <Text
-        size="1"
-        style={{ color: "var(--green-10)", fontFamily: "var(--code-font-family)" }}
-      >
-        +{String(diffStats.lines_added)}
-      </Text>
-      <Text
-        size="1"
-        style={{ color: "var(--red-10)", fontFamily: "var(--code-font-family)" }}
-      >
-        -{String(diffStats.lines_removed)}
-      </Text>
-    </Flex>
+    <div className={sessionHeaderDiffFlex}>
+      <Text size="1" className={sessionHeaderDiffAdd}>+{String(diffStats.lines_added)}</Text>
+      <Text size="1" className={sessionHeaderDiffRemove}>-{String(diffStats.lines_removed)}</Text>
+    </div>
   ) : null;
 
   return (
     <>
       <div className={sessionHeaderRoot}>
+
         {/* Row 1: title + ⋯ menu */}
         <div className={sessionHeaderRow1}>
           <Text size="2" weight="medium" className={sessionHeaderTitle}>
             {displayTitle}
           </Text>
-
           <DropdownMenu.Root>
             <DropdownMenu.Trigger>
               <IconButton variant="ghost" color="gray" size="2" aria-label="Session menu">
@@ -274,19 +246,15 @@ export function SessionHeader({
           onClick={() => setExpanded((v) => !v)}
         >
           {expanded ? (
-            <CaretDown size={11} style={{ color: "var(--gray-10)", flexShrink: 0 }} />
+            <CaretDown size={11} className={sessionHeaderCaret} />
           ) : (
-            <CaretRight size={11} style={{ color: "var(--gray-10)", flexShrink: 0 }} />
+            <CaretRight size={11} className={sessionHeaderCaret} />
           )}
 
           {liveTask ? (
-            <Text size="2" className={sessionHeaderRow2Title}>
-              {liveTask.title}
-            </Text>
+            <Text size="2" className={sessionHeaderRow2Title}>{liveTask.title}</Text>
           ) : (
-            <Text size="2" color="gray" className={sessionHeaderRow2Title}>
-              No active task
-            </Text>
+            <Text size="2" color="gray" className={sessionHeaderRow2Title}>No active task</Text>
           )}
 
           {progressDots}
@@ -294,50 +262,34 @@ export function SessionHeader({
         </button>
 
         {/* Expanded panel */}
-        <div
-          id={contentId}
-          className={sessionHeaderExpanded}
-          data-open={expanded}
-        >
+        <div id={contentId} className={sessionHeaderExpanded} data-open={expanded}>
           <div className={sessionHeaderPanelInner}>
 
             {/* Plan */}
-            {matePlan && matePlan.length > 0 && (
-              <div>
-                <Text className={sessionHeaderSectionLabel} as="div">Plan</Text>
+            <div>
+              <Text className={sessionHeaderSectionLabel} as="div">Plan</Text>
+              {matePlan && matePlan.length > 0 ? (
                 <Flex direction="column" gap="1">
                   {matePlan.map((step, i) => (
                     <Flex key={i} align="start" gap="2" className={planStepRow}>
-                      <Box style={{ paddingTop: 2, display: "flex" }}>
+                      <div className={sessionHeaderStepIconWrap}>
                         <StepIcon status={step.status} />
-                      </Box>
+                      </div>
                       <Text
                         size="2"
-                        className={planStepText}
-                        style={{
-                          color:
-                            step.status.tag === "Completed"
-                              ? "var(--gray-9)"
-                              : step.status.tag === "Failed"
-                                ? "var(--red-11)"
-                                : "var(--gray-12)",
-                          textDecoration:
-                            step.status.tag === "Completed" ? "line-through" : undefined,
-                        }}
+                        as="span"
+                        className={`${planStepText} ${sessionHeaderStepText}`}
+                        data-status={step.status.tag}
                       >
                         {step.title || step.description}
                       </Text>
                     </Flex>
                   ))}
                 </Flex>
-              </div>
-            )}
-            {(!matePlan || matePlan.length === 0) && (
-              <div>
-                <Text className={sessionHeaderSectionLabel} as="div">Plan</Text>
+              ) : (
                 <Text size="2" color="gray">No plan yet.</Text>
-              </div>
-            )}
+              )}
+            </div>
 
             {/* Agents */}
             {(captain ?? mate) && (
@@ -370,12 +322,8 @@ export function SessionHeader({
                 {diffStats && (
                   <>
                     <Text size="1" color="gray">·</Text>
-                    <Text size="1" style={{ color: "var(--green-10)", fontFamily: "var(--code-font-family)" }}>
-                      +{String(diffStats.lines_added)}
-                    </Text>
-                    <Text size="1" style={{ color: "var(--red-10)", fontFamily: "var(--code-font-family)" }}>
-                      -{String(diffStats.lines_removed)}
-                    </Text>
+                    <Text size="1" className={sessionHeaderDiffAdd}>+{String(diffStats.lines_added)}</Text>
+                    <Text size="1" className={sessionHeaderDiffRemove}>-{String(diffStats.lines_removed)}</Text>
                     {diffStats.files_changed > 0n && (
                       <Text size="1" color="gray">· {String(diffStats.files_changed)} files</Text>
                     )}
@@ -388,20 +336,11 @@ export function SessionHeader({
             {liveTask && (
               <div>
                 <Text className={sessionHeaderSectionLabel} as="div">Current task</Text>
-                <Box
-                  style={{
-                    background: "var(--gray-a2)",
-                    border: "1px solid var(--gray-a4)",
-                    borderRadius: "var(--radius-3)",
-                    padding: "var(--space-3)",
-                  }}
-                >
-                  <div className={taskDescriptionRoot}>
-                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-                      {liveTask.description}
-                    </ReactMarkdown>
-                  </div>
-                </Box>
+                <div className={`${feedBubble} ${taskDescriptionRoot}`}>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+                    {liveTask.description}
+                  </ReactMarkdown>
+                </div>
               </div>
             )}
 
