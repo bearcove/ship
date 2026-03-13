@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Box, Callout, Flex, Spinner, Text } from "@radix-ui/themes";
+import { Box, Button, Callout, Flex, Spinner, Text } from "@radix-ui/themes";
 import { Warning } from "@phosphor-icons/react";
 import { useSession } from "../hooks/useSession";
 import { useSessionState } from "../hooks/useSessionState";
@@ -227,6 +227,13 @@ export function SessionViewPage({ debugMode }: { debugMode: boolean; onOpenSideb
                 captainAcpInfo={eventState.captainAcpInfo}
                 mateAcpInfo={eventState.mateAcpInfo}
               />
+            )}
+            {(liveTask === null || liveTask.status.tag === "Accepted") && (
+              <Box px="4" pb="2">
+                <Button size="3" variant="outline" onClick={() => void handleArchive(false)}>
+                  Archive session
+                </Button>
+              </Box>
             )}
             <Box className={feedContentColumn}>
               <UnifiedComposer
