@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { Box, Callout, Flex, IconButton, Spinner, Text, Tooltip } from "@radix-ui/themes";
-import { Archive, ArrowLeft, List, Warning } from "@phosphor-icons/react";
+import { Archive, ArrowLeft, List, Plus, Warning } from "@phosphor-icons/react";
 import { useSession } from "../hooks/useSession";
 import { useSessionState } from "../hooks/useSessionState";
 import { refreshSessionList } from "../hooks/useSessionList";
@@ -15,6 +15,7 @@ import {
   hamburgerBtn,
   sessionFeedColumn,
   sessionTopBar,
+  sessionTopBarActions,
   sessionTopBarAgentSection,
   sessionTopBarBreadcrumb,
   sessionTopBarDivider,
@@ -53,63 +54,83 @@ function SessionTopBar({
   archiving: boolean;
 }) {
   const displayTitle = title ?? branchName;
+  const [newSessionOpen, setNewSessionOpen] = useState(false);
   return (
-    <div className={sessionTopBar}>
-      <div className={sessionTopBarLeft}>
-        <IconButton
-          className={hamburgerBtn}
-          variant="ghost"
-          color="gray"
-          size="2"
-          onClick={onOpenSidebar}
-          aria-label="Open sidebar"
-        >
-          <List size={18} />
-        </IconButton>
-        <Link to="/" style={{ color: "var(--gray-11)", display: "flex", alignItems: "center" }}>
-          <ArrowLeft size={18} />
-        </Link>
-        <div className={sessionTopBarBreadcrumb}>
-          <Text size="2" color="gray">
-            {project}
-          </Text>
-          <Text size="2" color="gray">
-            {" / "}
-          </Text>
-          <Text size="2" color="gray">
-            {displayTitle}
-          </Text>
-        </div>
-      </div>
-      <div className={sessionTopBarRight}>
-        {captain && (
-          <div className={sessionTopBarAgentSection}>
-            <AgentModelPicker sessionId={sessionId} agent={captain} />
-            <AgentEffortPicker sessionId={sessionId} agent={captain} />
-          </div>
-        )}
-        {captain && mate && <div className={sessionTopBarDivider} />}
-        {mate && (
-          <div className={sessionTopBarAgentSection}>
-            <AgentModelPicker sessionId={sessionId} agent={mate} />
-            <AgentEffortPicker sessionId={sessionId} agent={mate} />
-          </div>
-        )}
-        {(captain || mate) && <div className={sessionTopBarDivider} />}
-        <Tooltip content="Archive session">
+    <>
+      <div className={sessionTopBar}>
+        <div className={sessionTopBarLeft}>
           <IconButton
+            className={hamburgerBtn}
             variant="ghost"
             color="gray"
             size="2"
-            onClick={onArchive}
-            aria-label="Archive session"
-            loading={archiving}
+            onClick={onOpenSidebar}
+            aria-label="Open sidebar"
           >
-            <Archive size={16} />
+            <List size={18} />
           </IconButton>
-        </Tooltip>
+          <Link to="/" style={{ color: "var(--gray-11)", display: "flex", alignItems: "center" }}>
+            <ArrowLeft size={18} />
+          </Link>
+          <div className={sessionTopBarBreadcrumb}>
+            <Text size="2" color="gray">
+              {project}
+            </Text>
+            <Text size="2" color="gray">
+              {" / "}
+            </Text>
+            <Text size="2" color="gray">
+              {displayTitle}
+            </Text>
+          </div>
+        </div>
+        <div className={sessionTopBarRight}>
+          {captain && (
+            <div className={sessionTopBarAgentSection}>
+              <AgentModelPicker sessionId={sessionId} agent={captain} />
+              <AgentEffortPicker sessionId={sessionId} agent={captain} />
+            </div>
+          )}
+          {captain && mate && <div className={sessionTopBarDivider} />}
+          {mate && (
+            <div className={sessionTopBarAgentSection}>
+              <AgentModelPicker sessionId={sessionId} agent={mate} />
+              <AgentEffortPicker sessionId={sessionId} agent={mate} />
+            </div>
+          )}
+        </div>
+        <div className={sessionTopBarActions}>
+          <Tooltip content="New session">
+            <IconButton
+              variant="ghost"
+              color="gray"
+              size="2"
+              onClick={() => setNewSessionOpen(true)}
+              aria-label="New session"
+            >
+              <Plus size={16} />
+            </IconButton>
+          </Tooltip>
+          <Tooltip content="Archive session">
+            <IconButton
+              variant="ghost"
+              color="gray"
+              size="2"
+              onClick={onArchive}
+              aria-label="Archive session"
+              loading={archiving}
+            >
+              <Archive size={16} />
+            </IconButton>
+          </Tooltip>
+        </div>
       </div>
-    </div>
+      <NewSessionDialog
+        open={newSessionOpen}
+        onOpenChange={setNewSessionOpen}
+        preselectedProject={project}
+      />
+    </>
   );
 }
 
