@@ -1,21 +1,24 @@
 import { useId, useMemo, useState } from "react";
-import { Badge, Box, Code, DropdownMenu, Flex, IconButton, Spinner, Text } from "@radix-ui/themes";
+import { Badge, Box, Code, DropdownMenu, Flex, IconButton, Popover, Spinner, Text } from "@radix-ui/themes";
 import {
   Archive,
   CaretDown,
   CaretRight,
+  ChatsCircle,
   CheckCircle,
   Circle,
   DotsThree,
   Plus,
   XCircle,
 } from "@phosphor-icons/react";
+import { useNavigate } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type {
   AgentSnapshot,
   PlanStep,
   PlanStepStatus,
+  SessionSummary,
   TaskRecord,
   TaskStatus,
   WorktreeDiffStats,
@@ -52,9 +55,14 @@ import {
   sessionHeaderStepIconWrap,
   sessionHeaderStepText,
   sessionHeaderTitle,
+  sessionSwitcherList,
+  sessionSwitcherRow,
+  sessionSwitcherRowSub,
+  sessionSwitcherRowTitle,
   taskDescriptionRoot,
 } from "../styles/session-view.css";
 import { NewSessionDialog } from "../pages/SessionListPage";
+import { useSessionList } from "../hooks/useSessionList";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -79,6 +87,28 @@ const STATUS_COLOR = {
   Accepted: "green",
   Cancelled: "gray",
 } as const;
+
+function statusLabel(status: TaskStatus | null): string {
+  if (!status) return "Idle";
+  switch (status.tag) {
+    case "ReviewPending": return "Review";
+    case "SteerPending": return "Steer";
+    case "Working": return "Working";
+    case "Assigned": return "Starting";
+    case "Accepted": return "Done";
+    case "Cancelled": return "Cancelled";
+  }
+}
+
+function sortSessions(sessions: SessionSummary[]): SessionSummary[] {
+  const priority = (s: SessionSummary) => {
+    const tag = s.task_status?.tag;
+    if (tag === "ReviewPending" || tag === "SteerPending") return 0;
+    if (tag === "Working" || tag === "Assigned") return 1;
+    return 2;
+  };
+  return [...sessions].sort((a, b) => priority(a) - priority(b));
+}
 
 function TaskStatusBadge({ status }: { status: TaskStatus }) {
   return (
@@ -186,9 +216,15 @@ export function SessionHeader({
 }: Props) {
   const hasActivePlan = !!matePlan && matePlan.length > 0;
   const [expanded, setExpanded] = useState(hasActivePlan);
-  const inProgressStep = matePlan?.find((s) => s.status.tag === "InProgress") ?? null;
+  const inProgressStep =
+    matePlan?.find((s) => s.status.tag === "InProgress") ??
+    matePlan?.find((s) => s.status.tag === "Pending") ??
+    null;
   const [newSessionOpen, setNewSessionOpen] = useState(false);
+  const [switcherOpen, setSwitcherOpen] = useState(false);
   const contentId = useId();
+  const navigate = useNavigate();
+  const allSessions = useSessionList();
 
   const displayTitle = liveTask?.title ?? title ?? branchName;
   const history = useMemo(() => [...taskHistory].reverse(), [taskHistory]);
@@ -228,6 +264,49 @@ export function SessionHeader({
           <Text size="3" weight="medium" className={sessionHeaderTitle}>
             {displayTitle}
           </Text>
+          <Popover.Root open={switcherOpen} onOpenChange={setSwitcherOpen}>
+            <Popover.Trigger>
+              <IconButton
+                variant="ghost"
+                color="gray"
+                size="2"
+                aria-label="Switch session"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <ChatsCircle size={18} />
+              </IconButton>
+            </Popover.Trigger>
+            <Popover.Content align="end" size="1" style={{ padding: "var(--space-1)" }}>
+              <div className={sessionSwitcherList}>
+                {sortSessions(allSessions).map((session) => {
+                  const isActive = session.id === sessionId;
+                  const isActiveTask = ["Working", "Assigned", "ReviewPending", "SteerPending"].includes(
+                    session.task_status?.tag ?? "",
+                  );
+                  const rowTitle =
+                    isActiveTask && session.current_task_title
+                      ? session.current_task_title
+                      : (session.title ?? session.branch_name);
+                  return (
+                    <div
+                      key={session.id}
+                      className={sessionSwitcherRow}
+                      data-active={isActive ? "true" : "false"}
+                      onClick={() => {
+                        navigate(`/sessions/${session.slug}`);
+                        setSwitcherOpen(false);
+                      }}
+                    >
+                      <div className={sessionSwitcherRowTitle}>{rowTitle}</div>
+                      <div className={sessionSwitcherRowSub}>
+                        {session.project} · {statusLabel(session.task_status)}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </Popover.Content>
+          </Popover.Root>
           <DropdownMenu.Root>
             <DropdownMenu.Trigger>
               <IconButton
