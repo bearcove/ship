@@ -132,8 +132,60 @@ impl ServerHandler for CaptainMcpHandler {
                 let Some(message) = arguments.get("message").and_then(Value::as_str) else {
                     return Ok(tool_result("missing required argument: message", true));
                 };
+                let new_plan = match arguments.get("new_plan") {
+                    Some(Value::Array(arr)) => {
+                        let steps = arr
+                            .iter()
+                            .map(|v| {
+                                let title = v.get("title").and_then(Value::as_str)?.to_owned();
+                                let description =
+                                    v.get("description").and_then(Value::as_str)?.to_owned();
+                                Some(PlanStepInput { title, description })
+                            })
+                            .collect::<Option<Vec<_>>>();
+                        match steps {
+                            Some(s) => Some(s),
+                            None => {
+                                return Ok(tool_result(
+                                    "new_plan: each step must have title and description",
+                                    true,
+                                ));
+                            }
+                        }
+                    }
+                    Some(_) => {
+                        return Ok(tool_result("new_plan must be an array", true));
+                    }
+                    None => None,
+                };
+                let add_steps = match arguments.get("add_steps") {
+                    Some(Value::Array(arr)) => {
+                        let steps = arr
+                            .iter()
+                            .map(|v| {
+                                let title = v.get("title").and_then(Value::as_str)?.to_owned();
+                                let description =
+                                    v.get("description").and_then(Value::as_str)?.to_owned();
+                                Some(PlanStepInput { title, description })
+                            })
+                            .collect::<Option<Vec<_>>>();
+                        match steps {
+                            Some(s) => Some(s),
+                            None => {
+                                return Ok(tool_result(
+                                    "add_steps: each step must have title and description",
+                                    true,
+                                ));
+                            }
+                        }
+                    }
+                    Some(_) => {
+                        return Ok(tool_result("add_steps must be an array", true));
+                    }
+                    None => None,
+                };
                 self.client
-                    .captain_steer(message.to_owned())
+                    .captain_steer(message.to_owned(), new_plan, add_steps)
                     .await
                     .map_err(call_tool_rpc_error)?
             }
@@ -357,11 +409,37 @@ skips research and goes straight to execution. Omitting files or plan wastes the
         },
         ToolDefinition {
             name: "captain_steer",
-            description: "Send direction to the mate on the current task. Fire-and-forget: returns immediately.",
+            description: "Send direction to the mate on the current task. Fire-and-forget: returns immediately. Optionally provide new_plan to replace the entire plan or add_steps to append steps — at most one may be provided.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
-                    "message": { "type": "string" }
+                    "message": { "type": "string" },
+                    "new_plan": {
+                        "type": "array",
+                        "description": "Replace the entire plan with these steps. At most one of new_plan or add_steps may be provided.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "title": { "type": "string" },
+                                "description": { "type": "string" }
+                            },
+                            "required": ["title", "description"],
+                            "additionalProperties": false
+                        }
+                    },
+                    "add_steps": {
+                        "type": "array",
+                        "description": "Append these steps to the existing plan. At most one of new_plan or add_steps may be provided.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "title": { "type": "string" },
+                                "description": { "type": "string" }
+                            },
+                            "required": ["title", "description"],
+                            "additionalProperties": false
+                        }
+                    }
                 },
                 "required": ["message"],
                 "additionalProperties": false,
