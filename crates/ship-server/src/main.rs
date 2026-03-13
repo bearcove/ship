@@ -516,16 +516,9 @@ async fn run_serve(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
         .find(|a| a.ip().is_loopback())
         .copied()
         .unwrap_or(listen_addrs[0]);
-    // Use the first non-loopback address for Vite HMR so mobile devices on the
-    // LAN can reach the HMR WebSocket. Falls back to loopback (localhost-only).
-    let hmr_addr = listen_addrs
-        .iter()
-        .find(|a| !a.ip().is_loopback())
-        .copied()
-        .unwrap_or(primary_addr);
     let vite_addr = resolve_vite_addr()?;
     // r[dev-proxy.vite-lifecycle]
-    let _vite_process = spawn_vite_dev_server(hmr_addr, vite_addr).await?;
+    let _vite_process = spawn_vite_dev_server(vite_addr).await?;
     wait_for_tcp_readiness(vite_addr, Duration::from_secs(10)).await?;
 
     let frontend_mode = load_frontend_mode(vite_addr);
@@ -710,7 +703,6 @@ fn load_frontend_mode(vite_addr: SocketAddr) -> FrontendMode {
 }
 
 async fn spawn_vite_dev_server(
-    hmr_addr: SocketAddr,
     vite_addr: SocketAddr,
 ) -> Result<tokio::process::Child, Box<dyn std::error::Error>> {
     let frontend_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../frontend");
@@ -725,26 +717,12 @@ async fn spawn_vite_dev_server(
         .arg(vite_addr.ip().to_string())
         .arg("--port")
         .arg(vite_addr.port().to_string())
-        .env("SHIP_VITE_HMR_HOST", vite_hmr_host(hmr_addr))
-        .env("SHIP_VITE_HMR_CLIENT_PORT", hmr_addr.port().to_string())
         .current_dir(frontend_dir)
         .kill_on_drop(true)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit());
     Ok(child.spawn()?)
-}
-
-fn vite_hmr_host(listen_addr: SocketAddr) -> String {
-    match listen_addr.ip() {
-        std::net::IpAddr::V4(ip) if ip.is_unspecified() || ip.is_loopback() => {
-            "localhost".to_owned()
-        }
-        std::net::IpAddr::V6(ip) if ip.is_unspecified() || ip.is_loopback() => {
-            "localhost".to_owned()
-        }
-        ip => ip.to_string(),
-    }
 }
 
 async fn wait_for_tcp_readiness(
