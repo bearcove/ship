@@ -903,6 +903,60 @@ Continue where you left off — wait for the human to give you direction."
             .to_owned()
     }
 
+    async fn ensure_session_worktree_path(
+        &self,
+        session_id: &SessionId,
+    ) -> Result<PathBuf, String> {
+        let worktree_path = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions
+                .get(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            session.worktree_path.clone()
+        };
+
+        if let Some(path) = worktree_path {
+            return Ok(path);
+        }
+
+        let (project, base_branch) = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions
+                .get(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            (
+                session.config.project.clone(),
+                session.config.base_branch.clone(),
+            )
+        };
+        let repo_root = self.resolve_project_root(&project).await?;
+        let git_names = SessionGitNames::from_session_id(session_id);
+        let path = repo_root.join(".ship").join(&git_names.worktree_dir);
+        let worktree_path = if path.exists() {
+            path
+        } else {
+            self.worktree_ops
+                .create_worktree(
+                    &git_names.branch_name,
+                    &git_names.worktree_dir,
+                    &base_branch,
+                    &repo_root,
+                )
+                .await
+                .map_err(|error| error.message)?
+        };
+
+        {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            if let Some(session) = sessions.get_mut(session_id) {
+                session.worktree_path = Some(worktree_path.clone());
+            }
+        }
+        let _ = self.persist_session(session_id).await;
+
+        Ok(worktree_path)
+    }
+
     async fn restart_captain(
         &self,
         session_id: &SessionId,
@@ -920,57 +974,7 @@ Continue where you left off — wait for the human to give you direction."
         }
 
         // 2. Ensure worktree_path is set. If not, compute it from session ID + project.
-        let worktree_path = {
-            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
-            let session = sessions
-                .get(session_id)
-                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-            session.worktree_path.clone()
-        };
-
-        let worktree_path = if let Some(p) = worktree_path {
-            p
-        } else {
-            let (project, base_branch) = {
-                let sessions = self.sessions.lock().expect("sessions mutex poisoned");
-                let s = sessions
-                    .get(session_id)
-                    .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-                (s.config.project.clone(), s.config.base_branch.clone())
-            };
-            let repo_root = self.resolve_project_root(&project).await?;
-            let git_names = SessionGitNames::from_session_id(session_id);
-            let path = repo_root.join(".ship").join(&git_names.worktree_dir);
-            if path.exists() {
-                {
-                    let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
-                    if let Some(s) = sessions.get_mut(session_id) {
-                        s.worktree_path = Some(path.clone());
-                    }
-                }
-                let _ = self.persist_session(session_id).await;
-                path
-            } else {
-                let p = self
-                    .worktree_ops
-                    .create_worktree(
-                        &git_names.branch_name,
-                        &git_names.worktree_dir,
-                        &base_branch,
-                        &repo_root,
-                    )
-                    .await
-                    .map_err(|e| e.message)?;
-                {
-                    let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
-                    if let Some(s) = sessions.get_mut(session_id) {
-                        s.worktree_path = Some(p.clone());
-                    }
-                }
-                let _ = self.persist_session(session_id).await;
-                p
-            }
-        };
+        let worktree_path = self.ensure_session_worktree_path(session_id).await?;
 
         // 3. Install captain MCP server
         let captain_ship_mcp = self.install_captain_mcp_server(session_id).await?;
@@ -1459,23 +1463,20 @@ Continue where you left off — wait for the human to give you direction."
     }
 
     async fn restart_mate(&self, session_id: &SessionId) -> Result<(), String> {
-        let (old_handle, mate_kind, worktree_path, mate_acp_id, extra_servers) = {
+        let (old_handle, mate_kind, mate_acp_id, extra_servers) = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let session = sessions
                 .get(session_id)
                 .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-            let worktree_path = session
-                .worktree_path
-                .clone()
-                .ok_or_else(|| "session has no worktree path".to_owned())?;
             (
                 session.mate_handle.clone(),
                 session.config.mate_kind,
-                worktree_path,
                 session.mate_acp_session_id.clone(),
                 session.config.mcp_servers.clone(),
             )
         };
+
+        let worktree_path = self.ensure_session_worktree_path(session_id).await?;
 
         if let Some(handle) = old_handle {
             let _ = self.agent_driver.kill(&handle).await;
@@ -5151,6 +5152,18 @@ Here is your task:
         let mut enforce_submit_attempts = 0u32;
 
         loop {
+            let mate_needs_restart = {
+                let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                sessions
+                    .get(&session_id)
+                    .map(|session| session.mate_handle.is_none())
+                    .unwrap_or(false)
+            };
+            if mate_needs_restart && let Err(error) = self.restart_mate(&session_id).await {
+                Self::log_error("prompt_mate_steer restart_mate", &error);
+                return;
+            }
+
             let prompt_parts = current_parts.take().unwrap_or_default();
             let stop_reason = match self
                 .prompt_agent(&session_id, Role::Mate, prompt_parts)
