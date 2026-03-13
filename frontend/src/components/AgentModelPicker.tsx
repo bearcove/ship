@@ -1,9 +1,13 @@
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { Popover, TextField, Flex, Text, Box } from "@radix-ui/themes";
 import type { AgentSnapshot } from "../generated/ship";
 import { getShipClient } from "../api/client";
 import {
   agentHeaderControlRow,
+  agentHeaderModelPickerContent,
+  agentHeaderModelPickerList,
+  agentHeaderModelPickerOption,
+  agentHeaderModelPickerOptionText,
   agentHeaderPickerStatic,
   agentHeaderPickerText,
   agentHeaderPickerTextGrow,
@@ -49,16 +53,22 @@ export function AgentModelPicker({
   const [query, setQuery] = useState("");
   const listboxId = useId();
 
-  if (agent.model_id === null) return null;
-
+  const normalizedQuery = query.trim().toLowerCase();
   const filteredModels = availableModels.filter((modelId) =>
-    modelId.toLowerCase().includes(query.trim().toLowerCase()),
+    modelId.toLowerCase().includes(normalizedQuery),
   );
 
   function closePicker() {
     setOpen(false);
     setQuery("");
   }
+
+  useEffect(() => {
+    setOpen(false);
+    setQuery("");
+  }, [agent.model_id]);
+
+  if (agent.model_id === null) return null;
 
   if (availableModels.length <= 1) {
     return (
@@ -79,7 +89,7 @@ export function AgentModelPicker({
 
   return (
     <>
-      <Flex className={agentHeaderControlRow} style={{ position: "relative" }}>
+      <Flex className={agentHeaderControlRow}>
         <Popover.Root
           open={open}
           onOpenChange={(nextOpen) => {
@@ -98,10 +108,7 @@ export function AgentModelPicker({
               </Text>
             </button>
           </Popover.Trigger>
-          <Popover.Content
-            sideOffset={4}
-            style={{ width: "min(28rem, calc(100vw - 2rem))", padding: 8 }}
-          >
+          <Popover.Content align="start" sideOffset={4} className={agentHeaderModelPickerContent}>
             <Flex direction="column" gap="2">
               <TextField.Root
                 aria-label="Search models"
@@ -130,17 +137,7 @@ export function AgentModelPicker({
                   }
                 }}
               />
-              <Box
-                id={listboxId}
-                role="listbox"
-                style={{
-                  maxHeight: "14rem",
-                  overflowX: "hidden",
-                  overflowY: "auto",
-                  border: "1px solid var(--gray-a6)",
-                  borderRadius: "var(--radius-3)",
-                }}
-              >
+              <Box id={listboxId} role="listbox" className={agentHeaderModelPickerList}>
                 {filteredModels.length > 0 ? (
                   filteredModels.map((modelId) => (
                     <Box
@@ -148,18 +145,14 @@ export function AgentModelPicker({
                       role="option"
                       aria-selected={modelId === agent.model_id}
                       data-selected={modelId === agent.model_id ? "true" : "false"}
-                      style={{
-                        padding: "var(--space-2) var(--space-3)",
-                        cursor: "pointer",
-                        background: modelId === agent.model_id ? "var(--accent-a3)" : "transparent",
-                        fontWeight: modelId === agent.model_id ? "bold" : undefined,
-                      }}
-                      onMouseDown={() => {
+                      className={agentHeaderModelPickerOption}
+                      onMouseDown={(event) => {
+                        event.preventDefault();
                         void handleSelectModel(modelId);
                         closePicker();
                       }}
                     >
-                      <Text size="1" style={{ fontFamily: "var(--code-font-family)" }}>
+                      <Text size="1" className={agentHeaderModelPickerOptionText}>
                         {modelId}
                       </Text>
                     </Box>

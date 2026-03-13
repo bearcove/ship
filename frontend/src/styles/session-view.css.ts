@@ -1010,6 +1010,41 @@ export const agentHeaderPickerStatic = style({
   whiteSpace: "nowrap",
 });
 
+export const agentHeaderModelPickerContent = style({
+  width: "min(28rem, calc(100vw - 2rem))",
+  maxWidth: "calc(100vw - 2rem)",
+  padding: 8,
+});
+
+export const agentHeaderModelPickerList = style({
+  maxHeight: "14rem",
+  overflowX: "hidden",
+  overflowY: "auto",
+  border: "1px solid var(--gray-a6)",
+  borderRadius: "var(--radius-3)",
+});
+
+export const agentHeaderModelPickerOption = style({
+  padding: "var(--space-2) var(--space-3)",
+  cursor: "pointer",
+  selectors: {
+    '&[data-selected="true"]': {
+      background: "var(--accent-a3)",
+      fontWeight: "var(--font-weight-medium)",
+    },
+    "&:hover": {
+      background: "var(--gray-a3)",
+    },
+  },
+});
+
+export const agentHeaderModelPickerOptionText = style({
+  display: "block",
+  fontFamily: monoFontStack,
+  whiteSpace: "normal",
+  overflowWrap: "anywhere",
+});
+
 export const agentHeaderSlash = style({
   flexShrink: 0,
 });
