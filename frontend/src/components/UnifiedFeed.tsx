@@ -172,6 +172,11 @@ function TaskRecapBlock({
       <Text style={{ fontSize: "var(--font-size-1)", color: "var(--gray-9)", fontWeight: 500 }}>
         Work accepted
       </Text>
+      {duration != null && (
+        <Text style={{ fontSize: "var(--font-size-1)", color: "var(--gray-9)" }}>
+          completed in {formatDuration(duration)}
+        </Text>
+      )}
       {commits.length > 0 && (
         <Box
           style={{
@@ -223,11 +228,6 @@ function TaskRecapBlock({
           <span style={{ color: "var(--green-9)" }}>+{stats.insertions}</span>{" "}
           <span style={{ color: "var(--red-9)" }}>−{stats.deletions}</span> across{" "}
           {stats.files_changed} file{stats.files_changed !== 1 ? "s" : ""}
-        </Text>
-      )}
-      {duration != null && (
-        <Text style={{ fontSize: "var(--font-size-1)", color: "var(--gray-9)" }}>
-          completed in {formatDuration(duration)}
         </Text>
       )}
     </Box>
