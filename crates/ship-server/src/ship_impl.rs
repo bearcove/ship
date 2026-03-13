@@ -7541,6 +7541,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
+    // r[verify captain.tool.steer]
     #[tokio::test]
     async fn captain_tool_steer_restarts_missing_resumed_mate() {
         let _guard = lock_fake_agent_driver_tests();
