@@ -1,3 +1,4 @@
+// ship-types: shared types for the Ship system
 pub mod ids {
     // r[proto.id.session]
     #[derive(Debug, Clone, PartialEq, Eq, Hash, facet::Facet)]
