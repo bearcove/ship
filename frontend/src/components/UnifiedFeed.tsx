@@ -2,6 +2,7 @@ import { Fragment, useState, useRef, useEffect } from "react";
 import { Box, Flex, ScrollArea, Spinner, Text } from "@radix-ui/themes";
 import { ArrowDown, CaretRight } from "@phosphor-icons/react";
 import captainAvatar from "../assets/avatars/captain.png";
+import mateAvatar from "../assets/avatars/mate.png";
 import type { AgentSnapshot, ContentBlock, Role, SessionStartupState } from "../generated/ship";
 import type { BlockEntry } from "../state/blockStore";
 import { BubbleActions, TextBlock } from "./blocks/TextBlock";
@@ -24,6 +25,8 @@ import {
   liveBubble,
   liveBubbleDot,
   liveBubblesRow,
+  thinkingBubbleOuter,
+  thinkingBubbleInner,
   startupFeedBody,
   startupFeedItem,
   feedMessageMeta,
