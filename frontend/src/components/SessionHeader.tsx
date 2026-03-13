@@ -184,6 +184,7 @@ export function SessionHeader({
 }: Props) {
   const hasActivePlan = !!matePlan && matePlan.length > 0;
   const [expanded, setExpanded] = useState(hasActivePlan);
+  const inProgressStep = matePlan?.find((s) => s.status.tag === "InProgress") ?? null;
   const [newSessionOpen, setNewSessionOpen] = useState(false);
   const contentId = useId();
 
@@ -259,13 +260,9 @@ export function SessionHeader({
             <CaretRight size={11} className={sessionHeaderCaret} />
           )}
 
-          {liveTask ? (
-            <Text size="2" className={sessionHeaderRow2Title}>
-              {liveTask.title}
-            </Text>
-          ) : (
-            <Text size="2" color="gray" className={sessionHeaderRow2Title}>
-              No active task
+          {inProgressStep && (
+            <Text size="1" color="gray" className={sessionHeaderRow2Title}>
+              {inProgressStep.title || inProgressStep.description}
             </Text>
           )}
 
