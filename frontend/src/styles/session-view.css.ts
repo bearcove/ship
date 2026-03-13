@@ -104,6 +104,7 @@ export const feedRowUser = style({
   justifyContent: "flex-end",
   alignItems: "flex-start",
   gap: "var(--space-2)",
+  width: "100%",
 });
 
 export const userAvatar = style({
