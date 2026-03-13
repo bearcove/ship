@@ -90,30 +90,13 @@ type ToolGroupSegment = { kind: "tool-group"; role: Role; entries: BlockEntry[] 
 type FeedSegment = SingleSegment | ToolGroupSegment;
 
 function buildSegments(blocks: BlockEntry[]): FeedSegment[] {
-  const visible = blocks.filter((b) => b.block.tag !== "PlanUpdate");
-  const segments: FeedSegment[] = [];
-  let i = 0;
-  while (i < visible.length) {
-    const entry = visible[i];
-    if (entry.block.tag === "ToolCall") {
-      const group: BlockEntry[] = [entry];
-      let j = i + 1;
-      while (
-        j < visible.length &&
-        visible[j].block.tag === "ToolCall" &&
-        visible[j].role.tag === entry.role.tag
-      ) {
-        group.push(visible[j]);
-        j++;
-      }
-      segments.push({ kind: "tool-group", role: entry.role, entries: group });
-      i = j;
-    } else {
-      segments.push({ kind: "single", entry });
-      i++;
-    }
-  }
-  return segments;
+  const visible = blocks.filter(
+    (b) =>
+      b.block.tag !== "PlanUpdate" &&
+      b.block.tag !== "ToolCall" &&
+      !(b.block.tag === "Text" && b.block.source.tag === "AgentThought"),
+  );
+  return visible.map((entry) => ({ kind: "single", entry }));
 }
 
 function segmentLastTimestamp(seg: FeedSegment): string | null | undefined {
@@ -341,18 +324,9 @@ function SingleBlock({
         );
       }
 
-      // Thought block — collapsible, no bubble
+      // Thought block — hidden
       if (isThought) {
-        return (
-          <ThoughtBlock
-            block={block as TextBlockType}
-            role={role}
-            showAvatar={showAvatar}
-            kind={kind}
-            prevTimestamp={prevTimestamp}
-            timestamp={entry.timestamp}
-          />
-        );
+        return null;
       }
 
       // Agent message — left side with avatar
@@ -374,14 +348,7 @@ function SingleBlock({
     }
 
     case "ToolCall":
-      return (
-        <Box className={feedRowAgent}>
-          <Avatar role={role} show={showAvatar} kind={kind} />
-          <Box className={feedToolGroup}>
-            <ToolCallBlock block={block} />
-          </Box>
-        </Box>
-      );
+      return null;
 
     case "Error":
       return <ErrorBlock block={block} agentState={agentForBlock?.state ?? { tag: "Idle" }} />;
