@@ -183,6 +183,77 @@ describe("sessionReducer event handling", () => {
     expect(state.currentTaskStatus?.tag).toBe("Working");
   });
 
+  it("AgentEffortChanged updates the hydrated agent snapshot", () => {
+    const state = sessionReducer(freshState(), {
+      type: "hydrate",
+      session: {
+        id: "session-1",
+        slug: "aaaa",
+        project: "ship",
+        branch_name: "ship/123/test",
+        captain: {
+          role: { tag: "Captain" },
+          kind: { tag: "Codex" },
+          state: { tag: "Idle" },
+          context_remaining_percent: 75,
+          model_id: "gpt-5-codex/high",
+          available_models: ["gpt-5-codex/high", "gpt-5/high"],
+          effort_config_id: "reasoning.effort",
+          effort_value_id: "low",
+          available_effort_values: [
+            { id: "low", name: "Low" },
+            { id: "high", name: "High" },
+          ],
+        },
+        mate: {
+          role: { tag: "Mate" },
+          kind: { tag: "Codex" },
+          state: { tag: "Idle" },
+          context_remaining_percent: 55,
+          model_id: null,
+          available_models: [],
+          effort_config_id: null,
+          effort_value_id: null,
+          available_effort_values: [],
+        },
+        startup_state: { tag: "Ready" },
+        current_task: null,
+        task_history: [],
+        autonomy_mode: { tag: "HumanInTheLoop" },
+        pending_steer: null,
+        pending_human_review: null,
+        title: null,
+        created_at: "2026-01-01T00:00:00Z",
+        user_avatar_url: null,
+      },
+    });
+
+    const next = sessionReducer(state, {
+      type: "event",
+      envelope: {
+        seq: 1n,
+        timestamp: "2026-01-01T00:00:00Z",
+        event: {
+          tag: "AgentEffortChanged",
+          role: { tag: "Captain" },
+          effort_config_id: "reasoning.effort",
+          effort_value_id: "high",
+          available_effort_values: [
+            { id: "low", name: "Low" },
+            { id: "high", name: "High" },
+          ],
+        },
+      },
+    });
+
+    expect(next.captain?.effort_config_id).toBe("reasoning.effort");
+    expect(next.captain?.effort_value_id).toBe("high");
+    expect(next.captain?.available_effort_values).toEqual([
+      { id: "low", name: "Low" },
+      { id: "high", name: "High" },
+    ]);
+  });
+
   it("tracks lastSeq from event envelopes", () => {
     const state = sessionReducer(freshState(), {
       type: "event",

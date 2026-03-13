@@ -43,7 +43,7 @@ beforeEach(() => {
 // r[verify frontend.test.vitest]
 // r[verify frontend.test.rtl]
 describe("AgentEffortPicker", () => {
-  it("calls setAgentEffort with the selected config and value ids", async () => {
+  it("calls setAgentEffort with the selected config and value ids and updates the visible label", async () => {
     renderPicker(makeAgent());
 
     fireEvent.pointerDown(screen.getByText("Low"), {
@@ -60,6 +60,9 @@ describe("AgentEffortPicker", () => {
         "high",
       );
     });
+
+    expect(screen.getByText("High")).toBeInTheDocument();
+    expect(screen.queryByText("Low")).not.toBeInTheDocument();
   });
 
   it("updates the displayed effort when the agent snapshot changes", () => {

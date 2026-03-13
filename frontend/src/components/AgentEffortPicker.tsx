@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { DropdownMenu, Flex, Text } from "@radix-ui/themes";
 import type { AgentSnapshot } from "../generated/ship";
 import { getShipClient } from "../api/client";
@@ -18,20 +18,39 @@ export function AgentEffortPicker({
   agent: AgentSnapshot;
 }) {
   const [error, setError] = useState<string | null>(null);
+  const [selectedEffortId, setSelectedEffortId] = useState<string | null>(agent.effort_value_id);
   const { effort_config_id, effort_value_id, available_effort_values } = agent;
+
+  useEffect(() => {
+    setSelectedEffortId(effort_value_id);
+  }, [effort_value_id]);
 
   if (!effort_config_id || !effort_value_id) return null;
 
-  const currentEffort = available_effort_values.find((e) => e.id === effort_value_id);
+  const currentConfigId = effort_config_id;
+  const currentEffortId = selectedEffortId ?? effort_value_id;
+  const currentEffort = available_effort_values.find((effort) => effort.id === currentEffortId);
 
   async function handleSelect(valueId: string) {
+    if (valueId === currentEffortId) return;
+
+    const previousEffortId = currentEffortId;
+    setSelectedEffortId(valueId);
+
     const client = await getShipClient();
-    const result = await client.setAgentEffort(sessionId, agent.role, effort_config_id!, valueId);
+    const result = await client.setAgentEffort(sessionId, agent.role, currentConfigId, valueId);
     if (result.tag === "AgentNotSpawned") {
+      setSelectedEffortId(previousEffortId);
       setError("Agent not running");
       return;
     }
+    if (result.tag === "SessionNotFound") {
+      setSelectedEffortId(previousEffortId);
+      setError("Session not found");
+      return;
+    }
     if (result.tag === "Failed") {
+      setSelectedEffortId(previousEffortId);
       setError(result.message);
       return;
     }
@@ -45,7 +64,7 @@ export function AgentEffortPicker({
       <>
         <Flex className={agentHeaderControlRow}>
           <Text size="1" color="gray" className={agentHeaderPickerStatic}>
-            {currentEffort?.name ?? effort_value_id}
+            {currentEffort?.name ?? currentEffortId}
           </Text>
         </Flex>
         {error && (
@@ -65,17 +84,17 @@ export function AgentEffortPicker({
             className={`${agentHeaderPickerTrigger} ${agentHeaderPickerTextGrow}`}
           >
             <Text size="1" color="gray" className={agentHeaderPickerText}>
-              {currentEffort?.name ?? effort_value_id}
+              {currentEffort?.name ?? currentEffortId}
             </Text>
           </DropdownMenu.Trigger>
           <DropdownMenu.Content size="1">
-            {available_effort_values.map((ev) => (
+            {available_effort_values.map((effort) => (
               <DropdownMenu.Item
-                key={ev.id}
-                onSelect={() => void handleSelect(ev.id)}
-                style={ev.id === effort_value_id ? { fontWeight: "bold" } : undefined}
+                key={effort.id}
+                onSelect={() => void handleSelect(effort.id)}
+                style={effort.id === currentEffortId ? { fontWeight: "bold" } : undefined}
               >
-                {ev.name}
+                {effort.name}
               </DropdownMenu.Item>
             ))}
           </DropdownMenu.Content>
