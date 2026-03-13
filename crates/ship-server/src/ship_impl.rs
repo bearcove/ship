@@ -1557,87 +1557,111 @@ Here is your task:
             .start_task(session_id, title.clone(), description.clone())
             .await?;
 
-        if !keep {
-            self.restart_mate(session_id).await?;
-        }
-
-        // Pre-populate the plan if the captain supplied one.
-        let pre_supplied_plan = if !plan.is_empty() {
-            let plan_steps = Self::build_plan_steps(plan);
-            {
-                let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
-                if let Some(session) = sessions.get_mut(session_id) {
-                    if let Some(task) = session.current_task.as_mut() {
-                        task.mate_plan = Some(plan_steps.clone());
-                    }
-                }
-            }
-            self.persist_session(session_id).await?;
-            Some(plan_steps)
-        } else {
-            None
-        };
-
-        // Read files the captain wants inlined into the mate's prompt.
-        let file_context = if files.is_empty() {
-            String::new()
-        } else {
-            let worktree_path = {
-                let sessions = self.sessions.lock().expect("sessions mutex poisoned");
-                let session = sessions
-                    .get(session_id)
-                    .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-                Self::current_task_worktree_path(session)?.to_path_buf()
-            };
-            let mut sections = Vec::with_capacity(files.len());
-            for file_ref in &files {
-                let relative_path = match Self::validate_worktree_path(&file_ref.path) {
-                    Ok(p) => p.to_path_buf(),
-                    Err(e) => {
-                        tracing::warn!(path = %file_ref.path, "captain_assign: invalid file path: {e}");
-                        sections.push(format!("(skipped {}: {e})", file_ref.path));
-                        continue;
-                    }
-                };
-                let offset = file_ref.start_line.unwrap_or(1).max(1) as usize;
-                let limit = match (file_ref.start_line, file_ref.end_line) {
-                    (Some(start), Some(end)) if end >= start => (end - start + 1) as usize,
-                    _ => DEFAULT_READ_FILE_LIMIT,
-                };
-                let path = file_ref.path.clone();
-                let worktree = worktree_path.clone();
-                let excerpt = tokio::task::spawn_blocking(move || {
-                    let canonical_worktree =
-                        std::fs::canonicalize(&worktree).map_err(|e| e.to_string())?;
-                    let candidate = canonical_worktree.join(&relative_path);
-                    let canonical_file =
-                        std::fs::canonicalize(&candidate).map_err(|e| e.to_string())?;
-                    if !canonical_file.starts_with(&canonical_worktree) {
-                        return Err("path resolves outside the worktree".to_owned());
-                    }
-                    Self::format_read_file_excerpt(&canonical_file, offset, limit)
-                })
-                .await
-                .map_err(|e| format!("file read task failed: {e}"))??;
-                sections.push(format!("### {path}\n\n```\n{excerpt}\n```"));
-            }
-            sections.join("\n\n")
-        };
-
-        let mate_prompt =
-            Self::mate_task_preamble(&description, &file_context, pre_supplied_plan.as_deref());
-
+        // r[captain.tool.assign.nonblocking]
+        // Everything after start_task runs in the background so the tool
+        // returns immediately after the task record is created.
         let this = self.clone();
-        let session_id = session_id.clone();
+        let session_id_bg = session_id.clone();
         tokio::spawn(async move {
-            if let Err(error) = this
-                .dispatch_steer_to_mate(
-                    &session_id,
+            let result: Result<(), String> = async {
+                if !keep {
+                    this.restart_mate(&session_id_bg).await?;
+                }
+
+                // Pre-populate the plan if the captain supplied one.
+                let pre_supplied_plan = if !plan.is_empty() {
+                    let plan_steps = Self::build_plan_steps(plan);
+                    {
+                        let mut sessions = this.sessions.lock().expect("sessions mutex poisoned");
+                        if let Some(session) = sessions.get_mut(&session_id_bg) {
+                            if let Some(task) = session.current_task.as_mut() {
+                                task.mate_plan = Some(plan_steps.clone());
+                            }
+                        }
+                    }
+                    this.persist_session(&session_id_bg).await?;
+                    Some(plan_steps)
+                } else {
+                    None
+                };
+
+                // Read files the captain wants inlined into the mate's prompt.
+                let file_context = if files.is_empty() {
+                    String::new()
+                } else {
+                    let worktree_path = {
+                        let sessions = this.sessions.lock().expect("sessions mutex poisoned");
+                        let session = sessions
+                            .get(&session_id_bg)
+                            .ok_or_else(|| format!("session not found: {}", session_id_bg.0))?;
+                        Self::current_task_worktree_path(session)?.to_path_buf()
+                    };
+                    let mut sections = Vec::with_capacity(files.len());
+                    for file_ref in &files {
+                        let relative_path = match Self::validate_worktree_path(&file_ref.path) {
+                            Ok(p) => p.to_path_buf(),
+                            Err(e) => {
+                                tracing::warn!(path = %file_ref.path, "captain_assign: invalid file path: {e}");
+                                sections.push(format!("(skipped {}: {e})", file_ref.path));
+                                continue;
+                            }
+                        };
+                        let offset = file_ref.start_line.unwrap_or(1).max(1) as usize;
+                        let limit = match (file_ref.start_line, file_ref.end_line) {
+                            (Some(start), Some(end)) if end >= start => {
+                                (end - start + 1) as usize
+                            }
+                            _ => DEFAULT_READ_FILE_LIMIT,
+                        };
+                        let path = file_ref.path.clone();
+                        let worktree = worktree_path.clone();
+                        let excerpt = tokio::task::spawn_blocking(move || {
+                            let canonical_worktree =
+                                std::fs::canonicalize(&worktree).map_err(|e| e.to_string())?;
+                            let candidate = canonical_worktree.join(&relative_path);
+                            let canonical_file = std::fs::canonicalize(&candidate)
+                                .map_err(|e| e.to_string())?;
+                            if !canonical_file.starts_with(&canonical_worktree) {
+                                return Err("path resolves outside the worktree".to_owned());
+                            }
+                            Self::format_read_file_excerpt(&canonical_file, offset, limit)
+                        })
+                        .await
+                        .map_err(|e| format!("file read task failed: {e}"))??;
+                        sections.push(format!("### {path}\n\n```\n{excerpt}\n```"));
+                    }
+                    sections.join("\n\n")
+                };
+
+                let mate_prompt = Self::mate_task_preamble(
+                    &description,
+                    &file_context,
+                    pre_supplied_plan.as_deref(),
+                );
+
+                this.dispatch_steer_to_mate(
+                    &session_id_bg,
                     vec![PromptContentPart::Text { text: mate_prompt }],
                 )
-                .await
-            {
-                Self::log_error("captain_assign dispatch_steer_to_mate", &error);
+                .await?;
+
+                Ok(())
+            }
+            .await;
+
+            if let Err(error) = result {
+                tracing::error!(
+                    "captain_assign background startup failed: {error}; cancelling task"
+                );
+                if let Err(cancel_err) = this
+                    .cancel_task(
+                        &session_id_bg,
+                        Some(format!("background startup failed: {error}")),
+                    )
+                    .await
+                {
+                    tracing::error!("captain_assign: also failed to cancel task: {cancel_err}");
+                }
             }
         });
 
@@ -1743,7 +1767,22 @@ Here is your task:
         }
 
         self.accept_task(session_id, summary.clone()).await?;
-        Ok("Accepted the active task.".to_owned())
+
+        // r[task.duration]
+        let duration_suffix = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            if let Some(session) = sessions.get(session_id) {
+                session
+                    .task_history
+                    .last()
+                    .and_then(Self::format_task_duration)
+                    .map(|d| format!(" Task took {}.", d))
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            }
+        };
+        Ok(format!("Accepted the active task.{}", duration_suffix))
     }
 
     async fn captain_tool_cancel(
@@ -1765,7 +1804,22 @@ Here is your task:
         }
 
         self.cancel_task(session_id, reason.clone()).await?;
-        Ok("Task cancelled.".to_owned())
+
+        // r[task.duration]
+        let duration_suffix = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            if let Some(session) = sessions.get(session_id) {
+                session
+                    .task_history
+                    .last()
+                    .and_then(Self::format_task_duration)
+                    .map(|d| format!(" Task took {}.", d))
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            }
+        };
+        Ok(format!("Task cancelled.{}", duration_suffix))
     }
 
     // r[captain.tool.notify-human]
