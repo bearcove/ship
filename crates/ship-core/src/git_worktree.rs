@@ -96,6 +96,33 @@ impl WorktreeOps for GitWorktreeOps {
         ensure_success_stdout(output).map(|stdout| !stdout.trim().is_empty())
     }
 
+    async fn commit_all(&self, worktree_path: &Path, message: &str) -> Result<(), WorktreeError> {
+        let add_output = Command::new("git")
+            .arg("-C")
+            .arg(worktree_path)
+            .arg("add")
+            .arg("-A")
+            .output()
+            .await
+            .map_err(|e| WorktreeError {
+                message: e.to_string(),
+            })?;
+        ensure_success(add_output)?;
+
+        let commit_output = Command::new("git")
+            .arg("-C")
+            .arg(worktree_path)
+            .arg("commit")
+            .arg("-m")
+            .arg(message)
+            .output()
+            .await
+            .map_err(|e| WorktreeError {
+                message: e.to_string(),
+            })?;
+        ensure_success(commit_output)
+    }
+
     async fn list_branches(&self, repo_root: &Path) -> Result<Vec<String>, WorktreeError> {
         let output = Command::new("git")
             .arg("-C")
