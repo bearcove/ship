@@ -1504,6 +1504,21 @@ Here is your task:
             .start_task(session_id, title.clone(), description.clone())
             .await?;
 
+        let (worktree_path, base_branch) = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions
+                .get(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            (
+                Self::current_task_worktree_path(session)?.to_path_buf(),
+                session.config.base_branch.clone(),
+            )
+        };
+
+        // Keep the task branch current before the mate starts work so their prompt
+        // and any inlined file context reflect a synced worktree.
+        Self::rebase_worktree_on_base(&worktree_path, &base_branch).await;
+
         if !keep {
             self.restart_mate(session_id).await?;
         }
