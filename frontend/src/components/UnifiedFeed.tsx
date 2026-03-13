@@ -2,7 +2,6 @@ import { Fragment, useState, useRef, useEffect } from "react";
 import { Box, Flex, Spinner, Text } from "@radix-ui/themes";
 import { ArrowDown } from "@phosphor-icons/react";
 import type {
-  AgentKind,
   AgentSnapshot,
   ContentBlock,
   Role,
@@ -10,19 +9,12 @@ import type {
   TaskStatus,
 } from "../generated/ship";
 import type { BlockEntry } from "../state/blockStore";
-import { AgentKindIcon } from "./AgentKindIcon";
 import { TextBlock } from "./blocks/TextBlock";
 import { ErrorBlock } from "./blocks/ErrorBlock";
 import { PermissionBlock } from "./blocks/PermissionBlock";
 import { ImageBlock } from "./blocks/ImageBlock";
 import { getShipClient } from "../api/client";
-import captainAvatar from "../assets/avatars/captain.png";
-import mateAvatar from "../assets/avatars/mate.png";
 import {
-  agentAvatar,
-  agentAvatarBadge,
-  agentAvatarSpacer,
-  agentAvatarWrapper,
   feedBubble,
   feedBubbleCol,
   feedBubbleColUser,
@@ -45,8 +37,6 @@ import {
   unifiedFeedRoot,
   unifiedFeedScroll,
   unifiedFeedStream,
-  userAvatar,
-  userAvatarSpacer,
 } from "../styles/session-view.css";
 
 type TextBlockType = Extract<ContentBlock, { tag: "Text" }>;
@@ -94,47 +84,17 @@ function buildSegments(blocks: BlockEntry[]): FeedSegment[] {
   return visible.map((entry) => ({ kind: "single", entry }));
 }
 
-function segmentLastTimestamp(seg: FeedSegment): string | null | undefined {
-  return seg.entry.timestamp;
-}
-
 // Returns the "agent side" role of a segment, or null if it's a real user message.
-// Captain-to-mate relay messages (role=Mate, source=Human) are attributed to the
-// Captain so they group with other captain output and show the captain avatar.
 function segmentAgentRole(seg: FeedSegment): Role | null {
   const { block, role } = seg.entry;
   if (block.tag === "Text" && block.source.tag === "Human" && !isSystemInjection(block)) {
-    if (role.tag === "Captain") return null; // real user message → right side, no avatar
-    return { tag: "Captain" }; // captain relaying to mate → left side, captain avatar
+    if (role.tag === "Captain") return null; // real user message → right side
+    return { tag: "Captain" }; // captain relaying to mate → left side
   }
   if (block.tag === "Image" && role.tag === "Captain") {
-    return null; // user-sent image → right side, no avatar
+    return null; // user-sent image → right side
   }
   return role;
-}
-
-// ─── Avatar ───────────────────────────────────────────────────────────────────
-
-function Avatar({ role, show, kind }: { role: Role; show: boolean; kind?: AgentKind }) {
-  if (!show) return <div className={agentAvatarSpacer} />;
-  const src = role.tag === "Captain" ? captainAvatar : mateAvatar;
-  const label = role.tag === "Captain" ? "Captain" : "Mate";
-  if (kind) {
-    return (
-      <div className={agentAvatarWrapper}>
-        <img src={src} className={agentAvatar} alt={label} />
-        <div className={agentAvatarBadge}>
-          <AgentKindIcon kind={kind} />
-        </div>
-      </div>
-    );
-  }
-  return <img src={src} className={agentAvatar} alt={label} />;
-}
-
-function UserAvatar({ url }: { url: string | null }) {
-  if (!url) return <div className={userAvatarSpacer} />;
-  return <img src={url} className={userAvatar} alt="You" />;
 }
 
 // ─── Single block ─────────────────────────────────────────────────────────────
@@ -144,23 +104,16 @@ function SingleBlock({
   sessionId,
   lastUnresolvedPermBlockId,
   agentForBlock,
-  showAvatar,
-  userAvatarUrl,
   isLast,
-  prevTimestamp,
 }: {
   entry: BlockEntry;
   sessionId: string;
   lastUnresolvedPermBlockId: string | undefined;
   agentForBlock: AgentSnapshot | null;
-  showAvatar: boolean;
-  userAvatarUrl: string | null;
   isLast: boolean;
-  prevTimestamp?: string | null;
 }) {
   const { block, blockId, role } = entry;
   const isCaptain = role.tag === "Captain";
-  const kind = agentForBlock?.kind;
 
   switch (block.tag) {
     case "Text": {
@@ -178,7 +131,7 @@ function SingleBlock({
         );
       }
 
-      // Real user message — right side with avatar
+      // Real user message — right side
       if (isHuman && role.tag === "Captain") {
         return (
           <Box className={feedRowUser}>
@@ -190,16 +143,14 @@ function SingleBlock({
                 <Text className={feedTimestamp}>{formatTime(entry.timestamp)}</Text>
               )}
             </Box>
-            <UserAvatar url={userAvatarUrl} />
           </Box>
         );
       }
 
-      // Captain relaying to mate — left side, captain avatar, amber tint
+      // Captain relaying to mate — left side, amber tint
       if (isHuman && role.tag === "Mate") {
         return (
           <Box className={feedRowAgent}>
-            <Avatar role={{ tag: "Captain" }} show={showAvatar} kind={kind} />
             <Box className={feedBubbleCol}>
               <Box className={`${feedBubble} ${feedBubbleRelay}`}>
                 <TextBlock block={block as TextBlockType} speakable />
@@ -217,10 +168,9 @@ function SingleBlock({
         return null;
       }
 
-      // Agent message — left side with avatar
+      // Agent message — left side
       return (
         <Box className={feedRowAgent}>
-          <Avatar role={role} show={showAvatar} kind={kind} />
           <Box className={feedBubbleCol}>
             <Box
               className={`${feedBubble}${isCaptain ? ` ${feedBubbleCaptain}` : ` ${feedBubbleMate}`}`}
@@ -271,14 +221,12 @@ function SingleBlock({
                 <Text className={feedTimestamp}>{formatTime(entry.timestamp)}</Text>
               )}
             </Box>
-            <UserAvatar url={userAvatarUrl} />
           </Box>
         );
       }
-      // Mate/relay image — left side, captain avatar
+      // Relay image — left side
       return (
         <Box className={feedRowAgent}>
-          <Avatar role={{ tag: "Captain" }} show={showAvatar} kind={kind} />
           <Box className={feedBubbleCol}>
             <Box className={`${feedBubble} ${feedBubbleRelay}`}>
               <ImageBlock block={block} />
@@ -315,10 +263,9 @@ function StartupFeedState({ startupState }: { startupState: SessionStartupState 
 
 // ─── Live bubbles ─────────────────────────────────────────────────────────────
 
-function LiveBubble({ role, kind }: { role: Role; kind?: AgentKind }) {
+function LiveBubble() {
   return (
     <Box className={feedRowAgent} style={{ paddingBottom: 0 }}>
-      <Avatar role={role} show kind={kind} />
       <Box className={liveBubble}>
         <span className={liveBubbleDot} />
         <span className={liveBubbleDot} />
@@ -354,7 +301,6 @@ export function UnifiedFeed({
   startupState,
   taskStatus,
   taskCompletedDuration,
-  userAvatarUrl = null,
   loading,
   loadingLabel,
   debugMode = false,
@@ -399,10 +345,6 @@ export function UnifiedFeed({
   const captainWorking = captain?.state.tag === "Working";
   const mateWorking = mate?.state.tag === "Working";
 
-  function kindForRole(role: Role): AgentKind | undefined {
-    return role.tag === "Captain" ? captain?.kind : mate?.kind;
-  }
-
   const MAX_RENDERED_BLOCKS = 80;
   const truncated = blocks.length > MAX_RENDERED_BLOCKS;
   const visibleBlocks = truncated ? blocks.slice(blocks.length - MAX_RENDERED_BLOCKS) : blocks;
@@ -415,18 +357,6 @@ export function UnifiedFeed({
   }
 
   const segments = buildSegments(visibleBlocks);
-
-  // Determine which segments show the avatar: only the first in a consecutive
-  // run from the same agent role.
-  const showAvatarAt = new Set<number>();
-  for (let i = 0; i < segments.length; i++) {
-    const thisRole = segmentAgentRole(segments[i]);
-    if (!thisRole) continue; // user message, no avatar
-    const prevRole = i > 0 ? segmentAgentRole(segments[i - 1]) : null;
-    if (!prevRole || prevRole.tag !== thisRole.tag) {
-      showAvatarAt.add(i);
-    }
-  }
 
   return (
     <Box className={unifiedFeedRoot}>
@@ -462,7 +392,6 @@ export function UnifiedFeed({
           )}
 
           {segments.map((seg, idx) => {
-            const showAvatar = showAvatarAt.has(idx);
             const agentRole = segmentAgentRole(seg);
             const agentForBlock =
               agentRole?.tag === "Captain"
@@ -472,7 +401,6 @@ export function UnifiedFeed({
                   : seg.entry.role.tag === "Captain"
                     ? captain
                     : mate;
-            const prevTimestamp = idx > 0 ? segmentLastTimestamp(segments[idx - 1]) : null;
             return (
               <Fragment key={seg.entry.blockId}>
                 <SingleBlock
@@ -480,10 +408,7 @@ export function UnifiedFeed({
                   sessionId={sessionId}
                   lastUnresolvedPermBlockId={lastUnresolvedPermBlockId}
                   agentForBlock={agentForBlock}
-                  showAvatar={showAvatar}
-                  userAvatarUrl={userAvatarUrl}
                   isLast={idx === segments.length - 1}
-                  prevTimestamp={prevTimestamp}
                 />
                 {debugMode && (
                   <Box
@@ -538,10 +463,8 @@ export function UnifiedFeed({
           )}
 
         <Box className={liveBubblesRow}>
-          {captainWorking && (
-            <LiveBubble role={{ tag: "Captain" }} kind={kindForRole({ tag: "Captain" })} />
-          )}
-          {mateWorking && <LiveBubble role={{ tag: "Mate" }} kind={kindForRole({ tag: "Mate" })} />}
+          {captainWorking && <LiveBubble />}
+          {mateWorking && <LiveBubble />}
         </Box>
       </Box>
     </Box>
