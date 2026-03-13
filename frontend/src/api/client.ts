@@ -8,7 +8,7 @@ export type { ShipClient } from "../generated/ship";
 
 declare global {
   interface Window {
-    __SHIP_WS_URL__?: string;
+    __SHIP_SERVED__?: boolean;
   }
 }
 
@@ -198,13 +198,14 @@ function handleTransportDeath(
 
 async function createShipClient(generation: number): Promise<ShipClientHandle> {
   const attempt = ++connectionAttempt;
-  const wsUrl = window.__SHIP_WS_URL__;
-  if (wsUrl === undefined) {
+  if (!window.__SHIP_SERVED__) {
     setConnectionState("wrong-port");
     throw new Error(
-      "window.__SHIP_WS_URL__ is not defined — open Ship via its server port, not Vite directly",
+      "window.__SHIP_SERVED__ is not set — open Ship via its server port, not Vite directly",
     );
   }
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const wsUrl = `${protocol}//${window.location.host}/ws`;
   log("info", "opening websocket client", { attempt, url: wsUrl });
   const { socket, transport } = await connectWsOpen(wsUrl);
   const connection = await helloExchangeInitiator(transport, defaultHello(), {
