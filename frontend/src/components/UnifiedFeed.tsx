@@ -431,7 +431,7 @@ function ThinkingBubble({
         <img
           src={avatarSrc}
           alt={agentName}
-          style={{ width: 20, height: 20, borderRadius: "50%", flexShrink: 0 }}
+          style={{ width: 28, height: 28, borderRadius: "50%", flexShrink: 0 }}
         />
         <span className={liveBubbleDot} />
         <span className={liveBubbleDot} />
