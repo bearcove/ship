@@ -22,11 +22,9 @@ import {
   feedRowAgent,
   feedRowUser,
   feedSystemMessage,
-  liveBubble,
   liveBubbleDot,
   liveBubblesRow,
-  thinkingBubbleOuter,
-  thinkingBubbleInner,
+  thinkingBubble,
   startupFeedBody,
   startupFeedItem,
   feedMessageMeta,
@@ -428,30 +426,28 @@ function ThinkingBubble({
 }) {
   return (
     <Box className={feedRowAgent} style={{ paddingBottom: 0 }}>
-      <div className={thinkingBubbleOuter}>
-        <div className={thinkingBubbleInner}>
-          <img
-            src={avatarSrc}
-            alt={agentName}
-            style={{ width: 20, height: 20, borderRadius: "50%", flexShrink: 0 }}
-          />
-          <span className={liveBubbleDot} />
-          <span className={liveBubbleDot} />
-          <span className={liveBubbleDot} />
-          <Text size="2" color="gray">
-            {thinkingTokens} tokens
+      <div className={thinkingBubble}>
+        <img
+          src={avatarSrc}
+          alt={agentName}
+          style={{ width: 20, height: 20, borderRadius: "50%", flexShrink: 0 }}
+        />
+        <span className={liveBubbleDot} />
+        <span className={liveBubbleDot} />
+        <span className={liveBubbleDot} />
+        <Text size="2" color="gray">
+          {thinkingTokens} tokens
+        </Text>
+        {toolsOk > 0 && (
+          <Text size="2" style={{ color: "var(--green-11)" }}>
+            {toolsOk}✓
           </Text>
-          {toolsOk > 0 && (
-            <Text size="2" style={{ color: "var(--green-11)" }}>
-              {toolsOk}✓
-            </Text>
-          )}
-          {toolsFailed > 0 && (
-            <Text size="2" style={{ color: "var(--red-11)" }}>
-              {toolsFailed}✗
-            </Text>
-          )}
-        </div>
+        )}
+        {toolsFailed > 0 && (
+          <Text size="2" style={{ color: "var(--red-11)" }}>
+            {toolsFailed}✗
+          </Text>
+        )}
       </div>
     </Box>
   );

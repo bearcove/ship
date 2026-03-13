@@ -222,38 +222,30 @@ export const liveBubble = style({
 });
 
 const thinkingBorderSpin = keyframes({
-  from: { transform: "translate(-50%, -50%) rotate(0deg)" },
-  to: { transform: "translate(-50%, -50%) rotate(360deg)" },
+  from: { transform: "rotate(0deg)" },
+  to: { transform: "rotate(360deg)" },
 });
 
-export const thinkingBubbleOuter = style({
+export const thinkingBubble = style({
   position: "relative",
-  display: "inline-block",
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  padding: "8px var(--space-3)",
   borderRadius: "var(--radius-3)",
-  overflow: "hidden",
+  background: "var(--gray-a2)",
+  isolation: "isolate",
   selectors: {
     "&::before": {
       content: '""',
       position: "absolute",
-      aspectRatio: "1",
-      width: "200%",
-      top: "50%",
-      left: "50%",
+      inset: "-1px",
+      borderRadius: "inherit",
       background: "conic-gradient(var(--gray-a5) 0% 75%, var(--accent-9) 75% 100%)",
       animation: `${thinkingBorderSpin} 2s linear infinite`,
+      zIndex: -1,
     },
   },
-});
-
-export const thinkingBubbleInner = style({
-  position: "relative",
-  margin: "1px",
-  borderRadius: "calc(var(--radius-3) - 1px)",
-  background: "var(--color-page-background)",
-  display: "flex",
-  alignItems: "center",
-  gap: 6,
-  padding: "8px var(--space-3)",
 });
 
 export const liveBubbleDot = style({
