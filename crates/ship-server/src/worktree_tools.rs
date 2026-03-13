@@ -27,12 +27,12 @@ pub fn to_sdk_tool(tool: &ToolDefinition) -> Tool {
 pub fn run_command_tool() -> ToolDefinition {
     ToolDefinition {
         name: "run_command",
-        description: "Run a shell command in the worktree via sh -c. \
+        description: "Run a shell command via sh -c in the current session worktree. \
 Pipes, redirects, and shell syntax work directly — do NOT escape them. \
-rg uses modern regex syntax where | means alternation — do NOT backslash-escape it \
+Use rg instead of grep and fd instead of find. rg uses modern regex syntax where | means alternation — do NOT backslash-escape it \
 (e.g. `rg 'foo|bar'`, not `rg 'foo\\|bar'`). \
-Use rg instead of grep, fd instead of find. \
-Optional cwd is relative to the worktree root.",
+Omit cwd unless the task explicitly targets a subdirectory inside the current worktree. \
+Do not pass repo-root paths or `.ship/...` prefixes.",
         input_schema: json!({
             "type": "object",
             "properties": {
@@ -63,7 +63,8 @@ pub fn web_search_tool() -> ToolDefinition {
 pub fn read_file_tool() -> ToolDefinition {
     ToolDefinition {
         name: "read_file",
-        description: "Read a file in the worktree. Returns numbered lines. \
+        description: "Read a file in the current session worktree. Returns numbered lines. \
+Paths are worktree-relative; do not pass repo-root paths or `.ship/...` prefixes. \
 Use offset/limit to page through large files.",
         input_schema: json!({
             "type": "object",

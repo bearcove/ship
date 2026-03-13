@@ -97,10 +97,10 @@ fn parts_to_log_text(parts: &[PromptContentPart]) -> String {
 const FILE_MENTION_LINE_LIMIT: usize = 200;
 
 const PLAN_REQUIRED_MESSAGE: &str = "\
-Before you can write files, run commands, or make edits, you need to lay out \
-a plan using set_plan. Read the relevant code, understand the problem, then \
-call set_plan with the steps you intend to take. Once your plan is in place, \
-you can start working.";
+Before you can write files or make edits, you need to lay out a plan using \
+set_plan. Read the relevant code, explore with read_file and run_command as \
+needed, then call set_plan with the steps you intend to take. Once your plan \
+is in place, you can start editing.";
 
 const BLOCKED_COMMAND_MESSAGE: &str = "\
 That command has been blocked because it could damage the worktree in ways \
@@ -121,6 +121,17 @@ struct AutoCommitResult {
 
 struct PreparedEdit {
     pending: PendingEdit,
+}
+
+struct ParsedShellToken {
+    text: String,
+    start: usize,
+    end: usize,
+}
+
+struct RgCommandNormalization {
+    command: String,
+    warning: String,
 }
 
 enum RustfmtOutcome {
@@ -862,25 +873,19 @@ off track, or notify the human with captain_notify_human if you need their input
 
 Your available tools are your Ship MCP tools: captain_assign, captain_steer, \
 captain_accept, captain_cancel, captain_notify_human, read_file, run_command, and web_search. \
-Use run_command for codebase exploration and review (rg to search, fd to list files, git log/diff to inspect history and changes). \
-Built-in tools (Bash, Read, Write, Edit) are \
+Use run_command for codebase exploration and read-only inspection (rg to search, fd to list files, \
+and read-only git commands such as `git status`, `git log`, `git diff`, and `git show`). \
+Git is not your workflow control surface: do NOT use it to commit, rebase, merge, or advance review state. \
+Ship manages workflow state internally: the mate checkpoints with `plan_step_complete`, and \
+`captain_accept` runs the backend-managed rebase/merge flow. Built-in tools (Bash, Read, Write, Edit) are \
 disabled in this environment. If you try one and it fails or is rejected, do \
 not stop — use your MCP tools instead and continue.
 
-Git and branch state are captain-owned. Ship handles mate commits and rebases \
-on the server side, and the mate must never run git commands of any kind. If \
-the mate needs git information or thinks a git action is required, direct them \
-to ask you via mate_ask_captain instead of touching git.
+All commands and file reads already execute inside the current session worktree. \
+Omit `cwd` unless you intentionally need a subdirectory inside that worktree. Do not pass \
+repo-root paths, `-C` flags, absolute paths, or `.ship/...` prefixes.
 
-All commands (run_command, read_file) already execute inside the session worktree. \
-You do not need -C flags, absolute paths, or any path overrides. Just run \
-`git log`, `git diff`, `rg pattern`, etc. directly.
-
-Before you assign a new task, Ship will sync the task worktree onto the base \
-branch for you. That branch-sync responsibility stays on the captain/server \
-side; do not ask the mate to inspect or repair git state.
-
-When reviewing the mate's work, use the correct git commands:
+When reviewing the mate's work, use the correct read-only git commands:
 - To see the mate's new commits: `git log main..HEAD --oneline`
 - To see the mate's changes only: `git diff main...HEAD` (THREE dots)
 - Do NOT use `git diff main..HEAD` (two dots) — if the branch is behind main, \
@@ -1436,21 +1441,22 @@ Your plan:
 
 Work ONE step at a time: complete the step fully, then immediately call \
 plan_step_complete before starting the next step. Never work ahead. \
-Steps that produce file changes are committed individually — one step, \
-one commit. Steps with no file changes (research, investigation) are \
-marked complete without a commit."
+Ship uses `plan_step_complete` to create the step checkpoint commit, so do not \
+run manual git commit/rebase/merge commands. Steps with no file changes \
+(research, investigation) are marked complete without a checkpoint."
             )
         } else {
             "Here's how you work:
 
 1. Read the relevant files and understand the problem.
-2. Call set_plan with a list of steps you intend to take. You cannot write \
-   files, run commands, or make edits until you've done this.
+2. Call set_plan with a list of steps you intend to take before you write files \
+   or apply edits. Exploration with `read_file` and `run_command` is allowed \
+   before the plan exists.
 3. Work ONE step at a time: complete the step fully, then immediately call \
    plan_step_complete before starting the next step. Never work ahead. \
-   Steps that produce file changes are committed individually — one step, \
-   one commit. Steps with no file changes (research, investigation) are \
-   marked complete without a commit."
+   Ship uses `plan_step_complete` to create the step checkpoint commit, so do \
+   not run manual git commit/rebase/merge commands. Steps with no file changes \
+   (research, investigation) are marked complete without a checkpoint."
                 .to_owned()
         };
 
@@ -1490,6 +1496,10 @@ commands), read_file, write_file, edit_prepare/edit_confirm. Built-in tools \
 (Bash, Read, Write, Edit) are disabled — if you \
 try one and see an error or a rejection, do not stop. Just use the MCP \
 equivalent and continue your task.
+
+All paths and commands are already scoped to the current session worktree. \
+Omit `cwd` by default. Do not pass repo-root paths or `.ship/...` prefixes \
+unless the task explicitly targets a subdirectory inside the current worktree.
 
 Here is your task:
 
@@ -2049,6 +2059,283 @@ Here is your task:
         rendered
     }
 
+    fn shell_single_quote(arg: &str) -> String {
+        if arg.is_empty() {
+            return "''".to_owned();
+        }
+
+        let mut quoted = String::from("'");
+        for ch in arg.chars() {
+            if ch == '\'' {
+                quoted.push_str("'\"'\"'");
+            } else {
+                quoted.push(ch);
+            }
+        }
+        quoted.push('\'');
+        quoted
+    }
+
+    fn parse_simple_shell_tokens(command: &str) -> Option<Vec<ParsedShellToken>> {
+        let mut tokens = Vec::new();
+        let mut chars = command.char_indices().peekable();
+
+        while let Some(&(start, ch)) = chars.peek() {
+            if ch.is_whitespace() {
+                chars.next();
+                continue;
+            }
+
+            let mut text = String::new();
+            let token_start = start;
+            let mut token_end = start;
+            let mut in_single = false;
+            let mut in_double = false;
+
+            while let Some(&(idx, ch)) = chars.peek() {
+                if in_single {
+                    token_end = idx + ch.len_utf8();
+                    chars.next();
+                    if ch == '\'' {
+                        in_single = false;
+                    } else {
+                        text.push(ch);
+                    }
+                    continue;
+                }
+
+                if in_double {
+                    token_end = idx + ch.len_utf8();
+                    chars.next();
+                    match ch {
+                        '"' => in_double = false,
+                        '\\' => {
+                            let (escaped_idx, escaped) = chars.next()?;
+                            token_end = escaped_idx + escaped.len_utf8();
+                            match escaped {
+                                '"' | '\\' | '$' | '`' => text.push(escaped),
+                                '\n' => {}
+                                other => {
+                                    text.push('\\');
+                                    text.push(other);
+                                }
+                            }
+                        }
+                        '$' | '`' => return None,
+                        other => text.push(other),
+                    }
+                    continue;
+                }
+
+                if ch.is_whitespace() {
+                    break;
+                }
+
+                match ch {
+                    '\'' => {
+                        token_end = idx + ch.len_utf8();
+                        chars.next();
+                        in_single = true;
+                    }
+                    '"' => {
+                        token_end = idx + ch.len_utf8();
+                        chars.next();
+                        in_double = true;
+                    }
+                    '\\' => {
+                        token_end = idx + ch.len_utf8();
+                        chars.next();
+                        let (escaped_idx, escaped) = chars.next()?;
+                        token_end = escaped_idx + escaped.len_utf8();
+                        if escaped != '\n' {
+                            text.push(escaped);
+                        }
+                    }
+                    '$' | '`' | '|' | '&' | ';' | '<' | '>' | '(' | ')' => return None,
+                    other => {
+                        token_end = idx + other.len_utf8();
+                        chars.next();
+                        text.push(other);
+                    }
+                }
+            }
+
+            if in_single || in_double || token_end == token_start {
+                return None;
+            }
+
+            tokens.push(ParsedShellToken {
+                text,
+                start: token_start,
+                end: token_end,
+            });
+        }
+
+        Some(tokens)
+    }
+
+    fn rg_option_takes_next_value(token: &str) -> bool {
+        matches!(
+            token,
+            "-f" | "--file"
+                | "-g"
+                | "--glob"
+                | "-t"
+                | "--type"
+                | "-T"
+                | "--type-not"
+                | "-m"
+                | "--max-count"
+                | "-A"
+                | "-B"
+                | "-C"
+                | "-M"
+                | "--max-columns"
+                | "-d"
+                | "--max-depth"
+                | "-E"
+                | "--encoding"
+                | "-j"
+                | "--threads"
+                | "-r"
+                | "--replace"
+                | "--pre"
+                | "--pre-glob"
+                | "--sort"
+                | "--sortr"
+                | "--path-separator"
+                | "--context-separator"
+                | "--type-add"
+                | "--engine"
+        )
+    }
+
+    fn normalized_rg_pattern_replacement(pattern: &str) -> Option<String> {
+        let corrected = pattern.replace("\\|", "|");
+        (corrected != pattern).then(|| Self::shell_single_quote(&corrected))
+    }
+
+    fn rg_uses_fixed_strings(token: &str) -> bool {
+        if token == "--fixed-strings" {
+            return true;
+        }
+        let Some(flags) = token.strip_prefix('-') else {
+            return false;
+        };
+        !token.starts_with("--")
+            && flags.chars().all(|flag| flag.is_ascii_alphabetic())
+            && flags.contains('F')
+    }
+
+    // r[mate.tool.guardrail.rg-alternation]
+    fn normalize_rg_command(command: &str) -> Option<RgCommandNormalization> {
+        let tokens = Self::parse_simple_shell_tokens(command)?;
+        if tokens.first().map(|token| token.text.as_str()) != Some("rg") {
+            return None;
+        }
+
+        let mut replacements = Vec::new();
+        let mut corrected_alternation = false;
+        let mut expect_pattern = false;
+        let mut expect_value = false;
+        let mut after_double_dash = false;
+        let mut saw_positional_pattern = false;
+        let fixed_strings = tokens
+            .iter()
+            .skip(1)
+            .any(|token| Self::rg_uses_fixed_strings(&token.text));
+
+        for token in tokens.iter().skip(1) {
+            if expect_pattern {
+                expect_pattern = false;
+                if !fixed_strings {
+                    if let Some(replacement) = Self::normalized_rg_pattern_replacement(&token.text)
+                    {
+                        replacements.push((token.start, token.end, replacement));
+                        corrected_alternation = true;
+                    }
+                }
+                continue;
+            }
+
+            if expect_value {
+                expect_value = false;
+                continue;
+            }
+
+            if after_double_dash {
+                if !saw_positional_pattern {
+                    if !fixed_strings {
+                        if let Some(replacement) =
+                            Self::normalized_rg_pattern_replacement(&token.text)
+                        {
+                            replacements.push((token.start, token.end, replacement));
+                            corrected_alternation = true;
+                        }
+                    }
+                    saw_positional_pattern = true;
+                }
+                continue;
+            }
+
+            if token.text == "--" {
+                after_double_dash = true;
+                continue;
+            }
+
+            if token.text == "-e" || token.text == "--regexp" {
+                expect_pattern = true;
+                continue;
+            }
+
+            if Self::rg_option_takes_next_value(&token.text) {
+                expect_value = true;
+                continue;
+            }
+
+            if token.text.starts_with('-') {
+                continue;
+            }
+
+            if !saw_positional_pattern {
+                if !fixed_strings {
+                    if let Some(replacement) = Self::normalized_rg_pattern_replacement(&token.text)
+                    {
+                        replacements.push((token.start, token.end, replacement));
+                        corrected_alternation = true;
+                    }
+                }
+                saw_positional_pattern = true;
+            }
+        }
+
+        if replacements.is_empty() {
+            return None;
+        }
+
+        replacements.sort_by_key(|(start, _, _)| *start);
+        let mut corrected_command = String::with_capacity(command.len());
+        let mut cursor = 0;
+        for (start, end, replacement) in replacements {
+            corrected_command.push_str(&command[cursor..start]);
+            corrected_command.push_str(&replacement);
+            cursor = end;
+        }
+        corrected_command.push_str(&command[cursor..]);
+
+        let mut warning = format!(
+            "Ship auto-corrected this rg command before running it:\n`{command}`\nbecame\n`{corrected_command}`"
+        );
+        if corrected_alternation {
+            warning.push_str("\n`rg` uses modern regex syntax, so alternation is `|`, not `\\|`.");
+        }
+
+        Some(RgCommandNormalization {
+            command: corrected_command,
+            warning,
+        })
+    }
+
     // r[mate.tool.sandbox]
     fn sandboxed_sh(
         worktree: &Path,
@@ -2337,6 +2624,11 @@ Here is your task:
             ));
         }
 
+        let normalized_rg = Self::normalize_rg_command(&command);
+        let command_to_run = normalized_rg
+            .as_ref()
+            .map_or(command.as_str(), |normalized| normalized.command.as_str());
+
         let relative_cwd = match cwd {
             Some(cwd) => Some(Self::validate_worktree_path(&cwd)?.to_path_buf()),
             None => None,
@@ -2369,7 +2661,7 @@ Here is your task:
         .await
         .map_err(|error| format!("run_command path resolution failed: {error}"))??;
 
-        let shell_command = format!("exec 2>&1; {}", command);
+        let shell_command = format!("exec 2>&1; {}", command_to_run);
         let child = Self::sandboxed_sh(&canonical_worktree, &resolved_cwd, &shell_command)?;
 
         let output = match tokio::time::timeout(RUN_COMMAND_TIMEOUT, child.wait_with_output()).await
@@ -2386,11 +2678,17 @@ Here is your task:
             |code| code.to_string(),
         );
 
-        if truncated.is_empty() {
-            Ok(format!("exit code: {exit_code}"))
-        } else {
-            Ok(format!("{truncated}\nexit code: {exit_code}"))
+        let mut rendered = String::new();
+        if let Some(normalized_rg) = normalized_rg {
+            rendered.push_str(&normalized_rg.warning);
+            rendered.push_str("\n\n");
         }
+        if !truncated.is_empty() {
+            rendered.push_str(&truncated);
+            rendered.push('\n');
+        }
+        rendered.push_str(&format!("exit code: {exit_code}"));
+        Ok(rendered)
     }
 
     // r[ui.composer.file-mention]
@@ -6157,6 +6455,7 @@ mod tests {
     use std::time::Duration;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    use crate::captain_mcp::worktree_tools::{read_file_tool, run_command_tool};
     use ship_core::{ProjectRegistry, SessionStore};
     use ship_service::Ship;
     use ship_types::{
@@ -6354,6 +6653,7 @@ mod tests {
             next_event_seq: 0,
             captain_prompt_gen: 0,
             mate_prompt_gen: 0,
+            diff_stats: None,
         };
         ship.sessions
             .lock()
@@ -7015,6 +7315,11 @@ mod tests {
             "error should mention set_plan: {}",
             write_err.text
         );
+        assert!(
+            write_err.text.contains("read_file and run_command"),
+            "error should mention read-only exploration before planning: {}",
+            write_err.text
+        );
 
         let edit_err = ship
             .mate_tool_edit_prepare(
@@ -7294,6 +7599,167 @@ mod tests {
         assert_eq!(large_output.lines().count(), 1002);
 
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    // r[verify mate.tool.guardrail.rg-alternation]
+    #[tokio::test]
+    async fn mate_run_command_autocorrects_obvious_rg_mistakes_and_warns() {
+        let _guard = lock_mate_tool_tests();
+        let (dir, ship, session_id) =
+            create_session_for_workflow_test("mate-run-command-rg-autocorrect").await;
+        let project_root = dir.join("project");
+        std::fs::write(project_root.join("sample.txt"), "foo\nbar\nFOO\n")
+            .expect("sample file should exist");
+
+        {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(&session_id).expect("session should exist");
+            session.worktree_path = Some(project_root.clone());
+        }
+
+        let output = ship
+            .mate_tool_run_command(&session_id, "rg -n 'foo\\|bar' sample.txt".to_owned(), None)
+            .await
+            .expect("rg autocorrect command should succeed");
+        assert!(
+            output.contains("Ship auto-corrected this rg command before running it:"),
+            "unexpected output: {output}"
+        );
+        assert!(
+            output.contains("`rg -n 'foo\\|bar' sample.txt`"),
+            "unexpected output: {output}"
+        );
+        assert!(
+            output.contains("`rg -n 'foo|bar' sample.txt`"),
+            "unexpected output: {output}"
+        );
+        assert!(
+            output.contains("`rg` uses modern regex syntax, so alternation is `|`, not `\\|`."),
+            "unexpected output: {output}"
+        );
+        assert!(output.contains("1:foo"), "unexpected output: {output}");
+        assert!(output.contains("2:bar"), "unexpected output: {output}");
+        assert!(!output.contains("3:FOO"), "unexpected output: {output}");
+        assert!(
+            output.ends_with("exit code: 0"),
+            "unexpected output: {output}"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    // r[verify mate.tool.guardrail.rg-alternation]
+    #[test]
+    fn normalize_rg_command_skips_fixed_strings_and_replace_forms() {
+        assert!(ShipImpl::normalize_rg_command("rg -F 'foo\\|bar' sample.txt").is_none());
+        assert!(ShipImpl::normalize_rg_command("rg -e 'foo\\|bar' -F sample.txt").is_none());
+        assert!(
+            ShipImpl::normalize_rg_command("rg 'foo\\|bar' --fixed-strings sample.txt").is_none()
+        );
+        assert!(ShipImpl::normalize_rg_command("rg -rni foo sample.txt").is_none());
+    }
+
+    // r[verify captain.system-prompt]
+    #[test]
+    fn captain_bootstrap_prompt_describes_backend_managed_workflow() {
+        let prompt = ShipImpl::captain_bootstrap_prompt();
+        assert!(
+            prompt.contains("Git is not your workflow control surface"),
+            "unexpected prompt: {prompt}"
+        );
+        assert!(
+            prompt.contains("`captain_accept` runs the backend-managed rebase/merge flow"),
+            "unexpected prompt: {prompt}"
+        );
+        assert!(
+            prompt.contains("repo-root paths, `-C` flags, absolute paths, or `.ship/...` prefixes"),
+            "unexpected prompt: {prompt}"
+        );
+    }
+
+    // r[verify mate.system-prompt]
+    #[test]
+    fn mate_task_preamble_describes_checkpoints_and_worktree_scope() {
+        let prompt_with_plan = ShipImpl::mate_task_preamble(
+            "Do the thing",
+            "",
+            Some(&[PlanStep {
+                title: "step".to_owned(),
+                description: "Implement the thing".to_owned(),
+                status: PlanStepStatus::Pending,
+            }]),
+        );
+        assert!(
+            prompt_with_plan
+                .contains("Ship uses `plan_step_complete` to create the step checkpoint commit"),
+            "unexpected prompt: {prompt_with_plan}"
+        );
+        assert!(
+            prompt_with_plan.contains("do not run manual git commit/rebase/merge commands"),
+            "unexpected prompt: {prompt_with_plan}"
+        );
+
+        let prompt_without_plan = ShipImpl::mate_task_preamble("Do the thing", "", None);
+        assert!(
+            prompt_without_plan.contains(
+                "Exploration with `read_file` and `run_command` is allowed before the plan exists."
+            ),
+            "unexpected prompt: {prompt_without_plan}"
+        );
+        assert!(
+            prompt_without_plan.contains(
+                "All paths and commands are already scoped to the current session worktree."
+            ),
+            "unexpected prompt: {prompt_without_plan}"
+        );
+        assert!(
+            prompt_without_plan.contains("Omit `cwd` by default."),
+            "unexpected prompt: {prompt_without_plan}"
+        );
+    }
+
+    // r[verify mate.tool.description.search-ladder]
+    #[test]
+    fn worktree_tool_descriptions_reinforce_worktree_scope_and_rg_syntax() {
+        let run_command = run_command_tool();
+        assert!(
+            run_command.description.contains("current session worktree"),
+            "unexpected description: {}",
+            run_command.description
+        );
+        assert!(
+            run_command
+                .description
+                .contains("`rg 'foo|bar'`, not `rg 'foo\\|bar'`"),
+            "unexpected description: {}",
+            run_command.description
+        );
+        assert!(
+            run_command.description.contains("Omit cwd unless the task explicitly targets a subdirectory inside the current worktree."),
+            "unexpected description: {}",
+            run_command.description
+        );
+        assert!(
+            run_command
+                .description
+                .contains("Do not pass repo-root paths or `.ship/...` prefixes."),
+            "unexpected description: {}",
+            run_command.description
+        );
+
+        let read_file = read_file_tool();
+        assert!(
+            read_file.description.contains("current session worktree"),
+            "unexpected description: {}",
+            read_file.description
+        );
+        assert!(
+            read_file.description.contains(
+                "Paths are worktree-relative; do not pass repo-root paths or `.ship/...` prefixes."
+            ),
+            "unexpected description: {}",
+            read_file.description
+        );
     }
 
     // r[verify mate.tool.write-file]

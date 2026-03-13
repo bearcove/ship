@@ -70,9 +70,11 @@ export function SessionListPage() {
 
 ## Development workflow
 
-You work in a git worktree on your own branch. Commit your work when done. The coordinator handles merging and rebasing — you don't need to worry about that.
+Ship already created the current task worktree and manages workflow state internally. Do not use manual `git commit`, `git rebase`, `git merge`, or similar commands to advance task state.
 
-Before starting work, make sure your branch is up to date with main (`git rebase main` if needed).
+- Captains research with `read_file` and `run_command`, delegate with `captain_assign`, steer with `captain_steer`, and finish review with `captain_accept` or `captain_cancel`.
+- Mates checkpoint each completed step with `plan_step_complete`; that is the commit mechanism for task work.
+- `run_command` and `read_file` already operate inside the current session worktree. Omit `cwd` by default, and do not pass repo-root paths or `.ship/...` prefixes unless the task explicitly targets a subdirectory inside the current worktree.
 
 Stay within the scope of the assigned task. If a frontend task depends on a backend RPC, shared type, generated artifact, or other backend-owned surface that is not already present in your worktree, stop and report the missing dependency to the coordinator instead of implementing backend work from the frontend worktree. The same rule applies in reverse for backend tasks that depend on frontend work.
 
@@ -80,7 +82,7 @@ Stay within the scope of the assigned task. If a frontend task depends on a back
 
 - Never hand-edit generated files.
 - Change the source-of-truth inputs only.
-- Then run `cargo xtask codegen` and commit the regenerated artifacts.
+- Then run `cargo xtask codegen` and include the regenerated artifacts in the same `plan_step_complete` checkpoint.
 - If generated output looks wrong, fix the schema/codegen/runtime input that produced it rather than patching the output directly.
 
 ## Architecture: key files and layers
@@ -92,23 +94,29 @@ The captain and mate each get their own MCP server with a distinct set of tools.
 **Captain** (`crates/ship-server/src/captain_mcp_server.rs`):
 - `captain_assign` — assign a task to the mate (title + description)
 - `captain_steer` — send direction to the mate on the current task
-- `captain_accept` — accept the mate's submitted work
+- `captain_accept` — accept the mate's submitted work and let Ship run the backend-managed rebase/merge flow
 - `captain_cancel` — cancel the current task
 - `captain_notify_human` — ask the human for guidance (blocks until response)
+- `read_file` — inspect files in the current session worktree
+- `run_command` — run read-only exploration commands in the current session worktree
+- `web_search` — search the web when external context is required
 
-The captain has NO file, terminal, or code access. It reviews and delegates.
+The captain can inspect the current worktree, but Ship owns workflow state. Use git only for read-only inspection (`git status`, `git log`, `git diff`, `git show`), never for commits, rebases, or merges.
 
 **Mate** (`crates/ship-server/src/mate_mcp_server.rs`):
-- `run_command` — shell command via `sh -c` in the worktree
+- `run_command` — shell command via `sh -c` in the current session worktree
 - `read_file` — read a file with line numbers, optional offset/limit
 - `write_file` — write a file (Rust files get rustfmt validation)
 - `edit_prepare` — prepare a search-and-replace edit (returns diff preview)
 - `edit_confirm` — apply a previously prepared edit
-- `search_files` — ripgrep search in the worktree
-- `list_files` — fd file listing in the worktree
 - `mate_send_update` — send a progress update to the captain
-- `plan_create` — create the work plan before implementation
-- `plan_step_complete` — mark a plan step as done, commits changes
+- `set_plan` — create or revise the work plan when needed
+- `plan_step_complete` — checkpoint a finished step; Ship commits that step for you
+- `mate_ask_captain` — ask the captain for a decision or clarification
+- `mate_submit` — submit finished work for captain review
+- `web_search` — search the web when external context is required
+
+The mate implements inside the current session worktree. Use `plan_step_complete` for checkpoint commits and do not run manual git workflow commands.
 
 ### ACP built-in tool blocking
 

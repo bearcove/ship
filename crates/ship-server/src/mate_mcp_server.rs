@@ -395,7 +395,7 @@ fn tool_definitions() -> Vec<ToolDefinition> {
         },
         ToolDefinition {
             name: "plan_step_complete",
-            description: "Mark the current plan step complete and commit its changes. Call this IMMEDIATELY after finishing each step — before starting the next one. All file changes for this step must already be written. This commits them as one focused commit. If called after starting the next step's changes, those changes will be bundled into the wrong commit.",
+            description: "Mark the current plan step complete and checkpoint its changes. Call this IMMEDIATELY after finishing each step — before starting the next one. All file changes for this step must already be written. Ship creates one focused commit for that step. Do not run manual git commit/rebase/merge commands. If called after starting the next step's changes, those changes will be bundled into the wrong checkpoint.",
             input_schema: json!({
                 "type": "object",
                 "properties": {

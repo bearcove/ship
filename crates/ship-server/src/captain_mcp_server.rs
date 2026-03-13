@@ -334,7 +334,7 @@ skips research and goes straight to execution. Omitting files or plan wastes the
         },
         ToolDefinition {
             name: "captain_accept",
-            description: "Accept the mate's submitted work. Only valid after the mate calls mate_submit.",
+            description: "Accept the mate's submitted work. Only valid after the mate calls mate_submit. Ship handles the backend-managed rebase/merge flow for this review step; do not try to do that manually with git.",
             input_schema: json!({
                 "type": "object",
                 "properties": {

@@ -1303,9 +1303,10 @@ a command is blocked, Ship MUST reject the tool call and steer the mate to
 stop current work and explain the situation to the captain.
 
 r[mate.tool.guardrail.rg-alternation]
-If a mate `search_files` call or `run_command` invocation would execute `rg`
-with a pattern containing `\|`, Ship MUST reject the call before executing
-ripgrep and return corrective guidance that includes the example
+If a mate `search_files` call or `run_command` invocation would execute an
+obvious `rg` search with a pattern containing `\|`, Ship MUST auto-correct
+the `rg` invocation to use `|`, execute the corrected ripgrep command, and
+return corrective guidance that names the correction and includes the example
 `rg 'foo|bar'`, not `rg 'foo\\|bar'`.
 
 r[mate.tool.guardrail.blind-reads]
