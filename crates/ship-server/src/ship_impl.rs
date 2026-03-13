@@ -924,7 +924,7 @@ captain_accept, captain_cancel, captain_notify_human, read_file, run_command, an
 Use run_command for codebase exploration and read-only inspection (rg to search, fd to list files, \
 and read-only git commands such as `git status`, `git log`, `git diff`, and `git show`). \
 Git is not your workflow control surface: do NOT use it to commit, rebase, merge, or advance review state. \
-Ship manages workflow state internally: the mate checkpoints with `plan_step_complete`, and \
+Ship manages workflow state internally: the mate checkpoints with `commit`, and \
 `captain_accept` runs the backend-managed rebase/merge flow. Built-in tools (Bash, Read, Write, Edit) are \
 disabled in this environment. If you try one and it fails or is rejected, do \
 not stop — use your MCP tools instead and continue.
@@ -1639,8 +1639,8 @@ Your plan:
 {plan_text}
 
 Work ONE step at a time: complete the step fully, then immediately call \
-plan_step_complete before starting the next step. Never work ahead. \
-Ship uses `plan_step_complete` to create the step checkpoint commit, so do not \
+`commit` before starting the next step. Never work ahead. \
+Ship uses `commit` to create the step checkpoint commit, so do not \
 run manual git commit/rebase/merge commands. Steps with no file changes \
 (research, investigation) are marked complete without a checkpoint."
             )
@@ -1652,8 +1652,8 @@ run manual git commit/rebase/merge commands. Steps with no file changes \
    or apply edits. Exploration with `read_file` and `run_command` is allowed \
    before the plan exists.
 3. Work ONE step at a time: complete the step fully, then immediately call \
-   plan_step_complete before starting the next step. Never work ahead. \
-   Ship uses `plan_step_complete` to create the step checkpoint commit, so do \
+   `commit` before starting the next step. Never work ahead. \
+   Ship uses `commit` to create the step checkpoint commit, so do \
    not run manual git commit/rebase/merge commands. Steps with no file changes \
    (research, investigation) are marked complete without a checkpoint."
                 .to_owned()
@@ -4149,23 +4149,22 @@ Here is your task:
 
     // r[mate.tool.plan-step-complete]
     // r[task.progress]
-    async fn mate_tool_plan_step_complete(
+    async fn mate_tool_commit(
         &self,
         session_id: &SessionId,
-        step_index: usize,
-        summary: String,
+        step_index: Option<usize>,
+        message: String,
     ) -> Result<String, String> {
-        let (step_description, task_title, worktree_path, base_branch) = {
+        let (step_description, worktree_path, base_branch) = {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let session = sessions
                 .get_mut(session_id)
                 .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-            let (updated_plan, step_description, task_title) = {
+            let step_description = if let Some(step_index) = step_index {
                 let task = session
                     .current_task
                     .as_mut()
                     .ok_or_else(|| "session has no active task".to_owned())?;
-                let task_title = task.record.title.clone();
                 let plan = &mut task.record.steps;
                 if plan.is_empty() {
                     return Err(PLAN_REQUIRED_MESSAGE.to_owned());
@@ -4176,20 +4175,21 @@ Here is your task:
                 step.status = PlanStepStatus::Completed;
                 let step_description = step.description.clone();
                 let updated_plan = plan.clone();
-                (updated_plan, step_description, task_title)
+                set_agent_state(
+                    session,
+                    Role::Mate,
+                    AgentState::Working {
+                        plan: Some(updated_plan),
+                        activity: Some(format!("Completed step: {step_description}")),
+                    },
+                );
+                Some(step_description)
+            } else {
+                None
             };
-            set_agent_state(
-                session,
-                Role::Mate,
-                AgentState::Working {
-                    plan: Some(updated_plan),
-                    activity: Some(format!("Completed step: {step_description}")),
-                },
-            );
             let base = session.config.base_branch.clone();
             (
                 step_description,
-                task_title,
                 Self::current_task_worktree_path(session)?.to_path_buf(),
                 base,
             )
@@ -4197,33 +4197,34 @@ Here is your task:
 
         self.persist_session(session_id).await?;
 
-        let commit = Self::auto_commit_worktree(
-            &worktree_path,
-            format!("{task_title}\n\n{step_description}: {summary}"),
-        )
-        .await?;
+        let commit = Self::auto_commit_worktree(&worktree_path, message).await?;
 
         // Keep the branch up to date with the base branch to avoid
         // misleading diffs when the base branch moves forward.
         Self::rebase_worktree_on_base(&worktree_path, &base_branch).await;
 
-        if let Some(commit) = commit {
-            let commit_summary = Self::commit_summary(Some(&commit));
-            let captain_message = format!(
-                "The mate completed a step from their plan.\n\nCompleted: {step_description}\n\n{commit_summary}\n\nWe will notify you when they are done and need your review.",
-            );
-            self.append_captain_feed(session_id, captain_message)
-                .await?;
-            Ok(format!(
-                "Marked step {} complete. {}",
-                step_index + 1,
-                commit_summary
-            ))
+        let commit_summary = Self::commit_summary(commit.as_ref());
+        if let Some(step_description) = step_description {
+            let step_index = step_index.expect("step_description is Some iff step_index is Some");
+            if commit.is_some() {
+                let captain_message = format!(
+                    "The mate completed a step from their plan.\n\nCompleted: {step_description}\n\n{commit_summary}\n\nWe will notify you when they are done and need your review.",
+                );
+                self.append_captain_feed(session_id, captain_message)
+                    .await?;
+                Ok(format!(
+                    "Marked step {} complete. {}",
+                    step_index + 1,
+                    commit_summary
+                ))
+            } else {
+                Ok(format!(
+                    "Marked step {} complete. No file changes (research/investigation step).",
+                    step_index + 1
+                ))
+            }
         } else {
-            Ok(format!(
-                "Marked step {} complete. No file changes (research/investigation step).",
-                step_index + 1
-            ))
+            Ok(commit_summary)
         }
     }
 
@@ -4269,12 +4270,13 @@ Here is your task:
     }
 
     // r[task.completion]
+    // r[mate.tool.submit]
     async fn mate_tool_submit(
         &self,
         session_id: &SessionId,
         summary: String,
     ) -> Result<String, String> {
-        {
+        let worktree_path = {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let session = sessions
                 .get_mut(session_id)
@@ -4287,6 +4289,19 @@ Here is your task:
                 task.pending_mate_guidance = Some(PLAN_REQUIRED_MESSAGE.to_owned());
                 return Err(PLAN_REQUIRED_MESSAGE.to_owned());
             }
+            Self::current_task_worktree_path(session)?.to_path_buf()
+        };
+
+        let has_changes = self
+            .worktree_ops
+            .has_uncommitted_changes(&worktree_path)
+            .await
+            .map_err(|e| format!("failed to check uncommitted changes: {}", e.message))?;
+        if has_changes {
+            return Err(
+                "There are uncommitted changes in the worktree. Call `commit` before submitting."
+                    .to_owned(),
+            );
         }
 
         let (tx, rx) = tokio::sync::oneshot::channel::<MateReviewOutcome>();
@@ -6873,17 +6888,23 @@ impl MateMcp for MateMcpSessionService {
     }
 
     // r[mate.tool.plan-step-complete]
-    async fn plan_step_complete(&self, step_index: u64, summary: String) -> McpToolCallResponse {
-        let Ok(step_index) = usize::try_from(step_index) else {
-            return McpToolCallResponse {
-                text: "step_index is too large".to_owned(),
-                is_error: true,
-                diffs: vec![],
-            };
+    async fn commit(&self, step_index: Option<u64>, message: String) -> McpToolCallResponse {
+        let step_index = match step_index {
+            Some(idx) => match usize::try_from(idx) {
+                Ok(i) => Some(i),
+                Err(_) => {
+                    return McpToolCallResponse {
+                        text: "step_index is too large".to_owned(),
+                        is_error: true,
+                        diffs: vec![],
+                    };
+                }
+            },
+            None => None,
         };
         Self::response(
             self.ship
-                .mate_tool_plan_step_complete(&self.session_id, step_index, summary)
+                .mate_tool_commit(&self.session_id, step_index, message)
                 .await,
         )
     }
@@ -8257,12 +8278,12 @@ mod tests {
             )));
         }
 
-        // Mate writes step 1's changes, then immediately calls plan_step_complete.
+        // Mate writes step 1's changes, then immediately calls commit.
         std::fs::write(project_root.join("notes.txt"), "first draft\n")
             .expect("test file should be written");
-        ship.mate_tool_plan_step_complete(&session_id, 0, "added initial notes".to_owned())
+        ship.mate_tool_commit(&session_id, Some(0), "added initial notes".to_owned())
             .await
-            .expect("plan_step_complete should succeed");
+            .expect("commit should succeed");
 
         let step_head = std::process::Command::new("git")
             .arg("-C")
@@ -8548,8 +8569,7 @@ mod tests {
             }]),
         );
         assert!(
-            prompt_with_plan
-                .contains("Ship uses `plan_step_complete` to create the step checkpoint commit"),
+            prompt_with_plan.contains("Ship uses `commit` to create the step checkpoint commit"),
             "unexpected prompt: {prompt_with_plan}"
         );
         assert!(

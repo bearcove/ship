@@ -187,7 +187,7 @@ pub trait MateMcp {
     async fn set_plan(&self, steps: Vec<PlanStepInput>) -> McpToolCallResponse;
 
     // r[mate.tool.plan-step-complete]
-    async fn plan_step_complete(&self, step_index: u64, summary: String) -> McpToolCallResponse;
+    async fn commit(&self, step_index: Option<u64>, message: String) -> McpToolCallResponse;
 
     // r[mate.tool.ask-captain]
     async fn mate_ask_captain(&self, question: String) -> McpToolCallResponse;
