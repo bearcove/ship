@@ -5633,7 +5633,7 @@ Here is your task:
         }
     }
 
-    async fn notify_session_list_changed(&self) {
+    pub(crate) async fn notify_session_list_changed(&self) {
         self.refresh_all_diff_stats().await;
 
         let sessions = self.sessions.lock().expect("sessions mutex poisoned");
