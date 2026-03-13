@@ -163,6 +163,7 @@ interface Props {
   planSteps: PlanStep[];
   matePlan: PlanStep[] | null;
   diffStats: WorktreeDiffStats | null;
+  canArchiveSession: boolean;
   onArchive: () => void;
   archiving: boolean;
 }
@@ -179,6 +180,7 @@ export function SessionHeader({
   planSteps,
   matePlan,
   diffStats,
+  canArchiveSession,
   onArchive,
   archiving,
 }: Props) {
@@ -243,11 +245,15 @@ export function SessionHeader({
                 <Plus size={13} />
                 New session
               </DropdownMenu.Item>
-              <DropdownMenu.Separator />
-              <DropdownMenu.Item color="red" onClick={onArchive} disabled={archiving}>
-                <Archive size={13} />
-                {archiving ? "Archiving…" : "Archive session"}
-              </DropdownMenu.Item>
+              {canArchiveSession && (
+                <>
+                  <DropdownMenu.Separator />
+                  <DropdownMenu.Item color="red" onClick={onArchive} disabled={archiving}>
+                    <Archive size={13} />
+                    {archiving ? "Archiving…" : "Archive session"}
+                  </DropdownMenu.Item>
+                </>
+              )}
             </DropdownMenu.Content>
           </DropdownMenu.Root>
         </div>

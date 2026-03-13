@@ -209,6 +209,7 @@ export function SessionViewPage({ debugMode }: { debugMode: boolean; onOpenSideb
               planSteps={planSteps}
               matePlan={matePlan}
               diffStats={diffStats}
+              canArchiveSession={hasAcceptedSessionWork}
               onArchive={() => void handleArchive(false)}
               archiving={archiving}
             />
@@ -230,13 +231,14 @@ export function SessionViewPage({ debugMode }: { debugMode: boolean; onOpenSideb
                 mateAcpInfo={eventState.mateAcpInfo}
               />
             )}
-            {(liveTask === null || liveTask.status.tag === "Accepted") && (
-              <Flex justify="center" px="4" pb="2">
-                <Button size="3" variant="outline" onClick={() => void handleArchive(false)}>
-                  Archive session
-                </Button>
-              </Flex>
-            )}
+            {hasAcceptedSessionWork &&
+              (liveTask === null || liveTask.status.tag === "Accepted") && (
+                <Flex justify="center" px="4" pb="2">
+                  <Button size="3" variant="outline" onClick={() => void handleArchive(false)}>
+                    Archive session
+                  </Button>
+                </Flex>
+              )}
             <Box className={feedContentColumn}>
               <UnifiedComposer
                 sessionId={session.id}
