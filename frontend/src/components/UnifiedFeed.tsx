@@ -433,7 +433,12 @@ function SingleBlock({
                   <TextBlock block={block as TextBlockType} />
                 </Box>
               </Box>
-              <BubbleActions block={block as TextBlockType} speakable isLast={isLast} timestamp={entry.timestamp ?? undefined} />
+              <BubbleActions
+                block={block as TextBlockType}
+                speakable={false}
+                isLast={isLast}
+                timestamp={entry.timestamp ?? undefined}
+              />
             </Box>
           </Box>
         );
@@ -449,7 +454,12 @@ function SingleBlock({
                   <TextBlock block={block as TextBlockType} />
                 </Box>
               </Box>
-              <BubbleActions block={block as TextBlockType} speakable isLast={isLast} timestamp={entry.timestamp ?? undefined} />
+              <BubbleActions
+                block={block as TextBlockType}
+                speakable
+                isLast={isLast}
+                timestamp={entry.timestamp ?? undefined}
+              />
             </Box>
           </Box>
         );
@@ -471,7 +481,12 @@ function SingleBlock({
                 <TextBlock block={block as TextBlockType} />
               </Box>
             </Box>
-            <BubbleActions block={block as TextBlockType} speakable isLast={isLast} timestamp={entry.timestamp ?? undefined} />
+            <BubbleActions
+              block={block as TextBlockType}
+              speakable
+              isLast={isLast}
+              timestamp={entry.timestamp ?? undefined}
+            />
           </Box>
         </Box>
       );
