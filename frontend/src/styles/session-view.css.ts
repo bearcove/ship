@@ -395,7 +395,7 @@ export const thinkingStopBtn = style({
   height: 28,
   borderRadius: "50%",
   background: "var(--gray-12)",
-  color: "white",
+  color: "var(--gray-1)",
   border: "none",
   cursor: "pointer",
   flexShrink: 0,
