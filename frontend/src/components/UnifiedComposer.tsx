@@ -332,6 +332,15 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
     if (await sendNow(content, to)) setText("");
   }
 
+  // Persist draft to localStorage
+  useEffect(() => {
+    if (text) {
+      localStorage.setItem(draftKey(sessionId), text);
+    } else {
+      localStorage.removeItem(draftKey(sessionId));
+    }
+  }, [sessionId, text]);
+
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
