@@ -11,7 +11,6 @@ import { WrongPortMessage } from "./components/WrongPortMessage";
 import { NotificationPrompt } from "./components/NotificationPrompt";
 import { SessionSidebar } from "./components/SessionSidebar";
 import { useSessionList } from "./hooks/useSessionList";
-import { useProjects } from "./hooks/useProjects";
 import { getConnectionState, onConnectionStateChanged } from "./api/client";
 import {
   appColumns,
@@ -46,7 +45,6 @@ export function App() {
   const currentSessionId = sessionMatch?.params.sessionId;
   const inSessionView = !!sessionMatch;
   const allSessions = useSessionList();
-  const allProjects = useProjects();
   const [debugMode, setDebugMode] = useState(readDebugPreference);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [taskPanelOpen, setTaskPanelOpen] = useState(false);
@@ -149,7 +147,6 @@ export function App() {
       <Box className={appColumns}>
         <Box className={appColLeft}>
           <SessionSidebar
-            projects={allProjects}
             sessions={allSessions}
             currentSessionId={currentSessionId}
             debugMode={debugMode}

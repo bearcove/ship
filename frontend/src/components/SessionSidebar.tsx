@@ -1,16 +1,14 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Box, Flex, IconButton, Select, Text, Tooltip } from "@radix-ui/themes";
+import { Box, Flex, IconButton, Text, Tooltip } from "@radix-ui/themes";
 import {
   BugIcon,
   FolderSimplePlusIcon,
   SpeakerHighIcon,
   SpeakerSlashIcon,
 } from "@phosphor-icons/react";
-import type { AgentKind, ProjectInfo, SessionSummary, TaskStatus } from "../generated/ship";
+import type { SessionSummary, TaskStatus } from "../generated/ship";
 import { useSoundEnabled } from "../context/SoundContext";
-import { useAgentDiscovery } from "../hooks/useAgentDiscovery";
-import { useAgentKindPrefs } from "../hooks/useAgentKindPrefs";
 import { AddProjectDialog } from "../pages/SessionListPage";
 import { useClientLogs } from "../api/client";
 import { QrCodeButton } from "./QrCodeButton";
@@ -50,45 +48,6 @@ function sortSessions(sessions: SessionSummary[]): SessionSummary[] {
     return 2;
   };
   return [...sessions].sort((a, b) => priority(a) - priority(b));
-}
-
-function AgentKindSelect({
-  label,
-  value,
-  onChange,
-  claudeAvailable,
-  codexAvailable,
-}: {
-  label: string;
-  value: AgentKind;
-  onChange: (k: AgentKind) => void;
-  claudeAvailable: boolean;
-  codexAvailable: boolean;
-}) {
-  return (
-    <Flex align="center" gap="2">
-      <Box width="7" flexShrink="0">
-        <Text size="2" color="gray">
-          {label}
-        </Text>
-      </Box>
-      <Select.Root
-        size="2"
-        value={value.tag}
-        onValueChange={(v) => onChange({ tag: v as "Claude" | "Codex" })}
-      >
-        <Select.Trigger variant="ghost" />
-        <Select.Content>
-          <Select.Item value="Claude" disabled={!claudeAvailable}>
-            Claude
-          </Select.Item>
-          <Select.Item value="Codex" disabled={!codexAvailable}>
-            Codex
-          </Select.Item>
-        </Select.Content>
-      </Select.Root>
-    </Flex>
-  );
 }
 
 function SessionRow({
@@ -146,7 +105,6 @@ function SessionRow({
 }
 
 interface Props {
-  projects: ProjectInfo[];
   sessions: SessionSummary[];
   currentSessionId?: string;
   debugMode: boolean;
@@ -166,8 +124,6 @@ export function SessionSidebar({
 }: Props) {
   const [addProjectOpen, setAddProjectOpen] = useState(false);
   const { soundEnabled, setSoundEnabled } = useSoundEnabled();
-  const discovery = useAgentDiscovery();
-  const { captainKind, setCaptainKind, mateKind, setMateKind } = useAgentKindPrefs();
   const clientLogs = useClientLogs();
 
   return (
@@ -181,22 +137,6 @@ export function SessionSidebar({
             </Text>
           </Link>
         </div>
-        <Flex direction="column" gap="3" pt="3" pb="3" px="3">
-          <AgentKindSelect
-            label="Captain"
-            value={captainKind}
-            onChange={setCaptainKind}
-            claudeAvailable={discovery.claude}
-            codexAvailable={discovery.codex}
-          />
-          <AgentKindSelect
-            label="Mate"
-            value={mateKind}
-            onChange={setMateKind}
-            claudeAvailable={discovery.claude}
-            codexAvailable={discovery.codex}
-          />
-        </Flex>
 
         <Box className={sidebarScrollArea}>
           {sessions.length === 0 ? (
