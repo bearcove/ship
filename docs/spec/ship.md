@@ -549,6 +549,13 @@ elapsed duration (from `assigned_at` to `completed_at`) in the tool response
 returned to the captain. Format: `Xs` for under a minute, `Xm Ys` for under an
 hour, `Xh Ym` otherwise.
 
+r[task.recap]
+When a task is accepted, the backend MUST emit a `TaskRecap` content block into
+the session feed. The block MUST include the list of commits that landed on the
+base branch (short hash and subject line for each) and aggregate diff statistics
+(files changed, insertions, deletions). The frontend MUST render this as a
+system notice in the feed.
+
 r[task.cancel]
 Tasks MUST be cancellable at any point in their lifecycle.
 
@@ -751,6 +758,9 @@ Ship MUST support the following content block types, mapped from ACP
   `RequestPermissionRequest`. Fields: `tool_call_id`, `tool_name`,
   `description`, `arguments`, `options: Vec<PermissionOption>`,
   optional `resolution`.
+- `TaskRecap` — emitted by the backend after a successful task accept merge.
+  Fields: `commits: Vec<CommitSummary>` (short hash + subject), `stats:
+  Option<TaskRecapStats>` (files changed, insertions, deletions).
 
 The frontend MUST have a renderer for each block type.
 

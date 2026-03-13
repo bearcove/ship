@@ -395,6 +395,19 @@ pub mod events {
         },
     }
 
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct CommitSummary {
+        pub hash: String,
+        pub subject: String,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct TaskRecapStats {
+        pub files_changed: u32,
+        pub insertions: u32,
+        pub deletions: u32,
+    }
+
     // r[event.content-block.types]
     #[repr(u8)]
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
@@ -437,6 +450,11 @@ pub mod events {
         Image {
             mime_type: String,
             data: Vec<u8>,
+        },
+        // r[task.recap]
+        TaskRecap {
+            commits: Vec<CommitSummary>,
+            stats: Option<TaskRecapStats>,
         },
     }
 
@@ -892,9 +910,9 @@ pub use agent::{
     PermissionRequest, PlanStep, PlanStepInput, PlanStepStatus, Role,
 };
 pub use events::{
-    BlockPatch, ContentBlock, GlobalEvent, PermissionResolution, SessionEvent,
-    SessionEventEnvelope, SubscribeMessage, TextSource, ToolCallContent, ToolCallLocation,
-    ToolCallStatus,
+    BlockPatch, CommitSummary, ContentBlock, GlobalEvent, PermissionResolution, SessionEvent,
+    SessionEventEnvelope, SubscribeMessage, TaskRecapStats, TextSource, ToolCallContent,
+    ToolCallLocation, ToolCallStatus,
 };
 pub use ids::{BlockId, ProjectName, SessionId, TaskId};
 pub use persistence::{CurrentTask, PersistedSession, SessionConfig, TaskContentRecord};
