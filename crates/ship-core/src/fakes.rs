@@ -254,6 +254,7 @@ struct FakeWorktreeInner {
     delete_branch_errors: HashMap<String, String>,
     reset_errors: HashMap<PathBuf, String>,
     unmerged_commits: HashMap<String, Vec<String>>,
+    commit_all_calls: Vec<(PathBuf, String)>,
 }
 
 #[derive(Clone, Default)]
@@ -356,6 +357,14 @@ impl FakeWorktreeOps {
             .reset_requests
             .clone()
     }
+
+    pub fn commit_all_calls(&self) -> Vec<(PathBuf, String)> {
+        self.inner
+            .lock()
+            .expect("fake worktree ops mutex poisoned")
+            .commit_all_calls
+            .clone()
+    }
 }
 
 impl WorktreeOps for FakeWorktreeOps {
@@ -405,6 +414,15 @@ impl WorktreeOps for FakeWorktreeOps {
         let inner = self.inner.lock().expect("fake worktree ops mutex poisoned");
 
         Ok(*inner.dirty_flags.get(path).unwrap_or(&false))
+    }
+
+    async fn commit_all(&self, worktree_path: &Path, message: &str) -> Result<(), WorktreeError> {
+        let mut inner = self.inner.lock().expect("fake worktree ops mutex poisoned");
+        inner
+            .commit_all_calls
+            .push((worktree_path.to_path_buf(), message.to_owned()));
+        inner.dirty_flags.insert(worktree_path.to_path_buf(), false);
+        Ok(())
     }
 
     async fn list_branches(&self, _repo_root: &Path) -> Result<Vec<String>, WorktreeError> {
