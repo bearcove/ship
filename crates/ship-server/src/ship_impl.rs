@@ -22,13 +22,14 @@ use ship_service::{CaptainMcp, CaptainMcpDispatcher, MateMcp, MateMcpDispatcher,
 use ship_types::{
     AgentDiscovery, AgentKind, AgentSnapshot, AgentState, ArchiveSessionRequest,
     ArchiveSessionResponse, AutonomyMode, BlockId, CaptainAssignExtras, CloseSessionRequest,
-    CloseSessionResponse, ContentBlock, CreateSessionRequest, CreateSessionResponse, CurrentTask,
-    GlobalEvent, HumanReviewRequest, McpDiffContent, McpServerConfig, McpStdioServerConfig,
-    McpToolCallResponse, PersistedSession, PlanStep, PlanStepInput, PlanStepStatus, ProjectInfo,
-    ProjectName, PromptContentPart, Role, ServerInfo, SessionConfig, SessionDetail, SessionEvent,
-    SessionEventEnvelope, SessionId, SessionStartupStage, SessionStartupState, SessionSummary,
-    SetAgentEffortResponse, SetAgentModelResponse, SubscribeMessage, TaskId, TaskRecord,
-    TaskStatus, ToolCallKind, ToolTarget, TranscribeSegment, WorktreeDiffStats,
+    CloseSessionResponse, CommitSummary, ContentBlock, CreateSessionRequest, CreateSessionResponse,
+    CurrentTask, GlobalEvent, HumanReviewRequest, McpDiffContent, McpServerConfig,
+    McpStdioServerConfig, McpToolCallResponse, PersistedSession, PlanStep, PlanStepInput,
+    PlanStepStatus, ProjectInfo, ProjectName, PromptContentPart, Role, ServerInfo, SessionConfig,
+    SessionDetail, SessionEvent, SessionEventEnvelope, SessionId, SessionStartupStage,
+    SessionStartupState, SessionSummary, SetAgentEffortResponse, SetAgentModelResponse,
+    SubscribeMessage, TaskId, TaskRecapStats, TaskRecord, TaskStatus, ToolCallKind, ToolTarget,
+    TranscribeSegment, WorktreeDiffStats,
 };
 use similar::TextDiff;
 use tokio::process::Command as TokioCommand;
@@ -1267,10 +1268,85 @@ Continue where you left off — wait for the human to give you direction."
             .await
             .map_err(|error| format!("rebase failed: {}", error.message))?;
 
+        let old_base_head = TokioCommand::new("git")
+            .args(["rev-parse", &base_branch])
+            .current_dir(&repo_root)
+            .output()
+            .await
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned());
+
         self.worktree_ops
             .merge_ff_only(&repo_root, &branch_name)
             .await
             .map_err(|error| format!("fast-forward merge failed: {}", error.message))?;
+
+        // Collect recap info now that the merge succeeded.
+        let (recap_commits, recap_stats) = if let Some(old_head) = old_base_head {
+            let log_output = TokioCommand::new("git")
+                .args(["log", &format!("{}..HEAD", old_head), "--format=%h %s"])
+                .current_dir(&repo_root)
+                .output()
+                .await
+                .ok()
+                .filter(|o| o.status.success());
+
+            let commits: Vec<CommitSummary> = log_output
+                .map(|o| {
+                    String::from_utf8_lossy(&o.stdout)
+                        .lines()
+                        .filter(|l| !l.is_empty())
+                        .map(|line| {
+                            let (hash, subject) = line.split_once(' ').unwrap_or((line, ""));
+                            CommitSummary {
+                                hash: hash.to_owned(),
+                                subject: subject.to_owned(),
+                            }
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            let stats = if !commits.is_empty() {
+                TokioCommand::new("git")
+                    .args(["diff", "--numstat", &old_head, "HEAD"])
+                    .current_dir(&repo_root)
+                    .output()
+                    .await
+                    .ok()
+                    .filter(|o| o.status.success())
+                    .map(|o| {
+                        let (files_changed, insertions, deletions) =
+                            String::from_utf8_lossy(&o.stdout)
+                                .lines()
+                                .filter(|l| !l.is_empty())
+                                .fold((0u32, 0u32, 0u32), |(fc, ins, del), line| {
+                                    let mut parts = line.split('\t');
+                                    let i = parts
+                                        .next()
+                                        .and_then(|s| s.parse::<u32>().ok())
+                                        .unwrap_or(0);
+                                    let d = parts
+                                        .next()
+                                        .and_then(|s| s.parse::<u32>().ok())
+                                        .unwrap_or(0);
+                                    (fc + 1, ins + i, del + d)
+                                });
+                        TaskRecapStats {
+                            files_changed,
+                            insertions,
+                            deletions,
+                        }
+                    })
+            } else {
+                None
+            };
+
+            (commits, stats)
+        } else {
+            (Vec::new(), None)
+        };
 
         // Second lock: merge succeeded, now transition and archive the task.
         {
@@ -1288,6 +1364,21 @@ Continue where you left off — wait for the human to give you direction."
                         block: ContentBlock::Text {
                             text: summary,
                             source: ship_types::TextSource::AgentMessage,
+                        },
+                    },
+                );
+            }
+
+            // r[task.recap]
+            if !recap_commits.is_empty() {
+                apply_event(
+                    active,
+                    SessionEvent::BlockAppend {
+                        block_id: BlockId::new(),
+                        role: Role::Captain,
+                        block: ContentBlock::TaskRecap {
+                            commits: recap_commits,
+                            stats: recap_stats,
                         },
                     },
                 );
