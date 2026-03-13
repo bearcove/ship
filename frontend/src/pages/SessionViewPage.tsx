@@ -188,6 +188,7 @@ export function SessionViewPage({
           completed_at: eventState.currentTaskCompletedAt,
         }
       : session.current_task;
+  const matePlan = mate?.state.tag === "Working" ? (mate.state.plan ?? null) : null;
 
   return (
     <Flex className={sessionViewRoot}>
@@ -215,6 +216,7 @@ export function SessionViewPage({
             loadingLabel={replayLabel}
             debugMode={debugMode}
           />
+          {matePlan && matePlan.length > 0 && <PlanPanel steps={matePlan} />}
           <UnifiedComposer
             sessionId={session.id}
             captain={captain}
@@ -250,31 +252,10 @@ export function SessionAgentRail({ sessionId }: { sessionId: string }) {
 
   if (!(captain ?? mate)) return null;
 
-  const matePlan = mate?.state.tag === "Working" ? mate.state.plan : null;
-  const hasTask = eventState.currentTaskStatus !== null;
-  const hasPlan = matePlan && matePlan.length > 0;
-
   return (
     <Box className={agentRail}>
       {captain && <AgentHeader sessionId={sessionId} agent={captain} avatarSrc={captainAvatar} />}
       {mate && <AgentHeader sessionId={sessionId} agent={mate} avatarSrc={mateAvatar} />}
-      {hasPlan ? (
-        <PlanPanel steps={matePlan} />
-      ) : (
-        <Flex
-          align="center"
-          justify="center"
-          direction="column"
-          gap="1"
-          py="4"
-          px="3"
-          style={{ flex: 1, opacity: 0.5 }}
-        >
-          <Text size="1" color="gray" align="center">
-            {hasTask ? "No plan yet" : "No active task"}
-          </Text>
-        </Flex>
-      )}
     </Box>
   );
 }
