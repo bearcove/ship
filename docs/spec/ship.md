@@ -63,6 +63,24 @@ to the requesting session. The dependency request captures at minimum the
 requester session, target project, requested outcome, and current coordination
 state.
 
+r[dependency.request.action-kind]
+Dependency requests MUST identify the action currently being proposed or
+tracked. At minimum Ship MUST support `CreateChildSession` and
+`MarkDependencyUsable`.
+
+r[dependency.request.phase]
+Dependency requests MUST track a first-class phase or status. At minimum the
+model MUST distinguish `PendingCreateApproval`, `WaitingOnChildSession`,
+`CreateRejected`, `CreateFailed`, `PendingFulfillmentApproval`, `Usable`, and
+`FulfillmentRejected`.
+
+r[dependency.request.summary]
+The dependency request summary returned by `get_session` and carried by
+`DependencyRequestChanged` MUST include at minimum: request ID, action kind,
+current phase/status, requested outcome, requester session ID, target project,
+optional child session ID, and resolution metadata describing the latest human
+decision or recorded failure.
+
 r[dependency.request.approval]
 When dependency child-session creation is proposed, Ship MUST place the
 dependency request in a pending human-action phase. Ship MUST NOT create the
@@ -84,10 +102,11 @@ The session model MUST expose a first-class coordination state separate from
 r[dependency.request.persistence]
 Dependency requests, parent/child session links, and coordination-blocked
 state MUST be durable across browser reloads and server restarts. After
-restart, Ship MUST restore whether a request was awaiting approval, had an
-active child session, or had been cancelled or rejected. Ship MUST NOT
-auto-create new child sessions solely because a stored dependency request
-exists.
+restart, Ship MUST restore the dependency request's current phase/status,
+including pending create approval, active child-session work, pending
+fulfillment approval, usable state, rejection, or child-session creation
+failure. Ship MUST NOT auto-create new child sessions solely because a stored
+dependency request exists.
 
 r[dependency.request.fulfillment-gate]
 Linked-session task completion and dependency fulfillment are separate facts.
@@ -336,6 +355,14 @@ used both to approve or reject dependency child-session creation and to
 approve or reject the later fulfillment/usable-state transition. The backend
 MUST persist the decision, update the dependency request record and derived
 coordination state, and emit the corresponding dependency/coordination events.
+Approving `CreateChildSession` MUST create the linked child session or
+transition the dependency request to `CreateFailed` with recorded failure
+metadata if child-session creation fails. Rejecting `CreateChildSession` MUST
+leave no child session and transition the request to `CreateRejected`.
+Approving `MarkDependencyUsable` MUST transition the dependency request to
+`Usable` and unblock the requester if that dependency request was the blocker.
+Rejecting `MarkDependencyUsable` MUST leave the dependency non-usable and keep
+or recompute the requester's blocked state accordingly.
 
 r[proto.reply-to-human]
 The protocol MUST support a `reply_to_human` operation that takes a session ID
@@ -663,8 +690,10 @@ and the blocking dependency request ID, if any. This is a top-level event.
 r[event.dependency-request-changed]
 The system MUST emit `DependencyRequestChanged` whenever a dependency request
 linked to the session is created or changes phase, linkage, pending human
-approval status, or resolution. The frontend uses this to render dependency
-request approval UI and restore dependency state after replay.
+approval status, or resolution. The payload is the full current dependency
+request summary per `dependency.request.summary`. The frontend uses this to
+render dependency request approval UI and restore dependency state after
+replay.
 
 r[event.agent-effort-changed]
 The system MUST emit an `AgentEffortChanged` event when an agent's thinking
