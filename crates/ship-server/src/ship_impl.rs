@@ -1329,6 +1329,19 @@ Continue where you left off — wait for the human to give you direction."
             .map_err(|error| error.to_string())?
             .to_path_buf();
 
+        // Auto-commit any uncommitted changes so the rebase starts clean.
+        let has_changes = self
+            .worktree_ops
+            .has_uncommitted_changes(&worktree_path)
+            .await
+            .map_err(|e| format!("failed to check uncommitted changes: {}", e.message))?;
+        if has_changes {
+            self.worktree_ops
+                .commit_all(&worktree_path, "checkpoint: uncommitted changes")
+                .await
+                .map_err(|e| format!("failed to commit uncommitted changes: {}", e.message))?;
+        }
+
         self.worktree_ops
             .rebase_onto(&worktree_path, &base_branch)
             .await
