@@ -75,6 +75,9 @@ enum Command {
 
     /// Listen to the default mic and transcribe speech using Silero VAD + Whisper.
     Listen(ListenArgs),
+
+    /// Synthesize speech and write raw 24kHz mono f32-LE PCM to stdout.
+    Speak(SpeakArgs),
 }
 
 #[derive(Debug, facet::Facet)]
@@ -147,6 +150,13 @@ struct ListenArgs {
 }
 
 #[derive(Debug, facet::Facet)]
+struct SpeakArgs {
+    /// Text to synthesize.
+    #[facet(args::positional)]
+    text: String,
+}
+
+#[derive(Debug, facet::Facet)]
 struct ProjectAddArgs {
     /// Path to repository.
     #[facet(args::positional)]
@@ -192,6 +202,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Command::Project { command } => run_project(command).await,
         Command::Probe(args) => run_probe(args).await,
         Command::Listen(args) => run_listen(args).await,
+        Command::Speak(args) => run_speak(args).await,
     }
 }
 
@@ -1169,6 +1180,20 @@ async fn shutdown_signal() {
         _ = ctrl_c => {}
         _ = terminate => {}
     }
+}
+
+async fn run_speak(args: SpeakArgs) -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env().add_directive(Level::INFO.into()))
+        .init();
+
+    let mut model = tokio::task::spawn_blocking(kyutai_tts::KyutaiTtsModel::load).await??;
+    let mut stdout = std::io::stdout().lock();
+    model.speak(&args.text, |bytes| {
+        let _ = stdout.write_all(&bytes);
+    })?;
+
+    Ok(())
 }
 
 async fn run_listen(args: ListenArgs) -> Result<(), Box<dyn std::error::Error>> {
