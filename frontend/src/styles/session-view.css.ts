@@ -227,7 +227,7 @@ export const thinkingBubble = style({
   display: "inline-flex",
   alignItems: "center",
   gap: 8,
-  padding: "10px var(--space-4)",
+  padding: "12px var(--space-4)",
   borderRadius: "var(--radius-6)",
   border: "1px solid var(--gray-a4)",
   background: "var(--gray-a2)",

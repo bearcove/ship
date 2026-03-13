@@ -430,27 +430,6 @@ function ThinkingBubble({
   return (
     <Box className={feedRowAgent} style={{ paddingBottom: 0 }}>
       <div className={thinkingBubble}>
-        <img
-          src={avatarSrc}
-          alt={agentName}
-          style={{ width: 36, height: 36, borderRadius: "50%", flexShrink: 0 }}
-        />
-        <span className={liveBubbleDot} />
-        <span className={liveBubbleDot} />
-        <span className={liveBubbleDot} />
-        <Text size="2" color="gray">
-          {thinkingTokens} tokens
-        </Text>
-        {toolsOk > 0 && (
-          <Text size="2" style={{ color: "var(--green-11)" }}>
-            {toolsOk}✓
-          </Text>
-        )}
-        {toolsFailed > 0 && (
-          <Text size="2" style={{ color: "var(--red-11)" }}>
-            {toolsFailed}✗
-          </Text>
-        )}
         <button
           type="button"
           onClick={() => {
@@ -470,11 +449,41 @@ function ThinkingBubble({
             color: "var(--gray-10)",
             padding: "2px",
             borderRadius: "var(--radius-1)",
-            marginLeft: "var(--space-1)",
           }}
         >
           <Stop size={16} weight="fill" />
         </button>
+        <span className={liveBubbleDot} />
+        <span className={liveBubbleDot} />
+        <span className={liveBubbleDot} />
+        <Text
+          size="2"
+          color="gray"
+          style={{ marginLeft: "var(--space-2)", fontFamily: "var(--font-mono, monospace)" }}
+        >
+          {thinkingTokens} tokens
+        </Text>
+        {toolsOk > 0 && (
+          <Text
+            size="2"
+            style={{ color: "var(--green-11)", fontFamily: "var(--font-mono, monospace)" }}
+          >
+            {toolsOk}✓
+          </Text>
+        )}
+        {toolsFailed > 0 && (
+          <Text
+            size="2"
+            style={{ color: "var(--red-11)", fontFamily: "var(--font-mono, monospace)" }}
+          >
+            {toolsFailed}✗
+          </Text>
+        )}
+        <img
+          src={avatarSrc}
+          alt={agentName}
+          style={{ width: 36, height: 36, borderRadius: "50%", flexShrink: 0 }}
+        />
       </div>
     </Box>
   );
