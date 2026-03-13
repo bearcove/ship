@@ -354,14 +354,42 @@ export const liveBubble = style({
 });
 
 export const thinkingBubble = style({
-  position: "relative",
   display: "inline-flex",
   alignItems: "center",
-  gap: 8,
-  padding: "12px var(--space-4)",
-  borderRadius: "var(--radius-6)",
-  border: "1px solid var(--gray-a4)",
-  background: "var(--gray-a2)",
+  gap: 10,
+  padding: "8px 0",
+});
+
+const shimmerMove = keyframes({
+  from: { backgroundPosition: "200% center" },
+  to: { backgroundPosition: "-200% center" },
+});
+
+export const shimmerText = style({
+  background: "linear-gradient(90deg, var(--gray-10) 30%, var(--gray-1) 50%, var(--gray-10) 70%)",
+  backgroundSize: "200% auto",
+  WebkitBackgroundClip: "text",
+  backgroundClip: "text",
+  WebkitTextFillColor: "transparent",
+  color: "transparent",
+  animation: `${shimmerMove} 3s linear infinite`,
+});
+
+export const thinkingStopBtn = style({
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  width: 28,
+  height: 28,
+  borderRadius: "50%",
+  background: "var(--red-9)",
+  color: "white",
+  border: "none",
+  cursor: "pointer",
+  flexShrink: 0,
+  selectors: {
+    "&:hover": { background: "var(--red-10)" },
+  },
 });
 
 export const liveBubbleDot = style({

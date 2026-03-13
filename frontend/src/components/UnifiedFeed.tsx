@@ -25,6 +25,8 @@ import {
   liveBubbleDot,
   liveBubblesRow,
   thinkingBubble,
+  shimmerText,
+  thinkingStopBtn,
   startupFeedBody,
   startupFeedItem,
   feedMessageMeta,
@@ -431,6 +433,7 @@ function ThinkingBubble({
       <div className={thinkingBubble}>
         <button
           type="button"
+          className={thinkingStopBtn}
           onClick={() => {
             void (async () => {
               const client = await getShipClient();
@@ -438,19 +441,8 @@ function ThinkingBubble({
             })();
           }}
           title="Stop agent"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            color: "var(--gray-10)",
-            padding: "2px",
-            borderRadius: "var(--radius-1)",
-          }}
         >
-          <Stop size={16} weight="fill" />
+          <Stop size={14} weight="fill" />
         </button>
         <img
           src={avatarSrc}
@@ -461,16 +453,16 @@ function ThinkingBubble({
         <span className={liveBubbleDot} />
         <span className={liveBubbleDot} />
         {toolsOk > 0 && (
-          <Text size="2" style={{ color: "var(--green-11)" }}>
+          <Text size="2" className={shimmerText}>
             {toolsOk}✓
           </Text>
         )}
         {toolsFailed > 0 && (
-          <Text size="2" style={{ color: "var(--red-11)" }}>
+          <Text size="2" className={shimmerText}>
             {toolsFailed}✗
           </Text>
         )}
-        <Text size="2" color="gray" style={{ marginLeft: "auto" }}>
+        <Text size="2" className={shimmerText} style={{ marginLeft: "auto" }}>
           {thinkingTokens} tokens
         </Text>
       </div>
