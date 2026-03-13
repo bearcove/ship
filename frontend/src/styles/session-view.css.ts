@@ -137,8 +137,10 @@ export const feedBubbleMate = style({
 });
 
 export const feedBubbleUser = style({
-  background: "color-mix(in srgb, var(--accent-9) 7%, var(--gray-a2))",
-  border: "none",
+  background: "color-mix(in srgb, var(--accent-9) 12%, var(--gray-a1))",
+  borderColor: "var(--accent-a4)",
+  borderWidth: "1px",
+  borderStyle: "solid",
 });
 
 export const feedBubbleRelay = style({
@@ -150,6 +152,8 @@ export const feedBubbleRelay = style({
 export const feedBubbleCaptain = style({
   background: "transparent",
   border: "none",
+  borderRight: "1px solid var(--gray-a4)",
+  borderRadius: "0",
 });
 
 export const feedToolGroup = style({
@@ -490,7 +494,7 @@ export const appColCenter = style({
   background: "var(--color-background)",
   borderLeft: "1px solid var(--gray-a5)",
   borderRight: "1px solid var(--gray-a5)",
-  boxShadow: "0 0 40px rgba(0, 0, 0, 0.08)",
+  // boxShadow: "0 0 40px rgba(0, 0, 0, 0.08)",
 });
 
 export const appColRight = style({
@@ -685,6 +689,107 @@ export const sessionTopBarActions = style({
   alignItems: "center",
   gap: "var(--space-2)",
   flexShrink: 0,
+});
+
+// ─── SessionHeader ────────────────────────────────────────────────────────────
+
+export const sessionHeaderRoot = style({
+  flexShrink: 0,
+  borderBottom: "1px solid var(--gray-a4)",
+  position: "relative",
+});
+
+export const sessionHeaderRow1 = style({
+  display: "flex",
+  alignItems: "center",
+  gap: "var(--space-1)",
+  padding: "var(--space-2) var(--space-2) var(--space-2) var(--space-3)",
+  minHeight: 40,
+});
+
+export const sessionHeaderTitle = style({
+  flex: 1,
+  minWidth: 0,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+});
+
+export const sessionHeaderRow2 = style({
+  display: "flex",
+  alignItems: "center",
+  gap: "var(--space-2)",
+  padding: "var(--space-1) var(--space-3) var(--space-2)",
+  borderTop: "1px solid var(--gray-a3)",
+  width: "100%",
+  border: 0,
+  background: "transparent",
+  color: "inherit",
+  textAlign: "left",
+  cursor: "pointer",
+  selectors: {
+    "&:hover": {
+      background: "var(--gray-a2)",
+    },
+  },
+});
+
+export const sessionHeaderRow2Title = style({
+  flex: 1,
+  minWidth: 0,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+});
+
+export const sessionHeaderExpanded = style({
+  borderTop: "1px solid var(--gray-a4)",
+  background: "var(--gray-a1)",
+  maxHeight: 0,
+  overflow: "hidden",
+  transition: "max-height 0.22s ease",
+  selectors: {
+    '&[data-open="true"]': {
+      maxHeight: "28rem",
+      overflowY: "auto",
+    },
+  },
+});
+
+export const sessionHeaderPanelInner = style({
+  padding: "var(--space-3)",
+  display: "flex",
+  flexDirection: "column",
+  gap: "var(--space-4)",
+});
+
+export const sessionHeaderSectionLabel = style({
+  fontSize: "var(--font-size-1)",
+  letterSpacing: "0.07em",
+  textTransform: "uppercase",
+  color: "var(--gray-10)",
+  marginBottom: "var(--space-2)",
+});
+
+export const sessionHeaderAgentRow = style({
+  display: "flex",
+  alignItems: "center",
+  gap: "var(--space-2)",
+  flexWrap: "wrap",
+});
+
+export const sessionHeaderAgentLabel = style({
+  fontSize: "var(--font-size-1)",
+  color: "var(--gray-10)",
+  width: 46,
+  flexShrink: 0,
+});
+
+export const sessionHeaderBranchMeta = style({
+  display: "flex",
+  alignItems: "center",
+  gap: "var(--space-2)",
+  flexWrap: "wrap",
 });
 
 export const agentHeader = style({
@@ -1380,23 +1485,16 @@ export const bubbleCopyBtn = style({
 export const bubbleActions = style({
   display: "flex",
   flexDirection: "column",
-  gap: "var(--space-1)",
+  gap: "var(--space-2)",
   alignSelf: "flex-start",
   flexShrink: 0,
-  opacity: 0,
-  transition: "opacity 0.15s",
-  "@media": {
-    "(hover: none)": {
-      opacity: 1,
-    },
-  },
 });
 
 export const feedBubbleWithActions = style({
   display: "flex",
   flexDirection: "row",
   alignItems: "flex-start",
-  gap: "var(--space-1)",
+  gap: "var(--space-2)",
   flex: 1,
   minWidth: 0,
 });

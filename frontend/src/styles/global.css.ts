@@ -67,7 +67,7 @@ globalStyle(".radix-themes", {
     "--code-font-family": monoFontStack,
     "--strong-font-family": sansFontStack,
   },
-  backgroundColor: "#f3f3f5",
+  backgroundColor: "#fbfbfa",
   "@media": {
     "(prefers-color-scheme: dark)": {
       backgroundColor: "#111113",

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Routes, Route, useMatch } from "react-router-dom";
+import { Routes, Route, useMatch, useNavigate } from "react-router-dom";
 import { Flex, Box, IconButton } from "@radix-ui/themes";
-import { List, ListChecks } from "@phosphor-icons/react";
+import { List } from "@phosphor-icons/react";
 import { SessionListPage } from "./pages/SessionListPage";
-import { SessionAgentRail, SessionViewPage } from "./pages/SessionViewPage";
+import { SessionViewPage } from "./pages/SessionViewPage";
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { ConnectingSplash } from "./components/ConnectingSplash";
 import { ReconnectingIndicator } from "./components/ReconnectingIndicator";
@@ -18,9 +18,6 @@ import {
   appColCenter,
   appColRight,
   floatingHamburger,
-  floatingTaskBtn,
-  taskPanelBackdrop,
-  taskPanelRoot,
 } from "./styles/session-view.css";
 
 function readDebugPreference(): boolean {
@@ -47,7 +44,6 @@ export function App() {
   const allSessions = useSessionList();
   const [debugMode, setDebugMode] = useState(readDebugPreference);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [taskPanelOpen, setTaskPanelOpen] = useState(false);
   const [connState, setConnState] = useState(() => getConnectionState());
   const hasEverConnected = useRef(connState === "connected");
 
@@ -64,6 +60,7 @@ export function App() {
     });
   }, []);
 
+  const navigate = useNavigate();
   const toggleDebug = useCallback(() => setDebugMode((v) => !v), []);
 
   useEffect(() => {
@@ -76,17 +73,10 @@ export function App() {
     function onTouchEnd(e: TouchEvent) {
       const dx = e.changedTouches[0].clientX - startX;
       const dy = e.changedTouches[0].clientY - startY;
-      // Swipe right from left half → open sidebar
-      if (startX < window.innerWidth / 2 && dx > 60 && Math.abs(dy) < 80) {
-        setSidebarOpen(true);
-      }
-      // Swipe left from right half → open task panel
-      if (startX > window.innerWidth / 2 && dx < -60 && Math.abs(dy) < 80) {
-        setTaskPanelOpen(true);
-      }
-      // Swipe right while task panel is open → close it
-      if (taskPanelOpen && dx > 60 && Math.abs(dy) < 80) {
-        setTaskPanelOpen(false);
+      if (!inSessionView) return;
+      // Swipe left anywhere in session view → go back to session list
+      if (dx < -60 && Math.abs(dy) < 80) {
+        navigate("/");
       }
     }
     window.addEventListener("touchstart", onTouchStart, { passive: true });
@@ -95,7 +85,7 @@ export function App() {
       window.removeEventListener("touchstart", onTouchStart);
       window.removeEventListener("touchend", onTouchEnd);
     };
-  }, [taskPanelOpen]);
+  }, [inSessionView, navigate]);
 
   if (connState === "wrong-port") {
     return <WrongPortMessage />;
@@ -119,18 +109,7 @@ export function App() {
           <List size={18} />
         </IconButton>
       )}
-      {inSessionView && currentSessionId && (
-        <IconButton
-          className={floatingTaskBtn}
-          variant="soft"
-          color="gray"
-          size="2"
-          onClick={() => setTaskPanelOpen(true)}
-          aria-label="Open task panel"
-        >
-          <ListChecks size={18} />
-        </IconButton>
-      )}
+
       {connState !== "reconnecting" && (
         <ConnectionBanner
           connected={connState === "connected"}
@@ -168,17 +147,6 @@ export function App() {
         </Box>
         <Box className={appColRight} />
       </Box>
-
-      {inSessionView && currentSessionId && (
-        <>
-          {taskPanelOpen && (
-            <Box className={taskPanelBackdrop} onClick={() => setTaskPanelOpen(false)} />
-          )}
-          <Box className={taskPanelRoot} data-open={taskPanelOpen}>
-            <SessionAgentRail sessionId={currentSessionId} />
-          </Box>
-        </>
-      )}
 
       {connState === "reconnecting" && hasEverConnected.current && <ReconnectingIndicator />}
     </Flex>

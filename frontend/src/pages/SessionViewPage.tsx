@@ -1,152 +1,38 @@
 import { useEffect, useState } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
-import { Box, Callout, Flex, IconButton, Spinner, Text, Tooltip } from "@radix-ui/themes";
-import { Archive, ArrowLeft, List, Plus, Warning } from "@phosphor-icons/react";
+import { useParams, useNavigate } from "react-router-dom";
+import { Box, Callout, Flex, Spinner, Text } from "@radix-ui/themes";
+import { Warning } from "@phosphor-icons/react";
 import { useSession } from "../hooks/useSession";
 import { useSessionState } from "../hooks/useSessionState";
 import { refreshSessionList } from "../hooks/useSessionList";
 import { UnifiedFeed } from "../components/UnifiedFeed";
 import { UnifiedComposer } from "../components/UnifiedComposer";
-import { SessionTaskDrawer } from "../components/SessionTaskDrawer";
-
+import { SessionHeader } from "../components/SessionHeader";
 import { SteerReview } from "../components/SteerReview";
 import { HumanReview } from "../components/HumanReview";
 import { SessionDebugPanel } from "../components/SessionDebugPanel";
 import {
   agentRail,
   feedContentColumn,
-  hamburgerBtn,
   sessionFeedColumn,
-  sessionTopBar,
-  sessionTopBarActions,
-  sessionTopBarAgentSection,
-  sessionTopBarBreadcrumb,
-  sessionTopBarDivider,
-  sessionTopBarLeft,
-  sessionTopBarRight,
   sessionViewRoot,
 } from "../styles/session-view.css";
 import { AgentHeader } from "../components/AgentHeader";
-import { AgentModelPicker } from "../components/AgentModelPicker";
-import { AgentEffortPicker } from "../components/AgentEffortPicker";
 import captainAvatar from "../assets/avatars/captain.png";
 import mateAvatar from "../assets/avatars/mate.png";
 import { getShipClient } from "../api/client";
 import { ArchiveSessionDialog, NewSessionDialog } from "./SessionListPage";
-import type { AgentSnapshot, SessionSummary, TaskRecord } from "../generated/ship";
+import type { SessionSummary } from "../generated/ship";
 import { useWorktreeDiffStats } from "../hooks/useWorktreeDiffStats";
-
-function SessionTopBar({
-  sessionId,
-  project,
-  title,
-  branchName,
-  captain,
-  mate,
-  onOpenSidebar,
-  onArchive,
-  archiving,
-}: {
-  sessionId: string;
-  project: string;
-  title: string | null;
-  branchName: string;
-  captain: AgentSnapshot | null;
-  mate: AgentSnapshot | null;
-  onOpenSidebar: () => void;
-  onArchive: () => void;
-  archiving: boolean;
-}) {
-  const displayTitle = title ?? branchName;
-  const [newSessionOpen, setNewSessionOpen] = useState(false);
-  return (
-    <>
-      <div className={sessionTopBar}>
-        <div className={sessionTopBarLeft}>
-          <IconButton
-            className={hamburgerBtn}
-            variant="ghost"
-            color="gray"
-            size="2"
-            onClick={onOpenSidebar}
-            aria-label="Open sidebar"
-          >
-            <List size={18} />
-          </IconButton>
-          <Link to="/" style={{ color: "var(--gray-11)", display: "flex", alignItems: "center" }}>
-            <ArrowLeft size={18} />
-          </Link>
-          <div className={sessionTopBarBreadcrumb}>
-            <Text size="2" color="gray">
-              {project}
-            </Text>
-            <Text size="2" color="gray">
-              {" / "}
-            </Text>
-            <Text size="2" color="gray">
-              {displayTitle}
-            </Text>
-          </div>
-        </div>
-        <div className={sessionTopBarRight}>
-          {captain && (
-            <div className={sessionTopBarAgentSection}>
-              <AgentModelPicker sessionId={sessionId} agent={captain} />
-              <AgentEffortPicker sessionId={sessionId} agent={captain} />
-            </div>
-          )}
-          {captain && mate && <div className={sessionTopBarDivider} />}
-          {mate && (
-            <div className={sessionTopBarAgentSection}>
-              <AgentModelPicker sessionId={sessionId} agent={mate} />
-              <AgentEffortPicker sessionId={sessionId} agent={mate} />
-            </div>
-          )}
-        </div>
-        <div className={sessionTopBarActions}>
-          <Tooltip content="New session">
-            <IconButton
-              variant="ghost"
-              color="gray"
-              size="2"
-              onClick={() => setNewSessionOpen(true)}
-              aria-label="New session"
-            >
-              <Plus size={16} />
-            </IconButton>
-          </Tooltip>
-          <Tooltip content="Archive session">
-            <IconButton
-              variant="ghost"
-              color="gray"
-              size="2"
-              onClick={onArchive}
-              aria-label="Archive session"
-              loading={archiving}
-            >
-              <Archive size={16} />
-            </IconButton>
-          </Tooltip>
-        </div>
-      </div>
-      <NewSessionDialog
-        open={newSessionOpen}
-        onOpenChange={setNewSessionOpen}
-        preselectedProject={project}
-      />
-    </>
-  );
-}
 
 // r[view.session]
 // r[ui.layout.session-view]
 // r[proto.hydration-flow]
 export function SessionViewPage({
   debugMode,
-  onOpenSidebar,
 }: {
   debugMode: boolean;
-  onOpenSidebar: () => void;
+  onOpenSidebar?: () => void;
 }) {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
@@ -164,7 +50,7 @@ export function SessionViewPage({
   useEffect(() => {
     function handler(e: KeyboardEvent) {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (e.key === "Escape") onOpenSidebar();
+      if (e.key === "Escape") navigate("/");
       if (e.key === "d" && e.metaKey) {
         e.preventDefault();
         setDuplicateOpen(true);
@@ -172,7 +58,7 @@ export function SessionViewPage({
     }
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [onOpenSidebar]);
+  }, [navigate]);
 
   if (error) {
     return (
@@ -315,24 +201,20 @@ export function SessionViewPage({
       <Flex className={sessionViewRoot}>
         <Flex style={{ flex: 1, overflow: "hidden", minHeight: 0 }}>
           <Box className={sessionFeedColumn}>
-            <SessionTopBar
+            <SessionHeader
               sessionId={session.id}
               project={session.project}
               title={eventState.title ?? session.title}
               branchName={session.branch_name}
               captain={captain ?? null}
               mate={mate ?? null}
-              onOpenSidebar={onOpenSidebar}
-              onArchive={() => void handleArchive(false)}
-              archiving={archiving}
-            />
-            <SessionTaskDrawer
               liveTask={liveTask}
               taskHistory={session.task_history}
-              branchName={session.branch_name}
-              diffStats={diffStats}
               planSteps={planSteps}
               matePlan={matePlan}
+              diffStats={diffStats}
+              onArchive={() => void handleArchive(false)}
+              archiving={archiving}
             />
             <UnifiedFeed
               sessionId={session.id}
