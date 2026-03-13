@@ -141,7 +141,7 @@ describe("AgentHeader", () => {
       }),
     );
 
-    fireEvent.pointerDown(screen.getByRole("button", { name: "gpt-5-codex" }), {
+    fireEvent.pointerDown(screen.getByText("gpt-5-codex"), {
       button: 0,
       ctrlKey: false,
     });
