@@ -2,6 +2,7 @@ import { Fragment, useState, useRef, useEffect } from "react";
 import { Box, Flex, Spinner, Text } from "@radix-ui/themes";
 import { ArrowDown, CaretRight, CaretDown } from "@phosphor-icons/react";
 import type {
+  AgentKind,
   AgentSnapshot,
   ContentBlock,
   Role,
@@ -9,6 +10,7 @@ import type {
   TaskStatus,
 } from "../generated/ship";
 import type { BlockEntry } from "../state/blockStore";
+import { AgentKindIcon } from "./AgentKindIcon";
 import { TextBlock } from "./blocks/TextBlock";
 import { ToolCallBlock } from "./blocks/ToolCallBlock";
 import { ErrorBlock } from "./blocks/ErrorBlock";
@@ -19,7 +21,9 @@ import captainAvatar from "../assets/avatars/captain.png";
 import mateAvatar from "../assets/avatars/mate.png";
 import {
   agentAvatar,
+  agentAvatarBadge,
   agentAvatarSpacer,
+  agentAvatarWrapper,
   feedBubble,
   feedBubbleCol,
   feedBubbleColUser,
@@ -134,10 +138,24 @@ function segmentAgentRole(seg: FeedSegment): Role | null {
 
 // ─── Avatar ───────────────────────────────────────────────────────────────────
 
-function Avatar({ role, show }: { role: Role; show: boolean }) {
+function Avatar({ role, show, kind }: { role: Role; show: boolean; kind?: AgentKind }) {
   if (!show) return <div className={agentAvatarSpacer} />;
   const src = role.tag === "Captain" ? captainAvatar : mateAvatar;
   const label = role.tag === "Captain" ? "Captain" : "Mate";
+  if (kind) {
+    return (
+      <div className={agentAvatarWrapper}>
+        <img src={src} className={agentAvatar} alt={label} />
+        <div className={agentAvatarBadge}>
+          <div
+            style={{ width: 10, height: 10, transform: "scale(0.56)", transformOrigin: "center" }}
+          >
+            <AgentKindIcon kind={kind} />
+          </div>
+        </div>
+      </div>
+    );
+  }
   return <img src={src} className={agentAvatar} alt={label} />;
 }
 
@@ -152,10 +170,12 @@ function ToolGroup({
   entries,
   role,
   showAvatar,
+  kind,
 }: {
   entries: BlockEntry[];
   role: Role;
   showAvatar: boolean;
+  kind?: AgentKind;
 }) {
   const [expanded, setExpanded] = useState(false);
   const count = entries.length;
@@ -165,7 +185,7 @@ function ToolGroup({
 
   return (
     <Box className={feedRowAgent}>
-      <Avatar role={role} show={showAvatar} />
+      <Avatar role={role} show={showAvatar} kind={kind} />
       <Box className={feedToolGroup}>
         <div
           className={`${feedToolGroupHeader}${expanded ? ` ${feedToolGroupHeaderExpanded}` : ""}`}
@@ -203,12 +223,14 @@ function ThoughtBlock({
   block,
   role,
   showAvatar,
+  kind,
   prevTimestamp,
   timestamp,
 }: {
   block: TextBlockType;
   role: Role;
   showAvatar: boolean;
+  kind?: AgentKind;
   prevTimestamp?: string | null;
   timestamp?: string | null;
 }) {
@@ -224,7 +246,7 @@ function ThoughtBlock({
 
   return (
     <Box className={feedRowAgent}>
-      <Avatar role={role} show={showAvatar} />
+      <Avatar role={role} show={showAvatar} kind={kind} />
       <Box className={feedToolGroup}>
         <div
           className={`${feedToolGroupHeader}${expanded ? ` ${feedToolGroupHeaderExpanded}` : ""}`}
@@ -270,6 +292,7 @@ function SingleBlock({
 }) {
   const { block, blockId, role } = entry;
   const isCaptain = role.tag === "Captain";
+  const kind = agentForBlock?.kind;
 
   switch (block.tag) {
     case "Text": {
@@ -308,7 +331,7 @@ function SingleBlock({
       if (isHuman && role.tag === "Mate") {
         return (
           <Box className={feedRowAgent}>
-            <Avatar role={{ tag: "Captain" }} show={showAvatar} />
+            <Avatar role={{ tag: "Captain" }} show={showAvatar} kind={kind} />
             <Box className={feedBubbleCol}>
               <Box className={`${feedBubble} ${feedBubbleRelay}`}>
                 <TextBlock block={block as TextBlockType} speakable />
@@ -328,6 +351,7 @@ function SingleBlock({
             block={block as TextBlockType}
             role={role}
             showAvatar={showAvatar}
+            kind={kind}
             prevTimestamp={prevTimestamp}
             timestamp={entry.timestamp}
           />
@@ -337,7 +361,7 @@ function SingleBlock({
       // Agent message — left side with avatar
       return (
         <Box className={feedRowAgent}>
-          <Avatar role={role} show={showAvatar} />
+          <Avatar role={role} show={showAvatar} kind={kind} />
           <Box className={feedBubbleCol}>
             <Box className={`${feedBubble}${isCaptain ? "" : ` ${feedBubbleMate}`}`}>
               <TextBlock block={block as TextBlockType} speakable />
@@ -353,7 +377,7 @@ function SingleBlock({
     case "ToolCall":
       return (
         <Box className={feedRowAgent}>
-          <Avatar role={role} show={showAvatar} />
+          <Avatar role={role} show={showAvatar} kind={kind} />
           <Box className={feedToolGroup}>
             <ToolCallBlock block={block} />
           </Box>
@@ -400,7 +424,7 @@ function SingleBlock({
       // Mate/relay image — left side, captain avatar
       return (
         <Box className={feedRowAgent}>
-          <Avatar role={{ tag: "Captain" }} show={showAvatar} />
+          <Avatar role={{ tag: "Captain" }} show={showAvatar} kind={kind} />
           <Box className={feedBubbleCol}>
             <Box className={`${feedBubble} ${feedBubbleRelay}`}>
               <ImageBlock block={block} />
@@ -437,10 +461,10 @@ function StartupFeedState({ startupState }: { startupState: SessionStartupState 
 
 // ─── Live bubbles ─────────────────────────────────────────────────────────────
 
-function LiveBubble({ role }: { role: Role }) {
+function LiveBubble({ role, kind }: { role: Role; kind?: AgentKind }) {
   return (
     <Box className={feedRowAgent} style={{ paddingBottom: 0 }}>
-      <Avatar role={role} show />
+      <Avatar role={role} show kind={kind} />
       <Box className={liveBubble}>
         <span className={liveBubbleDot} />
         <span className={liveBubbleDot} />
@@ -521,6 +545,10 @@ export function UnifiedFeed({
   const captainWorking = captain?.state.tag === "Working";
   const mateWorking = mate?.state.tag === "Working";
 
+  function kindForRole(role: Role): AgentKind | undefined {
+    return role.tag === "Captain" ? captain?.kind : mate?.kind;
+  }
+
   const MAX_RENDERED_BLOCKS = 80;
   const truncated = blocks.length > MAX_RENDERED_BLOCKS;
   const visibleBlocks = truncated ? blocks.slice(blocks.length - MAX_RENDERED_BLOCKS) : blocks;
@@ -589,11 +617,20 @@ export function UnifiedFeed({
                   entries={seg.entries}
                   role={seg.role}
                   showAvatar={showAvatar}
+                  kind={kindForRole(seg.role)}
                 />
               );
             }
 
-            const agentForBlock = seg.entry.role.tag === "Captain" ? captain : mate;
+            const agentRole = segmentAgentRole(seg);
+            const agentForBlock =
+              agentRole?.tag === "Captain"
+                ? captain
+                : agentRole?.tag === "Mate"
+                  ? mate
+                  : seg.entry.role.tag === "Captain"
+                    ? captain
+                    : mate;
             const prevTimestamp = idx > 0 ? segmentLastTimestamp(segments[idx - 1]) : null;
             return (
               <Fragment key={seg.entry.blockId}>
@@ -660,8 +697,10 @@ export function UnifiedFeed({
           )}
 
         <Box className={liveBubblesRow}>
-          {captainWorking && <LiveBubble role={{ tag: "Captain" }} />}
-          {mateWorking && <LiveBubble role={{ tag: "Mate" }} />}
+          {captainWorking && (
+            <LiveBubble role={{ tag: "Captain" }} kind={kindForRole({ tag: "Captain" })} />
+          )}
+          {mateWorking && <LiveBubble role={{ tag: "Mate" }} kind={kindForRole({ tag: "Mate" })} />}
         </Box>
       </Box>
     </Box>
