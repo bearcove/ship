@@ -1187,11 +1187,60 @@ async fn run_speak(args: SpeakArgs) -> Result<(), Box<dyn std::error::Error>> {
         .with_env_filter(EnvFilter::from_default_env().add_directive(Level::INFO.into()))
         .init();
 
-    let mut model = tokio::task::spawn_blocking(kyutai_tts::KyutaiTtsModel::load).await??;
-    let mut stdout = std::io::stdout().lock();
-    model.speak(&args.text, |bytes| {
-        let _ = stdout.write_all(&bytes);
-    })?;
+    let text = args.text.clone();
+    let samples: Vec<f32> = tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<f32>> {
+        let mut model = kyutai_tts::KyutaiTtsModel::load()?;
+        let mut all_samples = Vec::new();
+        model.speak(&text, |bytes| {
+            for chunk in bytes.chunks_exact(4) {
+                all_samples.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
+            }
+        })?;
+        Ok(all_samples)
+    })
+    .await??;
+
+    if samples.is_empty() {
+        tracing::warn!("speak: no audio generated");
+        return Ok(());
+    }
+
+    use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+    let host = cpal::default_host();
+    let device = host.default_output_device().ok_or("no output device")?;
+    let config = cpal::StreamConfig {
+        channels: 1,
+        sample_rate: cpal::SampleRate(24_000),
+        buffer_size: cpal::BufferSize::Default,
+    };
+
+    let samples = Arc::new(samples);
+    let pos = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let (done_tx, done_rx) = tokio::sync::oneshot::channel::<()>();
+    let done_tx = std::sync::Mutex::new(Some(done_tx));
+
+    let samples2 = Arc::clone(&samples);
+    let pos2 = Arc::clone(&pos);
+    let stream = device.build_output_stream(
+        &config,
+        move |data: &mut [f32], _| {
+            let p = pos2.load(std::sync::atomic::Ordering::Relaxed);
+            let n = data.len().min(samples2.len().saturating_sub(p));
+            data[..n].copy_from_slice(&samples2[p..p + n]);
+            data[n..].fill(0.0);
+            pos2.fetch_add(n, std::sync::atomic::Ordering::Relaxed);
+            if p + n >= samples2.len() {
+                if let Some(tx) = done_tx.lock().expect("done_tx mutex poisoned").take() {
+                    let _ = tx.send(());
+                }
+            }
+        },
+        |err| tracing::error!("cpal output error: {err}"),
+        None,
+    )?;
+    stream.play()?;
+    let _ = done_rx.await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
 
     Ok(())
 }
