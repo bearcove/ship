@@ -133,9 +133,11 @@ export function SessionViewPage({ debugMode }: { debugMode: boolean; onOpenSideb
         : null;
   const matePlan = mate?.state.tag === "Working" ? (mate.state.plan ?? null) : null;
   const sessionDetail = session;
-  const tasksDone =
-    sessionDetail.task_history.filter((task) => task.status.tag === "Accepted").length +
-    (liveTask?.status.tag === "Accepted" ? 1 : 0);
+  const acceptedHistoryCount = sessionDetail.task_history.filter(
+    (task) => task.status.tag === "Accepted",
+  ).length;
+  const hasAcceptedSessionWork = acceptedHistoryCount > 0 || liveTask?.status.tag === "Accepted";
+  const tasksDone = acceptedHistoryCount + (liveTask?.status.tag === "Accepted" ? 1 : 0);
   const tasksTotal = sessionDetail.task_history.length + (liveTask ? 1 : 0);
   const planSteps = liveTask?.steps ?? [];
   const archiveSessionSummary: SessionSummary = {
