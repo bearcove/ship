@@ -2,119 +2,97 @@
 
 ## Executive Summary
 
-A native iPhone client for Ship is viable now. Ship already has the important backend pieces: a typed RPC surface, per-session event streaming with replay, a frontend reducer model that defines the live session view, and an existing audio transcription endpoint. The iPhone app is therefore mostly a native client layer over current backend capabilities, not a new backend initiative.
+Building a Ship iPhone client is viable because Ship already owns the hard domain logic. The backend already defines the typed RPC surface, session event stream with replay, reducer-friendly client model, and the server-side transcription pipeline. The iPhone app is therefore mostly a native client over existing Ship RPCs, event streams, and transcription, not a new backend project.
 
-A useful prototype should be achievable in about a day: connect, list sessions, open one session, replay the feed, and send text prompts or steers. An internal MVP should fit in roughly a week. A polished app takes longer mostly because of UI refinement, reconnect/replay correctness, notifications, and audio-session edge cases.
+The right sequencing is to prove a thin client first. A rough but real day-1 prototype is realistic: connect to Ship, list sessions, open a session, replay the feed, and send text. That is enough to prove the transport, hydration model, and basic interaction loop. A polished internal app is a longer effort mainly because of replay and reconnect correctness, structured renderer quality, notifications, audio-session edge cases, and QA. This should be scoped as an internal app first, not App Store-grade by default.
 
-## Scope Assumptions
+## Recommended Architecture
 
-- Internal app first, for the team that already runs Ship.
-- Not App Store-grade by default.
-- No offline-first sync, multi-account support, or push infrastructure in the first pass.
-- Keep the Rust backend as the source of truth for session state, task state, and event sequencing.
+The app should be SwiftUI-first. Use UIKit only where it is the pragmatic implementation detail, especially for a wrapped `UITextView` composer if SwiftUI's text editing limits get in the way.
 
-## Recommended Direction
+The client architecture should stay close to the current web shape:
 
-Build a SwiftUI-first iPhone app and only drop to UIKit where SwiftUI is awkward, most likely for a wrapped `UITextView` composer with better multiline editing, mentions, and transcript insertion behavior.
+- One transport layer for the Ship roam WebSocket connection, analogous to `frontend/src/api/client.ts`.
+- A thin typed client for the `Ship` service methods in `crates/ship-service/src/lib.rs`.
+- A session store that follows the same two-phase flow as the web client: `get_session` for structural state, then `subscribe_events` for replay plus live updates.
+- A reducer-driven view model, mirroring the responsibilities currently encoded in `frontend/src/state/sessionReducer.ts`.
+- A SwiftUI shell around a UIKit-backed text editor for the composer if needed.
+- Optional voice input UI layered over the existing `transcribe_audio` RPC and server-side transcription path.
 
-The client should mirror the current web architecture:
+## What The App Actually Renders
 
-- One transport layer for the Ship roam WebSocket connection.
-- A thin typed client for key `Ship` RPCs.
-- A session-view store driven by the same two-phase model the web client uses: `get_session` for structure, then `subscribe_events` for replay plus live updates.
-- SwiftUI views over that derived state.
-- Optional voice input UI layered over the existing `transcribe_audio` RPC.
+The app should not be framed as generic rich-text chat. Ship's UI is a structured event and block feed. The iPhone client should render typed block views, not one giant attributed text blob.
 
-## Why This Is Mostly A Client
+The rendering model should follow the existing web event pipeline:
 
-The repo already exposes the core surfaces an iPhone app needs:
+- Session chrome and structural metadata come from `get_session`.
+- Live content comes from `subscribe_events`, including replay and reconnect behavior.
+- The reducer materializes view state from ordered events rather than relying on ad hoc screen-local state.
+- Rich rendering should come from typed block views such as text, tool call, plan update, permission, and image blocks.
+- The composer is a control surface over Ship actions, not just a text field: send to captain, steer mate, attach images, and optionally inject transcript text.
 
-- `crates/ship-service/src/lib.rs` defines the `Ship` service methods for session listing, session detail, steering, review actions, permission resolution, event subscription, global subscription, and audio transcription.
-- `frontend/src/hooks/useSession.ts` and `frontend/src/hooks/useSessionState.ts` already encode the intended hydration and reconnect flow.
-- `frontend/src/state/sessionReducer.ts` already defines the materialized session view derived from events rather than ad hoc UI state.
-- `frontend/src/api/client.ts` shows the single-WebSocket roam client pattern.
-- `frontend/src/hooks/useTranscription.ts`, `frontend/src/components/UnifiedComposer.tsx`, `crates/ship-server/src/transcriber.rs`, and `crates/ship-server/src/ship_impl.rs` show that speech-to-text is already a backend capability.
+In practice, this means the core UI work is block rendering, session-state reduction, and a mobile-appropriate composer shell around those existing backend surfaces.
 
-That means the main iOS work is native transport, reducer/state, block rendering, composer UX, and mobile-specific polish.
-
-## MVP Feature Set
-
-- Connect to a Ship server over WebSocket.
-- Show the global session list and basic session metadata.
-- Open a session with the same two-phase hydration model as web.
-- Render the unified feed for captain and mate blocks.
-- Surface task status, agent state, plan state, and pending human review or permission items.
-- Send text to the captain and steer the mate.
-- Accept, cancel, reply to human, resolve permission, retry agent, and stop agents.
-- Optional but reasonable in MVP: hold-to-talk or tap-to-talk transcription using the existing `transcribe_audio` stream.
-
-## Phased Plan
+## Prototype-To-Polish Phases
 
 ### Day 1
 
-- Prove the transport and protocol shape with a thin client.
-- Implement `list_sessions`, `get_session`, `subscribe_events`, and basic reducer-driven rendering.
-- Show a simple unified feed and allow sending a text prompt.
+- Prove the thin client end to end.
+- Connect to Ship, list sessions, open a session, replay the current feed, and send text.
+- Render a rough but real structured feed and confirm the basic hydration model works on device or simulator.
 
 ### Days 2-3
 
-- Flesh out session detail screens, reconnect handling, replay completion, and gap recovery.
-- Add controls for steer, accept, cancel, retry, stop, reply-to-human, and permission resolution.
-- Add plan and agent-state presentation.
+- Add the key control actions: steer, accept, cancel, reply-to-human, resolve permission, retry agent, stop agents.
+- Tighten replay completion, reconnect handling, and gap recovery.
+- Replace rough feed rows with clearer typed block views.
 
 ### Week 1
 
-- Tighten the composer, block rendering, and review flows for real internal use.
-- Add audio transcription UI if it did not land on day 1.
-- Add test fixtures for representative event streams and reducer behavior.
-- Make the app stable enough for daily dogfooding.
+- Make it usable as an internal app.
+- Improve the composer, including a UIKit-backed editor if that is the pragmatic path.
+- Add plan, permission, and review rendering that matches Ship's structured model.
+- Layer in transcription UI if it did not land on day 1.
 
 ### Later Polish
 
-- Better notifications and attention management.
-- More refined block rendering for long tool output and diffs.
-- Better voice UX, interruption handling, and transcript editing.
-- Optional iPad and macOS/Catalyst improvements once the iPhone interaction model is solid.
-- Only consider push notifications after the internal app proves useful enough to justify the operational surface.
+- Improve renderer quality for long tool output, diffs, and dense plan or permission states.
+- Add better notification behavior and attention management.
+- Handle audio-session interruptions, routing changes, and backgrounding cleanly.
+- Spend real time on QA, because this is where a rough prototype turns into a dependable internal tool.
 
-## Iteration Strategy
+## Iteration Strategy For Agent-Driven Development
 
-Use agent-driven, fixture-heavy iteration rather than building only against a live backend.
+Without extra tooling, native UI work is a poor agent fit. The workable loop is artifact-driven, not browser-style. Do not assume native iteration is equivalent to browser HMR.
 
-- SwiftUI previews for individual feed blocks, agent-state cards, permission rows, and composer states.
-- Fixture-driven development for session replay: serialize representative `SessionDetail` values plus `SubscribeMessage` streams and drive the reducer with them.
-- Screenshot or snapshot workflow for key states: loading, replaying, live session, permission pending, review pending, error, and audio recording.
-- XCUITest with stable accessibility identifiers for core flows: open session, replay completes, send captain prompt, resolve permission, accept task, retry agent.
-- Use the simulator for integration passes, previews for fast UI iteration, and optionally a Catalyst target if desktop debugging materially speeds up iteration.
+The practical loop is:
 
-## Risks And Hard Parts
+- SwiftUI previews for fast work on individual block views, agent-state rows, composer states, and loading or replay states.
+- Fixed fixtures for `SessionDetail` plus representative `SubscribeMessage` streams so reducer and renderer work can be repeated deterministically.
+- Screenshot or snapshot generation for key states so an agent can see concrete artifacts instead of guessing from prose.
+- XCUITest and UI automation via stable accessibility identifiers for flows like open session, replay completes, send prompt, resolve permission, and accept task.
+- Simulator runs for integration validation; previews and fixtures for rapid iteration.
+- Optional Catalyst or macOS support only if it materially improves debugging speed.
 
-- Replay and reconnect correctness: the app has to respect Ship's sequence-based event model and rebuild from replay rather than merge into stale local state.
-- Block and event rendering: Ship's UI is a structured feed, not a terminal. The reducer and block renderers are the real product surface.
-- Audio-session edge cases: microphone permission, interruptions, route changes, backgrounding, and the difference between transcription transport success and good UX.
-- Notifications and push scope: local in-app attention patterns are cheap; remote push is a separate product and operational decision.
+Native automation does exist, but it is accessibility-tree and UI-test driven rather than DOM-driven. That difference matters: the plan should optimize for artifacts an agent can inspect, not for a browser-like live-edit loop that iOS does not provide.
 
-## Rough Size Estimate
+## Risks / Hard Parts
 
-For one engineer who is comfortable with SwiftUI and the existing Ship model:
+- Replay and reconnect correctness. The app has to respect Ship's sequence-based event model and rebuild from replay rather than merging into stale state.
+- Renderer quality. The product surface is a structured block feed, so typed rendering quality matters more than generic chat polish.
+- Notifications. Local attention management is straightforward; anything beyond that quickly becomes product and operational scope.
+- Audio-session edge cases. Microphone permission, interruptions, output route changes, backgrounding, and transcript UX are all real complexity.
+- QA. Mobile lifecycle bugs, reconnect timing issues, and renderer edge cases are what separate a convincing prototype from a dependable internal app.
 
-- Thin prototype: about 1 day.
-- Internal MVP: about 3-5 working days.
-- Polished internal app: about 2-4 weeks, depending mostly on audio, notifications, renderer quality, and QA.
+## Grounding In The Current Repo
 
-## Recommendation
-
-Build the thinnest useful client first. The practical next step is a SwiftUI prototype that proves four things quickly: roam WebSocket connectivity, `get_session` plus `subscribe_events` hydration, reducer-driven unified feed rendering, and basic prompt or steer submission. If those feel solid, the rest is mostly iterative product work rather than fundamental platform risk.
-
-## Grounding In Current Repo
-
-- `README.md`: architecture overview and the backend/frontend split.
-- `crates/ship-service/src/lib.rs`: `Ship` service trait, including `get_session`, `subscribe_events`, `subscribe_global_events`, action RPCs, and `transcribe_audio`.
-- `frontend/src/api/client.ts`: current roam WebSocket client setup.
-- `frontend/src/hooks/useSession.ts`: structural session hydration.
-- `frontend/src/hooks/useSessionState.ts`: replay, reconnect, and subscription lifecycle.
-- `frontend/src/state/sessionReducer.ts`: derived session view state and event reducer.
+- `README.md`: high-level architecture and the existing unified feed and composer model.
+- `crates/ship-service/src/lib.rs`: the `Ship` service trait, including `list_sessions`, `get_session`, `subscribe_events`, action RPCs, and `transcribe_audio`.
+- `frontend/src/api/client.ts`: the current single-WebSocket roam transport pattern.
+- `frontend/src/hooks/useSession.ts`: structural hydration via `get_session`.
+- `frontend/src/hooks/useSessionState.ts`: subscription lifecycle, replay buffering, replay completion, reconnect handling, and live event processing.
+- `frontend/src/state/sessionReducer.ts`: reducer-driven session view state and structured block application.
 - `frontend/src/components/UnifiedComposer.tsx`: current composer responsibilities and action mapping.
 - `frontend/src/hooks/useTranscription.ts`: frontend audio capture and streaming transcription usage.
-- `crates/ship-server/src/transcriber.rs`: backend streaming speech segmentation and transcription.
-- `crates/ship-server/src/ship_impl.rs`: server-side `transcribe_audio` wiring.
+- `crates/ship-server/src/transcriber.rs`: server-side segmentation and transcription.
+- `crates/ship-server/src/ship_impl.rs`: server wiring for `transcribe_audio`.
