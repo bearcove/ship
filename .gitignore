@@ -6,3 +6,4 @@ node_modules
 .ship/
 .worktrees/
 .envrc
+.pnpm-store
