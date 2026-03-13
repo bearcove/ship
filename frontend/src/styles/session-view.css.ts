@@ -206,6 +206,7 @@ const transcriptFadeIn = keyframes({
 export const liveBubblesRow = style({
   display: "flex",
   flexDirection: "column",
+  alignItems: "center",
   padding: "0 var(--space-3) var(--space-2)",
   gap: "var(--space-2)",
   flexShrink: 0,
@@ -225,9 +226,9 @@ export const thinkingBubble = style({
   position: "relative",
   display: "inline-flex",
   alignItems: "center",
-  gap: 6,
-  padding: "8px var(--space-3)",
-  borderRadius: "var(--radius-3)",
+  gap: 8,
+  padding: "10px var(--space-4)",
+  borderRadius: "var(--radius-6)",
   border: "1px solid var(--gray-a4)",
   background: "var(--gray-a2)",
 });
