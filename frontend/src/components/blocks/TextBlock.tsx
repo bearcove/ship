@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Box, Code, IconButton } from "@radix-ui/themes";
+import { Box, Code, IconButton, Text } from "@radix-ui/themes";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { bundledLanguages, codeToHtml } from "shiki";
@@ -11,6 +11,7 @@ import { getShipClient } from "../../api/client";
 import {
   bubbleActions,
   bubbleContent,
+  feedTimestamp,
   textBlockCodeBlock,
   textBlockCodeFallback,
   textBlockRoot,
@@ -22,7 +23,11 @@ type TextBlockType = Extract<ContentBlock, { tag: "Text" }>;
 interface BubbleActionsProps {
   block: TextBlockType;
   speakable?: boolean;
+  isLast?: boolean;
+  timestamp?: string;
 }
+
+
 
 function useColorScheme(): "dark" | "light" {
   const [scheme, setScheme] = useState<"dark" | "light">(() =>
@@ -65,7 +70,7 @@ export function MarkdownCodeBlock({ className, code }: { className?: string; cod
       .then((html) => {
         if (!cancelled) setHighlightedHtml(html);
       })
-      .catch(() => {});
+      .catch(() => { });
 
     return () => {
       cancelled = true;
@@ -87,7 +92,13 @@ export function MarkdownCodeBlock({ className, code }: { className?: string; cod
 
 type SpeakState = "idle" | "loading" | "playing";
 
-export function BubbleActions({ block, speakable }: BubbleActionsProps) {
+function formatTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}
+
+export function BubbleActions({ block, speakable, isLast, timestamp }: BubbleActionsProps) {
   const [copied, setCopied] = useState(false);
   const [speakState, setSpeakState] = useState<SpeakState>("idle");
 
@@ -179,6 +190,9 @@ export function BubbleActions({ block, speakable }: BubbleActionsProps) {
       <IconButton size="2" variant="ghost" onClick={handleCopy} aria-label="Copy">
         {copied ? <Check size={16} /> : <CopySimple size={16} />}
       </IconButton>
+      {timestamp && (
+        <Text className={feedTimestamp}>{formatTime(timestamp)}</Text>
+      )}
     </div>
   );
 }

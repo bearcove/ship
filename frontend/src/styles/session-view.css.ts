@@ -1103,13 +1103,8 @@ export const feedMessageCardUser = style({
 });
 
 export const feedTimestamp = style({
-  textAlign: "right",
   fontSize: "var(--font-size-1)",
   color: "var(--gray-9)",
-  lineHeight: 1,
-  whiteSpace: "nowrap",
-  marginTop: "var(--space-2)",
-  paddingBottom: "var(--space-2)",
 });
 
 export const feedBubbleCol = style({

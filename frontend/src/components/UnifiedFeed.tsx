@@ -432,11 +432,8 @@ function SingleBlock({
                 <Box className={`${feedBubble} ${feedBubbleUser}`}>
                   <TextBlock block={block as TextBlockType} />
                 </Box>
-                {isLast && entry.timestamp && (
-                  <Text className={feedTimestamp}>{formatTime(entry.timestamp)}</Text>
-                )}
               </Box>
-              <BubbleActions block={block as TextBlockType} speakable />
+              <BubbleActions block={block as TextBlockType} speakable isLast={isLast} timestamp={entry.timestamp ?? undefined} />
             </Box>
           </Box>
         );
@@ -451,11 +448,8 @@ function SingleBlock({
                 <Box className={`${feedBubble} ${feedBubbleRelay}`}>
                   <TextBlock block={block as TextBlockType} />
                 </Box>
-                {isLast && entry.timestamp && (
-                  <Text className={feedTimestamp}>{formatTime(entry.timestamp)}</Text>
-                )}
               </Box>
-              <BubbleActions block={block as TextBlockType} speakable />
+              <BubbleActions block={block as TextBlockType} speakable isLast={isLast} timestamp={entry.timestamp ?? undefined} />
             </Box>
           </Box>
         );
@@ -476,11 +470,8 @@ function SingleBlock({
               >
                 <TextBlock block={block as TextBlockType} />
               </Box>
-              {isLast && entry.timestamp && (
-                <Text className={feedTimestamp}>{formatTime(entry.timestamp)}</Text>
-              )}
             </Box>
-            <BubbleActions block={block as TextBlockType} speakable />
+            <BubbleActions block={block as TextBlockType} speakable isLast={isLast} timestamp={entry.timestamp ?? undefined} />
           </Box>
         </Box>
       );
