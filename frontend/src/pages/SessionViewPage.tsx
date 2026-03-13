@@ -229,11 +229,11 @@ export function SessionViewPage({ debugMode }: { debugMode: boolean; onOpenSideb
               />
             )}
             {(liveTask === null || liveTask.status.tag === "Accepted") && (
-              <Box px="4" pb="2">
+              <Flex justify="center" px="4" pb="2">
                 <Button size="3" variant="outline" onClick={() => void handleArchive(false)}>
                   Archive session
                 </Button>
-              </Box>
+              </Flex>
             )}
             <Box className={feedContentColumn}>
               <UnifiedComposer
