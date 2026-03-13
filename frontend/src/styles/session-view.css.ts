@@ -1164,7 +1164,6 @@ export const diffContext = style({
 });
 
 export const textBlockRoot = style({
-  position: "relative",
   color: "var(--gray-12)",
   fontSize: "var(--font-size-3)",
   lineHeight: "var(--line-height-3)",
@@ -1188,25 +1187,30 @@ export const bubbleCopyBtn = style({
 });
 
 export const bubbleActions = style({
-  position: "absolute",
-  top: 0,
-  right: 0,
   display: "flex",
-  flexDirection: "row",
+  flexDirection: "column",
   gap: "var(--space-1)",
+  alignSelf: "flex-start",
+  flexShrink: 0,
   opacity: 0,
   transition: "opacity 0.15s",
+  "@media": {
+    "(hover: none)": {
+      opacity: 1,
+    },
+  },
 });
 
-globalStyle(`${textBlockRoot}:hover ${bubbleActions}`, {
-  opacity: 1,
+export const feedBubbleWithActions = style({
+  display: "flex",
+  flexDirection: "row",
+  alignItems: "flex-start",
+  gap: "var(--space-1)",
+  flex: 1,
+  minWidth: 0,
 });
 
-globalStyle(`${textBlockRoot}:focus-within ${bubbleActions}`, {
-  opacity: 1,
-});
-
-globalStyle(`${textBlockRoot}[data-show-actions="true"] ${bubbleActions}`, {
+globalStyle(`${feedBubbleWithActions}:hover ${bubbleActions}`, {
   opacity: 1,
 });
 
