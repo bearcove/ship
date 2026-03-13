@@ -27,6 +27,7 @@ import {
   composerEscHint,
   composerInlineBtn,
   composerInput,
+  composerInputWideRight,
   composerInputWrapper,
   composerOverlay,
   composerRoot,
@@ -582,7 +583,7 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
         {/* Textarea — always present, hidden behind overlay when recording/processing */}
         <TextArea
           ref={textareaRef}
-          className={composerInput}
+          className={`${composerInput}${isRecording ? ` ${composerInputWideRight}` : ""}`}
           size="3"
           rows={1}
           placeholder="Steer the captain…"
@@ -625,20 +626,31 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
 
         {/* Right slot */}
         {isRecording ? (
-          <button
-            type="button"
-            className={composerInlineBtn}
-            data-pos="right"
-            data-variant="solid"
-            onClick={() => {
-              setSendAfterTranscription(true);
-              void transcription.stopRecording();
-            }}
-            disabled={disableSubmit}
-            title="Stop and send"
-          >
-            <ArrowUp size={20} weight="bold" />
-          </button>
+          <>
+            <button
+              type="button"
+              className={composerInlineBtn}
+              data-pos="right-2"
+              onClick={() => void transcription.stopRecording()}
+              title="Stop recording"
+            >
+              <Stop size={18} weight="fill" />
+            </button>
+            <button
+              type="button"
+              className={composerInlineBtn}
+              data-pos="right"
+              data-variant="solid"
+              onClick={() => {
+                setSendAfterTranscription(true);
+                void transcription.stopRecording();
+              }}
+              disabled={disableSubmit}
+              title="Stop and send"
+            >
+              <ArrowUp size={20} weight="bold" />
+            </button>
+          </>
         ) : isProcessing ? (
           <button
             type="button"
