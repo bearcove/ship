@@ -86,7 +86,7 @@ describe("UnifiedFeed task recap", () => {
       },
     ]);
 
-    fireEvent.click(screen.getByRole("button", { name: /abc1234 introduce phase boundary/i }));
+    fireEvent.click(screen.getByRole("button", { name: /introduce phase boundary/i }));
 
     const diff = screen.getByTestId("task-recap-diff");
 
