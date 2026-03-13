@@ -28,7 +28,7 @@ import { AgentEffortPicker } from "../components/AgentEffortPicker";
 import captainAvatar from "../assets/avatars/captain.png";
 import mateAvatar from "../assets/avatars/mate.png";
 import { getShipClient } from "../api/client";
-import { ArchiveSessionDialog } from "./SessionListPage";
+import { ArchiveSessionDialog, NewSessionDialog } from "./SessionListPage";
 import type { AgentSnapshot, SessionSummary, TaskRecord } from "../generated/ship";
 
 function SessionTopBar({
@@ -127,6 +127,7 @@ export function SessionViewPage({
   const navigate = useNavigate();
   const [archiving, setArchiving] = useState(false);
   const [archiveConfirm, setArchiveConfirm] = useState<string[] | null>(null);
+  const [duplicateOpen, setDuplicateOpen] = useState(false);
   // r[event.client.hydration-sequence]: Step 1 — structural state
   const { session, error } = useSession(sessionId ?? "");
   // r[event.client.hydration-sequence]: Step 2/3 — event subscription + replay
@@ -137,6 +138,10 @@ export function SessionViewPage({
     function handler(e: KeyboardEvent) {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (e.key === "Escape") onOpenSidebar();
+      if (e.key === "d" && e.metaKey) {
+        e.preventDefault();
+        setDuplicateOpen(true);
+      }
     }
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
@@ -261,6 +266,13 @@ export function SessionViewPage({
           archiving={archiving}
         />
       )}
+      <NewSessionDialog
+        open={duplicateOpen}
+        onOpenChange={setDuplicateOpen}
+        preselectedProject={session.project}
+        preselectedCaptainKind={session.captain.kind}
+        preselectedMateKind={session.mate.kind}
+      />
       <Flex className={sessionViewRoot}>
         <Flex style={{ flex: 1, overflow: "hidden", minHeight: 0 }}>
           <Box className={sessionFeedColumn}>
