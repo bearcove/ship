@@ -1115,9 +1115,15 @@ it does not get stuck in the `Assigned` state.
 
 r[captain.tool.steer]
 The captain MUST have access to a `captain_steer` tool that takes a `message`
-argument (string). This is fire-and-forget: if the mate is blocked on
-`mate_ask_captain` or `mate_submit`, the message resolves that pending call;
-otherwise it is injected into the mate's stream directly.
+argument (string) and two optional plan-mutation arguments: `new_plan` and
+`add_steps`, each an array of step objects with `title` and `description`
+fields. At most one of `new_plan` or `add_steps` may be provided; providing
+both is an error. If `new_plan` is provided, the backend replaces the task's
+plan with the supplied steps before dispatching the steer. If `add_steps` is
+provided, the backend appends the supplied steps to the existing plan before
+dispatching the steer. The steer itself is fire-and-forget: if the mate is
+blocked on `mate_ask_captain` or `mate_submit`, the message resolves that
+pending call; otherwise it is injected into the mate's stream directly.
 
 r[captain.tool.accept]
 The captain MUST have access to a `captain_accept` tool that takes an optional
