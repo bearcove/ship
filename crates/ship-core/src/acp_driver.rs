@@ -101,6 +101,7 @@ impl AcpAgentDriver {
 impl AgentDriver for AcpAgentDriver {
     // r[acp.binary.claude]
     // r[acp.binary.codex]
+    // r[acp.binary.opencode]
     // r[acp.spawn.stdio]
     // r[acp.spawn.cwd]
     // r[acp.spawn.kill-on-drop]
@@ -441,6 +442,7 @@ async fn run_acp_worker(
         let kind_name = match kind {
             ship_types::AgentKind::Claude => "Claude",
             ship_types::AgentKind::Codex => "Codex",
+            ship_types::AgentKind::OpenCode => "OpenCode",
         };
         AgentError {
             message: format!("no supported ACP launcher found for {kind_name}"),
@@ -866,6 +868,8 @@ fn command_for_launcher(
                 "(allow file-write* (subpath \"{home}/.claude\"))",
                 // Allow codex models cache
                 "(allow file-write* (subpath \"{home}/.codex\"))",
+                // Allow opencode config and state
+                "(allow file-write* (subpath \"{home}/.config/opencode\"))",
             ),
             worktree = real_worktree.display(),
             home = home,
@@ -958,6 +962,7 @@ mod tests {
         claude: bool,
         codex: bool,
         pnpx: bool,
+        opencode: bool,
     }
 
     impl BinaryPathProbe for FakeProbe {
@@ -966,6 +971,7 @@ mod tests {
                 "claude-agent-acp" => self.claude,
                 "codex-acp" => self.codex,
                 "pnpx" => self.pnpx,
+                "opencode" => self.opencode,
                 other => panic!("unexpected binary lookup: {other}"),
             }
         }
@@ -980,6 +986,7 @@ mod tests {
                 claude: false,
                 codex: false,
                 pnpx: true,
+                opencode: false,
             },
         )
         .expect("claude launcher should resolve");
@@ -1010,6 +1017,7 @@ mod tests {
                 claude: false,
                 codex: true,
                 pnpx: true,
+                opencode: false,
             },
         )
         .expect("codex launcher should resolve");
@@ -1025,6 +1033,35 @@ mod tests {
         } else {
             assert_eq!(command.as_std().get_program(), "codex-acp");
             assert_eq!(args.len(), 0);
+        }
+    }
+
+    // r[verify acp.binary.opencode]
+    #[test]
+    fn spawn_command_uses_opencode_launcher_resolution() {
+        let launcher = resolve_agent_launcher(
+            AgentKind::OpenCode,
+            &FakeProbe {
+                claude: false,
+                codex: false,
+                pnpx: false,
+                opencode: true,
+            },
+        )
+        .expect("opencode launcher should resolve");
+
+        let worktree = std::path::PathBuf::from("/tmp/test-worktree");
+        let command = command_for_launcher(launcher, &worktree);
+        let args: Vec<_> = command.as_std().get_args().collect();
+
+        if cfg!(target_os = "macos") {
+            assert_eq!(command.as_std().get_program(), "sandbox-exec");
+            assert_eq!(args[0], "-p");
+            assert_eq!(args[2], "opencode");
+            assert_eq!(args[3], "acp");
+        } else {
+            assert_eq!(command.as_std().get_program(), "opencode");
+            assert_eq!(args, vec!["acp"]);
         }
     }
 
