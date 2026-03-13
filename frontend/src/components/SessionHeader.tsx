@@ -220,9 +220,9 @@ export function SessionHeader({
 
   return (
     <>
-      <div className={sessionHeaderRoot} onClick={() => setExpanded((v) => !v)}>
+      <div className={sessionHeaderRoot}>
         {/* Row 1: title + menu */}
-        <div className={sessionHeaderRow1}>
+        <div className={sessionHeaderRow1} onClick={() => setExpanded((v) => !v)}>
           <Text size="3" weight="medium" className={sessionHeaderTitle}>
             {displayTitle}
           </Text>
@@ -253,7 +253,7 @@ export function SessionHeader({
         </div>
 
         {/* Row 2: in-progress step + progress + diff badge + chevron */}
-        <div className={sessionHeaderRow2}>
+        <div className={sessionHeaderRow2} onClick={() => setExpanded((v) => !v)}>
           <Text size="1" color="gray" className={sessionHeaderRow2Title}>
             {inProgressStep?.title || inProgressStep?.description || "No plan yet"}
           </Text>
