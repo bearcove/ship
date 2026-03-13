@@ -41,6 +41,28 @@ import { Waveform } from "./Waveform";
 import { useDocumentDrop } from "../hooks/useDocumentDrop";
 import { useTranscription } from "../hooks/useTranscription";
 
+const SUBMIT_TIMEOUT_MS = 15_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const id = setTimeout(() => reject(new Error("Request timed out")), ms);
+    promise.then(
+      (v) => {
+        clearTimeout(id);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(id);
+        reject(e);
+      },
+    );
+  });
+}
+
+function draftKey(sessionId: string): string {
+  return `ship.composer.draft.${sessionId}`;
+}
+
 interface AttachedImage {
   id: string;
   mimeType: string;
