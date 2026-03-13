@@ -35,6 +35,7 @@ pub struct ShipAcpClient {
     tool_calls: Rc<RefCell<HashMap<String, agent_client_protocol::ToolCall>>>,
     pending_permissions: Rc<RefCell<HashMap<String, oneshot::Sender<String>>>>,
     terminals: Rc<RefCell<HashMap<String, TerminalState>>>,
+    last_plan: Rc<RefCell<Option<Vec<PlanStep>>>>,
 }
 
 struct TerminalState {
@@ -59,6 +60,7 @@ impl ShipAcpClient {
             tool_calls: Rc::new(RefCell::new(HashMap::new())),
             pending_permissions: Rc::new(RefCell::new(HashMap::new())),
             terminals: Rc::new(RefCell::new(HashMap::new())),
+            last_plan: Rc::new(RefCell::new(None)),
         }
     }
 
@@ -299,19 +301,20 @@ impl ShipAcpClient {
             // r[acp.plans]
             SessionUpdate::Plan(plan) => {
                 self.reset_text_block();
+                let plan_vec: Vec<PlanStep> = plan
+                    .entries
+                    .into_iter()
+                    .map(|entry| PlanStep {
+                        title: String::new(),
+                        description: entry.content,
+                        status: map_plan_status(entry.status),
+                    })
+                    .collect();
+                *self.last_plan.borrow_mut() = Some(plan_vec.clone());
                 vec![SessionEvent::AgentStateChanged {
                     role: self.role,
                     state: AgentState::Working {
-                        plan: Some(
-                            plan.entries
-                                .into_iter()
-                                .map(|entry| PlanStep {
-                                    title: String::new(),
-                                    description: entry.content,
-                                    status: map_plan_status(entry.status),
-                                })
-                                .collect(),
-                        ),
+                        plan: Some(plan_vec),
                         activity: Some("ACP plan update".to_owned()),
                     },
                 }]
@@ -448,7 +451,7 @@ impl Client for ShipAcpClient {
         self.send_event(SessionEvent::AgentStateChanged {
             role: self.role,
             state: AgentState::Working {
-                plan: None,
+                plan: self.last_plan.borrow().clone(),
                 activity: Some("Permission resolved".to_owned()),
             },
         });
