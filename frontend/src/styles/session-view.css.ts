@@ -1267,7 +1267,7 @@ export const composerInlineBtn = style({
   padding: 0,
   transition: "background 0.1s, opacity 0.1s",
   background: "transparent",
-  color: "currentColor",
+  color: "var(--gray-1)",
   ":hover": {
     background: "var(--gray-a3)",
   },
