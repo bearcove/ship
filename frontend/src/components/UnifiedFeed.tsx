@@ -452,37 +452,27 @@ function ThinkingBubble({
         >
           <Stop size={16} weight="fill" />
         </button>
-        <span className={liveBubbleDot} />
-        <span className={liveBubbleDot} />
-        <span className={liveBubbleDot} />
-        <Text
-          size="2"
-          color="gray"
-          style={{ marginLeft: "var(--space-2)", fontFamily: "var(--font-mono, monospace)" }}
-        >
-          {thinkingTokens} tokens
-        </Text>
-        {toolsOk > 0 && (
-          <Text
-            size="2"
-            style={{ color: "var(--green-11)", fontFamily: "var(--font-mono, monospace)" }}
-          >
-            {toolsOk}✓
-          </Text>
-        )}
-        {toolsFailed > 0 && (
-          <Text
-            size="2"
-            style={{ color: "var(--red-11)", fontFamily: "var(--font-mono, monospace)" }}
-          >
-            {toolsFailed}✗
-          </Text>
-        )}
         <img
           src={avatarSrc}
           alt={agentName}
           style={{ width: 36, height: 36, borderRadius: "50%", flexShrink: 0 }}
         />
+        <span className={liveBubbleDot} />
+        <span className={liveBubbleDot} />
+        <span className={liveBubbleDot} />
+        {toolsOk > 0 && (
+          <Text size="2" style={{ color: "var(--green-11)" }}>
+            {toolsOk}✓
+          </Text>
+        )}
+        {toolsFailed > 0 && (
+          <Text size="2" style={{ color: "var(--red-11)" }}>
+            {toolsFailed}✗
+          </Text>
+        )}
+        <Text size="2" color="gray" style={{ marginLeft: "auto" }}>
+          {thinkingTokens} tokens
+        </Text>
       </div>
     </Box>
   );

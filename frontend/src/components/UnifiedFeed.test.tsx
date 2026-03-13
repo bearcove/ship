@@ -38,7 +38,6 @@ function renderFeed(blocks: BlockEntry[]) {
       mate={null}
       blocks={blocks}
       startupState={null}
-      taskStatus={null}
       taskCompletedDuration={null}
     />,
   );
