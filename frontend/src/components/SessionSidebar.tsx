@@ -277,7 +277,7 @@ function ProjectGroup({
                           handleArchive(session, false);
                         }}
                       >
-                        <Archive size={12} />
+                        <Archive size={16} />
                       </IconButton>
                     </Tooltip>
                   </Link>
