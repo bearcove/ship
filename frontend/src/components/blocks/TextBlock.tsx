@@ -9,8 +9,8 @@ import { channel } from "@bearcove/roam-core";
 import type { ContentBlock } from "../../generated/ship";
 import { getShipClient } from "../../api/client";
 import {
+  bubbleActions,
   bubbleContent,
-  bubbleCopyBtn,
   textBlockCodeBlock,
   textBlockCodeFallback,
   textBlockRoot,
@@ -90,6 +90,7 @@ type SpeakState = "idle" | "loading" | "playing";
 // r[ui.block.text]
 export function TextBlock({ block, speakable }: Props) {
   const [copied, setCopied] = useState(false);
+  const [showActions, setShowActions] = useState(false);
   const [speakState, setSpeakState] = useState<SpeakState>("idle");
 
   const handleCopy = () => {
@@ -183,37 +184,36 @@ export function TextBlock({ block, speakable }: Props) {
   );
 
   return (
-    <Box className={textBlockRoot}>
+    <Box
+      className={textBlockRoot}
+      data-show-actions={showActions ? "true" : undefined}
+      onClick={() => setShowActions((v) => !v)}
+    >
       <div className={bubbleContent}>
         <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
           {block.text}
         </ReactMarkdown>
       </div>
-      {speakable && (
-        <IconButton
-          size="1"
-          variant="ghost"
-          className={bubbleCopyBtn}
-          onClick={() => void handleSpeak()}
-          aria-label="Speak"
-          disabled={speakState !== "idle"}
-        >
-          {speakState === "idle" ? (
-            <SpeakerHigh size={12} />
-          ) : (
-            <CircleNotch size={12} style={{ animation: `${spinAnimation} 1s linear infinite` }} />
-          )}
+      <div className={bubbleActions}>
+        {speakable && (
+          <IconButton
+            size="1"
+            variant="ghost"
+            onClick={() => void handleSpeak()}
+            aria-label="Speak"
+            disabled={speakState !== "idle"}
+          >
+            {speakState === "idle" ? (
+              <SpeakerHigh size={12} />
+            ) : (
+              <CircleNotch size={12} style={{ animation: `${spinAnimation} 1s linear infinite` }} />
+            )}
+          </IconButton>
+        )}
+        <IconButton size="1" variant="ghost" onClick={handleCopy} aria-label="Copy">
+          {copied ? <Check size={12} /> : <CopySimple size={12} />}
         </IconButton>
-      )}
-      <IconButton
-        size="1"
-        variant="ghost"
-        className={bubbleCopyBtn}
-        onClick={handleCopy}
-        aria-label="Copy"
-      >
-        {copied ? <Check size={12} /> : <CopySimple size={12} />}
-      </IconButton>
+      </div>
     </Box>
   );
 }
