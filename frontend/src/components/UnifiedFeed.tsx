@@ -51,6 +51,7 @@ import {
   userAvatarSpacer,
   feedBubbleWithActions,
   feedBubbleWithActionsUser,
+  feedImageUser,
   diffAdd,
   diffRemove,
   diffContext,
@@ -522,12 +523,7 @@ function SingleBlock({
         return (
           <Box className={feedRowUser}>
             <Box className={`${feedBubbleCol} ${feedBubbleColUser}`}>
-              <Box className={`${feedBubble} ${feedBubbleUser}`}>
-                <ImageBlock block={block} />
-              </Box>
-              {isLast && entry.timestamp && (
-                <Text className={feedTimestamp}>{formatTime(entry.timestamp)}</Text>
-              )}
+              <ImageBlock block={block} className={feedImageUser} />
             </Box>
           </Box>
         );

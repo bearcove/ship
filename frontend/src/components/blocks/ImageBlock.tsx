@@ -11,9 +11,10 @@ type ImageBlockType = Extract<ContentBlock, { tag: "Image" }>;
 
 interface Props {
   block: ImageBlockType;
+  className?: string;
 }
 
-export function ImageBlock({ block }: Props) {
+export function ImageBlock({ block, className }: Props) {
   const [open, setOpen] = useState(false);
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
 
@@ -28,7 +29,12 @@ export function ImageBlock({ block }: Props) {
 
   return (
     <>
-      <img src={objectUrl} className={feedImageThumb} alt="" onClick={() => setOpen(true)} />
+      <img
+        src={objectUrl}
+        className={`${feedImageThumb} ${className ?? ""}`}
+        alt=""
+        onClick={() => setOpen(true)}
+      />
       {open &&
         createPortal(
           <div className={feedImageLightboxOverlay} onClick={() => setOpen(false)}>

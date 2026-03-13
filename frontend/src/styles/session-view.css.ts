@@ -1392,6 +1392,15 @@ export const feedImageThumb = style({
   display: "block",
 });
 
+export const feedImageUser = style({
+  maxWidth: "100%",
+  maxHeight: "400px",
+  objectFit: "contain",
+  borderRadius: "var(--radius-2)",
+  cursor: "pointer",
+  display: "block",
+});
+
 export const feedImageLightboxOverlay = style({
   position: "fixed",
   inset: 0,
