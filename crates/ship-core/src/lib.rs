@@ -190,6 +190,9 @@ pub trait WorktreeOps: Send + Sync {
 
     async fn has_uncommitted_changes(&self, path: &Path) -> Result<bool, WorktreeError>;
 
+    /// Stage all changes and create a commit with the given message.
+    async fn commit_all(&self, worktree_path: &Path, message: &str) -> Result<(), WorktreeError>;
+
     async fn list_branches(&self, repo_root: &Path) -> Result<Vec<String>, WorktreeError>;
 
     async fn delete_branch(
