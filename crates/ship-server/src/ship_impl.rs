@@ -6914,10 +6914,11 @@ mod tests {
     use ship_service::Ship;
     use ship_types::{
         AgentDiscovery, AgentKind, AgentSnapshot, AgentState, AutonomyMode, CaptainAssignExtras,
-        ContentBlock, CreateSessionRequest, CreateSessionResponse, CurrentTask, McpServerConfig,
-        McpStdioServerConfig, PlanStep, PlanStepInput, PlanStepStatus, ProjectName,
-        PromptContentPart, Role, SessionConfig, SessionEvent, SessionEventEnvelope, SessionId,
-        SessionStartupState, SubscribeMessage, TaskId, TaskRecord, TaskStatus,
+        ContentBlock, CreateSessionRequest, CreateSessionResponse, CurrentTask,
+        DirtySessionStrategy, McpServerConfig, McpStdioServerConfig, PlanStep, PlanStepInput,
+        PlanStepStatus, ProjectName, PromptContentPart, Role, SessionConfig, SessionEvent,
+        SessionEventEnvelope, SessionId, SessionStartupState, SubscribeMessage, TaskId, TaskRecord,
+        TaskStatus,
     };
     use tokio::sync::{broadcast, mpsc};
     use tokio::time::timeout;
