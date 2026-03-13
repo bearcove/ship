@@ -5727,21 +5727,24 @@ impl Ship for ShipImpl {
                     .expect("model must be Some after loading");
 
                 let handle = tokio::runtime::Handle::current();
-                model.speak(&text, |bytes| {
+                let result = model.speak(&text, |bytes| {
                     handle.block_on(async {
                         let _ = audio_out.send(bytes).await;
                     });
-                })?;
+                });
 
                 handle.block_on(async {
                     let _ = audio_out.close(Default::default()).await;
                 });
-                Ok(())
+
+                result
             })
             .await;
 
-            if let Err(e) = result {
-                tracing::error!("speak_text: blocking task panicked: {e}");
+            match result {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => tracing::error!("speak_text failed: {error:#}"),
+                Err(error) => tracing::error!("speak_text panicked: {error}"),
             }
         });
     }
