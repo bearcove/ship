@@ -371,17 +371,19 @@ export function SessionSidebar({
         </Flex>
 
         <Box className={sidebarScrollArea}>
-          {validProjects.map((project) => (
-            <ProjectGroup
-              key={project.name}
-              project={project}
-              sessions={sessions.filter((s) => s.project === project.name)}
-              currentSessionId={currentSessionId}
-              captainKind={captainKind}
-              mateKind={mateKind}
-              onClose={onClose}
-            />
-          ))}
+          {validProjects
+            .filter((project) => sessions.some((s) => s.project === project.name))
+            .map((project) => (
+              <ProjectGroup
+                key={project.name}
+                project={project}
+                sessions={sessions.filter((s) => s.project === project.name)}
+                currentSessionId={currentSessionId}
+                captainKind={captainKind}
+                mateKind={mateKind}
+                onClose={onClose}
+              />
+            ))}
         </Box>
 
         {debugMode && (
