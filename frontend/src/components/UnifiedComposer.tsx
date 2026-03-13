@@ -574,7 +574,7 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
           className={composerInlineBtn}
           data-pos="left"
           onClick={() => fileInputRef.current?.click()}
-          disabled={loading || isRecording}
+          disabled={loading}
           title="Attach image"
         >
           <PaperclipIcon size={18} />
