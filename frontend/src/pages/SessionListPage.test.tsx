@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => ({
   addProject: vi.fn(),
   projects: [] as ProjectInfo[],
   sessions: [] as SessionSummary[],
-  discovery: { claude: true, codex: true } as AgentDiscovery,
+  discovery: { claude: true, codex: true, opencode: true } as AgentDiscovery,
   branchesByProject: {} as Record<string, string[]>,
 }));
 
@@ -94,7 +94,7 @@ beforeEach(() => {
     { name: "roam", path: "/tmp/roam", valid: true, invalid_reason: null },
   ];
   mocks.sessions = [];
-  mocks.discovery = { claude: true, codex: true };
+  mocks.discovery = { claude: true, codex: true, opencode: true };
   mocks.branchesByProject = {
     ship: ["main", "release/2026.03"],
     roam: ["main"],

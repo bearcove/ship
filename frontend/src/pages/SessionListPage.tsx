@@ -47,7 +47,11 @@ const STATUS_COLOR: Record<
 
 function AgentKindLabel({ kind }: { kind: AgentKind }) {
   return (
-    <Badge color={kind.tag === "Claude" ? "violet" : "cyan"} variant="soft" size="1">
+    <Badge
+      color={kind.tag === "Claude" ? "violet" : kind.tag === "Codex" ? "cyan" : "green"}
+      variant="soft"
+      size="1"
+    >
       {kind.tag}
     </Badge>
   );
@@ -71,13 +75,16 @@ function AgentKindControl({
   onChange,
   claudeAvailable,
   codexAvailable,
+  opencodeAvailable,
 }: {
   label: string;
   value: AgentKind;
   onChange: (v: AgentKind) => void;
   claudeAvailable: boolean;
   codexAvailable: boolean;
+  opencodeAvailable: boolean;
 }) {
+  const discovery = { claude: claudeAvailable, codex: codexAvailable, opencode: opencodeAvailable };
   return (
     <Flex direction="column" gap="1">
       <Text size="2" weight="medium">
@@ -85,12 +92,10 @@ function AgentKindControl({
       </Text>
       <SegmentedControl.Root
         value={value.tag}
-        onValueChange={(v) => onChange({ tag: v as "Claude" | "Codex" })}
+        onValueChange={(v) => onChange({ tag: v as "Claude" | "Codex" | "OpenCode" })}
         size="2"
       >
-        <DisabledTooltip
-          content={agentKindTooltip("claude", { claude: claudeAvailable, codex: codexAvailable })}
-        >
+        <DisabledTooltip content={agentKindTooltip("claude", discovery)}>
           <SegmentedControl.Item
             value="Claude"
             style={claudeAvailable ? undefined : { opacity: 0.4, pointerEvents: "none" }}
@@ -98,9 +103,7 @@ function AgentKindControl({
             Claude
           </SegmentedControl.Item>
         </DisabledTooltip>
-        <DisabledTooltip
-          content={agentKindTooltip("codex", { claude: claudeAvailable, codex: codexAvailable })}
-        >
+        <DisabledTooltip content={agentKindTooltip("codex", discovery)}>
           <SegmentedControl.Item
             value="Codex"
             style={codexAvailable ? undefined : { opacity: 0.4, pointerEvents: "none" }}
@@ -108,21 +111,41 @@ function AgentKindControl({
             Codex
           </SegmentedControl.Item>
         </DisabledTooltip>
+        <DisabledTooltip content={agentKindTooltip("opencode", discovery)}>
+          <SegmentedControl.Item
+            value="OpenCode"
+            style={opencodeAvailable ? undefined : { opacity: 0.4, pointerEvents: "none" }}
+          >
+            OpenCode
+          </SegmentedControl.Item>
+        </DisabledTooltip>
       </SegmentedControl.Root>
     </Flex>
   );
 }
 
-function isAgentKindAvailable(kind: AgentKind, discovery: { claude: boolean; codex: boolean }) {
-  return kind.tag === "Claude" ? discovery.claude : discovery.codex;
+function isAgentKindAvailable(
+  kind: AgentKind,
+  discovery: { claude: boolean; codex: boolean; opencode: boolean },
+) {
+  if (kind.tag === "Claude") return discovery.claude;
+  if (kind.tag === "Codex") return discovery.codex;
+  return discovery.opencode;
 }
 
-function firstAvailableAgentKind(discovery: { claude: boolean; codex: boolean }): AgentKind | null {
+function firstAvailableAgentKind(discovery: {
+  claude: boolean;
+  codex: boolean;
+  opencode: boolean;
+}): AgentKind | null {
   if (discovery.claude) {
     return { tag: "Claude" };
   }
   if (discovery.codex) {
     return { tag: "Codex" };
+  }
+  if (discovery.opencode) {
+    return { tag: "OpenCode" };
   }
   return null;
 }
@@ -457,6 +480,7 @@ export function NewSessionDialog({
             onChange={setCaptainKind}
             claudeAvailable={discovery.claude}
             codexAvailable={discovery.codex}
+            opencodeAvailable={discovery.opencode}
           />
 
           <AgentKindControl
@@ -465,6 +489,7 @@ export function NewSessionDialog({
             onChange={setMateKind}
             claudeAvailable={discovery.claude}
             codexAvailable={discovery.codex}
+            opencodeAvailable={discovery.opencode}
           />
 
           <BranchCombobox projectName={projectName} value={branch} onChange={setBranch} />

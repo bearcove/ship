@@ -70,6 +70,7 @@ pub mod agent {
     pub enum AgentKind {
         Claude,
         Codex,
+        OpenCode,
     }
 
     #[repr(u8)]
@@ -791,6 +792,7 @@ pub mod protocol {
     pub struct AgentDiscovery {
         pub claude: bool,
         pub codex: bool,
+        pub opencode: bool,
     }
 
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]

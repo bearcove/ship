@@ -28,7 +28,7 @@ vi.mock("./hooks/useProjects", () => ({
 }));
 
 vi.mock("./hooks/useAgentDiscovery", () => ({
-  useAgentDiscovery: () => ({ claude: false, codex: false }),
+  useAgentDiscovery: () => ({ claude: false, codex: false, opencode: false }),
 }));
 
 vi.mock("./pages/SessionListPage", () => ({

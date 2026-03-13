@@ -4,7 +4,11 @@ import type { AgentDiscovery } from "../generated/ship";
 
 // r[server.agent-discovery]
 export function useAgentDiscovery(): AgentDiscovery {
-  const [discovery, setDiscovery] = useState<AgentDiscovery>({ claude: false, codex: false });
+  const [discovery, setDiscovery] = useState<AgentDiscovery>({
+    claude: false,
+    codex: false,
+    opencode: false,
+  });
 
   useEffect(() => {
     let active = true;
