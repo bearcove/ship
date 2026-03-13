@@ -1314,12 +1314,13 @@ changes, and asynchronously notifies the captain with the full plan without
 blocking the mate on captain review.
 
 r[mate.tool.plan-step-complete]
-The mate MUST have access to a `plan_step_complete` tool that takes a
-`step_index` argument (`usize`) and a `summary` argument (string). The backend
-marks the indexed plan step completed, auto-commits any pending worktree
-changes with a commit message derived from the step description and summary,
-and asynchronously notifies the captain with the updated plan plus commit
-details.
+The mate MUST have access to a `commit` tool that takes a `message` argument
+(string, required) and an optional `step_index` argument (`usize`). The
+`message` is used verbatim as the git commit message. The backend auto-commits
+any pending worktree changes with that message. If `step_index` is provided,
+the backend also marks the indexed plan step completed and asynchronously
+notifies the captain with the updated plan plus commit details. If `step_index`
+is omitted, the commit is created without marking any plan step complete.
 
 r[mate.tool.ask-captain]
 The mate MUST have access to a `mate_ask_captain` tool that takes a `question`
@@ -1330,8 +1331,10 @@ at which point the captain's message is returned as the answer.
 r[mate.tool.submit]
 The mate MUST have access to a `mate_submit` tool that takes a `summary`
 argument (string). The mate calls this when it believes its work is complete.
-The backend transitions the task to `ReviewPending`, notifies the captain, and
-blocks until the captain responds:
+The backend MUST reject the call if there are uncommitted changes in the
+worktree, returning an error telling the mate to call `commit` first. If there
+are no uncommitted changes, the backend transitions the task to `ReviewPending`,
+notifies the captain, and blocks until the captain responds:
 - `captain_accept` → returns an accepted message; task transitions to accepted.
 - `captain_steer` → returns captain feedback; mate continues working.
 - `captain_cancel` → returns a cancellation error; task transitions to cancelled.
