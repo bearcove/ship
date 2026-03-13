@@ -181,15 +181,13 @@ impl ServerHandler for MateMcpHandler {
                     .map_err(call_tool_rpc_error)?
             }
             // r[mate.tool.plan-step-complete]
-            "plan_step_complete" => {
-                let Some(step_index) = arguments.get("step_index").and_then(Value::as_u64) else {
-                    return Ok(tool_result("missing required argument: step_index", true));
+            "commit" => {
+                let Some(message) = arguments.get("message").and_then(Value::as_str) else {
+                    return Ok(tool_result("missing required argument: message", true));
                 };
-                let Some(summary) = arguments.get("summary").and_then(Value::as_str) else {
-                    return Ok(tool_result("missing required argument: summary", true));
-                };
+                let step_index = arguments.get("step_index").and_then(Value::as_u64);
                 self.client
-                    .plan_step_complete(step_index, summary.to_owned())
+                    .commit(step_index, message.to_owned())
                     .await
                     .map_err(call_tool_rpc_error)?
             }
@@ -394,15 +392,15 @@ fn tool_definitions() -> Vec<ToolDefinition> {
             }),
         },
         ToolDefinition {
-            name: "plan_step_complete",
-            description: "Mark the current plan step complete and checkpoint its changes. Call this IMMEDIATELY after finishing each step — before starting the next one. All file changes for this step must already be written. Ship creates one focused commit for that step. Do not run manual git commit/rebase/merge commands. If called after starting the next step's changes, those changes will be bundled into the wrong checkpoint.",
+            name: "commit",
+            description: "Commit staged changes with the given message. The message is used verbatim. Optionally marks a plan step complete if step_index is provided. Call this IMMEDIATELY after finishing each step — before starting the next one. All file changes for this step must already be written. Do not run manual git commit/rebase/merge commands.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
-                    "step_index": { "type": "integer", "minimum": 0 },
-                    "summary": { "type": "string" }
+                    "message": { "type": "string", "description": "Commit message, used verbatim." },
+                    "step_index": { "type": "integer", "minimum": 0, "description": "If provided, marks this plan step as complete." }
                 },
-                "required": ["step_index", "summary"],
+                "required": ["message"],
                 "additionalProperties": false,
             }),
         },
