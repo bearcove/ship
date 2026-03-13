@@ -938,20 +938,16 @@ async fn proxy_vite_handler(
         }
     };
 
-    // Inject __SHIP_WS_URL__ script tag into HTML responses so the frontend
-    // knows which WebSocket URL to connect to (avoids connecting to Vite's port).
+    // Inject __SHIP_SERVED__ flag into HTML responses so the frontend knows it's
+    // being served through Ship (not accessed directly via Vite). The WS URL is
+    // derived at runtime from window.location so it works with HTTP and HTTPS.
     let is_html = response_headers
         .get(header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .is_some_and(|ct| ct.contains("text/html"));
 
     let response_body = if is_html {
-        let host = parts
-            .headers
-            .get(header::HOST)
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("localhost");
-        let script = format!(r#"<script>window.__SHIP_WS_URL__="ws://{host}/ws";</script>"#);
+        let script = r#"<script>window.__SHIP_SERVED__=true;</script>"#;
         let body_str = String::from_utf8_lossy(&response_body);
         let injected = body_str.replacen("</head>", &format!("{script}</head>"), 1);
         axum::body::Bytes::from(injected.into_bytes())
