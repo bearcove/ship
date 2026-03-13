@@ -27,6 +27,13 @@ directly or, when `npx` is available, the npm package
 command and argument list before spawning so discovery and launch use the
 same strategy. This agent wraps codex-rs as an ACP agent.
 
+r[acp.binary.opencode]
+For OpenCode agents, Ship MUST support launching the `opencode` binary
+directly with the `acp` subcommand argument. There is no npm/pnpx fallback —
+`opencode` is a standalone native binary. Ship MUST resolve one concrete
+launch command and argument list before spawning so discovery and launch use
+the same strategy.
+
 ### Subprocess Lifecycle
 
 r[acp.spawn.stdio]
@@ -457,9 +464,10 @@ resolution it uses for spawning. Claude is available when either
 `claude-agent-acp` is on `PATH`, or `npx` is on `PATH` and Ship supports
 launching `@zed-industries/claude-agent-acp`. Codex is available when either
 `codex-acp` is on `PATH`, or `npx` is on `PATH` and Ship supports launching
-`@zed-industries/codex-acp`. The availability of each agent kind MUST be
-surfaced in the create-session dialog — unavailable agent kinds MUST be
-disabled with a `Tooltip` explaining what's missing.
+`@zed-industries/codex-acp`. OpenCode is available when `opencode` is on
+`PATH`. The availability of each agent kind MUST be surfaced in the
+create-session dialog — unavailable agent kinds MUST be disabled with a
+`Tooltip` explaining what's missing.
 
 ## Testability
 

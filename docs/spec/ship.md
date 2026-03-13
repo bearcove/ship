@@ -163,7 +163,7 @@ r[session.agent.mate]
 Each session MUST have exactly one mate agent (Claude or Codex, user's choice).
 
 r[session.agent.kind]
-The system MUST support at least two agent kinds: Claude and Codex.
+The system MUST support at least three agent kinds: Claude, Codex, and OpenCode.
 
 ## Agent Communication
 
