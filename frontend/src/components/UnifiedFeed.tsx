@@ -61,10 +61,6 @@ function isSystemInjection(block: Extract<ContentBlock, { tag: "Text" }>): boole
   return block.text.includes("<system-notification>");
 }
 
-function systemInjectionLabel(role: Role): string {
-  return role.tag === "Captain" ? "Captain was prompted" : "Mate was assigned a task";
-}
-
 function formatDuration(totalSeconds: number): string {
   if (totalSeconds < 60) return `${totalSeconds}s`;
   const mins = Math.floor(totalSeconds / 60);
@@ -233,13 +229,9 @@ function SingleBlock({
       const isHuman = block.source.tag === "Human";
       const isThought = block.source.tag === "AgentThought";
 
-      // Server-injected system message — collapse to a label
+      // Server-injected system message — hide
       if (isHuman && isSystemInjection(block)) {
-        return (
-          <Box className={feedSystemMessage}>
-            <Text className={feedSystemMessageText}>{systemInjectionLabel(role)}</Text>
-          </Box>
-        );
+        return null;
       }
 
       // Real user message — right side
