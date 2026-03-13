@@ -791,6 +791,24 @@ export const sessionHeaderBranchMeta = style({
   flexWrap: "wrap",
 });
 
+export const sessionHeaderInlineAvatar = style({
+  width: 20,
+  height: 20,
+  borderRadius: "50%",
+  background: "var(--gray-a3)",
+  flexShrink: 0,
+  display: "grid",
+  placeItems: "center",
+});
+
+export const sessionHeaderAgentsRow = style({
+  display: "flex",
+  alignItems: "center",
+  gap: "var(--space-2)",
+  minWidth: 0,
+  flexWrap: "wrap",
+});
+
 export const sessionHeaderCaret = style({
   color: "var(--gray-10)",
   flexShrink: 0,
@@ -970,6 +988,9 @@ export const agentHeaderControlRow = style({
   flexWrap: "nowrap",
   selectors: {
     [`${sessionHeaderAgentRow} &`]: {
+      width: "auto",
+    },
+    [`${sessionHeaderAgentsRow} &`]: {
       width: "auto",
     },
   },
