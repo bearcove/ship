@@ -5,7 +5,6 @@ import { Archive, ArrowLeft, List, Plus, Warning } from "@phosphor-icons/react";
 import { useSession } from "../hooks/useSession";
 import { useSessionState } from "../hooks/useSessionState";
 import { refreshSessionList } from "../hooks/useSessionList";
-import { useWorktreeDiffStats } from "../hooks/useWorktreeDiffStats";
 import { UnifiedFeed } from "../components/UnifiedFeed";
 import { UnifiedComposer } from "../components/UnifiedComposer";
 import { SessionTaskDrawer } from "../components/SessionTaskDrawer";
@@ -210,7 +209,6 @@ export function SessionViewPage({
   const mate = eventState.mate ?? session.mate;
   const startupState = eventState.startupState ?? session.startup_state;
   const pendingHumanReview = eventState.pendingHumanReview;
-  const diffStats = useWorktreeDiffStats(session.id);
   const isReplaying = eventState.phase !== "live";
   const replayLabel = eventState.connected
     ? eventState.replayEventCount > 0
