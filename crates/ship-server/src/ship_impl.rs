@@ -2026,6 +2026,9 @@ Here is your task:
                 \n(allow file-write* (subpath \"/private/var/folders\"))\
                 \n(allow file-write* (subpath \"{system_tmpdir}\"))\
                 \n(allow file-write* (subpath \"{home}/Library/Caches\"))\
+                \n(allow file-write* (subpath \"{home}/Library/pnpm\"))\
+                \n(allow file-write* (subpath \"{home}/.npm\"))\
+                \n(allow file-write* (subpath \"{home}/.pnpm-store\"))\
                 \n(allow file-write* (literal \"/dev/null\"))"
             );
             let mut cmd = TokioCommand::new("/usr/bin/sandbox-exec");

@@ -806,9 +806,10 @@ fn command_for_launcher(
                 // Allow cargo install, rustup toolchain management
                 "(allow file-write* (subpath \"{home}/.cargo\"))",
                 "(allow file-write* (subpath \"{home}/.rustup\"))",
-                // Allow pnpm/npm cache
+                // Allow pnpm/npm cache and temp state
                 "(allow file-write* (subpath \"{home}/Library/pnpm\"))",
                 "(allow file-write* (subpath \"{home}/Library/Caches/pnpm\"))",
+                "(allow file-write* (subpath \"{home}/Library/Caches/npm\"))",
                 "(allow file-write* (subpath \"{home}/.npm\"))",
                 "(allow file-write* (subpath \"{home}/.pnpm-store\"))",
                 // Allow claude state, plans, logs, etc.
