@@ -703,7 +703,7 @@ export const sessionHeaderRow1 = style({
   display: "flex",
   alignItems: "center",
   gap: "var(--space-1)",
-  padding: "var(--space-2) var(--space-2) var(--space-1) var(--space-3)",
+  padding: "var(--space-3) var(--space-3) var(--space-2) var(--space-3)",
 });
 
 export const sessionHeaderTitle = style({
@@ -712,16 +712,16 @@ export const sessionHeaderTitle = style({
   overflow: "hidden",
   textOverflow: "ellipsis",
   whiteSpace: "nowrap",
+  fontSize: "var(--font-size-3)",
 });
 
 export const sessionHeaderRow2 = style({
   display: "flex",
   alignItems: "center",
   gap: "var(--space-2)",
-  padding: "var(--space-1) var(--space-3) var(--space-2) var(--space-3)",
+  padding: "var(--space-2) var(--space-3) var(--space-3) var(--space-3)",
   width: "100%",
   border: 0,
-  borderTop: "1px solid var(--gray-a3)",
   background: "transparent",
   color: "inherit",
   textAlign: "left",
@@ -794,6 +794,7 @@ export const sessionHeaderBranchMeta = style({
 export const sessionHeaderCaret = style({
   color: "var(--gray-10)",
   flexShrink: 0,
+  marginLeft: "auto",
 });
 
 export const sessionHeaderProgressFlex = style({
