@@ -5633,6 +5633,14 @@ Here is your task:
         }
     }
 
+    pub(crate) async fn push_session_list(&self) {
+        let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+        let list: Vec<SessionSummary> = sessions.values().map(Self::to_session_summary).collect();
+        let _ = self
+            .global_events_tx
+            .send(GlobalEvent::SessionListChanged { sessions: list });
+    }
+
     pub(crate) async fn notify_session_list_changed(&self) {
         self.refresh_all_diff_stats().await;
 

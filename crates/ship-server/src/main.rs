@@ -537,7 +537,7 @@ async fn run_serve(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
                 interval.tick().await;
-                ship.notify_session_list_changed().await;
+                ship.push_session_list().await;
             }
         });
     }
