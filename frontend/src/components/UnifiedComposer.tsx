@@ -447,10 +447,16 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
       {isDragOver && <div className={pageDropOverlay}>Drop image to attach</div>}
 
       {(isWorking || mateUnavailable || diffStats) && (
-        <Flex className={composerStatusRow} align="center" gap="2">
+        <Flex
+          className={composerStatusRow}
+          align="center"
+          gap="2"
+          data-testid="composer-status-row"
+          data-working-anchor={isWorking ? "left" : undefined}
+        >
           <AgentStateChips captain={captain} mate={mate} />
           {isWorking && (
-            <Flex align="center" gap="1">
+            <Flex align="center" gap="1" data-testid="composer-working-status">
               <div className={composerActivityDot} />
               <Text size="2" color="gray">
                 {captainStateTag === "Working" && mateStateTag === "Working"
@@ -479,6 +485,7 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
             <Flex
               align="center"
               gap="2"
+              data-testid="composer-diff-stats"
               style={{ marginLeft: "auto", fontFamily: "var(--code-font-family)" }}
             >
               <Text
