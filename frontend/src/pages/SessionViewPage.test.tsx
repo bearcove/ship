@@ -44,6 +44,7 @@ vi.mock("../hooks/useSessionState", () => ({
 vi.mock("../api/client", () => ({
   getShipClient: async () => ({
     getSession: async () => mocks.session,
+    agentDiscovery: async () => ({ claude: true, codex: true, opencode: true }),
     promptCaptain: mocks.promptCaptain,
     steer: mocks.steer,
     resolvePermission: async () => undefined,
@@ -166,7 +167,7 @@ describe("SessionViewPage UX slice", () => {
     renderPage();
 
     expect(screen.getByLabelText("Steer input")).toBeInTheDocument();
-    expect(screen.getByText("Captain working")).toBeInTheDocument();
+    expect(screen.getByAltText("Captain")).toBeInTheDocument();
   });
 
   // r[verify view.agent-panel.state]
@@ -224,6 +225,52 @@ describe("SessionViewPage UX slice", () => {
     expect(screen.getByText("Captain's steer — awaiting your review")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Send to Mate" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Accept mate work" })).not.toBeInTheDocument();
+  });
+
+  // r[verify view.session]
+  it("hides archive controls until the session has accepted work", async () => {
+    renderPage();
+
+    expect(screen.queryByRole("button", { name: "Archive session" })).not.toBeInTheDocument();
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Session menu" }), {
+      button: 0,
+      ctrlKey: false,
+    });
+
+    expect(await screen.findByRole("menuitem", { name: "New session" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Archive session" })).not.toBeInTheDocument();
+  });
+
+  // r[verify view.session]
+  it("shows archive controls once the session has accepted work", async () => {
+    mocks.session = {
+      ...makeSession(),
+      current_task: null,
+      task_history: [
+        {
+          id: "task-0",
+          title: "Land session view archive gating",
+          description: "Ship the archive gating change.",
+          status: { tag: "Accepted" },
+          steps: [],
+          assigned_at: null,
+          completed_at: "2026-03-13T10:00:00Z",
+        },
+      ],
+    };
+
+    renderPage();
+
+    expect(screen.getByRole("button", { name: "Archive session" })).toBeInTheDocument();
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Session menu" }), {
+      button: 0,
+      ctrlKey: false,
+    });
+
+    expect(await screen.findByRole("menuitem", { name: "New session" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Archive session" })).toBeInTheDocument();
   });
 
   // r[verify view.session]
