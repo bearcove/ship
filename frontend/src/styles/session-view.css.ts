@@ -1163,7 +1163,26 @@ export const bubbleCopyBtn = style({
   transition: "opacity 0.15s",
 });
 
-globalStyle(`${textBlockRoot}:hover ${bubbleCopyBtn}`, {
+export const bubbleActions = style({
+  position: "absolute",
+  top: 0,
+  right: 0,
+  display: "flex",
+  flexDirection: "row",
+  gap: "var(--space-1)",
+  opacity: 0,
+  transition: "opacity 0.15s",
+});
+
+globalStyle(`${textBlockRoot}:hover ${bubbleActions}`, {
+  opacity: 1,
+});
+
+globalStyle(`${textBlockRoot}:focus-within ${bubbleActions}`, {
+  opacity: 1,
+});
+
+globalStyle(`${textBlockRoot}[data-show-actions="true"] ${bubbleActions}`, {
   opacity: 1,
 });
 
