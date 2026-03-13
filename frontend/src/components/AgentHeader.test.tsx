@@ -12,7 +12,13 @@ import {
 import { AgentHeader } from "./AgentHeader";
 
 const apiMocks = vi.hoisted(() => ({
-  setAgentModel: vi.fn(async () => ({ tag: "Ok" })),
+  setAgentModel: vi.fn(
+    async (): Promise<
+      { tag: "Ok" } | { tag: "Failed"; message: string } | { tag: "AgentNotSpawned" }
+    > => ({
+      tag: "Ok",
+    }),
+  ),
   setAgentEffort: vi.fn(async () => ({ tag: "Ok" })),
 }));
 
@@ -29,8 +35,12 @@ function makeAgent(overrides: Partial<AgentSnapshot> = {}): AgentSnapshot {
     kind: { tag: "Claude" },
     state: { tag: "Working", plan: null, activity: null },
     context_remaining_percent: 82,
-    model_id: "gpt-5-codex/medium",
-    available_models: ["gpt-5-codex/medium", "gpt-5-codex/low", "gpt-5/medium"],
+    model_id: "opencode/openai/gpt-5",
+    available_models: [
+      "opencode/openai/gpt-5",
+      "opencode/anthropic/claude-sonnet-4",
+      "opencode/google/gemini-2.5-pro",
+    ],
     effort_config_id: null,
     effort_value_id: null,
     available_effort_values: [],
@@ -43,8 +53,10 @@ function renderHeader(agent: AgentSnapshot, avatarSrc?: string) {
 }
 
 beforeEach(() => {
-  apiMocks.setAgentModel.mockClear();
-  apiMocks.setAgentEffort.mockClear();
+  apiMocks.setAgentModel.mockReset();
+  apiMocks.setAgentModel.mockImplementation(async () => ({ tag: "Ok" }));
+  apiMocks.setAgentEffort.mockReset();
+  apiMocks.setAgentEffort.mockImplementation(async () => ({ tag: "Ok" }));
 });
 
 // r[verify frontend.test.vitest]
@@ -52,7 +64,7 @@ beforeEach(() => {
 describe("AgentHeader", () => {
   // r[verify ui.agent-header.layout]
   // r[verify view.agent-panel.state]
-  it("renders a stacked rail header with a circular context indicator and split model controls", () => {
+  it("renders a stacked rail header with a circular context indicator and an unsplit full model id", () => {
     const { container } = renderHeader(makeAgent(), "/captain.png");
 
     expect(container.querySelector(`img.${agentHeaderAvatar}[alt="Captain"]`)).toBeInTheDocument();
@@ -72,21 +84,43 @@ describe("AgentHeader", () => {
     expect(progressbar.querySelectorAll("circle")).toHaveLength(2);
     expect(progressbar).not.toHaveTextContent("82");
 
-    expect(within(controlRow!).getByText("gpt-5-codex")).toBeInTheDocument();
-    expect(within(controlRow!).getByText("medium")).toBeInTheDocument();
+    expect(within(controlRow!).getByText("opencode/openai/gpt-5")).toBeInTheDocument();
   });
 
   // r[verify ui.agent-header.layout]
-  it("falls back to a single model dropdown when only unsplit model ids are available", () => {
-    renderHeader(
-      makeAgent({
-        model_id: "gpt-5",
-        available_models: ["gpt-5", "gpt-5-mini"],
-      }),
-    );
+  it("filters models from a single searchable list and selects the exact full model id", async () => {
+    renderHeader(makeAgent());
 
-    expect(screen.getByText("gpt-5")).toBeInTheDocument();
-    expect(screen.queryByText("medium")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Select model" }));
+
+    const searchInput = await screen.findByLabelText("Search models");
+    expect(screen.getByRole("option", { name: "opencode/openai/gpt-5" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "opencode/anthropic/claude-sonnet-4" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "opencode/google/gemini-2.5-pro" }),
+    ).toBeInTheDocument();
+
+    fireEvent.change(searchInput, { target: { value: "claude" } });
+
+    expect(
+      screen.getByRole("option", { name: "opencode/anthropic/claude-sonnet-4" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "opencode/openai/gpt-5" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("option", { name: "opencode/google/gemini-2.5-pro" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.mouseDown(screen.getByRole("option", { name: "opencode/anthropic/claude-sonnet-4" }));
+
+    await waitFor(() => {
+      expect(apiMocks.setAgentModel).toHaveBeenCalledWith(
+        "session-1",
+        { tag: "Captain" },
+        "opencode/anthropic/claude-sonnet-4",
+      );
+    });
   });
 
   // r[verify ui.agent-header.layout]
@@ -99,11 +133,11 @@ describe("AgentHeader", () => {
     );
 
     expect(screen.getByText("gpt-5")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "gpt-5" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Select model" })).not.toBeInTheDocument();
   });
 
   // r[verify ui.agent-header.layout]
-  it("renders dedicated effort separately from slash-suffixed model ids in the mixed Codex shape", () => {
+  it("renders dedicated effort separately while leaving the model id unsplit", () => {
     const { container } = renderHeader(
       makeAgent({
         kind: { tag: "Codex" },
@@ -120,39 +154,26 @@ describe("AgentHeader", () => {
 
     const controlRows = container.querySelectorAll<HTMLElement>(`.${agentHeaderControlRow}`);
     expect(controlRows).toHaveLength(2);
-    expect(within(controlRows[0]!).getByText("gpt-5-codex")).toBeInTheDocument();
-    expect(within(controlRows[0]!).queryByText("high")).not.toBeInTheDocument();
+    expect(within(controlRows[0]!).getByText("gpt-5-codex/high")).toBeInTheDocument();
     expect(within(controlRows[1]!).getByText("Low")).toBeInTheDocument();
   });
 
   // r[verify ui.agent-header.layout]
-  it("keeps the dedicated effort value when switching models in the mixed Codex shape", async () => {
-    renderHeader(
-      makeAgent({
-        kind: { tag: "Codex" },
-        model_id: "gpt-5-codex/high",
-        available_models: ["gpt-5-codex/high", "gpt-5/high", "gpt-5-codex/low", "gpt-5/low"],
-        effort_config_id: "reasoning.effort",
-        effort_value_id: "low",
-        available_effort_values: [
-          { id: "low", name: "Low" },
-          { id: "high", name: "High" },
-        ],
-      }),
+  it("preserves failed setAgentModel error handling", async () => {
+    apiMocks.setAgentModel.mockResolvedValueOnce({
+      tag: "Failed",
+      message: "Provider unavailable",
+    });
+
+    renderHeader(makeAgent());
+
+    fireEvent.click(screen.getByRole("button", { name: "Select model" }));
+    fireEvent.mouseDown(
+      await screen.findByRole("option", { name: "opencode/anthropic/claude-sonnet-4" }),
     );
 
-    fireEvent.pointerDown(screen.getByText("gpt-5-codex"), {
-      button: 0,
-      ctrlKey: false,
-    });
-    fireEvent.click(await screen.findByRole("menuitem", { name: "gpt-5" }));
-
     await waitFor(() => {
-      expect(apiMocks.setAgentModel).toHaveBeenCalledWith(
-        "session-1",
-        { tag: "Captain" },
-        "gpt-5/low",
-      );
+      expect(screen.getByText("Provider unavailable")).toBeInTheDocument();
     });
   });
 
