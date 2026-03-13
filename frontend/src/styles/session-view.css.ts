@@ -992,7 +992,8 @@ export const composerStatusRow = style({
   display: "flex",
   alignItems: "center",
   gap: "var(--space-2)",
-  justifyContent: "end",
+  justifyContent: "flex-start",
+  width: "100%",
   flexShrink: 0,
 });
 
