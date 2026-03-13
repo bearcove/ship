@@ -1,6 +1,7 @@
 import { Fragment, useState, useRef, useEffect } from "react";
 import { Box, Flex, ScrollArea, Spinner, Text } from "@radix-ui/themes";
 import { ArrowDown, CaretRight } from "@phosphor-icons/react";
+import captainAvatar from "../assets/avatars/captain.png";
 import type {
   AgentSnapshot,
   ContentBlock,
@@ -419,6 +420,50 @@ function LiveBubble() {
   );
 }
 
+function CaptainThinkingBubble({
+  thinkingTokens,
+  toolsOk,
+  toolsFailed,
+}: {
+  thinkingTokens: number;
+  toolsOk: number;
+  toolsFailed: number;
+}) {
+  return (
+    <Box className={feedRowAgent} style={{ paddingBottom: 0 }}>
+      <Box className={liveBubble}>
+        <img
+          src={captainAvatar}
+          alt="Captain"
+          style={{ width: 16, height: 16, borderRadius: "50%", flexShrink: 0 }}
+        />
+        <Spinner size="1" />
+        {thinkingTokens > 0 ? (
+          <Text size="1" color="gray">
+            ~{thinkingTokens} tokens
+          </Text>
+        ) : (
+          <>
+            <span className={liveBubbleDot} />
+            <span className={liveBubbleDot} />
+            <span className={liveBubbleDot} />
+          </>
+        )}
+        {toolsOk > 0 && (
+          <Text size="1" style={{ color: "var(--green-11)" }}>
+            {toolsOk}✓
+          </Text>
+        )}
+        {toolsFailed > 0 && (
+          <Text size="1" style={{ color: "var(--red-11)" }}>
+            {toolsFailed}✗
+          </Text>
+        )}
+      </Box>
+    </Box>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 interface Props {
@@ -493,6 +538,36 @@ export function UnifiedFeed({
   const MAX_RENDERED_BLOCKS = 80;
   const truncated = blocks.length > MAX_RENDERED_BLOCKS;
   const visibleBlocks = truncated ? blocks.slice(blocks.length - MAX_RENDERED_BLOCKS) : blocks;
+
+  let thinkingTokens = 0;
+  let toolsOk = 0;
+  let toolsFailed = 0;
+  if (captainWorking) {
+    let lastCaptainMsgIdx = -1;
+    for (let i = visibleBlocks.length - 1; i >= 0; i--) {
+      const b = visibleBlocks[i];
+      if (
+        b.role.tag === "Captain" &&
+        b.block.tag === "Text" &&
+        b.block.source.tag === "AgentMessage"
+      ) {
+        lastCaptainMsgIdx = i;
+        break;
+      }
+    }
+    const turnBlocks = visibleBlocks.slice(lastCaptainMsgIdx + 1);
+    let thinkingChars = 0;
+    for (const b of turnBlocks) {
+      if (b.role.tag !== "Captain") continue;
+      if (b.block.tag === "Text" && b.block.source.tag === "AgentThought") {
+        thinkingChars += b.block.text.length;
+      } else if (b.block.tag === "ToolCall") {
+        if (b.block.status.tag === "Success") toolsOk++;
+        else if (b.block.status.tag === "Failure") toolsFailed++;
+      }
+    }
+    thinkingTokens = Math.ceil(thinkingChars / 4);
+  }
 
   let lastUnresolvedPermBlockId: string | undefined;
   for (const entry of visibleBlocks) {
@@ -609,7 +684,13 @@ export function UnifiedFeed({
           )}
 
         <Box className={liveBubblesRow}>
-          {captainWorking && <LiveBubble />}
+          {captainWorking && (
+            <CaptainThinkingBubble
+              thinkingTokens={thinkingTokens}
+              toolsOk={toolsOk}
+              toolsFailed={toolsFailed}
+            />
+          )}
           {mateWorking && <LiveBubble />}
         </Box>
       </Box>
