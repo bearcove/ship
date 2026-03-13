@@ -36,6 +36,52 @@ r[session.single-task]
 Each session MUST have at most one active task at a time, plus a history of
 completed tasks.
 
+### Linked Sessions
+
+r[session.linked.explicit]
+Cross-project orchestration MUST be modeled as explicit links between normal
+Ship sessions. Ship MUST NOT hide dependency work inside autonomous nested
+captains or other invisible sub-sessions.
+
+r[session.linked.parent-child]
+When one session requests work from another project, the resulting child
+session MUST be a normal Ship session with its own captain, mate, worktree,
+event stream, and task history. The child MUST record its parent session, the
+parent MUST be able to reference zero or more child sessions, and the child
+session MUST appear in the normal session list rather than being hidden.
+
+r[session.linked.cross-project]
+A child session MAY target a different registered project from its parent. Per
+`worktree.isolated` and `project.persistence-dir`, each linked session still
+uses only the worktree and repo-scoped assets of its own project.
+
+### Dependency Requests
+
+r[dependency.request.explicit]
+Cross-project help MUST begin as an explicit dependency request record linked
+to the requesting session. The dependency request captures at minimum the
+requester session, target project, requested outcome, and current coordination
+state.
+
+r[dependency.request.approval]
+Ship MUST NOT create a dependency child session until the human explicitly
+approves the dependency request. Proposing the request and creating the child
+session are separate steps.
+
+r[dependency.request.blocked]
+A requesting session MAY enter a coordination-blocked state while a dependency
+request is awaiting approval or being worked by a linked child session. This
+blocked state is distinct from `task.status.enum`; it does not change the
+underlying task lifecycle values.
+
+r[dependency.request.persistence]
+Dependency requests, parent/child session links, and coordination-blocked
+state MUST be durable across browser reloads and server restarts. After
+restart, Ship MUST restore whether a request was awaiting approval, had an
+active child session, or had been cancelled or rejected. Ship MUST NOT
+auto-create new child sessions solely because a stored dependency request
+exists.
+
 ### Agent Assignment
 
 r[session.agent.captain]

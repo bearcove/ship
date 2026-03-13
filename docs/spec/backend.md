@@ -273,6 +273,12 @@ Implementations MAY import legacy session JSON files from project-local
 `.ship/` directories during migration, but those files are a compatibility
 mechanism, not the long-term storage contract.
 
+r[backend.persistence.links]
+Cross-project dependency requests and parent/child session links MUST be
+stored as first-class durable records rather than inferred from agent text or
+hidden process trees. These records MUST preserve approval state and
+coordination-blocked state across restart.
+
 r[backend.persistence-dir-gitignore]
 The `.ship/` Ship-owned directory MUST be added to `.gitignore`.
 
