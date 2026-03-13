@@ -990,6 +990,7 @@ mod tests {
             assert_eq!(command.as_std().get_program(), "sandbox-exec");
             assert_eq!(args[0], "-p");
             let policy = args[1].to_str().unwrap();
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/nobody".to_owned());
             assert!(
                 policy.contains("deny default"),
                 "policy should deny by default"
@@ -997,6 +998,16 @@ mod tests {
             assert!(
                 policy.contains("file-write*"),
                 "policy should have write rules"
+            );
+            assert!(
+                policy.contains(&format!(
+                    "(allow file-write* (subpath \"{home}/Library/Caches/npm\"))"
+                )),
+                "policy should allow npm cache writes under Library/Caches"
+            );
+            assert!(
+                policy.contains(&format!("(allow file-write* (subpath \"{home}/.npm\"))")),
+                "policy should allow npm cache temp writes under ~/.npm"
             );
             assert_eq!(args[2], "pnpx");
             assert_eq!(args[3], "pkg");

@@ -1230,7 +1230,7 @@ r[mate.tool.sandbox]
 On macOS, Ship MUST execute mate `run_command` calls under `sandbox-exec`
 with a Seatbelt profile that:
 - Allows all filesystem reads
-- Denies all filesystem writes outside the session worktree and `/tmp`
+- Denies all filesystem writes outside the session worktree, temp dirs, and essential package-manager cache paths
 - Denies all network access (including outbound TCP/UDP)
 On other platforms, sandboxing is not yet implemented.
 
