@@ -1,14 +1,18 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Routes, Route, useMatch } from "react-router-dom";
 import { Flex, Box, IconButton } from "@radix-ui/themes";
 import { List, ListChecks } from "@phosphor-icons/react";
 import { SessionListPage } from "./pages/SessionListPage";
 import { SessionAgentRail, SessionViewPage } from "./pages/SessionViewPage";
 import { ConnectionBanner } from "./components/ConnectionBanner";
+import { ConnectingSplash } from "./components/ConnectingSplash";
+import { ReconnectingIndicator } from "./components/ReconnectingIndicator";
+import { WrongPortMessage } from "./components/WrongPortMessage";
 import { NotificationPrompt } from "./components/NotificationPrompt";
 import { SessionSidebar } from "./components/SessionSidebar";
 import { useSessionList } from "./hooks/useSessionList";
 import { useProjects } from "./hooks/useProjects";
+import { getConnectionState, onConnectionStateChanged } from "./api/client";
 import {
   appColumns,
   appColLeft,
@@ -46,10 +50,21 @@ export function App() {
   const [debugMode, setDebugMode] = useState(readDebugPreference);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [taskPanelOpen, setTaskPanelOpen] = useState(false);
+  const [connState, setConnState] = useState(() => getConnectionState());
+  const hasEverConnected = useRef(connState === "connected");
 
   useEffect(() => {
     writeDebugPreference(debugMode);
   }, [debugMode]);
+
+  useEffect(() => {
+    return onConnectionStateChanged((state) => {
+      setConnState(state);
+      if (state === "connected") {
+        hasEverConnected.current = true;
+      }
+    });
+  }, []);
 
   const toggleDebug = useCallback(() => setDebugMode((v) => !v), []);
 
@@ -84,6 +99,14 @@ export function App() {
     };
   }, [taskPanelOpen]);
 
+  if (connState === "wrong-port") {
+    return <WrongPortMessage />;
+  }
+
+  if (connState === "initial-connecting" && !hasEverConnected.current) {
+    return <ConnectingSplash />;
+  }
+
   return (
     <Flex direction="column" style={{ height: "100dvh" }}>
       {!inSessionView && (
@@ -111,7 +134,7 @@ export function App() {
         </IconButton>
       )}
       <ConnectionBanner
-        connected={true}
+        connected={connState === "connected"}
         phase="live"
         disconnectReason={null}
         replayEventCount={0}
@@ -162,6 +185,8 @@ export function App() {
           </Box>
         </>
       )}
+
+      {connState === "reconnecting" && hasEverConnected.current && <ReconnectingIndicator />}
     </Flex>
   );
 }

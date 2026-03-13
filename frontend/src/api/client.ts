@@ -6,6 +6,12 @@ import { ShipClient } from "../generated/ship";
 
 export type { ShipClient } from "../generated/ship";
 
+declare global {
+  interface Window {
+    __SHIP_WS_URL__?: string;
+  }
+}
+
 export type ClientLogEntry = {
   level: "info" | "warn";
   message: string;
@@ -52,6 +58,31 @@ export function useClientLogs(): ClientLogEntry[] {
   }, []);
   return entries;
 }
+
+// --- Connection state ---
+
+export type ConnectionState = "initial-connecting" | "connected" | "reconnecting" | "wrong-port";
+
+let connectionState: ConnectionState = "initial-connecting";
+const connectionStateListeners = new Set<(state: ConnectionState) => void>();
+
+function setConnectionState(state: ConnectionState) {
+  connectionState = state;
+  for (const cb of connectionStateListeners) cb(state);
+}
+
+/** Subscribe to connection state changes. Returns an unsubscribe function. */
+export function onConnectionStateChanged(cb: (state: ConnectionState) => void): () => void {
+  connectionStateListeners.add(cb);
+  return () => connectionStateListeners.delete(cb);
+}
+
+/** Get the current connection state. */
+export function getConnectionState(): ConnectionState {
+  return connectionState;
+}
+
+// --- WebSocket internals ---
 
 type OpenWebSocket = {
   socket: WebSocket;
@@ -136,6 +167,8 @@ function closeActiveClient(reason: string) {
 }
 
 function scheduleRetry() {
+  // Don't retry if user is on the wrong port — retrying won't help.
+  if (connectionState === "wrong-port") return;
   if (retryTimer !== null) return;
   retryTimer = setTimeout(() => {
     retryTimer = null;
@@ -159,13 +192,19 @@ function handleTransportDeath(
   clientGeneration += 1;
   activeHandle = null;
   clientPromise = null;
+  setConnectionState("reconnecting");
   scheduleRetry();
 }
 
 async function createShipClient(generation: number): Promise<ShipClientHandle> {
   const attempt = ++connectionAttempt;
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const wsUrl = `${protocol}//${window.location.host}/ws`;
+  const wsUrl = window.__SHIP_WS_URL__;
+  if (wsUrl === undefined) {
+    setConnectionState("wrong-port");
+    throw new Error(
+      "window.__SHIP_WS_URL__ is not defined — open Ship via its server port, not Vite directly",
+    );
+  }
   log("info", "opening websocket client", { attempt, url: wsUrl });
   const { socket, transport } = await connectWsOpen(wsUrl);
   const connection = await helloExchangeInitiator(transport, defaultHello(), {
@@ -201,6 +240,7 @@ async function createShipClient(generation: number): Promise<ShipClientHandle> {
   }
   log("info", "websocket client ready", { attempt });
   activeHandle = handle;
+  setConnectionState("connected");
   for (const cb of clientReadyListeners) cb();
   return handle;
 }
