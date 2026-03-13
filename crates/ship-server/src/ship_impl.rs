@@ -1878,6 +1878,23 @@ Here is your task:
             .await
     }
 
+    // r[task.duration]
+    fn format_task_duration(record: &TaskRecord) -> Option<String> {
+        let assigned = record.assigned_at.as_deref()?;
+        let completed = record.completed_at.as_deref()?;
+        let start = chrono::DateTime::parse_from_rfc3339(assigned).ok()?;
+        let end = chrono::DateTime::parse_from_rfc3339(completed).ok()?;
+        let secs = (end - start).num_seconds().max(0) as u64;
+        let formatted = if secs < 60 {
+            format!("{}s", secs)
+        } else if secs < 3600 {
+            format!("{}m {}s", secs / 60, secs % 60)
+        } else {
+            format!("{}h {}m", secs / 3600, (secs % 3600) / 60)
+        };
+        Some(formatted)
+    }
+
     fn format_plan_status(steps: &[PlanStep]) -> String {
         steps
             .iter()
