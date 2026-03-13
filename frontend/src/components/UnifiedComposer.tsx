@@ -204,6 +204,12 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
   const isDragOver = useDocumentDrop(addImageFiles);
   const transcription = useTranscription();
 
+  // Restore draft from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem(draftKey(sessionId));
+    if (saved) setText(saved);
+  }, [sessionId]);
+
   // Track the text that existed before transcription started, so we can
   // prepend it to the final transcription result.
   const preTranscriptionTextRef = useRef<string | null>(null);
