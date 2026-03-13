@@ -283,7 +283,7 @@ function SingleBlock({
           <Box className={feedRowAgent}>
             <Box className={feedBubbleCol}>
               <Box className={`${feedBubble} ${feedBubbleRelay}`}>
-                <TextBlock block={block as TextBlockType} speakable />
+                <TextBlock block={block as TextBlockType} />
               </Box>
               {isLast && entry.timestamp && (
                 <Text className={feedTimestamp}>{formatTime(entry.timestamp)}</Text>
@@ -305,7 +305,7 @@ function SingleBlock({
             <Box
               className={`${feedBubble}${isCaptain ? ` ${feedBubbleCaptain}` : ` ${feedBubbleMate}`}`}
             >
-              <TextBlock block={block as TextBlockType} speakable />
+              <TextBlock block={block as TextBlockType} />
             </Box>
             {isLast && entry.timestamp && (
               <Text className={feedTimestamp}>{formatTime(entry.timestamp)}</Text>

@@ -19,7 +19,7 @@ import { spinAnimation } from "../../styles/global.css";
 
 type TextBlockType = Extract<ContentBlock, { tag: "Text" }>;
 
-interface Props {
+interface BubbleActionsProps {
   block: TextBlockType;
   speakable?: boolean;
 }
@@ -87,10 +87,8 @@ function MarkdownCodeBlock({ className, code }: { className?: string; code: stri
 
 type SpeakState = "idle" | "loading" | "playing";
 
-// r[ui.block.text]
-export function TextBlock({ block, speakable }: Props) {
+export function BubbleActions({ block, speakable }: BubbleActionsProps) {
   const [copied, setCopied] = useState(false);
-  const [showActions, setShowActions] = useState(false);
   const [speakState, setSpeakState] = useState<SpeakState>("idle");
 
   const handleCopy = () => {
@@ -110,7 +108,6 @@ export function TextBlock({ block, speakable }: Props) {
 
       const callPromise = client.speakText(block.text, tx);
 
-      // Accumulate all byte chunks until channel closes
       const chunks: Uint8Array[] = [];
       while (true) {
         const chunk = await rx.recv();
@@ -126,7 +123,6 @@ export function TextBlock({ block, speakable }: Props) {
         return;
       }
 
-      // Concatenate chunks
       const totalBytes = chunks.reduce((sum, c) => sum + c.length, 0);
       const allBytes = new Uint8Array(totalBytes);
       let offset = 0;
@@ -135,7 +131,6 @@ export function TextBlock({ block, speakable }: Props) {
         offset += chunk.length;
       }
 
-      // Decode f32 LE samples
       const sampleCount = allBytes.length / 4;
       const samples = new Float32Array(sampleCount);
       const view = new DataView(allBytes.buffer, allBytes.byteOffset, allBytes.byteLength);
@@ -143,7 +138,6 @@ export function TextBlock({ block, speakable }: Props) {
         samples[i] = view.getFloat32(i * 4, true);
       }
 
-      // Play via Web Audio API at 24kHz
       setSpeakState("playing");
       const ctx = new AudioContext({ sampleRate: 24000 });
       const buffer = ctx.createBuffer(1, samples.length, 24000);
@@ -165,6 +159,32 @@ export function TextBlock({ block, speakable }: Props) {
     }
   };
 
+  return (
+    <div className={bubbleActions}>
+      {speakable && (
+        <IconButton
+          size="2"
+          variant="ghost"
+          onClick={() => void handleSpeak()}
+          aria-label="Speak"
+          disabled={speakState !== "idle"}
+        >
+          {speakState === "idle" ? (
+            <SpeakerHigh size={16} />
+          ) : (
+            <CircleNotch size={16} style={{ animation: `${spinAnimation} 1s linear infinite` }} />
+          )}
+        </IconButton>
+      )}
+      <IconButton size="2" variant="ghost" onClick={handleCopy} aria-label="Copy">
+        {copied ? <Check size={16} /> : <CopySimple size={16} />}
+      </IconButton>
+    </div>
+  );
+}
+
+// r[ui.block.text]
+export function TextBlock({ block }: { block: TextBlockType }) {
   const markdownComponents = useMemo(
     () => ({
       code({ children, className }: { children?: React.ReactNode; className?: string }) {
@@ -184,35 +204,11 @@ export function TextBlock({ block, speakable }: Props) {
   );
 
   return (
-    <Box
-      className={textBlockRoot}
-      data-show-actions={showActions ? "true" : undefined}
-      onClick={() => setShowActions((v) => !v)}
-    >
+    <Box className={textBlockRoot}>
       <div className={bubbleContent}>
         <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
           {block.text}
         </ReactMarkdown>
-      </div>
-      <div className={bubbleActions}>
-        {speakable && (
-          <IconButton
-            size="1"
-            variant="ghost"
-            onClick={() => void handleSpeak()}
-            aria-label="Speak"
-            disabled={speakState !== "idle"}
-          >
-            {speakState === "idle" ? (
-              <SpeakerHigh size={12} />
-            ) : (
-              <CircleNotch size={12} style={{ animation: `${spinAnimation} 1s linear infinite` }} />
-            )}
-          </IconButton>
-        )}
-        <IconButton size="1" variant="ghost" onClick={handleCopy} aria-label="Copy">
-          {copied ? <Check size={12} /> : <CopySimple size={12} />}
-        </IconButton>
       </div>
     </Box>
   );
