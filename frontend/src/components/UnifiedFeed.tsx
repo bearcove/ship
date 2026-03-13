@@ -1,6 +1,6 @@
 import { Fragment, useState, useRef, useEffect } from "react";
 import { Box, Flex, ScrollArea, Spinner, Text } from "@radix-ui/themes";
-import { ArrowDown } from "@phosphor-icons/react";
+import { ArrowDown, CaretRight } from "@phosphor-icons/react";
 import type {
   AgentSnapshot,
   ContentBlock,
@@ -175,9 +175,25 @@ function TaskRecapBlock({ block }: { block: TaskRecapBlockType }) {
           {commits.map((c) => (
             <Box key={c.hash}>
               <Box
-                style={{ display: "inline-block", cursor: c.diff ? "pointer" : undefined }}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "var(--space-1)",
+                  cursor: c.diff ? "pointer" : undefined,
+                }}
                 onClick={() => c.diff && setExpandedHash(expandedHash === c.hash ? null : c.hash)}
               >
+                {c.diff && (
+                  <CaretRight
+                    size={10}
+                    style={{
+                      color: "var(--gray-8)",
+                      transition: "transform 0.15s ease",
+                      transform: expandedHash === c.hash ? "rotate(90deg)" : "rotate(0deg)",
+                      flexShrink: 0,
+                    }}
+                  />
+                )}
                 <Text style={{ color: "var(--gray-8)" }}>{c.hash}</Text> <Text>{c.subject}</Text>
               </Box>
               {expandedHash === c.hash && c.diff && <CommitDiffView diff={c.diff} />}
