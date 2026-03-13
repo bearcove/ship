@@ -1,5 +1,6 @@
+import { useEffect, useState } from "react";
 import { Box, Flex, Spinner, Text } from "@radix-ui/themes";
-import { Circle, CheckCircle, XCircle } from "@phosphor-icons/react";
+import { CaretDown, CaretRight, Circle, CheckCircle, XCircle } from "@phosphor-icons/react";
 import type { PlanStep, PlanStepStatus } from "../generated/ship";
 import { planPanel, planStepRow, planStepText } from "../styles/session-view.css";
 
@@ -26,41 +27,58 @@ export function PlanPanel({ steps }: Props) {
   if (steps.length === 0) return null;
 
   const completed = steps.filter((s) => s.status.tag === "Completed").length;
+  const hasInProgress = steps.some((step) => step.status.tag === "InProgress");
+  const [collapsed, setCollapsed] = useState(!hasInProgress);
+
+  useEffect(() => {
+    setCollapsed(!hasInProgress);
+  }, [hasInProgress]);
 
   return (
-    <Box className={planPanel}>
-      <Flex align="center" justify="between" mb="2">
-        <Text size="1" weight="medium" color="gray">
-          Plan
-        </Text>
-        <Text size="1" color="gray">
-          {completed}/{steps.length}
-        </Text>
+    <Box className={planPanel} style={{ background: "var(--gray-a3)" }}>
+      <Flex
+        align="center"
+        justify="between"
+        onClick={() => setCollapsed((v) => !v)}
+        style={{ cursor: "pointer", userSelect: "none" }}
+      >
+        <Flex align="center" gap="2">
+          {collapsed ? (
+            <CaretRight size={12} style={{ color: "var(--gray-9)", flexShrink: 0 }} />
+          ) : (
+            <CaretDown size={12} style={{ color: "var(--gray-9)", flexShrink: 0 }} />
+          )}
+          <Text size="1" weight="medium" color="gray">
+            Plan ({completed}/{steps.length})
+          </Text>
+        </Flex>
       </Flex>
-      <Flex direction="column" gap="1">
-        {steps.map((step, i) => (
-          <Flex key={i} align="start" gap="2" className={planStepRow}>
-            <Box style={{ paddingTop: 2, display: "flex" }}>
-              <StepIcon status={step.status} />
-            </Box>
-            <Text
-              size="1"
-              className={planStepText}
-              style={{
-                color:
-                  step.status.tag === "Completed"
-                    ? "var(--gray-9)"
-                    : step.status.tag === "Failed"
-                      ? "var(--red-11)"
-                      : "var(--gray-12)",
-                textDecoration: step.status.tag === "Completed" ? "line-through" : undefined,
-              }}
-            >
-              {step.title || step.description}
-            </Text>
-          </Flex>
-        ))}
-      </Flex>
+      {!collapsed && (
+        <Flex direction="column" gap="1" mt="2">
+          {steps.map((step, i) => (
+            <Flex key={i} align="start" gap="2" className={planStepRow}>
+              <Box style={{ paddingTop: 2, display: "flex" }}>
+                <StepIcon status={step.status} />
+              </Box>
+              <Text
+                size="2"
+                className={planStepText}
+                style={{
+                  color:
+                    step.status.tag === "Completed"
+                      ? "var(--gray-9)"
+                      : step.status.tag === "Failed"
+                        ? "var(--red-11)"
+                        : "var(--gray-12)",
+                  textDecoration: step.status.tag === "Completed" ? "line-through" : undefined,
+                }}
+              >
+                {step.title || step.description}
+              </Text>
+            </Flex>
+          ))}
+        </Flex>
+      )}
     </Box>
   );
 }
