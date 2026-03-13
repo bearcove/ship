@@ -221,6 +221,41 @@ export const liveBubble = style({
   background: "var(--gray-a2)",
 });
 
+const thinkingBorderSpin = keyframes({
+  from: { transform: "translate(-50%, -50%) rotate(0deg)" },
+  to: { transform: "translate(-50%, -50%) rotate(360deg)" },
+});
+
+export const thinkingBubbleOuter = style({
+  position: "relative",
+  display: "inline-block",
+  borderRadius: "var(--radius-3)",
+  overflow: "hidden",
+  selectors: {
+    "&::before": {
+      content: '""',
+      position: "absolute",
+      aspectRatio: "1",
+      width: "200%",
+      top: "50%",
+      left: "50%",
+      background: "conic-gradient(var(--gray-a5) 0% 75%, var(--accent-9) 75% 100%)",
+      animation: `${thinkingBorderSpin} 2s linear infinite`,
+    },
+  },
+});
+
+export const thinkingBubbleInner = style({
+  position: "relative",
+  margin: "1px",
+  borderRadius: "calc(var(--radius-3) - 1px)",
+  background: "var(--color-page-background)",
+  display: "flex",
+  alignItems: "center",
+  gap: 6,
+  padding: "8px var(--space-3)",
+});
+
 export const liveBubbleDot = style({
   width: 6,
   height: 6,
