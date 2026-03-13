@@ -947,6 +947,74 @@ return numbered lines in a code-reading format, truncate individual lines
 longer than 2000 characters, and truncate output to at most the requested line
 window with a message explaining how to read more.
 
+### Structural Navigation
+
+r[mate.tool.structural-languages]
+In v1, Ship MUST support structural navigation for Rust (`.rs`), TypeScript
+(`.ts`), TSX (`.tsx`), and Markdown (`.md`). Other file types MAY be indexed
+later; in v1 they MUST be treated as unsupported by `file_outline`,
+`search_symbols`, and `read_symbol`.
+
+r[mate.tool.file-outline]
+The mate MUST have access to a `file_outline` tool that takes a worktree-
+relative `path` argument. Ship MUST apply the same path validation as
+`read_file`. For supported languages, the tool MUST return structured content
+with `path`, `language`, `status`, `symbols`, `truncated`, `total_symbols`,
+and optional `fallback_hint`. `status` MUST be one of `ok`, `partial`,
+`unsupported_language`, or `parse_error`. `symbols` MUST be ordered by source
+position, and each symbol entry MUST include `symbol_id`, `kind`, `name`,
+`signature`, `line_start`, `line_end`, `parent_symbol_id`, `container_name`,
+and `child_count`; unavailable fields MUST be `null`. Line numbers are 1-based
+inclusive. If a file yields more than 200 symbol entries, Ship MUST return the
+first 200, set `truncated` to true, and report the full count in
+`total_symbols`. For Markdown, headings MUST be returned as symbols.
+
+r[mate.tool.search-symbols]
+The mate MUST have access to a `search_symbols` tool that takes a required
+`query` argument plus optional `path_prefix`, `kinds`, and `limit` arguments.
+If `limit` is omitted, Ship MUST default it to 20; if it is greater than 50,
+Ship MUST reject the call. For supported languages, the tool MUST return
+structured content with `query`, `status`, `results`, `truncated`,
+`total_matches`, `indexed_languages`, and optional `fallback_hint`. `status`
+MUST be one of `ok`, `partial`, `no_results`, or `unsupported_scope`. Each
+result entry MUST include all symbol fields required by
+`r[mate.tool.file-outline]` plus `path`, `rank`, and `match_reason`.
+`match_reason` MUST be one of `exact`, `prefix`, `substring`, or `fuzzy`.
+Ranking MUST order exact identifier matches before prefix matches, prefix
+matches before substring token matches, and substring token matches before
+fuzzy matches. Tie-breakers MUST prefer a matching `path_prefix`, then shorter
+paths, then earlier source position. If more matches exist than are returned,
+Ship MUST set `truncated` to true and report the full count in `total_matches`.
+
+r[mate.tool.read-symbol]
+The mate MUST have access to a `read_symbol` tool that accepts either a
+`symbol_id` or the pair `path` plus `name`. If `symbol_id` is absent, Ship
+MUST apply the same path validation as `read_file`. On success, the tool MUST
+return structured content with `path`, `language`, `status`, `symbol`,
+`excerpt_start_line`, `excerpt_end_line`, `numbered_excerpt`, `truncated`, and
+optional `fallback_hint`. `status` MUST be one of `ok`, `symbol_not_found`,
+`unsupported_language`, or `parse_error`. `numbered_excerpt` MUST cover the
+symbol's full source span unless that span exceeds 400 lines, in which case
+Ship MUST return the first 400 lines, set `truncated` to true, and explain how
+to read more. For Markdown headings, the excerpt MUST extend through the next
+heading of the same or higher level.
+
+r[mate.tool.structural-freshness]
+Before returning `file_outline` or `read_symbol`, Ship MUST verify that the
+indexed data for the target file matches current on-disk file metadata. Before
+returning `search_symbols`, Ship MUST refresh any stale indexed files within
+its searched scope. Structural navigation tools MUST NOT return knowingly stale
+line spans.
+
+r[mate.tool.structural-fallback]
+For unsupported languages, `file_outline`, `search_symbols`, and `read_symbol`
+MUST return `unsupported_language` or `unsupported_scope` plus a
+`fallback_hint` that names `read_file` and `search_files` or `run_command`
+with `rg`. For supported languages with recoverable parse errors,
+`file_outline` and `search_symbols` MAY return best-effort results, but if they
+do they MUST set `status` to `partial`. If no usable structure can be
+recovered, they MUST return `parse_error` plus a `fallback_hint`.
+
 r[mate.tool.write-file]
 The mate MUST have access to a `write_file` tool that takes `path` (relative
 to worktree) and `content` arguments. For Rust files, the backend MUST write
@@ -1063,6 +1131,27 @@ reset/restore/checkout/clean and broad recursive deletion commands. When such
 a command is blocked, Ship MUST reject the tool call and steer the mate to
 stop current work and explain the situation to the captain.
 
+r[mate.tool.guardrail.rg-alternation]
+If a mate `search_files` call or `run_command` invocation would execute `rg`
+with a pattern containing `\|`, Ship MUST reject the call before executing
+ripgrep and return corrective guidance that includes the example
+`rg 'foo|bar'`, not `rg 'foo\\|bar'`.
+
+r[mate.tool.guardrail.blind-reads]
+Before the mate has successfully called `file_outline`, `search_symbols`, or
+`read_symbol` in the current task, Ship MUST count `read_file` calls on
+supported-language files. If the task started with captain-supplied files or a
+pre-supplied plan, Ship MUST inject guidance after the fourth such read.
+Otherwise it MUST inject guidance after the eighth such read. The guidance
+MUST name at least one structural tool and MUST be emitted at most once until a
+structural tool call succeeds or a new task begins.
+
+r[mate.tool.guardrail.blind-reads.same-file]
+If the mate calls `read_file` three times on the same supported-language file
+within one task without a successful `file_outline` or `read_symbol` for that
+path, Ship MUST inject targeted guidance naming that file and recommending
+`file_outline` or `read_symbol`.
+
 ### Captain Review Cycle
 
 r[captain.review.auto]
@@ -1104,6 +1193,27 @@ r[mate.system-prompt]
 The mate's system prompt MUST instruct it to act as an implementation-focused
 engineer: write code, run tests, follow the captain's direction. It MUST
 include the task description and any steer history.
+
+r[mate.search-discipline.prompt]
+The mate's system prompt MUST describe this search ladder for Rust,
+TypeScript/TSX, and Markdown: use captain-supplied files and plan first;
+`file_outline` for known files; `search_symbols` for named declarations whose
+file is unknown; `read_symbol` before broad `read_file`; `search_files` or
+`run_command` with `rg` for literals, comments, error text, and other
+non-symbol patterns; and `list_files` or `fd` for path lookup.
+
+r[mate.search-discipline.pre-supplied-context]
+If `captain_assign` included files or a pre-supplied plan, the mate's prompt
+MUST instruct the mate to begin in that supplied scope and to avoid broad
+repository rediscovery unless the supplied context proves insufficient or
+contradictory.
+
+r[mate.tool.description.search-ladder]
+The tool descriptions for `file_outline`, `search_symbols`, `read_symbol`,
+`read_file`, `search_files`, `list_files`, and `run_command` MUST reinforce
+the search ladder from `r[mate.search-discipline.prompt]`. The descriptions
+for `search_files` and `run_command` MUST include an example showing
+`rg 'foo|bar'` and MUST state that `rg 'foo\\|bar'` is incorrect.
 
 r[mate.capabilities]
 The mate agent MUST NOT be configured with raw ACP filesystem or terminal
@@ -1344,3 +1454,29 @@ Ship intentionally does NOT track token usage or API costs. Both Claude and
 Codex are expected to be used via subscriptions (Claude Pro/Team, Codex
 subscription), not metered API tokens. If a future agent kind requires API
 billing, cost tracking can be added then.
+
+## Agent Navigation Rollout
+
+Implementation should land in this order:
+
+1. Add the typed roam and MCP surface for `file_outline`, `search_symbols`, and
+   `read_symbol`.
+2. Implement the lazy structural index and freshness checks for Rust,
+   TypeScript/TSX, and Markdown.
+3. Update mate prompt text and tool descriptions to teach the search ladder.
+4. Add runtime guardrails for `rg` alternation misuse and blind-read thrash.
+5. Add tests covering result shapes, fallback behavior, freshness, and
+   guardrail triggering.
+
+## Agent Navigation Deferred Choices
+
+The following choices are intentionally left open for a later implementation
+slice:
+
+- whether captain access to structural navigation lands in the same slice as
+  mate access or immediately after
+- whether Markdown heading level is encoded inside `kind` or in a separate
+  field
+- how stable `symbol_id` must be across reparses within one task
+- whether generated files are indexed in v1 or merely searchable via raw text
+  tools
