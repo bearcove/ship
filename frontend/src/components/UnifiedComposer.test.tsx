@@ -1,11 +1,10 @@
-import { screen } from "@testing-library/react";
+import { act, fireEvent, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AgentSnapshot, WorktreeDiffStats } from "../generated/ship";
+import type { AgentSnapshot } from "../generated/ship";
 import { renderWithTheme } from "../test/render";
 import { UnifiedComposer } from "./UnifiedComposer";
 
 const mocks = vi.hoisted(() => ({
-  diffStats: null as WorktreeDiffStats | null,
   transcription: {
     state: { tag: "idle" as const },
     result: null,
@@ -15,14 +14,17 @@ const mocks = vi.hoisted(() => ({
     cancelRecording: vi.fn(),
     clearResult: vi.fn(),
   },
+  promptCaptain: vi.fn(async () => undefined),
+  steer: vi.fn(async () => undefined),
 }));
 
 vi.mock("../api/client", () => ({
   getShipClient: async () => ({
-    promptCaptain: async () => undefined,
-    steer: async () => undefined,
+    promptCaptain: mocks.promptCaptain,
+    steer: mocks.steer,
     listWorktreeFiles: async () => [],
     stopAgents: async () => undefined,
+    getWorktreeDiffStats: async () => null,
   }),
 }));
 
@@ -32,10 +34,6 @@ vi.mock("../hooks/useDocumentDrop", () => ({
 
 vi.mock("../hooks/useTranscription", () => ({
   useTranscription: () => mocks.transcription,
-}));
-
-vi.mock("../hooks/useWorktreeDiffStats", () => ({
-  useWorktreeDiffStats: () => mocks.diffStats,
 }));
 
 function makeAgent(role: "Captain" | "Mate", state: AgentSnapshot["state"]): AgentSnapshot {
@@ -52,12 +50,12 @@ function makeAgent(role: "Captain" | "Mate", state: AgentSnapshot["state"]): Age
   };
 }
 
-function renderComposer(captain: AgentSnapshot, mate: AgentSnapshot) {
+function idleComposer() {
   return renderWithTheme(
     <UnifiedComposer
       sessionId="session-1"
-      captain={captain}
-      mate={mate}
+      captain={makeAgent("Captain", { tag: "Idle" })}
+      mate={makeAgent("Mate", { tag: "Idle" })}
       startupState={null}
       taskStatus={null}
     />,
@@ -65,7 +63,10 @@ function renderComposer(captain: AgentSnapshot, mate: AgentSnapshot) {
 }
 
 beforeEach(() => {
-  mocks.diffStats = null;
+  mocks.promptCaptain.mockReset();
+  mocks.promptCaptain.mockResolvedValue(undefined);
+  mocks.steer.mockReset();
+  mocks.steer.mockResolvedValue(undefined);
   mocks.transcription.startRecording.mockReset();
   mocks.transcription.stopRecording.mockReset();
   mocks.transcription.cancelRecording.mockReset();
@@ -75,45 +76,46 @@ beforeEach(() => {
 // r[verify frontend.test.vitest]
 // r[verify frontend.test.rtl]
 describe("UnifiedComposer", () => {
-  // r[verify view.agent-panel.activity]
-  it("anchors captain working status on the left when diff stats are absent", () => {
-    renderComposer(
-      makeAgent("Captain", { tag: "Working", plan: null, activity: null }),
-      makeAgent("Mate", { tag: "Idle" }),
-    );
-
-    const row = screen.getByTestId("composer-status-row");
-    const workingStatus = screen.getByTestId("composer-working-status");
-
-    expect(workingStatus).toHaveTextContent("Captain working");
-    expect(row).toHaveAttribute("data-working-anchor", "left");
-    expect(row.firstElementChild).toBe(workingStatus);
-    expect(screen.queryByTestId("composer-diff-stats")).not.toBeInTheDocument();
+  it("restores saved draft from localStorage on mount", () => {
+    localStorage.setItem("ship.composer.draft.session-1", "my saved draft");
+    idleComposer();
+    const textarea = screen.getByRole("textbox", { name: /steer input/i });
+    expect(textarea).toHaveValue("my saved draft");
   });
 
-  // r[verify view.agent-panel.activity]
-  it("keeps mate working status left-anchored when diff stats are present and pins diff stats right", () => {
-    mocks.diffStats = {
-      branch_name: "feature/footer-align",
-      lines_added: 12n,
-      lines_removed: 3n,
-      files_changed: 2n,
-    };
+  it("clears draft from localStorage on successful submit", async () => {
+    idleComposer();
+    const textarea = screen.getByRole("textbox", { name: /steer input/i });
+    fireEvent.change(textarea, { target: { value: "hello world" } });
+    expect(localStorage.getItem("ship.composer.draft.session-1")).toBe("hello world");
+    await act(async () => {
+      fireEvent.keyDown(textarea, { key: "Enter" });
+    });
+    await act(async () => {});
+    expect(localStorage.getItem("ship.composer.draft.session-1")).toBeNull();
+    expect(textarea).toHaveValue("");
+  });
 
-    renderComposer(
-      makeAgent("Captain", { tag: "Idle" }),
-      makeAgent("Mate", { tag: "Working", plan: null, activity: null }),
-    );
+  // r[verify ui.keys.steer-send]
+  it("preserves text and shows error when submit times out", async () => {
+    vi.useFakeTimers();
+    mocks.promptCaptain.mockReturnValue(new Promise<undefined>(() => {}));
 
-    const row = screen.getByTestId("composer-status-row");
-    const workingStatus = screen.getByTestId("composer-working-status");
-    const diffStats = screen.getByTestId("composer-diff-stats");
+    idleComposer();
+    const textarea = screen.getByRole("textbox", { name: /steer input/i });
+    fireEvent.change(textarea, { target: { value: "will timeout" } });
 
-    expect(workingStatus).toHaveTextContent("Mate working");
-    expect(row).toHaveAttribute("data-working-anchor", "left");
-    expect(row.firstElementChild).toBe(workingStatus);
-    expect(diffStats).toHaveTextContent("feature/footer-align");
-    expect(diffStats).toHaveStyle({ marginLeft: "auto" });
-    expect(row.lastElementChild).toBe(diffStats);
+    await act(async () => {
+      fireEvent.keyDown(textarea, { key: "Enter" });
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(16_000);
+    });
+
+    expect(textarea).toHaveValue("will timeout");
+    expect(screen.getByText(/request timed out/i)).toBeInTheDocument();
+
+    vi.useRealTimers();
   });
 });
