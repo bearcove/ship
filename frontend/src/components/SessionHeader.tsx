@@ -287,6 +287,14 @@ export function SessionHeader({
                     isActiveTask && session.current_task_title
                       ? session.current_task_title
                       : (session.title ?? session.branch_name);
+                  const mateState = session.mate.state;
+                  const currentStep =
+                    mateState.tag === "Working" && mateState.plan
+                      ? (mateState.plan.find((s) => s.status.tag === "InProgress") ??
+                          mateState.plan.find((s) => s.status.tag === "Pending") ??
+                          null)
+                      : null;
+                  const stepLabel = currentStep?.title || currentStep?.description || null;
                   return (
                     <div
                       key={session.id}
@@ -300,9 +308,7 @@ export function SessionHeader({
                       <div className={sessionSwitcherRowTitle}>{rowTitle}</div>
                       <div className={sessionSwitcherRowSub}>
                         {session.project} · {statusLabel(session.task_status)}
-                        {session.tasks_total > 0 && (
-                          <> · {session.tasks_done}/{session.tasks_total}</>
-                        )}
+                        {stepLabel && <> · {stepLabel}</>}
                         {session.diff_stats &&
                           (session.diff_stats.lines_added > 0 || session.diff_stats.lines_removed > 0) && (
                             <>
