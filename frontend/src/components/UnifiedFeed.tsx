@@ -9,7 +9,7 @@ import type {
   TaskStatus,
 } from "../generated/ship";
 import type { BlockEntry } from "../state/blockStore";
-import { TextBlock } from "./blocks/TextBlock";
+import { BubbleActions, TextBlock } from "./blocks/TextBlock";
 import { ErrorBlock } from "./blocks/ErrorBlock";
 import { PermissionBlock } from "./blocks/PermissionBlock";
 import { ImageBlock } from "./blocks/ImageBlock";
@@ -39,6 +39,7 @@ import {
   unifiedFeedStream,
   userAvatar,
   userAvatarSpacer,
+  feedBubbleWithActions,
   diffAdd,
   diffRemove,
   diffContext,
@@ -264,13 +265,16 @@ function SingleBlock({
       if (isHuman && role.tag === "Captain") {
         return (
           <Box className={feedRowUser}>
-            <Box className={`${feedBubbleCol} ${feedBubbleColUser}`}>
-              <Box className={`${feedBubble} ${feedBubbleUser}`}>
-                <TextBlock block={block as TextBlockType} />
+            <Box className={feedBubbleWithActions}>
+              <BubbleActions block={block as TextBlockType} />
+              <Box className={`${feedBubbleCol} ${feedBubbleColUser}`}>
+                <Box className={`${feedBubble} ${feedBubbleUser}`}>
+                  <TextBlock block={block as TextBlockType} />
+                </Box>
+                {isLast && entry.timestamp && (
+                  <Text className={feedTimestamp}>{formatTime(entry.timestamp)}</Text>
+                )}
               </Box>
-              {isLast && entry.timestamp && (
-                <Text className={feedTimestamp}>{formatTime(entry.timestamp)}</Text>
-              )}
             </Box>
             <UserAvatar url={userAvatarUrl} />
           </Box>
@@ -281,13 +285,16 @@ function SingleBlock({
       if (isHuman && role.tag === "Mate") {
         return (
           <Box className={feedRowAgent}>
-            <Box className={feedBubbleCol}>
-              <Box className={`${feedBubble} ${feedBubbleRelay}`}>
-                <TextBlock block={block as TextBlockType} />
+            <Box className={feedBubbleWithActions}>
+              <Box className={feedBubbleCol}>
+                <Box className={`${feedBubble} ${feedBubbleRelay}`}>
+                  <TextBlock block={block as TextBlockType} />
+                </Box>
+                {isLast && entry.timestamp && (
+                  <Text className={feedTimestamp}>{formatTime(entry.timestamp)}</Text>
+                )}
               </Box>
-              {isLast && entry.timestamp && (
-                <Text className={feedTimestamp}>{formatTime(entry.timestamp)}</Text>
-              )}
+              <BubbleActions block={block as TextBlockType} speakable />
             </Box>
           </Box>
         );
@@ -301,15 +308,18 @@ function SingleBlock({
       // Agent message — left side
       return (
         <Box className={feedRowAgent}>
-          <Box className={feedBubbleCol}>
-            <Box
-              className={`${feedBubble}${isCaptain ? ` ${feedBubbleCaptain}` : ` ${feedBubbleMate}`}`}
-            >
-              <TextBlock block={block as TextBlockType} />
+          <Box className={feedBubbleWithActions}>
+            <Box className={feedBubbleCol}>
+              <Box
+                className={`${feedBubble}${isCaptain ? ` ${feedBubbleCaptain}` : ` ${feedBubbleMate}`}`}
+              >
+                <TextBlock block={block as TextBlockType} />
+              </Box>
+              {isLast && entry.timestamp && (
+                <Text className={feedTimestamp}>{formatTime(entry.timestamp)}</Text>
+              )}
             </Box>
-            {isLast && entry.timestamp && (
-              <Text className={feedTimestamp}>{formatTime(entry.timestamp)}</Text>
-            )}
+            <BubbleActions block={block as TextBlockType} speakable />
           </Box>
         </Box>
       );
