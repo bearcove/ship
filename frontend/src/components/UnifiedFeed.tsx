@@ -110,13 +110,21 @@ function UserAvatar({ url }: { url: string | null }) {
 
 function CommitDiffView({ diff }: { diff: string }) {
   return (
-    <ScrollArea style={{ maxHeight: "16rem", maxWidth: "100%", marginTop: "var(--space-1)" }}>
+    <ScrollArea
+      style={{
+        maxHeight: "16rem",
+        width: "100%",
+        overflowX: "auto",
+        marginTop: "var(--space-1)",
+      }}
+    >
       <Box
         style={{
           fontFamily: "var(--font-mono, monospace)",
           fontSize: "var(--font-size-1)",
           whiteSpace: "pre",
           textAlign: "left",
+          minWidth: "max-content",
         }}
       >
         {diff.split("\n").map((line, index) => {
@@ -170,6 +178,8 @@ function TaskRecapBlock({ block }: { block: TaskRecapBlockType }) {
             fontSize: "var(--font-size-1)",
             color: "var(--gray-10)",
             textAlign: "center",
+            width: "100%",
+            minWidth: 0,
           }}
         >
           {commits.map((c) => (
