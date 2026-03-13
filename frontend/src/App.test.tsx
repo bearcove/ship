@@ -5,6 +5,12 @@ import { App } from "./App";
 import { SoundProvider } from "./context/SoundContext";
 import { renderWithTheme } from "./test/render";
 
+vi.mock("./api/client", () => ({
+  getConnectionState: () => "connected",
+  onConnectionStateChanged: () => () => {},
+  useClientLogs: () => [],
+}));
+
 vi.mock("./components/ConnectionBanner", () => ({
   ConnectionBanner: () => null,
 }));
