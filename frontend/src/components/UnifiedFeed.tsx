@@ -1,6 +1,6 @@
 import { Fragment, useState, useRef, useEffect } from "react";
 import { Box, Flex, ScrollArea, Spinner, Text } from "@radix-ui/themes";
-import { ArrowDown, CaretRight } from "@phosphor-icons/react";
+import { ArrowDown, CaretRight, Stop } from "@phosphor-icons/react";
 import captainAvatar from "../assets/avatars/captain.png";
 import mateAvatar from "../assets/avatars/mate.png";
 import type { AgentSnapshot, ContentBlock, Role, SessionStartupState } from "../generated/ship";
@@ -413,12 +413,14 @@ function StartupFeedState({ startupState }: { startupState: SessionStartupState 
 // ─── Live bubbles ─────────────────────────────────────────────────────────────
 
 function ThinkingBubble({
+  sessionId,
   avatarSrc,
   agentName,
   thinkingTokens,
   toolsOk,
   toolsFailed,
 }: {
+  sessionId: string;
   avatarSrc: string;
   agentName: string;
   thinkingTokens: number;
@@ -449,6 +451,30 @@ function ThinkingBubble({
             {toolsFailed}✗
           </Text>
         )}
+        <button
+          type="button"
+          onClick={() => {
+            void (async () => {
+              const client = await getShipClient();
+              await client.stopAgents(sessionId);
+            })();
+          }}
+          title="Stop agent"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            color: "var(--gray-10)",
+            padding: "2px",
+            borderRadius: "var(--radius-1)",
+            marginLeft: "var(--space-1)",
+          }}
+        >
+          <Stop size={16} weight="fill" />
+        </button>
       </div>
     </Box>
   );
@@ -694,6 +720,7 @@ export function UnifiedFeed({
         <Box className={liveBubblesRow}>
           {captainWorking && (
             <ThinkingBubble
+              sessionId={sessionId}
               avatarSrc={captainAvatar}
               agentName="Captain"
               thinkingTokens={thinkingTokens}
@@ -703,6 +730,7 @@ export function UnifiedFeed({
           )}
           {mateWorking && (
             <ThinkingBubble
+              sessionId={sessionId}
               avatarSrc={mateAvatar}
               agentName="Mate"
               thinkingTokens={mateThinkingTokens}
