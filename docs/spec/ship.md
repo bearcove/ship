@@ -543,6 +543,12 @@ r[task.accept]
 On accept, the task MUST move to history and the session MUST be ready for the
 next task.
 
+r[task.duration]
+When a task reaches a terminal state, the backend MUST include a human-readable
+elapsed duration (from `assigned_at` to `completed_at`) in the tool response
+returned to the captain. Format: `Xs` for under a minute, `Xm Ys` for under an
+hour, `Xh Ym` otherwise.
+
 r[task.cancel]
 Tasks MUST be cancellable at any point in their lifecycle.
 
@@ -1072,6 +1078,13 @@ strings. If provided, the backend pre-populates the task's `mate_plan` with
 those steps (all `Pending`) before the mate starts, and the mate's initial
 prompt instructs it to skip research and planning and proceed directly to step
 1. The mate MUST NOT call `set_plan` when a plan is pre-supplied.
+
+r[captain.tool.assign.nonblocking]
+`captain_assign` MUST return to the captain immediately after the task record is
+created. Mate startup — process spawn, MCP installation, and initial prompt
+delivery — MUST happen asynchronously and MUST NOT block the tool response. If
+the background startup fails, the backend MUST automatically cancel the task so
+it does not get stuck in the `Assigned` state.
 
 r[captain.tool.steer]
 The captain MUST have access to a `captain_steer` tool that takes a `message`
