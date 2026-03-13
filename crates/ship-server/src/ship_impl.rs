@@ -7146,6 +7146,8 @@ mod tests {
             archived_at: None,
             captain_acp_session_id: None,
             mate_acp_session_id: None,
+            captain_acp_info: None,
+            mate_acp_info: None,
             events_tx,
             next_event_seq: 0,
             captain_prompt_gen: 0,
