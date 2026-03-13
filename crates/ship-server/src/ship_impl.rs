@@ -3835,7 +3835,7 @@ Here is your task:
         message: String,
     ) -> Result<String, String> {
         // Inject the update into the captain's stream as a user message, then prompt the captain.
-        let injected = format!("The mate sent you an update: {message}");
+        let injected = format!("<mate-update>\n{message}\n</mate-update>");
         self.append_human_message(
             session_id,
             Role::Captain,
