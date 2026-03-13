@@ -35,6 +35,7 @@ import {
   userAvatar,
   userAvatarSpacer,
   feedBubbleWithActions,
+  feedBubbleWithActionsUser,
   diffAdd,
   diffRemove,
   diffContext,
@@ -269,7 +270,7 @@ function SingleBlock({
       if (isHuman && role.tag === "Captain") {
         return (
           <Box className={feedRowUser}>
-            <Box className={feedBubbleWithActions}>
+            <Box className={`${feedBubbleWithActions} ${feedBubbleWithActionsUser}`}>
               <BubbleActions block={block as TextBlockType} />
               <Box className={`${feedBubbleCol} ${feedBubbleColUser}`}>
                 <Box className={`${feedBubble} ${feedBubbleUser}`}>
