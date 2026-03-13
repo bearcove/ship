@@ -241,7 +241,10 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
       if (trimmed || attachedImages.length > 0) {
         const { target: to, content } = parseTarget(trimmed);
         void sendNow(content, to).then((success) => {
-          if (success) setText("");
+          if (success) {
+            localStorage.removeItem(draftKey(sessionId));
+            setText("");
+          }
         });
       }
     } else {
@@ -329,7 +332,10 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
     const raw = text.trim();
     if ((!raw && attachedImages.length === 0) || loading || disableSubmit) return;
     const { target: to, content } = parseTarget(raw);
-    if (await sendNow(content, to)) setText("");
+    if (await sendNow(content, to)) {
+      localStorage.removeItem(draftKey(sessionId));
+      setText("");
+    }
   }
 
   // Persist draft to localStorage
