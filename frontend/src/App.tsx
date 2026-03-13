@@ -133,15 +133,17 @@ export function App() {
           <ListChecks size={18} />
         </IconButton>
       )}
-      <ConnectionBanner
-        connected={connState === "connected"}
-        phase="live"
-        disconnectReason={null}
-        replayEventCount={0}
-        connectionAttempt={0}
-        lastSeq={null}
-        lastEventKind={null}
-      />
+      {connState !== "reconnecting" && (
+        <ConnectionBanner
+          connected={connState === "connected"}
+          phase="live"
+          disconnectReason={null}
+          replayEventCount={0}
+          connectionAttempt={0}
+          lastSeq={null}
+          lastEventKind={null}
+        />
+      )}
       <NotificationPrompt />
 
       <Box className={appColumns}>
