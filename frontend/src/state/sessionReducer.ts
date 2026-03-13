@@ -194,6 +194,9 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
               captain = { ...captain, state: ev.state };
             } else if (ev.role.tag !== "Captain" && mate) {
               mate = { ...mate, state: ev.state };
+              if (ev.state.tag === "Working" && ev.state.plan) {
+                currentTaskSteps = ev.state.plan;
+              }
             }
             break;
           }
@@ -373,7 +376,13 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
             return { ...nextState, captain: { ...nextState.captain, state: ev.state } };
           }
           if (!isCaptain && nextState.mate) {
-            return { ...nextState, mate: { ...nextState.mate, state: ev.state } };
+            return {
+              ...nextState,
+              mate: { ...nextState.mate, state: ev.state },
+              ...(ev.state.tag === "Working" && ev.state.plan
+                ? { currentTaskSteps: ev.state.plan }
+                : {}),
+            };
           }
           return nextState;
         }
