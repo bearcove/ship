@@ -17,6 +17,14 @@ vi.mock("./hooks/useSessionList", () => ({
   useSessionList: () => [],
 }));
 
+vi.mock("./hooks/useProjects", () => ({
+  useProjects: () => [],
+}));
+
+vi.mock("./hooks/useAgentDiscovery", () => ({
+  useAgentDiscovery: () => ({ claude: false, codex: false }),
+}));
+
 vi.mock("./pages/SessionListPage", () => ({
   SessionListPage: () => <div>Session list page</div>,
   NewSessionDialog: () => null,

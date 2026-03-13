@@ -12,7 +12,7 @@ r[frontend.react]
 The frontend MUST use React 19 for UI rendering.
 
 r[frontend.vite]
-The frontend MUST use Vite 6 as its dev server and build tool, with the
+The frontend MUST use Vite 8 as its dev server and build tool, with the
 `@vitejs/plugin-react` plugin.
 
 r[frontend.codegen]
