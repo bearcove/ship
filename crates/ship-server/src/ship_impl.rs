@@ -1940,15 +1940,19 @@ Here is your task:
             .and_then(|ops| ops.plan_change_reply.take());
 
         if let Some((old_plan, tx)) = pending_plan_change {
-            {
-                let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
-                if let Some(session) = sessions.get_mut(session_id) {
-                    if let Some(task) = session.current_task.as_mut() {
-                        task.record.steps = old_plan;
+            // Only restore old_plan if the captain didn't supply their own plan change.
+            // If captain supplied new_plan/add_steps, those were already applied above.
+            if plan_change_note.is_none() {
+                {
+                    let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                    if let Some(session) = sessions.get_mut(session_id) {
+                        if let Some(task) = session.current_task.as_mut() {
+                            task.record.steps = old_plan;
+                        }
                     }
                 }
+                self.persist_session(session_id).await?;
             }
-            self.persist_session(session_id).await?;
             let _ = tx.send(Err(message));
             return Ok("Plan change rejected; mate redirected.".to_owned());
         }
