@@ -300,6 +300,18 @@ export function SessionHeader({
                       <div className={sessionSwitcherRowTitle}>{rowTitle}</div>
                       <div className={sessionSwitcherRowSub}>
                         {session.project} · {statusLabel(session.task_status)}
+                        {session.tasks_total > 0 && (
+                          <> · {session.tasks_done}/{session.tasks_total}</>
+                        )}
+                        {session.diff_stats &&
+                          (session.diff_stats.lines_added > 0 || session.diff_stats.lines_removed > 0) && (
+                            <>
+                              {" · "}
+                              <span style={{ color: "var(--green-10)" }}>+{String(session.diff_stats.lines_added)}</span>
+                              {" "}
+                              <span style={{ color: "var(--red-10)" }}>-{String(session.diff_stats.lines_removed)}</span>
+                            </>
+                          )}
                       </div>
                     </div>
                   );
