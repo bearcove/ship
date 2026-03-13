@@ -201,6 +201,10 @@ On macOS, agent processes MUST be launched inside a sandbox-exec sandbox that
 denies all file writes except to the worktree directory and essential system
 paths (temp dirs, cargo/rustup, package manager caches).
 
+r[acp.debug-info]
+The backend MUST surface ACP debug information per agent role (such as model
+name and token usage) and relay it to the UI.
+
 ## Views
 
 ### Session List

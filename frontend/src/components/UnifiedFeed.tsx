@@ -289,8 +289,8 @@ function RawBlockDebug({ entry }: { entry: BlockEntry }) {
       >
         {json}
       </Box>
-      <Box
-        as="button"
+      <button
+        type="button"
         onClick={() => setExpanded((v) => !v)}
         style={{
           all: "unset",
@@ -302,7 +302,7 @@ function RawBlockDebug({ entry }: { entry: BlockEntry }) {
         }}
       >
         {expanded ? "▲ collapse" : "▼ expand"}
-      </Box>
+      </button>
     </Box>
   );
 }
@@ -364,8 +364,8 @@ function ToolCallDebugBlock({ block, role }: { block: ToolCallBlockType; role: R
           >
             {prettyArgs}
           </Box>
-          <Box
-            as="button"
+          <button
+            type="button"
             onClick={() => setExpanded((v) => !v)}
             style={{
               all: "unset",
@@ -377,7 +377,7 @@ function ToolCallDebugBlock({ block, role }: { block: ToolCallBlockType; role: R
             }}
           >
             {expanded ? "▲ collapse" : "▼ expand"}
-          </Box>
+          </button>
         </>
       )}
       {block.error && (
