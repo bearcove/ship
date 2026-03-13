@@ -1931,3 +1931,49 @@ export const taskPanelRoot = style({
 globalStyle(`${taskPanelRoot} .${agentRail}`, {
   display: "flex",
 });
+
+// ─── Session switcher popover ─────────────────────────────────────────────────
+
+export const sessionSwitcherList = style({
+  maxHeight: "400px",
+  overflowY: "auto",
+  minWidth: "260px",
+});
+
+export const sessionSwitcherRow = style({
+  display: "flex",
+  flexDirection: "column",
+  gap: "2px",
+  padding: "var(--space-2) var(--space-3)",
+  cursor: "pointer",
+  borderRadius: "var(--radius-2)",
+  margin: "1px var(--space-1)",
+  selectors: {
+    '&[data-active="true"]': {
+      background: "var(--accent-a3)",
+    },
+    "&:hover": {
+      background: "var(--gray-a3)",
+    },
+    '&[data-active="true"]:hover': {
+      background: "var(--accent-a4)",
+    },
+  },
+});
+
+export const sessionSwitcherRowTitle = style({
+  fontSize: "var(--font-size-2)",
+  fontWeight: "var(--font-weight-medium)",
+  color: "var(--gray-12)",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+});
+
+export const sessionSwitcherRowSub = style({
+  fontSize: "var(--font-size-1)",
+  color: "var(--gray-10)",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+});
