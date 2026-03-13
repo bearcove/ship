@@ -148,11 +148,7 @@ function Avatar({ role, show, kind }: { role: Role; show: boolean; kind?: AgentK
       <div className={agentAvatarWrapper}>
         <img src={src} className={agentAvatar} alt={label} />
         <div className={agentAvatarBadge}>
-          <div
-            style={{ width: 10, height: 10, transform: "scale(0.56)", transformOrigin: "center" }}
-          >
-            <AgentKindIcon kind={kind} />
-          </div>
+          <AgentKindIcon kind={kind} />
         </div>
       </div>
     );

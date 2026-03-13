@@ -58,12 +58,13 @@ export const agentAvatarWrapper = style({
 
 export const agentAvatarBadge = style({
   position: "absolute",
-  bottom: -2,
-  right: -2,
-  width: 14,
-  height: 14,
+  bottom: -4,
+  right: -4,
+  width: 18,
+  height: 18,
   borderRadius: "50%",
-  background: "var(--color-background)",
+  background: "white",
+  boxShadow: "0 0 0 1.5px white",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
@@ -74,7 +75,6 @@ export const agentAvatar = style({
   height: 40,
   borderRadius: "50%",
   objectFit: "cover",
-  maskImage: "radial-gradient(circle, black 64%, transparent 64%)",
 });
 
 export const agentAvatarSpacer = style({
