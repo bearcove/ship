@@ -4773,7 +4773,7 @@ Here is your task:
         let mut refreshed = Vec::with_capacity(sessions_to_refresh.len());
         for (id, worktree_path, branch_name, base_branch) in sessions_to_refresh {
             let diff_stats =
-                Self::compute_worktree_diff_stats(worktree_path, branch_name, base_branch).await;
+                compute_worktree_diff_stats(worktree_path, branch_name, base_branch).await;
             refreshed.push((id, diff_stats));
         }
 
@@ -4802,6 +4802,57 @@ Here is your task:
             .global_events_tx
             .send(GlobalEvent::ProjectListChanged { projects });
     }
+}
+
+async fn compute_worktree_diff_stats(
+    worktree_path: PathBuf,
+    branch_name: String,
+    base_branch: String,
+) -> Option<WorktreeDiffStats> {
+    // Find the merge-base so we only see changes on this branch,
+    // not changes that landed on the base branch since we branched.
+    let merge_base_output = TokioCommand::new("git")
+        .args(["merge-base", "HEAD", &base_branch])
+        .current_dir(&worktree_path)
+        .output()
+        .await
+        .ok()?;
+    let merge_base = String::from_utf8_lossy(&merge_base_output.stdout)
+        .trim()
+        .to_owned();
+    let diff_target = if merge_base.is_empty() {
+        base_branch.clone()
+    } else {
+        merge_base
+    };
+
+    // Total diff vs merge-base (includes committed + uncommitted changes)
+    let output = TokioCommand::new("git")
+        .args(["diff", "--numstat", &diff_target])
+        .current_dir(&worktree_path)
+        .output()
+        .await
+        .ok()?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut lines_added: u64 = 0;
+    let mut lines_removed: u64 = 0;
+    let mut files_changed: u64 = 0;
+    for line in stdout.lines() {
+        let parts: Vec<&str> = line.split('\t').collect();
+        if parts.len() >= 3 {
+            lines_added += parts[0].parse::<u64>().unwrap_or(0);
+            lines_removed += parts[1].parse::<u64>().unwrap_or(0);
+            files_changed += 1;
+        }
+    }
+
+    Some(WorktreeDiffStats {
+        branch_name,
+        lines_added,
+        lines_removed,
+        files_changed,
+    })
 }
 
 impl Ship for ShipImpl {
@@ -5538,58 +5589,7 @@ impl Ship for ShipImpl {
             (path, branch, base)
         };
 
-        Self::compute_worktree_diff_stats(worktree_path, branch_name, base_branch).await
-    }
-
-    async fn compute_worktree_diff_stats(
-        worktree_path: PathBuf,
-        branch_name: String,
-        base_branch: String,
-    ) -> Option<WorktreeDiffStats> {
-        // Find the merge-base so we only see changes on this branch,
-        // not changes that landed on the base branch since we branched.
-        let merge_base_output = TokioCommand::new("git")
-            .args(["merge-base", "HEAD", &base_branch])
-            .current_dir(&worktree_path)
-            .output()
-            .await
-            .ok()?;
-        let merge_base = String::from_utf8_lossy(&merge_base_output.stdout)
-            .trim()
-            .to_owned();
-        let diff_target = if merge_base.is_empty() {
-            base_branch.clone()
-        } else {
-            merge_base
-        };
-
-        // Total diff vs merge-base (includes committed + uncommitted changes)
-        let output = TokioCommand::new("git")
-            .args(["diff", "--numstat", &diff_target])
-            .current_dir(&worktree_path)
-            .output()
-            .await
-            .ok()?;
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let mut lines_added: u64 = 0;
-        let mut lines_removed: u64 = 0;
-        let mut files_changed: u64 = 0;
-        for line in stdout.lines() {
-            let parts: Vec<&str> = line.split('\t').collect();
-            if parts.len() >= 3 {
-                lines_added += parts[0].parse::<u64>().unwrap_or(0);
-                lines_removed += parts[1].parse::<u64>().unwrap_or(0);
-                files_changed += 1;
-            }
-        }
-
-        Some(WorktreeDiffStats {
-            branch_name,
-            lines_added,
-            lines_removed,
-            files_changed,
-        })
+        compute_worktree_diff_stats(worktree_path, branch_name, base_branch).await
     }
 
     // r[event.subscribe.replay]

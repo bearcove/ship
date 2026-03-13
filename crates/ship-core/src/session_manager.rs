@@ -454,26 +454,39 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
     pub fn list_sessions(&self) -> Vec<SessionSummary> {
         self.sessions
             .values()
-            .map(|session| SessionSummary {
-                id: session.id.clone(),
-                slug: SessionGitNames::from_session_id(&session.id).slug,
-                project: session.config.project.clone(),
-                branch_name: session.config.branch_name.clone(),
-                title: session.title.clone(),
-                captain: session.captain.clone(),
-                mate: session.mate.clone(),
-                startup_state: session.startup_state.clone(),
-                current_task_title: session
-                    .current_task
-                    .as_ref()
-                    .map(|task| task.record.title.clone()),
-                current_task_description: session
-                    .current_task
-                    .as_ref()
-                    .map(|task| task.record.description.clone()),
-                task_status: session.current_task.as_ref().map(|task| task.record.status),
-                autonomy_mode: session.config.autonomy_mode,
-                created_at: session.created_at.clone(),
+            .map(|session| {
+                let tasks_done = session
+                    .task_history
+                    .iter()
+                    .filter(|task| task.status == TaskStatus::Accepted)
+                    .count() as u32;
+                let tasks_total =
+                    session.task_history.len() as u32 + u32::from(session.current_task.is_some());
+
+                SessionSummary {
+                    id: session.id.clone(),
+                    slug: SessionGitNames::from_session_id(&session.id).slug,
+                    project: session.config.project.clone(),
+                    branch_name: session.config.branch_name.clone(),
+                    title: session.title.clone(),
+                    captain: session.captain.clone(),
+                    mate: session.mate.clone(),
+                    startup_state: session.startup_state.clone(),
+                    current_task_title: session
+                        .current_task
+                        .as_ref()
+                        .map(|task| task.record.title.clone()),
+                    current_task_description: session
+                        .current_task
+                        .as_ref()
+                        .map(|task| task.record.description.clone()),
+                    task_status: session.current_task.as_ref().map(|task| task.record.status),
+                    diff_stats: session.diff_stats.clone(),
+                    tasks_done,
+                    tasks_total,
+                    autonomy_mode: session.config.autonomy_mode,
+                    created_at: session.created_at.clone(),
+                }
             })
             .collect()
     }
