@@ -61,7 +61,13 @@ function SessionRow({
   onClose?: () => void;
 }) {
   const isActive = session.slug === currentSessionId;
-  const title = session.title ?? session.current_task_title ?? session.branch_name;
+  const isActiveTask = ["Working", "Assigned", "ReviewPending", "SteerPending"].includes(
+    session.task_status?.tag ?? "",
+  );
+  const title =
+    isActiveTask && session.current_task_title
+      ? session.current_task_title
+      : (session.title ?? session.branch_name);
   const diffStats = session.diff_stats;
   const showTaskCounts = session.tasks_total > 0;
   const showDiffStats =
