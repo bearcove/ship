@@ -1232,7 +1232,7 @@ export const composerInlineBtn = style({
   padding: 0,
   transition: "background 0.1s, opacity 0.1s",
   background: "transparent",
-  color: "var(--gray-11)",
+  color: "var(--gray-12)",
   ":hover": {
     background: "var(--gray-a3)",
   },
@@ -1415,7 +1415,7 @@ export const composerActivityDot = style({
   width: 8,
   height: 8,
   borderRadius: "50%",
-  background: "var(--accent-9)",
+  background: "var(--accent-10)",
   animation: `${composerPulse} 1.5s ease-in-out infinite`,
 });
 
