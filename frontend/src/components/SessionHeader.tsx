@@ -250,6 +250,11 @@ export function SessionHeader({
               </DropdownMenu.Item>
             </DropdownMenu.Content>
           </DropdownMenu.Root>
+          {expanded ? (
+            <CaretDown size={11} className={sessionHeaderCaret} />
+          ) : (
+            <CaretRight size={11} className={sessionHeaderCaret} />
+          )}
         </div>
 
         {/* Row 2: in-progress step + progress + diff badge + chevron (clickable) */}
