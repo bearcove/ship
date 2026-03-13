@@ -2301,11 +2301,9 @@ Here is your task:
         command: String,
         cwd: Option<String>,
     ) -> Result<String, String> {
-        if Self::is_dangerous_command(&command).is_some() {
+        if let Some(reason) = Self::is_dangerous_command(&command) {
             return Err(format!(
-                "The command `{command}` has been blocked because it could affect the worktree \
-in ways that are hard to undo. Use mate_ask_captain to explain what you need, \
-and the captain will help you find the right approach."
+                "The command `{command}` has been blocked. {reason}"
             ));
         }
 
@@ -3971,20 +3969,19 @@ and the captain will help you find the right approach."
         let Some(program) = parts.next() else {
             return None;
         };
-        let subcommand = parts.next();
 
-        if program == "git"
-            && matches!(subcommand, Some("checkout" | "restore" | "clean" | "reset"))
-        {
-            return Some("Blocked: destructive git command. This is not reversible.");
+        if program == "git" {
+            return Some(
+                "Git commands are captain-owned and not allowed for the mate. Ship handles commits and rebases itself. Use mate_ask_captain if you need git information or a git action.",
+            );
         }
 
         if program == "find" {
-            return Some("Blocked: use fd instead of find. Example: fd -t f 'pattern' path/");
+            return Some("Use fd instead of find. Example: fd -t f 'pattern' path/.");
         }
 
         if program == "grep" {
-            return Some("Blocked: use rg instead of grep. Example: rg 'pattern' path/");
+            return Some("Use rg instead of grep. Example: rg 'pattern' path/.");
         }
 
         if program != "rm" {
@@ -4007,7 +4004,7 @@ and the captain will help you find the right approach."
             || normalized.contains(" ~");
 
         if has_recursive && has_force && broad_target {
-            return Some("Blocked: broad recursive delete.");
+            return Some("Broad recursive delete is not allowed.");
         }
 
         None
