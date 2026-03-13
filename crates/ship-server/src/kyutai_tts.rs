@@ -72,3 +72,44 @@ impl Drop for KyutaiTtsModel {
         let _ = self.child.kill();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{read_audio_frame, write_text_request};
+    use std::io::Cursor;
+
+    fn decode_text_request_frame(bytes: &[u8]) -> String {
+        let (len_buf, payload) = bytes.split_at(4);
+        let len = u32::from_le_bytes(len_buf.try_into().unwrap()) as usize;
+        assert_eq!(payload.len(), len);
+        String::from_utf8(payload.to_vec()).unwrap()
+    }
+
+    #[test]
+    fn write_text_request_preserves_embedded_newlines() {
+        let text = "first line\nsecond line\n\nfinal line";
+        let mut bytes = Vec::new();
+
+        write_text_request(&mut bytes, text).unwrap();
+
+        assert_eq!(decode_text_request_frame(&bytes), text);
+    }
+
+    #[test]
+    fn write_text_request_encodes_empty_text_as_one_request() {
+        let mut bytes = Vec::new();
+
+        write_text_request(&mut bytes, "").unwrap();
+
+        assert_eq!(bytes, 0u32.to_le_bytes());
+    }
+
+    #[test]
+    fn read_audio_frame_reads_zero_length_end_marker() {
+        let mut cursor = Cursor::new(0u32.to_le_bytes().to_vec());
+
+        let frame = read_audio_frame(&mut cursor).unwrap();
+
+        assert!(frame.is_empty());
+    }
+}
