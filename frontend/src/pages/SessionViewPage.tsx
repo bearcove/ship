@@ -1,9 +1,10 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { Box, Callout, Flex, IconButton, Spinner, Text } from "@radix-ui/themes";
-import { ArrowLeft, List, Warning } from "@phosphor-icons/react";
+import { Box, Callout, Flex, IconButton, Spinner, Text, Tooltip } from "@radix-ui/themes";
+import { Archive, ArrowLeft, List, Warning } from "@phosphor-icons/react";
 import { useSession } from "../hooks/useSession";
 import { useSessionState } from "../hooks/useSessionState";
+import { refreshSessionList } from "../hooks/useSessionList";
 import { UnifiedFeed } from "../components/UnifiedFeed";
 import { UnifiedComposer } from "../components/UnifiedComposer";
 import { PlanPanel } from "../components/PlanPanel";
@@ -26,7 +27,9 @@ import { AgentModelPicker } from "../components/AgentModelPicker";
 import { AgentEffortPicker } from "../components/AgentEffortPicker";
 import captainAvatar from "../assets/avatars/captain.png";
 import mateAvatar from "../assets/avatars/mate.png";
-import type { AgentSnapshot, TaskRecord } from "../generated/ship";
+import { getShipClient } from "../api/client";
+import { ArchiveSessionDialog } from "./SessionListPage";
+import type { AgentSnapshot, SessionSummary, TaskRecord } from "../generated/ship";
 
 function SessionTopBar({
   sessionId,
@@ -36,6 +39,8 @@ function SessionTopBar({
   captain,
   mate,
   onOpenSidebar,
+  onArchive,
+  archiving,
 }: {
   sessionId: string;
   project: string;
@@ -44,6 +49,8 @@ function SessionTopBar({
   captain: AgentSnapshot | null;
   mate: AgentSnapshot | null;
   onOpenSidebar: () => void;
+  onArchive: () => void;
+  archiving: boolean;
 }) {
   const displayTitle = title ?? branchName;
   return (
@@ -74,23 +81,34 @@ function SessionTopBar({
           </Text>
         </div>
       </div>
-      {(captain ?? mate) && (
-        <div className={sessionTopBarRight}>
-          {captain && (
-            <div className={sessionTopBarAgentSection}>
-              <AgentModelPicker sessionId={sessionId} agent={captain} />
-              <AgentEffortPicker sessionId={sessionId} agent={captain} />
-            </div>
-          )}
-          {captain && mate && <div className={sessionTopBarDivider} />}
-          {mate && (
-            <div className={sessionTopBarAgentSection}>
-              <AgentModelPicker sessionId={sessionId} agent={mate} />
-              <AgentEffortPicker sessionId={sessionId} agent={mate} />
-            </div>
-          )}
-        </div>
-      )}
+      <div className={sessionTopBarRight}>
+        {captain && (
+          <div className={sessionTopBarAgentSection}>
+            <AgentModelPicker sessionId={sessionId} agent={captain} />
+            <AgentEffortPicker sessionId={sessionId} agent={captain} />
+          </div>
+        )}
+        {captain && mate && <div className={sessionTopBarDivider} />}
+        {mate && (
+          <div className={sessionTopBarAgentSection}>
+            <AgentModelPicker sessionId={sessionId} agent={mate} />
+            <AgentEffortPicker sessionId={sessionId} agent={mate} />
+          </div>
+        )}
+        {(captain || mate) && <div className={sessionTopBarDivider} />}
+        <Tooltip content="Archive session">
+          <IconButton
+            variant="ghost"
+            color="gray"
+            size="2"
+            onClick={onArchive}
+            aria-label="Archive session"
+            loading={archiving}
+          >
+            <Archive size={16} />
+          </IconButton>
+        </Tooltip>
+      </div>
     </div>
   );
 }
@@ -107,6 +125,8 @@ export function SessionViewPage({
 }) {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
+  const [archiving, setArchiving] = useState(false);
+  const [archiveConfirm, setArchiveConfirm] = useState<string[] | null>(null);
   // r[event.client.hydration-sequence]: Step 1 — structural state
   const { session, error } = useSession(sessionId ?? "");
   // r[event.client.hydration-sequence]: Step 2/3 — event subscription + replay
@@ -189,53 +209,106 @@ export function SessionViewPage({
         }
       : session.current_task;
   const matePlan = mate?.state.tag === "Working" ? (mate.state.plan ?? null) : null;
+  const sessionDetail = session;
+  const tasksDone = sessionDetail.task_history.filter(
+    (task) => task.status.tag === "Accepted",
+  ).length;
+  const tasksTotal = sessionDetail.task_history.length + (liveTask ? 1 : 0);
+  const archiveSessionSummary: SessionSummary = {
+    id: session.id,
+    slug: session.slug,
+    project: session.project,
+    branch_name: session.branch_name,
+    title: eventState.title ?? session.title,
+    captain,
+    mate,
+    startup_state: startupState,
+    current_task_title: liveTask?.title ?? null,
+    current_task_description: liveTask?.description ?? null,
+    task_status: liveTask?.status ?? null,
+    autonomy_mode: session.autonomy_mode,
+    created_at: session.created_at,
+    diff_stats: null,
+    tasks_done: tasksDone,
+    tasks_total: tasksTotal,
+  };
+
+  async function handleArchive(force: boolean) {
+    setArchiving(true);
+    try {
+      const client = await getShipClient();
+      const result = await client.archiveSession({ id: sessionDetail.id, force });
+      if (result.tag === "Archived") {
+        setArchiveConfirm(null);
+        await refreshSessionList();
+        navigate("/");
+      } else if (result.tag === "RequiresConfirmation") {
+        setArchiveConfirm(result.unmerged_commits);
+      }
+    } finally {
+      setArchiving(false);
+    }
+  }
 
   return (
-    <Flex className={sessionViewRoot}>
-      <Flex style={{ flex: 1, overflow: "hidden", minHeight: 0 }}>
-        <Box className={sessionFeedColumn}>
-          <SessionTopBar
-            sessionId={session.id}
-            project={session.project}
-            title={eventState.title ?? session.title}
-            branchName={session.branch_name}
-            captain={captain ?? null}
-            mate={mate ?? null}
-            onOpenSidebar={onOpenSidebar}
-          />
-          <UnifiedFeed
-            sessionId={session.id}
-            captain={captain}
-            mate={mate}
-            blocks={eventState.unifiedBlocks.blocks}
-            startupState={startupState}
-            taskStatus={liveTask?.status ?? null}
-            taskCompletedDuration={taskCompletedDuration}
-            userAvatarUrl={session.user_avatar_url}
-            loading={isReplaying}
-            loadingLabel={replayLabel}
-            debugMode={debugMode}
-          />
-          {matePlan && matePlan.length > 0 && <PlanPanel steps={matePlan} />}
-          <UnifiedComposer
-            sessionId={session.id}
-            captain={captain}
-            mate={mate}
-            startupState={startupState}
-            taskStatus={liveTask?.status ?? null}
-          />
-        </Box>
-      </Flex>
-
-      {session.pending_steer && (
-        <SteerReview
-          sessionId={session.id}
-          steerText={session.pending_steer}
-          onDismiss={() => {}}
+    <>
+      {archiveConfirm && (
+        <ArchiveSessionDialog
+          session={archiveSessionSummary}
+          unmergedCommits={archiveConfirm}
+          onConfirm={() => void handleArchive(true)}
+          onCancel={() => setArchiveConfirm(null)}
+          archiving={archiving}
         />
       )}
-      {pendingHumanReview && <HumanReview sessionId={session.id} review={pendingHumanReview} />}
-    </Flex>
+      <Flex className={sessionViewRoot}>
+        <Flex style={{ flex: 1, overflow: "hidden", minHeight: 0 }}>
+          <Box className={sessionFeedColumn}>
+            <SessionTopBar
+              sessionId={session.id}
+              project={session.project}
+              title={eventState.title ?? session.title}
+              branchName={session.branch_name}
+              captain={captain ?? null}
+              mate={mate ?? null}
+              onOpenSidebar={onOpenSidebar}
+              onArchive={() => void handleArchive(false)}
+              archiving={archiving}
+            />
+            <UnifiedFeed
+              sessionId={session.id}
+              captain={captain}
+              mate={mate}
+              blocks={eventState.unifiedBlocks.blocks}
+              startupState={startupState}
+              taskStatus={liveTask?.status ?? null}
+              taskCompletedDuration={taskCompletedDuration}
+              userAvatarUrl={session.user_avatar_url}
+              loading={isReplaying}
+              loadingLabel={replayLabel}
+              debugMode={debugMode}
+            />
+            {matePlan && matePlan.length > 0 && <PlanPanel steps={matePlan} />}
+            <UnifiedComposer
+              sessionId={session.id}
+              captain={captain}
+              mate={mate}
+              startupState={startupState}
+              taskStatus={liveTask?.status ?? null}
+            />
+          </Box>
+        </Flex>
+
+        {session.pending_steer && (
+          <SteerReview
+            sessionId={session.id}
+            steerText={session.pending_steer}
+            onDismiss={() => {}}
+          />
+        )}
+        {pendingHumanReview && <HumanReview sessionId={session.id} review={pendingHumanReview} />}
+      </Flex>
+    </>
   );
 }
 
