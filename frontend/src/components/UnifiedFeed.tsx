@@ -22,10 +22,8 @@ import {
   feedRowAgent,
   feedRowUser,
   feedSystemMessage,
-  liveBubbleDot,
   liveBubblesRow,
   thinkingBubble,
-  shimmerText,
   thinkingStopBtn,
   startupFeedBody,
   startupFeedItem,
@@ -449,20 +447,17 @@ function ThinkingBubble({
           alt={agentName}
           style={{ width: 36, height: 36, borderRadius: "50%", flexShrink: 0 }}
         />
-        <span className={liveBubbleDot} />
-        <span className={liveBubbleDot} />
-        <span className={liveBubbleDot} />
         {toolsOk > 0 && (
-          <Text size="2" className={shimmerText}>
+          <Text size="2" color="gray">
             {toolsOk}✓
           </Text>
         )}
         {toolsFailed > 0 && (
-          <Text size="2" className={shimmerText}>
+          <Text size="2" color="gray">
             {toolsFailed}✗
           </Text>
         )}
-        <Text size="2" className={shimmerText} style={{ marginLeft: "auto" }}>
+        <Text size="2" color="gray" style={{ marginLeft: "auto" }}>
           {thinkingTokens} tokens
         </Text>
       </div>
