@@ -1,5 +1,5 @@
 import { Fragment, useState, useRef, useEffect } from "react";
-import { Box, Flex, ScrollArea, Spinner, Text } from "@radix-ui/themes";
+import { Box, Flex, Spinner, Text } from "@radix-ui/themes";
 import { ArrowDown, CaretRight, Stop } from "@phosphor-icons/react";
 import captainAvatar from "../assets/avatars/captain.png";
 import mateAvatar from "../assets/avatars/mate.png";
@@ -34,6 +34,7 @@ import {
   feedRowAgent,
   feedRowUser,
   feedSystemMessage,
+  liveBubbleDot,
   liveBubblesRow,
   thinkingBubble,
   shimmerText,
@@ -174,8 +175,17 @@ function TaskRecapBlock({
   block: TaskRecapBlockType;
   duration: number | null;
 }) {
-  const [expandedHash, setExpandedHash] = useState<string | null>(null);
+  const [expandedHashes, setExpandedHashes] = useState<Set<string>>(() => new Set());
   const { commits, stats } = block;
+
+  function toggleExpanded(hash: string) {
+    setExpandedHashes((prev) => {
+      const next = new Set(prev);
+      if (next.has(hash)) next.delete(hash);
+      else next.add(hash);
+      return next;
+    });
+  }
 
   return (
     <Box
@@ -204,7 +214,7 @@ function TaskRecapBlock({
       {commits.length > 0 && (
         <Box className={taskRecapCommitList}>
           {commits.map((c) => {
-            const expanded = expandedHash === c.hash;
+            const expanded = expandedHashes.has(c.hash);
             const commitLine = (
               <>
                 {c.diff && (
@@ -225,7 +235,7 @@ function TaskRecapBlock({
                   <button
                     type="button"
                     className={taskRecapCommitToggle}
-                    onClick={() => setExpandedHash(expanded ? null : c.hash)}
+                    onClick={() => toggleExpanded(c.hash)}
                   >
                     {commitLine}
                   </button>
