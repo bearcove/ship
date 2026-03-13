@@ -1,5 +1,5 @@
 import { Fragment, useState, useRef, useEffect } from "react";
-import { Box, Flex, Spinner, Text } from "@radix-ui/themes";
+import { Box, Flex, ScrollArea, Spinner, Text } from "@radix-ui/themes";
 import { ArrowDown } from "@phosphor-icons/react";
 import type {
   AgentSnapshot,
@@ -39,6 +39,9 @@ import {
   unifiedFeedStream,
   userAvatar,
   userAvatarSpacer,
+  diffAdd,
+  diffRemove,
+  diffContext,
 } from "../styles/session-view.css";
 
 type TextBlockType = Extract<ContentBlock, { tag: "Text" }>;
@@ -105,6 +108,99 @@ function segmentAgentRole(seg: FeedSegment): Role | null {
 function UserAvatar({ url }: { url: string | null }) {
   if (!url) return <div className={userAvatarSpacer} />;
   return <img src={url} className={userAvatar} alt="You" />;
+}
+
+// ─── TaskRecap components ──────────────────────────────────────────────────────
+
+function CommitDiffView({ diff }: { diff: string }) {
+  return (
+    <ScrollArea style={{ maxHeight: "16rem", maxWidth: "100%", marginTop: "var(--space-1)" }}>
+      <Box
+        style={{
+          fontFamily: "var(--font-mono, monospace)",
+          fontSize: "var(--font-size-1)",
+          whiteSpace: "pre",
+          textAlign: "left",
+        }}
+      >
+        {diff.split("\n").map((line, index) => {
+          if (line.startsWith("+") && !line.startsWith("+++"))
+            return (
+              <span key={index} className={diffAdd}>
+                {line}
+              </span>
+            );
+          if (line.startsWith("-") && !line.startsWith("---"))
+            return (
+              <span key={index} className={diffRemove}>
+                {line}
+              </span>
+            );
+          return (
+            <span key={index} className={diffContext}>
+              {line}
+            </span>
+          );
+        })}
+      </Box>
+    </ScrollArea>
+  );
+}
+
+type TaskRecapBlockType = Extract<ContentBlock, { tag: "TaskRecap" }>;
+
+function TaskRecapBlock({ block }: { block: TaskRecapBlockType }) {
+  const [expandedHash, setExpandedHash] = useState<string | null>(null);
+  const { commits, stats } = block;
+
+  return (
+    <Box
+      className={feedSystemMessage}
+      style={{
+        flexDirection: "column",
+        alignItems: "center",
+        gap: "var(--space-1)",
+        paddingTop: "var(--space-2)",
+        paddingBottom: "var(--space-2)",
+      }}
+    >
+      <Text className={feedSystemMessageText} style={{ fontWeight: 500 }}>
+        Work accepted
+      </Text>
+      {commits.length > 0 && (
+        <Box
+          style={{
+            fontFamily: "var(--font-mono, monospace)",
+            fontSize: "var(--font-size-1)",
+            color: "var(--gray-10)",
+            textAlign: "center",
+          }}
+        >
+          {commits.map((c) => (
+            <Box key={c.hash}>
+              <Box
+                style={{ display: "inline-block", cursor: c.diff ? "pointer" : undefined }}
+                onClick={() => c.diff && setExpandedHash(expandedHash === c.hash ? null : c.hash)}
+              >
+                <Text style={{ color: "var(--gray-8)" }}>{c.hash}</Text> <Text>{c.subject}</Text>
+              </Box>
+              {expandedHash === c.hash && c.diff && <CommitDiffView diff={c.diff} />}
+            </Box>
+          ))}
+        </Box>
+      )}
+      {stats && (
+        <Text
+          className={feedSystemMessageText}
+          style={{ fontFamily: "var(--font-mono, monospace)" }}
+        >
+          <span style={{ color: "var(--green-9)" }}>+{stats.insertions}</span>{" "}
+          <span style={{ color: "var(--red-9)" }}>−{stats.deletions}</span> across{" "}
+          {stats.files_changed} file{stats.files_changed !== 1 ? "s" : ""}
+        </Text>
+      )}
+    </Box>
+  );
 }
 
 // ─── Single block ─────────────────────────────────────────────────────────────
@@ -253,47 +349,8 @@ function SingleBlock({
       );
     }
 
-    case "TaskRecap": {
-      const { commits, stats } = block;
-      return (
-        <Box
-          className={feedSystemMessage}
-          style={{
-            flexDirection: "column",
-            alignItems: "center",
-            gap: "var(--space-1)",
-            paddingTop: "var(--space-2)",
-            paddingBottom: "var(--space-2)",
-          }}
-        >
-          <Text className={feedSystemMessageText} style={{ fontWeight: 500 }}>
-            Work accepted
-          </Text>
-          {commits.length > 0 && (
-            <Box
-              style={{
-                fontFamily: "var(--font-mono, monospace)",
-                fontSize: "var(--font-size-1)",
-                color: "var(--gray-10)",
-                textAlign: "center",
-              }}
-            >
-              {commits.map((c) => (
-                <Box key={c.hash}>
-                  <Text style={{ color: "var(--gray-8)" }}>{c.hash}</Text> <Text>{c.subject}</Text>
-                </Box>
-              ))}
-            </Box>
-          )}
-          {stats && (
-            <Text className={feedSystemMessageText}>
-              +{stats.insertions} −{stats.deletions} across {stats.files_changed} file
-              {stats.files_changed !== 1 ? "s" : ""}
-            </Text>
-          )}
-        </Box>
-      );
-    }
+    case "TaskRecap":
+      return <TaskRecapBlock block={block} />;
   }
 }
 
