@@ -4,12 +4,13 @@ import { Box, Flex, IconButton, Text, Tooltip } from "@radix-ui/themes";
 import {
   BugIcon,
   FolderSimplePlusIcon,
+  PlusIcon,
   SpeakerHighIcon,
   SpeakerSlashIcon,
 } from "@phosphor-icons/react";
 import type { SessionSummary, TaskStatus } from "../generated/ship";
 import { useSoundEnabled } from "../context/SoundContext";
-import { AddProjectDialog } from "../pages/SessionListPage";
+import { AddProjectDialog, NewSessionDialog } from "../pages/SessionListPage";
 import { useClientLogs } from "../api/client";
 import { QrCodeButton } from "./QrCodeButton";
 import {
@@ -123,6 +124,7 @@ export function SessionSidebar({
   onClose,
 }: Props) {
   const [addProjectOpen, setAddProjectOpen] = useState(false);
+  const [newSessionOpen, setNewSessionOpen] = useState(false);
   const { soundEnabled, setSoundEnabled } = useSoundEnabled();
   const clientLogs = useClientLogs();
 
@@ -131,11 +133,26 @@ export function SessionSidebar({
       {isOpen && <div className={sidebarBackdrop} onClick={onClose} />}
       <Box className={sidebarRoot} data-open={isOpen ? "true" : undefined}>
         <div className={sidebarHomeLink}>
-          <Link to="/" style={{ textDecoration: "none", color: "inherit" }}>
-            <Text size="3" weight="bold">
-              Ship
-            </Text>
-          </Link>
+          <Flex direction="column" gap="2">
+            <Link to="/" style={{ textDecoration: "none", color: "inherit" }}>
+              <Text size="3" weight="bold">
+                Ship
+              </Text>
+            </Link>
+            <Link
+              to="#"
+              style={{ textDecoration: "none", color: "inherit" }}
+              onClick={(e) => {
+                e.preventDefault();
+                setNewSessionOpen(true);
+              }}
+            >
+              <Flex align="center" gap="1">
+                <PlusIcon size={14} />
+                <Text size="2">New session</Text>
+              </Flex>
+            </Link>
+          </Flex>
         </div>
 
         <Box className={sidebarScrollArea}>
@@ -220,6 +237,7 @@ export function SessionSidebar({
         </Flex>
 
         <AddProjectDialog open={addProjectOpen} onOpenChange={setAddProjectOpen} />
+        <NewSessionDialog open={newSessionOpen} onOpenChange={setNewSessionOpen} />
       </Box>
     </>
   );
