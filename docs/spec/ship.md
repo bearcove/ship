@@ -236,13 +236,13 @@ the ACP connection, and if a task was in progress, triggers crash recovery
 r[proto.close-session]
 The protocol MUST support a `close_session` operation that tears down both
 agents, triggers worktree cleanup (with confirmation), and removes the session
-from the active list. The session's persistence file is retained for history.
+from the active list. The session's durable record is retained for history.
 
 r[proto.archive-session]
 The protocol MUST support an `archive_session` operation that retires a session:
 tears down both agents, removes the worktree and branch, marks the session as
 archived (sets `archived_at`), and removes it from the active list. The
-persistence file is kept on disk with `archived_at` set.
+session's durable record is retained with `archived_at` set.
 
 r[proto.archive-session.safety-check]
 Before archiving, the system MUST check whether the session's branch has unmerged
@@ -251,9 +251,9 @@ MUST return `RequiresConfirmation` with a list of unmerged commit summaries so
 the user can decide whether to proceed.
 
 r[session.persistent.across-restart]
-Sessions that are active (not archived) MUST be reloaded from disk on server
-restart. Corrupted or unreadable session files MUST be skipped with a warning
-rather than preventing all sessions from loading.
+Sessions that are active (not archived) MUST be reloaded from Ship's durable
+store on server restart. Corrupted or unreadable persisted session records MUST
+be skipped with a warning rather than preventing all sessions from loading.
 
 r[proto.get-session]
 The protocol MUST support a `get_session` operation that returns the session's
@@ -797,13 +797,14 @@ respawn + summary prompt as described above.
 r[resilience.server-restart]
 When Ship restarts, all agent processes are dead (they were children of the
 previous server process). On startup, Ship MUST load persisted session state
-from each project's `.ship/` directory. Sessions with non-terminal tasks
-(status is not `Accepted` or `Cancelled`) MUST be displayed in the session
-list with both agents in the `Error` state and a message indicating "Server
-restarted — agents need respawn." The human can then click "Retry" on each
-agent to respawn and trigger crash recovery (per
-`resilience.agent-crash-recovery`). Ship MUST NOT auto-respawn agents on
-restart — the human decides which sessions to resume.
+from its durable store rather than treating project-local `.ship/` directories
+as the source of truth for sessions. Sessions with non-terminal tasks (status
+is not `Accepted` or `Cancelled`) MUST be displayed in the session list with
+both agents in the `Error` state and a message indicating "Server restarted —
+agents need respawn." The human can then click "Retry" on each agent to
+respawn and trigger crash recovery (per `resilience.agent-crash-recovery`).
+Ship MUST NOT auto-respawn agents on restart — the human decides which
+sessions to resume.
 
 ## Session Sharing
 
@@ -1396,10 +1397,12 @@ exist and are git repositories. Projects with invalid paths MUST be flagged
 in the UI (not silently removed).
 
 r[project.persistence-dir]
-Each project's `.ship/` directory (for session persistence, Ship-managed
-worktrees, and MCP config) is relative to that project's repository root.
-Ship's own configuration (project list, global settings) lives in
-`~/.config/ship/`.
+Each project's `.ship/` directory is relative to that project's repository
+root and is reserved for repo-scoped Ship assets such as Ship-managed
+worktrees and project-local MCP config. Durable orchestration state —
+including sessions and other cross-project coordination records — MUST live in
+Ship-managed global storage under `~/.config/ship/` or another Ship-controlled
+global data location.
 
 r[project.mcp-defaults]
 Each project MAY have a `.ship/mcp-servers.json` in its repository root for

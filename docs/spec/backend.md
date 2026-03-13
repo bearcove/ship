@@ -255,10 +255,23 @@ r[backend.task-persistence]
 Task state MUST be persisted to survive server restarts.
 
 r[backend.persistence-format]
-Session and task state MUST be serialized using facet-json and stored as JSON
-files in a `.ship/` directory relative to the session's project repository
-root. Each session gets a `{session_id}.json` file containing the session
-config, current task, and task history.
+Session and task state MUST be stored in a Ship-managed durable store. The
+steady-state architecture MUST NOT require per-session JSON files inside
+project repositories. The concrete storage engine is intentionally unspecified
+so Ship can evolve from the current JSON-backed implementation to a database
+or equivalent durable store without changing protocol semantics.
+
+r[backend.persistence.boundary]
+The global durable store MUST be the authority for orchestration state that
+can span projects or outlive a single checkout, including session records,
+cross-project dependency data, shared knowledge, and issue-tracking metadata.
+Project-local `.ship/` directories remain authoritative only for repo-scoped
+assets such as worktrees and project-local MCP configuration.
+
+r[backend.persistence.migration]
+Implementations MAY import legacy session JSON files from project-local
+`.ship/` directories during migration, but those files are a compatibility
+mechanism, not the long-term storage contract.
 
 r[backend.persistence-dir-gitignore]
 The `.ship/` Ship-owned directory MUST be added to `.gitignore`.
@@ -290,7 +303,7 @@ always consistent. There is no separate codepath for "update state" vs
 "send events" — they are the same operation.
 
 r[backend.persistence-contents]
-The persisted JSON file for a session MUST contain:
+The persisted session record in the durable store MUST contain:
 - Session config (project, branch, agent kinds, autonomy mode)
 - Materialized agent states (for quick `get_session` responses on restart)
 - Current task metadata (id, description, status)
@@ -298,10 +311,10 @@ The persisted JSON file for a session MUST contain:
 - Task history (completed tasks with metadata, no event logs — those are
   discarded when a task completes)
 
-On server restart, the backend loads the JSON, reconstructs the materialized
-state by folding the event log, and resumes. Agent processes are NOT restored
-(they are re-spawned via `resilience.agent-crash-recovery` if a task was in
-progress).
+On server restart, the backend loads persisted session records, reconstructs
+the materialized state by folding the event log, and resumes. Agent processes
+are NOT restored (they are re-spawned via `resilience.agent-crash-recovery`
+if a task was in progress).
 
 ### Dev Proxy
 
@@ -416,8 +429,9 @@ Production mode is deferred to post-v1 (see `dev-proxy.prod-static`).
 
 r[server.config-dir]
 Ship's global configuration MUST be stored in `~/.config/ship/`. This
-directory contains `projects.json` (the project registry) and optional
-global settings.
+directory contains `projects.json` (the project registry), optional global
+settings, and Ship-managed artifacts for locating or hosting the durable
+orchestration store.
 
 r[server.discord-webhook]
 The Discord webhook URL MUST be configurable via the `SHIP_DISCORD_WEBHOOK`
