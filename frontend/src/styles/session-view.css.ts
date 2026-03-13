@@ -152,8 +152,7 @@ export const feedBubbleRelay = style({
 export const feedBubbleCaptain = style({
   background: "transparent",
   border: "none",
-  borderRight: "1px solid var(--gray-a4)",
-  borderRadius: "0",
+  padding: "0 !important",
 });
 
 export const feedToolGroup = style({
@@ -703,8 +702,7 @@ export const sessionHeaderRow1 = style({
   display: "flex",
   alignItems: "center",
   gap: "var(--space-1)",
-  padding: "var(--space-2) var(--space-2) var(--space-2) var(--space-3)",
-  minHeight: 40,
+  padding: "var(--space-2) var(--space-2) var(--space-1) var(--space-3)",
 });
 
 export const sessionHeaderTitle = style({
@@ -719,10 +717,10 @@ export const sessionHeaderRow2 = style({
   display: "flex",
   alignItems: "center",
   gap: "var(--space-2)",
-  padding: "var(--space-1) var(--space-3) var(--space-2)",
-  borderTop: "1px solid var(--gray-a3)",
+  padding: "var(--space-1) var(--space-3) var(--space-2) var(--space-3)",
   width: "100%",
   border: 0,
+  borderTop: "1px solid var(--gray-a3)",
   background: "transparent",
   color: "inherit",
   textAlign: "left",
@@ -861,6 +859,11 @@ export const agentHeaderControlRow = style({
   overflow: "hidden",
   whiteSpace: "nowrap",
   flexWrap: "nowrap",
+  selectors: {
+    [`${sessionHeaderAgentRow} &`]: {
+      width: "auto",
+    },
+  },
 });
 
 export const agentHeaderPickerTrigger = style({
@@ -1054,7 +1057,7 @@ export const startupFeedBody = style({
 });
 
 export const composerRoot = style({
-  padding: "var(--space-2) var(--space-3) var(--space-3)",
+  padding: "var(--space-2)",
   paddingBottom: "max(var(--space-3), env(safe-area-inset-bottom, 0px))",
   flexShrink: 0,
 });
@@ -1484,7 +1487,7 @@ export const bubbleCopyBtn = style({
 
 export const bubbleActions = style({
   display: "flex",
-  flexDirection: "column",
+  flexDirection: "row",
   gap: "var(--space-2)",
   alignSelf: "flex-start",
   flexShrink: 0,
@@ -1492,11 +1495,12 @@ export const bubbleActions = style({
 
 export const feedBubbleWithActions = style({
   display: "flex",
-  flexDirection: "row",
+  flexDirection: "column",
   alignItems: "flex-start",
   gap: "var(--space-2)",
   flex: 1,
   minWidth: 0,
+  marginBottom: "var(--space-4)",
 });
 
 export const feedBubbleWithActionsUser = style({
