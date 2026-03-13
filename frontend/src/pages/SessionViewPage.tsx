@@ -14,6 +14,7 @@ import { HumanReview } from "../components/HumanReview";
 import { SessionDebugPanel } from "../components/SessionDebugPanel";
 import {
   agentRail,
+  feedContentColumn,
   hamburgerBtn,
   sessionFeedColumn,
   sessionTopBar,
@@ -351,13 +352,15 @@ export function SessionViewPage({
                 mateAcpInfo={eventState.mateAcpInfo}
               />
             )}
-            <UnifiedComposer
-              sessionId={session.id}
-              captain={captain}
-              mate={mate}
-              startupState={startupState}
-              taskStatus={liveTask?.status ?? null}
-            />
+            <Box className={feedContentColumn}>
+              <UnifiedComposer
+                sessionId={session.id}
+                captain={captain}
+                mate={mate}
+                startupState={startupState}
+                taskStatus={liveTask?.status ?? null}
+              />
+            </Box>
           </Box>
         </Flex>
 

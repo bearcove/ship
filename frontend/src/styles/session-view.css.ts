@@ -456,14 +456,18 @@ export const sessionFeedColumn = style({
 // Three-column app layout: [left: sidebar] [center: fills space] [right: agent rail]
 export const appColumns = style({
   display: "grid",
-  gridTemplateColumns: "260px 1fr",
-  maxWidth: "1200px",
+  gridTemplateColumns: "260px 1fr 260px",
+  maxWidth: "1400px",
   width: "100%",
   margin: "0 auto",
   flex: 1,
   minHeight: 0,
   overflow: "hidden",
+  gap: "var(--space-2)",
   "@media": {
+    "(max-width: 980px)": {
+      gridTemplateColumns: "260px 1fr",
+    },
     "(max-width: 700px)": {
       gridTemplateColumns: "1fr",
     },
@@ -490,7 +494,11 @@ export const appColCenter = style({
 });
 
 export const appColRight = style({
-  display: "none",
+  "@media": {
+    "(max-width: 980px)": {
+      display: "none",
+    },
+  },
 });
 
 export const panelColumn = style({

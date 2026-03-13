@@ -100,22 +100,21 @@ export const sessionRow = style({
   paddingRight: "var(--space-3)",
   paddingTop: "var(--space-2)",
   paddingBottom: "var(--space-2)",
+  margin: "var(--space-1) var(--space-2)",
+  borderRadius: "var(--radius-3)",
   textDecoration: "none",
   color: "inherit",
   selectors: {
-    "& + &": {
-      borderTop: "1px solid var(--gray-a3)",
-    },
     '&[data-active="true"]': {
-      background: "var(--accent-a5)",
-      borderLeft: "3px solid var(--accent-9)",
-      paddingLeft: "calc(var(--space-3) - 3px)",
+      background: "var(--color-background)",
+      outline: "1px solid var(--gray-a4)",
+      boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
     },
     "&:hover": {
-      background: "var(--gray-a3)",
+      background: "var(--gray-a2)",
     },
     '&[data-active="true"]:hover': {
-      background: "var(--accent-a6)",
+      background: "var(--color-background)",
     },
   },
 });

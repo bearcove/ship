@@ -15,7 +15,7 @@ createRoot(document.getElementById("root")!).render(
       {/* r[frontend.components.radix-theme] r[ui.theme.config] */}
       <Theme
         appearance="inherit"
-        accentColor="iris"
+        accentColor="lime"
         grayColor="slate"
         radius="medium"
         scaling="100%"
