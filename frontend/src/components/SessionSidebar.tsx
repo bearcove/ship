@@ -1,8 +1,7 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { Box, Flex, IconButton, Select, Text, Tooltip } from "@radix-ui/themes";
 import {
-  Archive,
   BugIcon,
   FolderSimplePlusIcon,
   SpeakerHighIcon,
@@ -12,30 +11,18 @@ import type { AgentKind, ProjectInfo, SessionSummary, TaskStatus } from "../gene
 import { useSoundEnabled } from "../context/SoundContext";
 import { useAgentDiscovery } from "../hooks/useAgentDiscovery";
 import { useAgentKindPrefs } from "../hooks/useAgentKindPrefs";
-import { refreshSessionList } from "../hooks/useSessionList";
-import { AddProjectDialog, ArchiveSessionDialog } from "../pages/SessionListPage";
-import { getShipClient, useClientLogs } from "../api/client";
+import { AddProjectDialog } from "../pages/SessionListPage";
+import { useClientLogs } from "../api/client";
 import { QrCodeButton } from "./QrCodeButton";
 import {
   sessionRow,
-  sessionRowArchiveBtn,
   sessionRowEmpty,
   sessionRowTitle,
   sidebarBackdrop,
   sidebarHomeLink,
   sidebarRoot,
   sidebarScrollArea,
-  sidebarStatusDot,
 } from "../styles/session-sidebar.css";
-
-const STATUS_DOT_COLOR: Record<TaskStatus["tag"], string> = {
-  Assigned: "var(--gray-9)",
-  Working: "var(--blue-9)",
-  ReviewPending: "var(--amber-9)",
-  SteerPending: "var(--orange-9)",
-  Accepted: "var(--green-9)",
-  Cancelled: "var(--red-9)",
-};
 
 function statusLabel(status: TaskStatus | null): string {
   if (!status) return "Idle";
@@ -113,89 +100,48 @@ function SessionRow({
   currentSessionId?: string;
   onClose?: () => void;
 }) {
-  const [archiving, setArchiving] = useState(false);
-  const [archiveConfirm, setArchiveConfirm] = useState<{
-    session: SessionSummary;
-    unmergedCommits: string[];
-  } | null>(null);
-  const navigate = useNavigate();
   const isActive = session.slug === currentSessionId;
   const title = session.title ?? session.current_task_title ?? session.branch_name;
-
-  async function handleArchive(force: boolean) {
-    setArchiving(true);
-    try {
-      const client = await getShipClient();
-      const result = await client.archiveSession({ id: session.id, force });
-      if (result.tag === "Archived") {
-        setArchiveConfirm(null);
-        await refreshSessionList();
-        if (currentSessionId === session.slug) {
-          navigate("/");
-        }
-      } else if (result.tag === "RequiresConfirmation") {
-        setArchiveConfirm({ session, unmergedCommits: result.unmerged_commits });
-      }
-    } finally {
-      setArchiving(false);
-    }
-  }
+  const diffStats = session.diff_stats;
+  const showTaskCounts = session.tasks_total > 0;
+  const showDiffStats =
+    diffStats != null && (diffStats.lines_added > 0 || diffStats.lines_removed > 0);
 
   return (
-    <>
-      {archiveConfirm && (
-        <ArchiveSessionDialog
-          session={archiveConfirm.session}
-          unmergedCommits={archiveConfirm.unmergedCommits}
-          onConfirm={() => handleArchive(true)}
-          onCancel={() => setArchiveConfirm(null)}
-          archiving={archiving}
-        />
-      )}
-      <Link
-        to={`/sessions/${session.slug}`}
-        className={sessionRow}
-        data-active={isActive ? "true" : "false"}
-        aria-current={isActive ? "page" : undefined}
-        onClick={() => onClose?.()}
-      >
-        <Flex direction="column" gap="1" style={{ minWidth: 0, flex: 1 }}>
-          <Text size="2" className={sessionRowTitle}>
-            {title}
-          </Text>
-          <Text
-            size="1"
-            color="gray"
-            style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-          >
-            {session.project} · {statusLabel(session.task_status)}
-          </Text>
-        </Flex>
-        {session.task_status && (
-          <div
-            className={sidebarStatusDot}
-            style={{ background: STATUS_DOT_COLOR[session.task_status.tag] }}
-          />
-        )}
-        {/* r[proto.archive-session] */}
-        <Tooltip content="Archive session">
-          <IconButton
-            size="1"
-            variant="ghost"
-            color="gray"
-            className={sessionRowArchiveBtn}
-            loading={archiving}
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              void handleArchive(false);
-            }}
-          >
-            <Archive size={16} />
-          </IconButton>
-        </Tooltip>
-      </Link>
-    </>
+    <Link
+      to={`/sessions/${session.slug}`}
+      className={sessionRow}
+      data-active={isActive ? "true" : "false"}
+      aria-current={isActive ? "page" : undefined}
+      onClick={() => onClose?.()}
+    >
+      <Flex direction="column" gap="1" style={{ minWidth: 0, flex: 1 }}>
+        <Text size="2" className={sessionRowTitle}>
+          {title}
+        </Text>
+        <Text
+          size="1"
+          color="gray"
+          style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+        >
+          {session.project} · {statusLabel(session.task_status)}
+          {showTaskCounts && (
+            <span>
+              {" "}
+              · {session.tasks_done}/{session.tasks_total}
+            </span>
+          )}
+          {showDiffStats && (
+            <>
+              <span> · </span>
+              <span style={{ color: "var(--green-10)" }}>+{diffStats.lines_added}</span>
+              <span> </span>
+              <span style={{ color: "var(--red-10)" }}>-{diffStats.lines_removed}</span>
+            </>
+          )}
+        </Text>
+      </Flex>
+    </Link>
   );
 }
 
