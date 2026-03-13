@@ -5,7 +5,7 @@ interface Props {
   color?: string;
 }
 
-export function Waveform({ analyser, color = "var(--red-9)" }: Props) {
+export function Waveform({ analyser, color = "var(--accent-9)" }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number>(0);
 
