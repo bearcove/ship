@@ -279,6 +279,11 @@ stored as first-class durable records rather than inferred from agent text or
 hidden process trees. These records MUST preserve approval state and
 coordination-blocked state across restart.
 
+r[backend.persistence.fulfillment]
+Dependency request records MUST distinguish child-session task completion from
+fulfillment or usable state. Restart recovery MUST preserve whether a human-
+gated merge, publish, release, vendoring, or update decision is still pending.
+
 r[backend.persistence-dir-gitignore]
 The `.ship/` Ship-owned directory MUST be added to `.gitignore`.
 

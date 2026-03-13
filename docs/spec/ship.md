@@ -82,6 +82,50 @@ active child session, or had been cancelled or rejected. Ship MUST NOT
 auto-create new child sessions solely because a stored dependency request
 exists.
 
+r[dependency.request.fulfillment-gate]
+Linked-session task completion and dependency fulfillment are separate facts.
+Accepting or finishing work in the child session MUST NOT by itself satisfy the
+dependency request or clear the requester's coordination-blocked state.
+
+r[dependency.request.usable-state]
+Ship MUST model a second fulfillment or usable-state step after dependency work
+completes. That step captures whether the dependency is actually ready for the
+requester to consume, including downstream actions such as merge, publish,
+release, vendoring, or version updates.
+
+r[dependency.request.fulfillment-approval]
+Transitioning a dependency request into its usable state MUST require explicit
+human approval for the relevant downstream action. Ship MUST NOT infer merge,
+publish, release, or update approval from child-session completion alone.
+
+r[dependency.request.unblock]
+If the requester was coordination-blocked on a dependency request, Ship MUST
+keep that blocked state in place until the dependency is marked usable or the
+human explicitly overrides it.
+
+### ArchCaptain
+
+r[archcaptain.role]
+Ship MAY expose an ArchCaptain-style coordinator that the human can talk to at
+a multi-project level. Its job is to inspect linked sessions, propose
+cross-project dependency requests, and coordinate follow-up across projects.
+
+r[archcaptain.explicit-model]
+ArchCaptain MUST coordinate through explicit dependency-request and linked-
+session records. It MUST NOT bypass that model with hidden nested captains,
+implicit background delegation, or invisible child sessions.
+
+r[archcaptain.human-gates]
+ArchCaptain MAY propose creating dependency child sessions and later propose
+merge, publish, release, or update actions needed to make dependency work
+usable, but Ship MUST require explicit human approval before those actions are
+executed.
+
+r[archcaptain.session-scoped-captains]
+Per-project session captains remain responsible for their own normal sessions.
+ArchCaptain coordinates across sessions; it does not replace the captain role
+inside each linked child session.
+
 ### Agent Assignment
 
 r[session.agent.captain]
