@@ -164,7 +164,7 @@ function TaskRecapBlock({ block }: { block: TaskRecapBlockType }) {
         paddingBottom: "var(--space-2)",
       }}
     >
-      <Text className={feedSystemMessageText} style={{ fontWeight: 500 }}>
+      <Text style={{ fontSize: "var(--font-size-1)", color: "var(--gray-9)", fontWeight: 500 }}>
         Work accepted
       </Text>
       {commits.length > 0 && (
@@ -191,8 +191,11 @@ function TaskRecapBlock({ block }: { block: TaskRecapBlockType }) {
       )}
       {stats && (
         <Text
-          className={feedSystemMessageText}
-          style={{ fontFamily: "var(--font-mono, monospace)" }}
+          style={{
+            fontSize: "var(--font-size-1)",
+            color: "var(--gray-9)",
+            fontFamily: "var(--font-mono, monospace)",
+          }}
         >
           <span style={{ color: "var(--green-9)" }}>+{stats.insertions}</span>{" "}
           <span style={{ color: "var(--red-9)" }}>−{stats.deletions}</span> across{" "}
