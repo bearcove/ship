@@ -143,6 +143,8 @@ enum RustfmtOutcome {
 
 #[cfg(test)]
 static TEST_RUSTFMT_PROGRAM: Mutex<Option<std::ffi::OsString>> = Mutex::new(None);
+#[cfg(test)]
+static TEST_AGENT_DRIVER: Mutex<Option<ship_core::FakeAgentDriver>> = Mutex::new(None);
 
 pub enum MateReviewOutcome {
     Accepted { summary: Option<String> },
@@ -221,6 +223,41 @@ impl ShipImpl {
             kyutai_model: Arc::new(Mutex::new(None)),
             global_events_tx,
         }
+    }
+
+    #[cfg(test)]
+    fn test_agent_driver() -> Option<ship_core::FakeAgentDriver> {
+        TEST_AGENT_DRIVER
+            .lock()
+            .expect("test agent driver mutex poisoned")
+            .clone()
+    }
+
+    async fn agent_spawn(
+        &self,
+        kind: AgentKind,
+        role: Role,
+        config: &AgentSessionConfig,
+    ) -> Result<ship_core::AgentSpawnInfo, ship_core::AgentError> {
+        #[cfg(test)]
+        if let Some(driver) = Self::test_agent_driver() {
+            return driver.spawn(kind, role, config).await;
+        }
+
+        self.agent_driver.spawn(kind, role, config).await
+    }
+
+    async fn agent_prompt(
+        &self,
+        handle: &ship_core::AgentHandle,
+        parts: &[PromptContentPart],
+    ) -> Result<ship_core::PromptResponse, ship_core::AgentError> {
+        #[cfg(test)]
+        if let Some(driver) = Self::test_agent_driver() {
+            return driver.prompt(handle, parts).await;
+        }
+
+        self.agent_driver.prompt(handle, parts).await
     }
 
     /// Configure the whisper model path from env var or default locations.
@@ -1494,8 +1531,7 @@ Continue where you left off — wait for the human to give you direction."
         };
 
         let mate_spawn = self
-            .agent_driver
-            .spawn(mate_kind, Role::Mate, &mate_config)
+            .agent_spawn(mate_kind, Role::Mate, &mate_config)
             .await
             .map_err(|error| error.message)?;
 
@@ -4875,7 +4911,7 @@ Here is your task:
         self.persist_session(session_id).await?;
 
         let (stop_tx, pump_handle) = self.spawn_notification_pump(session_id.clone(), role);
-        let response = match self.agent_driver.prompt(&handle, &parts).await {
+        let response = match self.agent_prompt(&handle, &parts).await {
             Ok(response) => response,
             Err(error) => {
                 let message = error.message;
@@ -6652,7 +6688,10 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use crate::captain_mcp::worktree_tools::{read_file_tool, run_command_tool};
-    use ship_core::{ProjectRegistry, SessionStore};
+    use ship_core::{
+        AgentError, FakeAgentDriver, FakePromptScript, ProjectRegistry, PromptResponse,
+        SessionGitNames, SessionStore, StopReason,
+    };
     use ship_service::Ship;
     use ship_types::{
         AgentDiscovery, AgentKind, AgentSnapshot, AgentState, AutonomyMode, CaptainAssignExtras,
@@ -6667,6 +6706,7 @@ mod tests {
     use super::ShipImpl;
 
     static MATE_TOOL_TEST_LOCK: Mutex<()> = Mutex::new(());
+    static FAKE_AGENT_DRIVER_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     fn lock_mate_tool_tests() -> MutexGuard<'static, ()> {
         MATE_TOOL_TEST_LOCK
@@ -6674,7 +6714,32 @@ mod tests {
             .expect("mate tool test lock should not be poisoned")
     }
 
+    fn lock_fake_agent_driver_tests() -> MutexGuard<'static, ()> {
+        FAKE_AGENT_DRIVER_TEST_LOCK
+            .lock()
+            .expect("fake agent driver test lock should not be poisoned")
+    }
+
     struct TestRustfmtProgramGuard;
+
+    struct TestAgentDriverGuard;
+
+    impl TestAgentDriverGuard {
+        fn set(driver: FakeAgentDriver) -> Self {
+            *super::TEST_AGENT_DRIVER
+                .lock()
+                .expect("test agent driver mutex poisoned") = Some(driver);
+            Self
+        }
+    }
+
+    impl Drop for TestAgentDriverGuard {
+        fn drop(&mut self) {
+            *super::TEST_AGENT_DRIVER
+                .lock()
+                .expect("test agent driver mutex poisoned") = None;
+        }
+    }
 
     impl TestRustfmtProgramGuard {
         fn set(program: &str) -> Self {
@@ -7461,6 +7526,99 @@ mod tests {
             .expect("captain tool should succeed");
 
         assert_eq!(result, "Steer sent to the mate.");
+
+        let detail = Ship::get_session(&ship, session_id.clone()).await;
+        assert_eq!(
+            detail
+                .current_task
+                .as_ref()
+                .expect("task should exist")
+                .status,
+            TaskStatus::Working
+        );
+        assert_eq!(detail.pending_steer, None);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn captain_tool_steer_restarts_missing_resumed_mate() {
+        let _guard = lock_fake_agent_driver_tests();
+        let fake_driver = FakeAgentDriver::default();
+        fake_driver.push_script(FakePromptScript {
+            expected_handle: None,
+            response: Ok(PromptResponse {
+                stop_reason: StopReason::EndTurn,
+            }),
+            events: Vec::new(),
+        });
+        fake_driver.push_script(FakePromptScript {
+            expected_handle: None,
+            response: Err(AgentError {
+                message: "stop after the first steer prompt".to_owned(),
+            }),
+            events: Vec::new(),
+        });
+        let _driver_guard = TestAgentDriverGuard::set(fake_driver.clone());
+
+        let (dir, ship, session_id) =
+            create_session_for_workflow_test("captain-tool-steer-restart-mate").await;
+        let recovered_worktree = dir
+            .join("project")
+            .join(".ship")
+            .join(&SessionGitNames::from_session_id(&session_id).worktree_dir);
+        std::fs::create_dir_all(&recovered_worktree)
+            .expect("recovered worktree path should be created");
+
+        {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(&session_id).expect("session should exist");
+            session.mate_handle = None;
+            session.worktree_path = None;
+            session.mate_acp_session_id = Some("persisted-mate-acp".to_owned());
+        }
+
+        let result = ship
+            .captain_tool_steer(&session_id, "Ask the mate to add coverage".to_owned())
+            .await
+            .expect("captain tool should succeed");
+        assert_eq!(result, "Steer sent to the mate.");
+
+        timeout(Duration::from_secs(1), async {
+            loop {
+                let ready = {
+                    let sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+                    let session = sessions.get(&session_id).expect("session should exist");
+                    session.mate_handle.is_some()
+                        && session.worktree_path.as_ref() == Some(&recovered_worktree)
+                };
+                if ready
+                    && fake_driver.spawn_records().len() == 1
+                    && fake_driver.prompt_log().len() >= 2
+                {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("mate restart and prompt delivery should finish");
+
+        let spawns = fake_driver.spawn_records();
+        assert_eq!(spawns.len(), 1);
+        assert_eq!(spawns[0].role, Role::Mate);
+        assert_eq!(
+            spawns[0].session_config.resume_session_id.as_deref(),
+            Some("persisted-mate-acp")
+        );
+        assert_eq!(spawns[0].session_config.worktree_path, recovered_worktree);
+
+        let prompts = fake_driver.prompt_log();
+        assert!(matches!(
+            prompts.first().and_then(|(_, parts)| parts.first()),
+            Some(PromptContentPart::Text { text })
+                if text == "Captain steer:\nAsk the mate to add coverage"
+        ));
 
         let detail = Ship::get_session(&ship, session_id.clone()).await;
         assert_eq!(
