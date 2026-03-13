@@ -602,8 +602,8 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
         {isRecording && transcription.analyser && (
           <div className={composerOverlay}>
             <Text
-              size="1"
-              color="red"
+              size="2"
+              color="gray"
               style={{
                 fontVariantNumeric: "tabular-nums",
                 flexShrink: 0,
