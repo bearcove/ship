@@ -51,6 +51,8 @@ import {
   taskRecapCommitHash,
   taskRecapCommitSubject,
   taskRecapCaret,
+  taskRecapDiff,
+  taskRecapDiffInner,
 } from "../styles/session-view.css";
 
 type TextBlockType = Extract<ContentBlock, { tag: "Text" }>;
@@ -119,23 +121,8 @@ function UserAvatar({ url }: { url: string | null }) {
 
 function CommitDiffView({ diff }: { diff: string }) {
   return (
-    <ScrollArea
-      style={{
-        maxHeight: "16rem",
-        width: "100%",
-        overflowX: "auto",
-        marginTop: "var(--space-1)",
-      }}
-    >
-      <Box
-        style={{
-          fontFamily: "var(--font-mono, monospace)",
-          fontSize: "var(--font-size-1)",
-          whiteSpace: "pre",
-          textAlign: "left",
-          minWidth: "max-content",
-        }}
-      >
+    <Box className={taskRecapDiff} style={{ marginTop: "var(--space-1)" }}>
+      <Box className={taskRecapDiffInner}>
         {diff.split("\n").map((line, index) => {
           if (line.startsWith("+") && !line.startsWith("+++"))
             return (
@@ -156,7 +143,7 @@ function CommitDiffView({ diff }: { diff: string }) {
           );
         })}
       </Box>
-    </ScrollArea>
+    </Box>
   );
 }
 

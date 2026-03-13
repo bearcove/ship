@@ -271,6 +271,24 @@ export const taskRecapCaret = style({
   transition: "transform 0.15s ease",
 });
 
+export const taskRecapDiff = style({
+  width: "100%",
+  overflowX: "auto",
+  overflowY: "visible",
+  padding: "var(--space-2)",
+  borderRadius: "var(--radius-2)",
+  border: "1px solid var(--gray-a4)",
+  background: "var(--gray-a3)",
+});
+
+export const taskRecapDiffInner = style({
+  fontFamily: monoFontStack,
+  fontSize: "var(--font-size-1)",
+  whiteSpace: "pre",
+  textAlign: "left",
+  minWidth: "max-content",
+});
+
 export const feedToolGroupHeader = style({
   display: "flex",
   alignItems: "center",
