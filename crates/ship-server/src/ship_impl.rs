@@ -7167,6 +7167,39 @@ mod tests {
         }
     }
 
+    fn git_succeeds(path: &std::path::Path, args: &[&str], message: &str) {
+        let status = Command::new("git")
+            .arg("-C")
+            .arg(path)
+            .args(args)
+            .status()
+            .expect("git command should run");
+        assert!(status.success(), "{message}");
+    }
+
+    fn git_stdout(path: &std::path::Path, args: &[&str], message: &str) -> String {
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(path)
+            .args(args)
+            .output()
+            .expect("git command should run");
+        assert!(
+            output.status.success(),
+            "{message}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8_lossy(&output.stdout).into_owned()
+    }
+
+    fn extract_saved_branch_name(response: &str) -> String {
+        response
+            .split('`')
+            .nth(1)
+            .expect("saved branch name should appear in backticks")
+            .to_owned()
+    }
+
     fn parse_edit_id(response: &str) -> String {
         // The edit_prepare response text starts with "Edit prepared (edit_id=<id>)."
         response
@@ -7300,8 +7333,9 @@ mod tests {
 
     // r[verify task.assign]
     // r[verify captain.tool.assign]
+    // r[verify captain.tool.assign.dirty-session-strategy]
     #[tokio::test]
-    async fn captain_tool_assign_fails_when_session_worktree_is_dirty() {
+    async fn captain_tool_assign_requires_dirty_session_strategy_when_leftover_state_exists() {
         let (dir, ship, session_id) =
             create_ready_session_for_assign_test("captain-assign-dirty", "task").await;
         let project_root = dir.join("project");
@@ -7310,35 +7344,16 @@ mod tests {
 
         std::fs::write(project_root.join("tracked.txt"), "base\n")
             .expect("tracked file should be written");
-        assert!(
-            Command::new("git")
-                .arg("-C")
-                .arg(&project_root)
-                .args(["add", "."])
-                .status()
-                .expect("git add should run")
-                .success(),
-            "git add should succeed"
+        git_succeeds(&project_root, &["add", "."], "git add should succeed");
+        git_succeeds(
+            &project_root,
+            &["commit", "-m", "initial"],
+            "git commit should succeed",
         );
-        assert!(
-            Command::new("git")
-                .arg("-C")
-                .arg(&project_root)
-                .args(["commit", "-m", "initial"])
-                .status()
-                .expect("git commit should run")
-                .success(),
-            "git commit should succeed"
-        );
-        assert!(
-            Command::new("git")
-                .arg("-C")
-                .arg(&project_root)
-                .args(["worktree", "add", "-b", "task", ".ship/@task", "main"])
-                .status()
-                .expect("git worktree add should run")
-                .success(),
-            "git worktree add should succeed"
+        git_succeeds(
+            &project_root,
+            &["worktree", "add", "-b", "task", ".ship/@task", "main"],
+            "git worktree add should succeed",
         );
         std::fs::write(worktree_path.join("dirty.txt"), "dirty\n")
             .expect("dirty file should be written");
@@ -7356,17 +7371,19 @@ mod tests {
                 },
             )
             .await
-            .expect_err("captain assign should fail on dirty worktree");
+            .expect_err("captain assign should require a dirty-session strategy");
 
         assert!(
-            error.contains("pre-task reset is unsafe:")
-                && error.contains("(uncommitted changes in worktree)"),
+            error.contains("leftover session state")
+                && error.contains("(uncommitted changes in worktree)")
+                && error.contains("continue_in_place")
+                && error.contains("save_and_start_clean"),
             "unexpected assign error: {error}"
         );
         let session = Ship::get_session(&ship, session_id.clone()).await;
         assert!(
             session.current_task.is_none(),
-            "task should not start on dirty worktree"
+            "task should not start when the captain has not chosen a dirty-session strategy"
         );
 
         let _ = std::fs::remove_dir_all(dir);
@@ -7374,82 +7391,190 @@ mod tests {
 
     // r[verify task.assign]
     // r[verify captain.tool.assign]
+    // r[verify captain.tool.assign.dirty-session-strategy]
     #[tokio::test]
-    async fn captain_tool_assign_fails_when_session_branch_has_unmerged_commits() {
+    async fn captain_tool_assign_can_continue_in_place_with_unmerged_commits() {
         let (dir, ship, session_id) =
-            create_ready_session_for_assign_test("captain-assign-unmerged", "task").await;
+            create_ready_session_for_assign_test("captain-assign-continue", "task").await;
         let project_root = dir.join("project");
         let worktree_path = project_root.join(".ship").join("@task");
         init_git_repo(&project_root);
 
         std::fs::write(project_root.join("tracked.txt"), "base\n")
             .expect("tracked file should be written");
-        assert!(
-            Command::new("git")
-                .arg("-C")
-                .arg(&project_root)
-                .args(["add", "."])
-                .status()
-                .expect("git add should run")
-                .success(),
-            "git add should succeed"
+        git_succeeds(&project_root, &["add", "."], "git add should succeed");
+        git_succeeds(
+            &project_root,
+            &["commit", "-m", "initial"],
+            "git commit should succeed",
         );
-        assert!(
-            Command::new("git")
-                .arg("-C")
-                .arg(&project_root)
-                .args(["commit", "-m", "initial"])
-                .status()
-                .expect("git commit should run")
-                .success(),
-            "git commit should succeed"
-        );
-        assert!(
-            Command::new("git")
-                .arg("-C")
-                .arg(&project_root)
-                .args(["worktree", "add", "-b", "task", ".ship/@task", "main"])
-                .status()
-                .expect("git worktree add should run")
-                .success(),
-            "git worktree add should succeed"
+        git_succeeds(
+            &project_root,
+            &["worktree", "add", "-b", "task", ".ship/@task", "main"],
+            "git worktree add should succeed",
         );
         std::fs::write(worktree_path.join("tracked.txt"), "task\n")
             .expect("task branch file should be written");
-        assert!(
-            Command::new("git")
-                .arg("-C")
-                .arg(&worktree_path)
-                .args(["commit", "-am", "task change"])
-                .status()
-                .expect("git commit should run")
-                .success(),
-            "git commit on task should succeed"
+        git_succeeds(
+            &worktree_path,
+            &["commit", "-am", "task change"],
+            "git commit on task should succeed",
         );
 
-        let error = ship
+        let assigned = ship
             .captain_tool_assign(
                 &session_id,
-                "Reset before assign".to_owned(),
-                "Ensure the worktree is reset before the mate starts.".to_owned(),
+                "Continue in place".to_owned(),
+                "Reuse the leftover task branch state.".to_owned(),
                 true,
                 CaptainAssignExtras {
                     files: Vec::new(),
                     plan: Vec::new(),
-                    dirty_session_strategy: None,
+                    dirty_session_strategy: Some(DirtySessionStrategy::ContinueInPlace),
                 },
             )
             .await
-            .expect_err("captain assign should fail on unmerged commits");
+            .expect("captain assign should continue in place");
 
         assert!(
-            error.contains("pre-task reset is unsafe:") && error.contains("task change"),
-            "unexpected assign error: {error}"
+            assigned.starts_with("Task "),
+            "unexpected assign result: {assigned}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(worktree_path.join("tracked.txt"))
+                .expect("task worktree file should be readable after continue"),
+            "task\n"
+        );
+        assert_eq!(
+            git_stdout(
+                &worktree_path,
+                &["branch", "--show-current"],
+                "git branch should succeed"
+            )
+            .trim(),
+            "task"
         );
         let session = Ship::get_session(&ship, session_id.clone()).await;
         assert!(
-            session.current_task.is_none(),
-            "task should not start when the session branch has unmerged commits"
+            session.current_task.is_some(),
+            "task should start when continue_in_place is selected"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    // r[verify task.assign]
+    // r[verify captain.tool.assign]
+    // r[verify captain.tool.assign.dirty-session-strategy]
+    #[tokio::test]
+    async fn captain_tool_assign_can_save_leftover_state_and_start_clean() {
+        let (dir, ship, session_id) =
+            create_ready_session_for_assign_test("captain-assign-save-clean", "task").await;
+        let project_root = dir.join("project");
+        let worktree_path = project_root.join(".ship").join("@task");
+        init_git_repo(&project_root);
+
+        std::fs::write(project_root.join("tracked.txt"), "base\n")
+            .expect("tracked file should be written");
+        git_succeeds(&project_root, &["add", "."], "git add should succeed");
+        git_succeeds(
+            &project_root,
+            &["commit", "-m", "initial"],
+            "git commit should succeed",
+        );
+        git_succeeds(
+            &project_root,
+            &["worktree", "add", "-b", "task", ".ship/@task", "main"],
+            "git worktree add should succeed",
+        );
+
+        std::fs::write(worktree_path.join("tracked.txt"), "task committed\n")
+            .expect("task branch file should be written");
+        git_succeeds(
+            &worktree_path,
+            &["commit", "-am", "task change"],
+            "git commit on task should succeed",
+        );
+        std::fs::write(worktree_path.join("dirty.txt"), "dirty\n")
+            .expect("dirty file should be written");
+
+        std::fs::write(project_root.join("tracked.txt"), "main advanced\n")
+            .expect("base branch file should be updated");
+        git_succeeds(
+            &project_root,
+            &["commit", "-am", "advance base"],
+            "git commit on main should succeed",
+        );
+
+        let assigned = ship
+            .captain_tool_assign(
+                &session_id,
+                "Save then clean".to_owned(),
+                "Save the leftover branch before resetting to base.".to_owned(),
+                true,
+                CaptainAssignExtras {
+                    files: Vec::new(),
+                    plan: Vec::new(),
+                    dirty_session_strategy: Some(DirtySessionStrategy::SaveAndStartClean),
+                },
+            )
+            .await
+            .expect("captain assign should save leftover state and continue cleanly");
+
+        let saved_branch = extract_saved_branch_name(&assigned);
+        assert!(
+            saved_branch.starts_with("task-saved-"),
+            "unexpected saved branch name: {saved_branch}"
+        );
+        assert!(
+            assigned.contains("Saved previous session state to branch"),
+            "unexpected assign result: {assigned}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(worktree_path.join("tracked.txt"))
+                .expect("reset tracked file should be readable"),
+            "main advanced\n"
+        );
+        assert!(
+            !worktree_path.join("dirty.txt").exists(),
+            "dirty file should be absent after resetting the session branch"
+        );
+        assert_eq!(
+            git_stdout(
+                &worktree_path,
+                &["branch", "--show-current"],
+                "git branch should succeed"
+            )
+            .trim(),
+            "task"
+        );
+        assert_eq!(
+            git_stdout(
+                &project_root,
+                &["rev-parse", "task"],
+                "git rev-parse task should succeed"
+            ),
+            git_stdout(
+                &project_root,
+                &["rev-parse", "main"],
+                "git rev-parse main should succeed"
+            )
+        );
+        assert_eq!(
+            git_stdout(
+                &project_root,
+                &["show", &format!("{saved_branch}:tracked.txt")],
+                "git show tracked file on saved branch should succeed"
+            ),
+            "task committed\n"
+        );
+        assert_eq!(
+            git_stdout(
+                &project_root,
+                &["show", &format!("{saved_branch}:dirty.txt")],
+                "git show dirty file on saved branch should succeed"
+            ),
+            "dirty\n"
         );
 
         let _ = std::fs::remove_dir_all(dir);
