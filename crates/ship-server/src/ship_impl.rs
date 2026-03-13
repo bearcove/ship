@@ -3820,15 +3820,29 @@ Here is your task:
             chrono::Utc::now().format("%Y%m%dt%H%M%Sz")
         );
         Self::git_checkout_new_branch(worktree_path, &saved_branch_name).await?;
-        let _ = Self::auto_commit_worktree(
-            worktree_path,
-            format!(
-                "Save leftover session state before starting a clean task\n\nSaved from {session_branch_name}."
-            ),
-        )
-        .await?;
-        Self::git_checkout_branch(worktree_path, session_branch_name).await?;
-        Ok(saved_branch_name)
+
+        let save_result: Result<(), String> = async {
+            let _ = Self::auto_commit_worktree(
+                worktree_path,
+                format!(
+                    "Save leftover session state before starting a clean task\n\nSaved from {session_branch_name}."
+                ),
+            )
+            .await?;
+            Self::git_checkout_branch(worktree_path, session_branch_name).await
+        }
+        .await;
+
+        match save_result {
+            Ok(()) => Ok(saved_branch_name),
+            Err(error) => match Self::git_checkout_branch(worktree_path, session_branch_name).await
+            {
+                Ok(()) => Err(error),
+                Err(restore_error) => Err(format!(
+                    "{error}; also failed to restore session branch `{session_branch_name}`: {restore_error}"
+                )),
+            },
+        }
     }
 
     /// Best-effort rebase of the worktree branch onto the base branch.
@@ -6900,6 +6914,8 @@ fn rejection_metadata(reason: &'static str) -> Metadata<'static> {
 mod tests {
     use std::collections::HashMap;
     use std::ffi::OsString;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
     use std::path::PathBuf;
     use std::process::Command;
     use std::sync::{Mutex, MutexGuard};
@@ -7199,6 +7215,19 @@ mod tests {
             .nth(1)
             .expect("saved branch name should appear in backticks")
             .to_owned()
+    }
+
+    #[cfg(unix)]
+    fn install_failing_pre_commit_hook(repo_root: &std::path::Path) {
+        let hook_path = repo_root.join(".git/hooks/pre-commit");
+        std::fs::write(&hook_path, "#!/bin/sh\nexit 1\n")
+            .expect("pre-commit hook should be written");
+        let mut permissions = std::fs::metadata(&hook_path)
+            .expect("pre-commit hook metadata should be readable")
+            .permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&hook_path, permissions)
+            .expect("pre-commit hook should be executable");
     }
 
     fn parse_edit_id(response: &str) -> String {
@@ -7576,6 +7605,81 @@ mod tests {
                 "git show dirty file on saved branch should succeed"
             ),
             "dirty\n"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    // r[verify task.assign]
+    // r[verify captain.tool.assign]
+    // r[verify captain.tool.assign.dirty-session-strategy]
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn captain_tool_assign_restores_session_branch_if_save_and_start_clean_fails() {
+        let (dir, ship, session_id) =
+            create_ready_session_for_assign_test("captain-assign-save-failure", "task").await;
+        let project_root = dir.join("project");
+        let worktree_path = project_root.join(".ship").join("@task");
+        init_git_repo(&project_root);
+
+        std::fs::write(project_root.join("tracked.txt"), "base\n")
+            .expect("tracked file should be written");
+        git_succeeds(&project_root, &["add", "."], "git add should succeed");
+        git_succeeds(
+            &project_root,
+            &["commit", "-m", "initial"],
+            "git commit should succeed",
+        );
+        git_succeeds(
+            &project_root,
+            &["worktree", "add", "-b", "task", ".ship/@task", "main"],
+            "git worktree add should succeed",
+        );
+        std::fs::write(worktree_path.join("dirty.txt"), "dirty\n")
+            .expect("dirty file should be written");
+        install_failing_pre_commit_hook(&project_root);
+
+        let error = ship
+            .captain_tool_assign(
+                &session_id,
+                "Save then clean".to_owned(),
+                "Try to save the leftover branch before resetting to base.".to_owned(),
+                true,
+                CaptainAssignExtras {
+                    files: Vec::new(),
+                    plan: Vec::new(),
+                    dirty_session_strategy: Some(DirtySessionStrategy::SaveAndStartClean),
+                },
+            )
+            .await
+            .expect_err("captain assign should fail when saving leftover state cannot commit");
+
+        assert!(
+            error.contains("git commit failed"),
+            "unexpected assign error: {error}"
+        );
+        assert_eq!(
+            git_stdout(
+                &worktree_path,
+                &["branch", "--show-current"],
+                "git branch should succeed after restore"
+            )
+            .trim(),
+            "task"
+        );
+        assert!(
+            git_stdout(
+                &project_root,
+                &["branch", "--list", "task-saved-*"],
+                "git branch --list should succeed"
+            )
+            .contains("task-saved-"),
+            "saved branch should still exist after the failed save attempt"
+        );
+        let session = Ship::get_session(&ship, session_id.clone()).await;
+        assert!(
+            session.current_task.is_none(),
+            "task should not start if save_and_start_clean fails before reset"
         );
 
         let _ = std::fs::remove_dir_all(dir);
