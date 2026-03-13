@@ -72,12 +72,10 @@ impl ServerHandler for CaptainMcpHandler {
                     Some("continue_in_place") => Some(DirtySessionStrategy::ContinueInPlace),
                     Some("save_and_start_clean") => Some(DirtySessionStrategy::SaveAndStartClean),
                     Some(other) => {
-                        return Ok(tool_result(
-                            format!(
-                                "invalid dirty_session_strategy: {other}. Expected one of: continue_in_place, save_and_start_clean"
-                            ),
-                            true,
-                        ));
+                        let message = format!(
+                            "invalid dirty_session_strategy: {other}. Expected one of: continue_in_place, save_and_start_clean"
+                        );
+                        return Ok(tool_result(&message, true));
                     }
                     None => None,
                 };

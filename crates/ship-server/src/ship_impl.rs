@@ -23,13 +23,13 @@ use ship_types::{
     AgentAcpInfo, AgentDiscovery, AgentKind, AgentSnapshot, AgentState, ArchiveSessionRequest,
     ArchiveSessionResponse, AutonomyMode, BlockId, CaptainAssignExtras, CloseSessionRequest,
     CloseSessionResponse, CommitSummary, ContentBlock, CreateSessionRequest, CreateSessionResponse,
-    CurrentTask, GlobalEvent, HumanReviewRequest, McpDiffContent, McpServerConfig,
-    McpStdioServerConfig, McpToolCallResponse, PersistedSession, PlanStep, PlanStepInput,
-    PlanStepStatus, ProjectInfo, ProjectName, PromptContentPart, Role, ServerInfo, SessionConfig,
-    SessionDetail, SessionEvent, SessionEventEnvelope, SessionId, SessionStartupStage,
-    SessionStartupState, SessionSummary, SetAgentEffortResponse, SetAgentModelResponse,
-    SubscribeMessage, TaskId, TaskRecapStats, TaskRecord, TaskStatus, ToolCallKind, ToolTarget,
-    TranscribeSegment, WorktreeDiffStats,
+    CurrentTask, DirtySessionStrategy, GlobalEvent, HumanReviewRequest, McpDiffContent,
+    McpServerConfig, McpStdioServerConfig, McpToolCallResponse, PersistedSession, PlanStep,
+    PlanStepInput, PlanStepStatus, ProjectInfo, ProjectName, PromptContentPart, Role, ServerInfo,
+    SessionConfig, SessionDetail, SessionEvent, SessionEventEnvelope, SessionId,
+    SessionStartupStage, SessionStartupState, SessionSummary, SetAgentEffortResponse,
+    SetAgentModelResponse, SubscribeMessage, TaskId, TaskRecapStats, TaskRecord, TaskStatus,
+    ToolCallKind, ToolTarget, TranscribeSegment, WorktreeDiffStats,
 };
 use similar::TextDiff;
 use tokio::process::Command as TokioCommand;
@@ -1708,6 +1708,7 @@ Here is your task:
         extras: CaptainAssignExtras,
     ) -> Result<String, String> {
         let files = extras.files;
+        let dirty_session_strategy = extras.dirty_session_strategy;
         let plan_steps = Self::build_plan_steps(extras.plan);
         let session = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
@@ -1727,18 +1728,35 @@ Here is your task:
             ));
         }
         let discard_blockers = self.session_discard_blockers(&session).await?;
-        if !discard_blockers.is_empty() {
-            return Err(format!(
-                "pre-task reset is unsafe:\n{}",
-                discard_blockers.join("\n")
-            ));
+        let mut saved_branch = None;
+        if discard_blockers.is_empty() {
+            // Start each new task from the base branch on the existing session branch.
+            self.worktree_ops
+                .reset_to_base(&worktree_path, &session.config.base_branch)
+                .await
+                .map_err(|error| format!("pre-task reset failed: {}", error.message))?;
+        } else {
+            match dirty_session_strategy {
+                Some(DirtySessionStrategy::ContinueInPlace) => {}
+                Some(DirtySessionStrategy::SaveAndStartClean) => {
+                    let saved_branch_name = Self::save_session_state_to_timestamped_branch(
+                        &worktree_path,
+                        &session.config.branch_name,
+                    )
+                    .await?;
+                    self.worktree_ops
+                        .reset_to_base(&worktree_path, &session.config.base_branch)
+                        .await
+                        .map_err(|error| format!("pre-task reset failed: {}", error.message))?;
+                    saved_branch = Some(saved_branch_name);
+                }
+                None => {
+                    return Err(Self::captain_assign_dirty_session_message(
+                        &discard_blockers,
+                    ));
+                }
+            }
         }
-
-        // Start each new task from the base branch on the existing session branch.
-        self.worktree_ops
-            .reset_to_base(&worktree_path, &session.config.base_branch)
-            .await
-            .map_err(|error| format!("pre-task reset failed: {}", error.message))?;
 
         let task_id = self
             .start_task(
@@ -1847,7 +1865,13 @@ Here is your task:
             }
         });
 
-        Ok(format!("Task {} assigned to the mate.", task_id.0))
+        let saved_branch_suffix = saved_branch
+            .map(|branch| format!(" Saved previous session state to branch `{branch}`."))
+            .unwrap_or_default();
+        Ok(format!(
+            "Task {} assigned to the mate.{}",
+            task_id.0, saved_branch_suffix
+        ))
     }
 
     // r[task.steer]
@@ -3719,6 +3743,92 @@ Here is your task:
         })
         .await
         .map_err(|error| format!("git auto-commit task failed: {error}"))?
+    }
+
+    fn captain_assign_dirty_session_message(discard_blockers: &[String]) -> String {
+        format!(
+            "captain_assign found leftover session state that would be discarded by starting clean:\n{}\n\nRe-run captain_assign with dirty_session_strategy set to `continue_in_place` or `save_and_start_clean`.",
+            discard_blockers.join("\n")
+        )
+    }
+
+    fn git_command_failure(action: &str, output: &std::process::Output) -> String {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        if !stderr.is_empty() {
+            format!("{action} failed: {stderr}")
+        } else if !stdout.is_empty() {
+            format!("{action} failed: {stdout}")
+        } else {
+            format!("{action} failed")
+        }
+    }
+
+    async fn git_checkout_new_branch(
+        worktree_path: &std::path::Path,
+        branch_name: &str,
+    ) -> Result<(), String> {
+        let worktree_path = worktree_path.to_path_buf();
+        let branch_name = branch_name.to_owned();
+        tokio::task::spawn_blocking(move || {
+            let output = Command::new("git")
+                .arg("-C")
+                .arg(&worktree_path)
+                .args(["checkout", "-b", &branch_name])
+                .output()
+                .map_err(|error| format!("git checkout -b failed: {error}"))?;
+            if output.status.success() {
+                Ok(())
+            } else {
+                Err(Self::git_command_failure("git checkout -b", &output))
+            }
+        })
+        .await
+        .map_err(|error| format!("git checkout -b task failed: {error}"))?
+    }
+
+    async fn git_checkout_branch(
+        worktree_path: &std::path::Path,
+        branch_name: &str,
+    ) -> Result<(), String> {
+        let worktree_path = worktree_path.to_path_buf();
+        let branch_name = branch_name.to_owned();
+        tokio::task::spawn_blocking(move || {
+            let output = Command::new("git")
+                .arg("-C")
+                .arg(&worktree_path)
+                .args(["checkout", &branch_name])
+                .output()
+                .map_err(|error| format!("git checkout failed: {error}"))?;
+            if output.status.success() {
+                Ok(())
+            } else {
+                Err(Self::git_command_failure("git checkout", &output))
+            }
+        })
+        .await
+        .map_err(|error| format!("git checkout task failed: {error}"))?
+    }
+
+    async fn save_session_state_to_timestamped_branch(
+        worktree_path: &std::path::Path,
+        session_branch_name: &str,
+    ) -> Result<String, String> {
+        let saved_branch_name = format!(
+            "{}-saved-{}",
+            session_branch_name,
+            chrono::Utc::now().format("%Y%m%dt%H%M%Sz")
+        );
+        Self::git_checkout_new_branch(worktree_path, &saved_branch_name).await?;
+        let _ = Self::auto_commit_worktree(
+            worktree_path,
+            format!(
+                "Save leftover session state before starting a clean task\n\nSaved from {session_branch_name}."
+            ),
+        )
+        .await?;
+        Self::git_checkout_branch(worktree_path, session_branch_name).await?;
+        Ok(saved_branch_name)
     }
 
     /// Best-effort rebase of the worktree branch onto the base branch.
