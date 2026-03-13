@@ -64,46 +64,81 @@ In short: the issue is not that Ship chose mutexes. The issue is that mutex-prot
 
 ### `ship-core`
 
-_TODO: define `ship-core` as the authoritative session kernel for session mutation, event application, task transitions, persistence-facing state, and replay helpers._
+`ship-core` should become the authoritative session kernel. It should own the durable session state model, task state machine, event-log mutation rules, materialized-state updates, replay helpers, and the validation of allowed transitions. In practical terms, backend code outside `ship-core` should stop constructing or mutating `ActiveSession` directly.
+
+That does not require `ship-core` to perform IO itself. It requires `ship-core` to be the only place where backend session state is decided. If an operation changes task state, appends an event, resolves a permission, starts or ends a review, or updates agent-facing session state, the authoritative state transition should be expressed in `ship-core` first.
 
 ### `ship-server`
 
-_TODO: define `ship-server` as the transport, process, IO, and side-effect boundary that delegates session mutation to `ship-core`._
+`ship-server` should become the adapter layer around the kernel. Its job should be transport handling, ACP process lifecycle, filesystem and git integration, WebSocket and roam wiring, HTTP concerns, and executing side effects that the kernel requests.
+
+In that design, `ship-server` still matters, but it stops being a competing implementation of session management. RPC and MCP handlers should translate requests into kernel operations, execute any required side effects, persist or broadcast as required by the kernel contract, and then return results. It should not re-encode the session state machine inline.
 
 ### Frontend projection layer
 
-_TODO: define the frontend as a single event projection layer with one authoritative event application path for both replay and live updates._
+The frontend should have one authoritative event application path. Replay and live delivery can remain operationally distinct at the subscription level, but both should converge on the same projection logic so that every `SessionEvent` is interpreted exactly once.
+
+Concretely, that means the reducer should have a shared event-application function that can be folded over a replay batch and also applied to a single live event. The frontend should continue to store derived UI state, but it should not maintain separate semantic implementations for replay and live mutation.
 
 ## Phased Refactor Plan
 
 ### Phase 1: Define invariants and architectural rules
 
-_TODO: specify the rules that future changes must preserve._
+Write down the rules the refactor is meant to enforce before moving code. At minimum:
+
+- Backend session state has one authoritative mutation path.
+- Event-log append, materialized-state update, persistence update, and subscriber broadcast have a defined ordering contract.
+- `ship-server` may execute side effects, but it does not invent new session transitions outside the kernel.
+- The frontend applies each event through one semantic projection path, regardless of replay or live delivery.
+
+This phase should also decide whether the spec is the source of truth to restore, or whether the intended target architecture needs a spec update before implementation proceeds further.
 
 ### Phase 2: Consolidate session behavior into a real kernel in `ship-core`
 
-_TODO: move the authoritative mutation path into `ship-core` instead of duplicating it in `ship-server`._
+Move duplicated session behavior out of `ship-server` and into `ship-core` until `ship-core` is the undisputed owner of backend session mutation. The immediate targets are the operations currently duplicated or partially split, such as session creation, startup-state transitions, task lifecycle transitions, permission state, human review state, and event-log mutation.
+
+This does not need to happen as one giant rewrite. A practical approach is to move one vertical slice at a time behind kernel entrypoints while preserving the existing transports. The key requirement is that each migrated slice ends with fewer state mutations in `ship_impl.rs`, not just different helper names.
 
 ### Phase 3: Separate command handling from side effects
 
-_TODO: distinguish pure state transitions from IO, process management, and broadcast work._
+Once the kernel owns mutation, separate pure state decisions from effect execution. Kernel operations should decide what state changes and which follow-up effects are required, while the server executes those effects.
+
+The exact representation can vary, but the outcome should look like this: the kernel determines state transitions and follow-up intents; the server performs ACP calls, git/worktree operations, persistence writes, and event broadcasts; then control returns without re-deriving state in the server layer. This is the step that makes the architecture more than a file move.
 
 ### Phase 4: Make `ship-server` delegate
 
-_TODO: reduce `ship-server` to orchestration, transport adaptation, and side-effect execution around kernel decisions._
+After the kernel boundary is real, simplify `ShipImpl` and related server code so that request handlers delegate rather than mutate. `Ship` RPC methods, captain MCP tools, and mate MCP tools should mostly validate inputs, call the kernel, execute requested effects, and translate results back to protocol responses.
 
-### Phase 5: Split `ship_impl.rs` by responsibility after logic is centralized
+This is also the point where server-owned maps and mutexes should become easier to reason about. Some shared runtime state will still exist, but it should mostly support transport and effect coordination rather than hold the session state machine together.
 
-_TODO: only decompose files once the logic boundary is real._
+### Phase 5: Split `ship_impl.rs` by responsibility only after logic is centralized
+
+Only after the previous phases are in place should `ship_impl.rs` be split. At that point, file boundaries can reflect real responsibility boundaries instead of slicing a still-entangled implementation into smaller entangled files.
+
+A reasonable outcome would be separate modules for service handlers, session-runtime orchestration, MCP tool services, and transport/bootstrap code. The important rule is that the split follows architectural seams that already exist in behavior, not wishful seams created by moving methods around.
 
 ### Phase 6: Unify frontend event application paths
 
-_TODO: remove replay/live reducer duplication and converge on one projection model._
+Refactor the frontend reducer so that replay and live updates share one event-application implementation. A replay batch should be a fold over the same event handler used for live messages, with batching only as a performance concern.
+
+This phase should also remove any event coverage gap between the replay and live branches and make it difficult to add a new backend event without updating the shared projection function. The goal is not only smaller code. The goal is a single semantic contract for UI state projection.
 
 ### Phase 7: Resume feature work after the architecture is stable
 
-_TODO: describe the threshold for returning to normal feature delivery._
+Normal feature delivery should resume only after the kernel boundary is established, the main backend duplication is removed, and the frontend no longer has separate replay/live semantics. Until then, feature work in the same area risks cementing the current split-brain design.
+
+This does not require every file to be perfect. It requires the major sources of architectural ambiguity to be closed first, so that new work lands on the stable path instead of extending both paths.
 
 ## What Success Looks Like
 
-_TODO: describe the observable technical end state for backend mutation flow, server delegation, frontend projection, and spec alignment._
+Success is not merely a smaller `ship_impl.rs`. It is a system where the architectural center is obvious from the code.
+
+Signs that the refactor succeeded:
+
+- Backend session creation, task transitions, permission changes, review state, and event-log mutation are authored through `ship-core` rather than reimplemented in `ship-server`.
+- `ship-server` no longer constructs or mutates core session state directly except through the kernel boundary.
+- The ordering between event append, state application, persistence, and broadcast is explicit and consistently enforced.
+- The frontend uses one event-application path for replay and live updates.
+- The spec and crate boundaries agree closely enough that future work does not require guessing which layer owns session behavior.
+
+If those conditions are true, Ship will still use mutable runtime state and probably still use some mutexes. That is fine. The architecture will feel materially cleaner because the mutation authority will be singular and legible.
