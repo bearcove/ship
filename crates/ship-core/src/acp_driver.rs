@@ -870,6 +870,7 @@ fn command_for_launcher(
                 "(allow file-write* (subpath \"{home}/.codex\"))",
                 // Allow opencode config and state
                 "(allow file-write* (subpath \"{home}/.config/opencode\"))",
+                "(allow file-write* (subpath \"{home}/.local/share/opencode\"))",
             ),
             worktree = real_worktree.display(),
             home = home,
