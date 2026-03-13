@@ -572,15 +572,11 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
           type="button"
           className={composerInlineBtn}
           data-pos="left"
-          onClick={
-            isRecording
-              ? () => void transcription.stopRecording()
-              : () => fileInputRef.current?.click()
-          }
-          disabled={!isRecording && loading}
-          title={isRecording ? "Stop recording" : "Attach image"}
+          onClick={() => fileInputRef.current?.click()}
+          disabled={loading || isRecording}
+          title="Attach image"
         >
-          {isRecording ? <Stop size={18} weight="fill" /> : <PaperclipIcon size={18} />}
+          <PaperclipIcon size={18} />
         </button>
 
         {/* Textarea — always present, hidden behind overlay when recording/processing */}
