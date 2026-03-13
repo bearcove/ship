@@ -437,7 +437,6 @@ function SingleBlock({
                 )}
               </Box>
             </Box>
-            <UserAvatar url={userAvatarUrl} />
           </Box>
         );
       }
@@ -523,7 +522,6 @@ function SingleBlock({
                 <Text className={feedTimestamp}>{formatTime(entry.timestamp)}</Text>
               )}
             </Box>
-            <UserAvatar url={userAvatarUrl} />
           </Box>
         );
       }

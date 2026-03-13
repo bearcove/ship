@@ -48,6 +48,10 @@ export const unifiedFeedStream = style({
   gap: "var(--space-2)",
   padding: "var(--space-3)",
   paddingBottom: "var(--space-2)",
+  maxWidth: "640px",
+  width: "100%",
+  marginLeft: "auto",
+  marginRight: "auto",
 });
 
 export const agentAvatarWrapper = style({
@@ -128,8 +132,8 @@ export const feedBubbleMate = style({
 });
 
 export const feedBubbleUser = style({
-  background: "color-mix(in srgb, var(--accent-9) 12%, var(--gray-a2))",
-  borderColor: "color-mix(in srgb, var(--accent-9) 28%, var(--gray-a4))",
+  background: "color-mix(in srgb, var(--accent-9) 7%, var(--gray-a2))",
+  border: "none",
 });
 
 export const feedBubbleRelay = style({
@@ -447,7 +451,7 @@ export const sessionFeedColumn = style({
 // Three-column app layout: [left: sidebar] [center: fills space] [right: agent rail]
 export const appColumns = style({
   display: "grid",
-  gridTemplateColumns: "260px 1fr 260px",
+  gridTemplateColumns: "260px 1fr",
   maxWidth: "1200px",
   width: "100%",
   margin: "0 auto",
@@ -455,9 +459,6 @@ export const appColumns = style({
   minHeight: 0,
   overflow: "hidden",
   "@media": {
-    "(max-width: 980px)": {
-      gridTemplateColumns: "260px 1fr",
-    },
     "(max-width: 700px)": {
       gridTemplateColumns: "1fr",
     },
@@ -480,12 +481,7 @@ export const appColCenter = style({
 });
 
 export const appColRight = style({
-  overflow: "hidden",
-  "@media": {
-    "(max-width: 980px)": {
-      display: "none",
-    },
-  },
+  display: "none",
 });
 
 export const panelColumn = style({
@@ -891,7 +887,7 @@ export const feedBubbleCol = style({
 });
 
 export const feedBubbleColUser = style({
-  maxWidth: "66%",
+  maxWidth: "85%",
 });
 
 export const feedMessageTimestamp = style({
@@ -1397,7 +1393,7 @@ globalStyle(`${feedBubbleWithActions}:hover ${bubbleActions}`, {
 });
 
 globalStyle(`${textBlockRoot} :where(p, ul, ol, blockquote)`, {
-  margin: "0 0 var(--space-2)",
+  margin: "0 0 var(--space-3)",
 });
 
 globalStyle(

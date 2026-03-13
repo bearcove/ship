@@ -166,12 +166,7 @@ export function App() {
             />
           </Routes>
         </Box>
-        <Box
-          className={appColRight}
-          style={{ borderLeft: currentSessionId ? "1px solid var(--gray-a5)" : undefined }}
-        >
-          {currentSessionId ? <SessionAgentRail sessionId={currentSessionId} /> : null}
-        </Box>
+        <Box className={appColRight} />
       </Box>
 
       {inSessionView && currentSessionId && (

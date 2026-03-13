@@ -8,7 +8,7 @@ import { refreshSessionList } from "../hooks/useSessionList";
 import { UnifiedFeed } from "../components/UnifiedFeed";
 import { UnifiedComposer } from "../components/UnifiedComposer";
 import { SessionTaskDrawer } from "../components/SessionTaskDrawer";
-import { PlanPanel } from "../components/PlanPanel";
+
 import { SteerReview } from "../components/SteerReview";
 import { HumanReview } from "../components/HumanReview";
 import { SessionDebugPanel } from "../components/SessionDebugPanel";
@@ -219,36 +219,36 @@ export function SessionViewPage({
   const taskCompletedDuration =
     eventState.currentTaskStartedAt && eventState.currentTaskCompletedAt
       ? Math.round(
-          (new Date(eventState.currentTaskCompletedAt).getTime() -
-            new Date(eventState.currentTaskStartedAt).getTime()) /
-            1000,
-        )
+        (new Date(eventState.currentTaskCompletedAt).getTime() -
+          new Date(eventState.currentTaskStartedAt).getTime()) /
+        1000,
+      )
       : null;
 
   const liveTask =
     eventState.currentTaskId &&
-    eventState.currentTaskTitle &&
-    eventState.currentTaskDescription &&
-    eventState.currentTaskStatus
+      eventState.currentTaskTitle &&
+      eventState.currentTaskDescription &&
+      eventState.currentTaskStatus
       ? {
-          id: eventState.currentTaskId,
-          title: eventState.currentTaskTitle,
-          description: eventState.currentTaskDescription,
-          status: eventState.currentTaskStatus,
-          assigned_at: eventState.currentTaskStartedAt,
-          completed_at: eventState.currentTaskCompletedAt,
-          steps: eventState.currentTaskSteps,
-        }
+        id: eventState.currentTaskId,
+        title: eventState.currentTaskTitle,
+        description: eventState.currentTaskDescription,
+        status: eventState.currentTaskStatus,
+        assigned_at: eventState.currentTaskStartedAt,
+        completed_at: eventState.currentTaskCompletedAt,
+        steps: eventState.currentTaskSteps,
+      }
       : session.current_task
         ? {
-            ...session.current_task,
-            steps:
-              (
-                session.current_task as unknown as {
-                  steps?: import("../generated/ship").PlanStep[];
-                }
-              ).steps ?? [],
-          }
+          ...session.current_task,
+          steps:
+            (
+              session.current_task as unknown as {
+                steps?: import("../generated/ship").PlanStep[];
+              }
+            ).steps ?? [],
+        }
         : null;
   const matePlan = mate?.state.tag === "Working" ? (mate.state.plan ?? null) : null;
   const sessionDetail = session;
@@ -331,6 +331,7 @@ export function SessionViewPage({
               branchName={session.branch_name}
               diffStats={diffStats}
               planSteps={planSteps}
+              matePlan={matePlan}
             />
             <UnifiedFeed
               sessionId={session.id}
@@ -344,7 +345,6 @@ export function SessionViewPage({
               loadingLabel={replayLabel}
               debugMode={debugMode}
             />
-            {matePlan && matePlan.length > 0 && <PlanPanel steps={matePlan} />}
             {debugMode && (
               <SessionDebugPanel
                 captainAcpInfo={eventState.captainAcpInfo}
@@ -365,7 +365,7 @@ export function SessionViewPage({
           <SteerReview
             sessionId={session.id}
             steerText={session.pending_steer}
-            onDismiss={() => {}}
+            onDismiss={() => { }}
           />
         )}
         {pendingHumanReview && <HumanReview sessionId={session.id} review={pendingHumanReview} />}

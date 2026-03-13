@@ -1,11 +1,24 @@
 import { useId, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Badge, Box, Code, Flex, Text } from "@radix-ui/themes";
-import { CaretDown, CaretRight } from "@phosphor-icons/react";
-import type { PlanStep, TaskRecord, TaskStatus, WorktreeDiffStats } from "../generated/ship";
-import { taskDescriptionRoot } from "../styles/session-view.css";
+import { Badge, Box, Code, Flex, Spinner, Text } from "@radix-ui/themes";
+import { CaretDown, CaretRight, CheckCircle, Circle, XCircle } from "@phosphor-icons/react";
+import type { PlanStep, PlanStepStatus, TaskRecord, TaskStatus, WorktreeDiffStats } from "../generated/ship";
+import { planStepRow, planStepText, taskDescriptionRoot } from "../styles/session-view.css";
 import { MarkdownCodeBlock } from "./blocks/TextBlock";
+
+function StepIcon({ status }: { status: PlanStepStatus }) {
+  switch (status.tag) {
+    case "Pending":
+      return <Circle size={12} style={{ color: "var(--gray-8)", flexShrink: 0 }} />;
+    case "InProgress":
+      return <Spinner size="1" />;
+    case "Completed":
+      return <CheckCircle size={12} weight="fill" style={{ color: "var(--green-9)", flexShrink: 0 }} />;
+    case "Failed":
+      return <XCircle size={12} weight="fill" style={{ color: "var(--red-9)", flexShrink: 0 }} />;
+  }
+}
 
 const STATUS_COLOR = {
   Assigned: "blue",
@@ -143,6 +156,7 @@ interface Props {
   branchName: string;
   diffStats: WorktreeDiffStats | null;
   planSteps: PlanStep[];
+  matePlan: PlanStep[] | null;
 }
 
 // r[view.task-panel]
@@ -152,8 +166,10 @@ export function SessionTaskDrawer({
   branchName,
   diffStats,
   planSteps,
+  matePlan,
 }: Props) {
-  const [expanded, setExpanded] = useState(false);
+  const hasActivePlan = !!matePlan && matePlan.length > 0;
+  const [expanded, setExpanded] = useState(hasActivePlan);
   const contentId = useId();
   const history = useMemo(() => [...taskHistory].reverse(), [taskHistory]);
   const summary = summaryTitle(liveTask);
@@ -210,22 +226,22 @@ export function SessionTaskDrawer({
             >
               {planSteps.length > 0
                 ? planSteps.map((step, index) => {
-                    const complete = step.status.tag === "Completed";
-                    return (
-                      <span
-                        key={index}
-                        data-testid="session-task-drawer-dot"
-                        data-complete={complete ? "true" : "false"}
-                        style={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: "999px",
-                          background: complete ? "var(--accent-9)" : "var(--gray-6)",
-                          flexShrink: 0,
-                        }}
-                      />
-                    );
-                  })
+                  const complete = step.status.tag === "Completed";
+                  return (
+                    <span
+                      key={index}
+                      data-testid="session-task-drawer-dot"
+                      data-complete={complete ? "true" : "false"}
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: "999px",
+                        background: complete ? "var(--accent-9)" : "var(--gray-6)",
+                        flexShrink: 0,
+                      }}
+                    />
+                  );
+                })
                 : null}
             </Flex>
           </Flex>
@@ -245,6 +261,33 @@ export function SessionTaskDrawer({
             gap: "var(--space-3)",
           }}
         >
+          {matePlan && matePlan.length > 0 && (
+            <Flex direction="column" gap="1">
+              <Text size="1" weight="medium" color="gray">Plan</Text>
+              {matePlan.map((step, i) => (
+                <Flex key={i} align="start" gap="2" className={planStepRow}>
+                  <Box style={{ paddingTop: 2, display: "flex" }}>
+                    <StepIcon status={step.status} />
+                  </Box>
+                  <Text
+                    size="2"
+                    className={planStepText}
+                    style={{
+                      color:
+                        step.status.tag === "Completed"
+                          ? "var(--gray-9)"
+                          : step.status.tag === "Failed"
+                            ? "var(--red-11)"
+                            : "var(--gray-12)",
+                      textDecoration: step.status.tag === "Completed" ? "line-through" : undefined,
+                    }}
+                  >
+                    {step.title || step.description}
+                  </Text>
+                </Flex>
+              ))}
+            </Flex>
+          )}
           <Flex align="center" gap="2" wrap="wrap">
             <Text size="1" color="gray">
               Branch
