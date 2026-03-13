@@ -52,6 +52,7 @@ vi.mock("../api/client", () => ({
     interruptCaptain: async () => undefined,
     listWorktreeFiles: async () => [],
   }),
+  onClientReady: () => () => {},
 }));
 
 vi.mock("../components/ConnectionBanner", () => ({
