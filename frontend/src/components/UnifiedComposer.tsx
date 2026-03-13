@@ -43,7 +43,7 @@ import { useTranscription } from "../hooks/useTranscription";
 
 const SUBMIT_TIMEOUT_MS = 15_000;
 
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+function withTimeout<T>(promise: PromiseLike<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const id = setTimeout(() => reject(new Error("Request timed out")), ms);
     promise.then(
@@ -53,7 +53,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
       },
       (e) => {
         clearTimeout(id);
-        reject(e);
+        reject(e as Error);
       },
     );
   });
@@ -302,9 +302,9 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
       const client = await getShipClient();
       const parts = buildParts(value);
       if (to === "captain") {
-        await client.promptCaptain(sessionId, parts);
+        await withTimeout(client.promptCaptain(sessionId, parts), SUBMIT_TIMEOUT_MS);
       } else {
-        await client.steer(sessionId, parts);
+        await withTimeout(client.steer(sessionId, parts), SUBMIT_TIMEOUT_MS);
       }
       setAttachedImages((prev) => {
         for (const img of prev) URL.revokeObjectURL(img.objectUrl);
