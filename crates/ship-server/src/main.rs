@@ -511,11 +511,6 @@ async fn run_serve(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let listen_addrs = resolve_listen_addrs(args.listen)?;
-    let primary_addr = listen_addrs
-        .iter()
-        .find(|a| a.ip().is_loopback())
-        .copied()
-        .unwrap_or(listen_addrs[0]);
     let vite_addr = resolve_vite_addr()?;
     // r[dev-proxy.vite-lifecycle]
     let _vite_process = spawn_vite_dev_server(vite_addr).await?;
