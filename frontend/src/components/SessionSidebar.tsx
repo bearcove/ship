@@ -1,13 +1,10 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Box, Flex, IconButton, Select, Spinner, Text, Tooltip } from "@radix-ui/themes";
+import { Box, Flex, IconButton, Select, Text, Tooltip } from "@radix-ui/themes";
 import {
   Archive,
   BugIcon,
-  FolderIcon,
-  FolderOpenIcon,
   FolderSimplePlusIcon,
-  PlusIcon,
   SpeakerHighIcon,
   SpeakerSlashIcon,
 } from "@phosphor-icons/react";
@@ -20,10 +17,6 @@ import { AddProjectDialog, ArchiveSessionDialog } from "../pages/SessionListPage
 import { getShipClient, useClientLogs } from "../api/client";
 import { QrCodeButton } from "./QrCodeButton";
 import {
-  projectActions,
-  projectName,
-  projectRow,
-  sessionGroupLabel,
   sessionRow,
   sessionRowArchiveBtn,
   sessionRowEmpty,
@@ -44,36 +37,32 @@ const STATUS_DOT_COLOR: Record<TaskStatus["tag"], string> = {
   Cancelled: "var(--red-9)",
 };
 
-function useProjectCollapsed(name: string): [boolean, () => void] {
-  const key = `ship:project-collapsed:${name}`;
-  const [collapsed, setCollapsed] = useState(() => localStorage.getItem(key) === "true");
-  function toggle() {
-    setCollapsed((v) => {
-      const next = !v;
-      if (next) {
-        localStorage.setItem(key, "true");
-      } else {
-        localStorage.removeItem(key);
-      }
-      return next;
-    });
+function statusLabel(status: TaskStatus | null): string {
+  if (!status) return "Idle";
+  switch (status.tag) {
+    case "ReviewPending":
+      return "Review";
+    case "SteerPending":
+      return "Steer";
+    case "Working":
+      return "Working";
+    case "Assigned":
+      return "Starting";
+    case "Accepted":
+      return "Done";
+    case "Cancelled":
+      return "Cancelled";
   }
-  return [collapsed, toggle];
 }
 
-async function pickBranch(projectName: string): Promise<string> {
-  try {
-    const client = await getShipClient();
-    const branches = await client.listBranches(projectName);
-    return (
-      branches.find((b) => b === "main") ??
-      branches.find((b) => b === "master") ??
-      branches[0] ??
-      "main"
-    );
-  } catch {
-    return "main";
-  }
+function sortSessions(sessions: SessionSummary[]): SessionSummary[] {
+  const priority = (session: SessionSummary) => {
+    const tag = session.task_status?.tag;
+    if (tag === "ReviewPending" || tag === "SteerPending") return 0;
+    if (tag === "Working" || tag === "Assigned") return 1;
+    return 2;
+  };
+  return [...sessions].sort((a, b) => priority(a) - priority(b));
 }
 
 function AgentKindSelect({
@@ -115,32 +104,26 @@ function AgentKindSelect({
   );
 }
 
-function ProjectGroup({
-  project,
-  sessions,
+function SessionRow({
+  session,
   currentSessionId,
-  captainKind,
-  mateKind,
   onClose,
 }: {
-  project: ProjectInfo;
-  sessions: SessionSummary[];
+  session: SessionSummary;
   currentSessionId?: string;
-  captainKind: AgentKind;
-  mateKind: AgentKind;
   onClose?: () => void;
 }) {
-  const [collapsed, toggleCollapsed] = useProjectCollapsed(project.name);
-  const [creating, setCreating] = useState(false);
-  const [archivingId, setArchivingId] = useState<string | null>(null);
+  const [archiving, setArchiving] = useState(false);
   const [archiveConfirm, setArchiveConfirm] = useState<{
     session: SessionSummary;
     unmergedCommits: string[];
   } | null>(null);
   const navigate = useNavigate();
+  const isActive = session.slug === currentSessionId;
+  const title = session.title ?? session.current_task_title ?? session.branch_name;
 
-  async function handleArchive(session: SessionSummary, force: boolean) {
-    setArchivingId(session.id);
+  async function handleArchive(force: boolean) {
+    setArchiving(true);
     try {
       const client = await getShipClient();
       const result = await client.archiveSession({ id: session.id, force });
@@ -154,163 +137,65 @@ function ProjectGroup({
         setArchiveConfirm({ session, unmergedCommits: result.unmerged_commits });
       }
     } finally {
-      setArchivingId(null);
-    }
-  }
-
-  async function handleCreate(e: React.MouseEvent) {
-    e.stopPropagation();
-    if (creating) return;
-    setCreating(true);
-    try {
-      const branch = await pickBranch(project.name);
-      const client = await getShipClient();
-      const result = await client.createSession({
-        project: project.name,
-        captain_kind: captainKind,
-        mate_kind: mateKind,
-        base_branch: branch,
-        mcp_servers: null,
-      });
-      if (result.tag === "Failed") {
-        // TODO: surface this better
-        console.error("Failed to create session:", result.message);
-        return;
-      }
-      await refreshSessionList();
-      navigate(`/sessions/${result.slug}`);
-      onClose?.();
-    } finally {
-      setCreating(false);
+      setArchiving(false);
     }
   }
 
   return (
-    <Box>
-      <div className={projectRow} onClick={toggleCollapsed}>
-        {collapsed ? (
-          <FolderIcon size={18} style={{ color: "var(--gray-9)", flexShrink: 0 }} />
-        ) : (
-          <FolderOpenIcon size={18} style={{ color: "var(--gray-9)", flexShrink: 0 }} />
-        )}
-        <Text size="2" className={projectName}>
-          {project.name}
-        </Text>
-        <div className={projectActions}>
-          <Tooltip content={`New session in ${project.name}`}>
-            <IconButton
-              size="2"
-              variant="ghost"
-              color="gray"
-              aria-label={`New session in ${project.name}`}
-              onClick={handleCreate}
-              disabled={creating}
-            >
-              {creating ? <Spinner size="2" /> : <PlusIcon size={13} />}
-            </IconButton>
-          </Tooltip>
-        </div>
-      </div>
-
+    <>
       {archiveConfirm && (
         <ArchiveSessionDialog
           session={archiveConfirm.session}
           unmergedCommits={archiveConfirm.unmergedCommits}
-          onConfirm={() => handleArchive(archiveConfirm.session, true)}
+          onConfirm={() => handleArchive(true)}
           onCancel={() => setArchiveConfirm(null)}
-          archiving={archivingId === archiveConfirm.session.id}
+          archiving={archiving}
         />
       )}
-
-      {!collapsed && (
-        <Box>
-          {sessions.length === 0 ? (
-            <div className={sessionRowEmpty}>No sessions</div>
-          ) : (
-            (() => {
-              const reviewSessions = sessions.filter(
-                (s) =>
-                  s.task_status?.tag === "ReviewPending" || s.task_status?.tag === "SteerPending",
-              );
-              const workingSessions = sessions.filter(
-                (s) => s.task_status?.tag === "Working" || s.task_status?.tag === "Assigned",
-              );
-              const idleSessions = sessions.filter(
-                (s) =>
-                  !s.task_status ||
-                  s.task_status.tag === "Accepted" ||
-                  s.task_status.tag === "Cancelled",
-              );
-
-              function renderSession(session: SessionSummary) {
-                const isActive = session.slug === currentSessionId;
-                const title = session.title ?? session.current_task_title ?? session.branch_name;
-                return (
-                  <Link
-                    key={session.id}
-                    to={`/sessions/${session.slug}`}
-                    className={sessionRow}
-                    data-active={isActive ? "true" : "false"}
-                    aria-current={isActive ? "page" : undefined}
-                    onClick={() => onClose?.()}
-                  >
-                    <Text size="2" className={sessionRowTitle}>
-                      {title}
-                    </Text>
-                    {session.task_status && (
-                      <div
-                        className={sidebarStatusDot}
-                        style={{ background: STATUS_DOT_COLOR[session.task_status.tag] }}
-                      />
-                    )}
-                    {/* r[proto.archive-session] */}
-                    <Tooltip content="Archive session">
-                      <IconButton
-                        size="1"
-                        variant="ghost"
-                        color="gray"
-                        className={sessionRowArchiveBtn}
-                        loading={archivingId === session.id}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          handleArchive(session, false);
-                        }}
-                      >
-                        <Archive size={16} />
-                      </IconButton>
-                    </Tooltip>
-                  </Link>
-                );
-              }
-
-              return (
-                <>
-                  {reviewSessions.length > 0 && (
-                    <>
-                      <div className={sessionGroupLabel}>Review</div>
-                      {reviewSessions.map(renderSession)}
-                    </>
-                  )}
-                  {workingSessions.length > 0 && (
-                    <>
-                      <div className={sessionGroupLabel}>Working</div>
-                      {workingSessions.map(renderSession)}
-                    </>
-                  )}
-                  {idleSessions.length > 0 && (
-                    <>
-                      <div className={sessionGroupLabel}>Idle</div>
-                      {idleSessions.map(renderSession)}
-                    </>
-                  )}
-                </>
-              );
-            })()
-          )}
-        </Box>
-      )}
-    </Box>
+      <Link
+        to={`/sessions/${session.slug}`}
+        className={sessionRow}
+        data-active={isActive ? "true" : "false"}
+        aria-current={isActive ? "page" : undefined}
+        onClick={() => onClose?.()}
+      >
+        <Flex direction="column" gap="1" style={{ minWidth: 0, flex: 1 }}>
+          <Text size="2" className={sessionRowTitle}>
+            {title}
+          </Text>
+          <Text
+            size="1"
+            color="gray"
+            style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+          >
+            {session.project} · {statusLabel(session.task_status)}
+          </Text>
+        </Flex>
+        {session.task_status && (
+          <div
+            className={sidebarStatusDot}
+            style={{ background: STATUS_DOT_COLOR[session.task_status.tag] }}
+          />
+        )}
+        {/* r[proto.archive-session] */}
+        <Tooltip content="Archive session">
+          <IconButton
+            size="1"
+            variant="ghost"
+            color="gray"
+            className={sessionRowArchiveBtn}
+            loading={archiving}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              void handleArchive(false);
+            }}
+          >
+            <Archive size={16} />
+          </IconButton>
+        </Tooltip>
+      </Link>
+    </>
   );
 }
 
@@ -326,7 +211,6 @@ interface Props {
 
 // r[ui.session-list.nav]
 export function SessionSidebar({
-  projects,
   sessions,
   currentSessionId,
   debugMode,
@@ -339,8 +223,6 @@ export function SessionSidebar({
   const discovery = useAgentDiscovery();
   const { captainKind, setCaptainKind, mateKind, setMateKind } = useAgentKindPrefs();
   const clientLogs = useClientLogs();
-
-  const validProjects = projects.filter((p) => p.valid);
 
   return (
     <>
@@ -371,19 +253,18 @@ export function SessionSidebar({
         </Flex>
 
         <Box className={sidebarScrollArea}>
-          {validProjects
-            .filter((project) => sessions.some((s) => s.project === project.name))
-            .map((project) => (
-              <ProjectGroup
-                key={project.name}
-                project={project}
-                sessions={sessions.filter((s) => s.project === project.name)}
+          {sessions.length === 0 ? (
+            <div className={sessionRowEmpty}>No sessions</div>
+          ) : (
+            sortSessions(sessions).map((session) => (
+              <SessionRow
+                key={session.id}
+                session={session}
                 currentSessionId={currentSessionId}
-                captainKind={captainKind}
-                mateKind={mateKind}
                 onClose={onClose}
               />
-            ))}
+            ))
+          )}
         </Box>
 
         {debugMode && (
