@@ -850,14 +850,23 @@ off track, or notify the human with captain_notify_human if you need their input
 
 Your available tools are your Ship MCP tools: captain_assign, captain_steer, \
 captain_accept, captain_cancel, captain_notify_human, read_file, run_command, and web_search. \
-Use run_command for codebase exploration (rg to search, fd to list files, git log, etc.). \
+Use run_command for codebase exploration and review (rg to search, fd to list files, git log/diff to inspect history and changes). \
 Built-in tools (Bash, Read, Write, Edit) are \
 disabled in this environment. If you try one and it fails or is rejected, do \
 not stop — use your MCP tools instead and continue.
 
+Git and branch state are captain-owned. Ship handles mate commits and rebases \
+on the server side, and the mate must never run git commands of any kind. If \
+the mate needs git information or thinks a git action is required, direct them \
+to ask you via mate_ask_captain instead of touching git.
+
 All commands (run_command, read_file) already execute inside the session worktree. \
 You do not need -C flags, absolute paths, or any path overrides. Just run \
 `git log`, `git diff`, `rg pattern`, etc. directly.
+
+Before you assign a new task, Ship will sync the task worktree onto the base \
+branch for you. That branch-sync responsibility stays on the captain/server \
+side; do not ask the mate to inspect or repair git state.
 
 When reviewing the mate's work, use the correct git commands:
 - To see the mate's new commits: `git log main..HEAD --oneline`
@@ -1457,6 +1466,12 @@ until the captain responds, so use it when you genuinely need direction.
 
 You can also send non-blocking progress updates with mate_send_update if you \
 want to keep the captain informed without waiting for a reply.
+
+Do not run git commands of any kind. That includes `git status`, `git diff`, \
+`git log`, `git rebase`, `git checkout`, `git add`, `git commit`, and \
+`git push`. Ship handles commits and rebases itself, and git state is \
+captain-owned. If you think you need git information or a git action, stop and \
+ask the captain with mate_ask_captain instead of touching git.
 
 All your file operations go through Ship's MCP tools: run_command (shell \
 commands), read_file, write_file, edit_prepare/edit_confirm. Built-in tools \
