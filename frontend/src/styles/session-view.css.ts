@@ -137,6 +137,11 @@ export const feedBubbleRelay = style({
   opacity: 0.85,
 });
 
+export const feedBubbleCaptain = style({
+  background: "transparent",
+  border: "none",
+});
+
 export const feedToolGroup = style({
   maxWidth: "80%",
 });

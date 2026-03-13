@@ -27,6 +27,7 @@ import {
   feedBubble,
   feedBubbleCol,
   feedBubbleColUser,
+  feedBubbleCaptain,
   feedBubbleMate,
   feedBubbleRelay,
   feedBubbleUser,
@@ -363,7 +364,9 @@ function SingleBlock({
         <Box className={feedRowAgent}>
           <Avatar role={role} show={showAvatar} kind={kind} />
           <Box className={feedBubbleCol}>
-            <Box className={`${feedBubble}${isCaptain ? "" : ` ${feedBubbleMate}`}`}>
+            <Box
+              className={`${feedBubble}${isCaptain ? ` ${feedBubbleCaptain}` : ` ${feedBubbleMate}`}`}
+            >
               <TextBlock block={block as TextBlockType} speakable />
             </Box>
             {isLast && entry.timestamp && (
