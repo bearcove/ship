@@ -33,6 +33,7 @@ import mateAvatar from "../assets/avatars/mate.png";
 import { getShipClient } from "../api/client";
 import { ArchiveSessionDialog, NewSessionDialog } from "./SessionListPage";
 import type { AgentSnapshot, SessionSummary, TaskRecord } from "../generated/ship";
+import { useWorktreeDiffStats } from "../hooks/useWorktreeDiffStats";
 
 function SessionTopBar({
   sessionId,
@@ -156,6 +157,8 @@ export function SessionViewPage({
   // r[event.client.hydration-sequence]: Step 2/3 — event subscription + replay
   const eventState = useSessionState(sessionId ?? "", session);
 
+  const diffStats = useWorktreeDiffStats(sessionId ?? "");
+
   // r[ui.keys.nav]
   useEffect(() => {
     function handler(e: KeyboardEvent) {
@@ -257,7 +260,7 @@ export function SessionViewPage({
     task_status: liveTask?.status ?? null,
     autonomy_mode: session.autonomy_mode,
     created_at: session.created_at,
-    diff_stats: null,
+    diff_stats: diffStats,
     tasks_done: tasksDone,
     tasks_total: tasksTotal,
   };
