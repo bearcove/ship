@@ -8,7 +8,7 @@ use ship_types::{
     ContentBlock, CreateSessionRequest, CurrentTask, HumanReviewRequest, PermissionRequest,
     PermissionResolution, PersistedSession, Role, SessionConfig, SessionEvent,
     SessionEventEnvelope, SessionId, SessionStartupStage, SessionStartupState, SessionSummary,
-    TaskContentRecord, TaskId, TaskRecord, TaskStatus,
+    TaskContentRecord, TaskId, TaskRecord, TaskStatus, WorktreeDiffStats,
 };
 use tokio::sync::broadcast;
 
@@ -89,6 +89,7 @@ pub struct ActiveSession {
     pub session_event_log: Vec<SessionEventEnvelope>,
     pub current_task: Option<CurrentTask>,
     pub task_history: Vec<TaskRecord>,
+    pub diff_stats: Option<WorktreeDiffStats>,
     pub captain_block_count: usize,
     pub mate_block_count: usize,
     pub pending_permissions: HashMap<String, PendingPermission>,
@@ -187,6 +188,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             session_event_log: Vec::new(),
             current_task: None,
             task_history: Vec::new(),
+            diff_stats: None,
             captain_block_count: 0,
             mate_block_count: 0,
             pending_permissions: HashMap::new(),

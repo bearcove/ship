@@ -365,6 +365,7 @@ impl ShipImpl {
                 session_event_log: persisted.session_event_log,
                 current_task: persisted.current_task,
                 task_history: persisted.task_history,
+                diff_stats: None,
                 captain_block_count: 0,
                 mate_block_count: 0,
                 pending_permissions: HashMap::new(),
@@ -417,6 +418,14 @@ impl ShipImpl {
     }
 
     fn to_session_summary(session: &ActiveSession) -> SessionSummary {
+        let tasks_done = session
+            .task_history
+            .iter()
+            .filter(|task| task.status == TaskStatus::Accepted)
+            .count() as u32;
+        let tasks_total =
+            session.task_history.len() as u32 + u32::from(session.current_task.is_some());
+
         SessionSummary {
             id: session.id.clone(),
             slug: SessionGitNames::from_session_id(&session.id).slug,
@@ -435,6 +444,9 @@ impl ShipImpl {
                 .as_ref()
                 .map(|task| task.record.description.clone()),
             task_status: session.current_task.as_ref().map(|task| task.record.status),
+            diff_stats: session.diff_stats.clone(),
+            tasks_done,
+            tasks_total,
             autonomy_mode: session.config.autonomy_mode,
             created_at: session.created_at.clone(),
         }
@@ -782,7 +794,7 @@ impl ShipImpl {
                 },
             );
         }
-        self.notify_session_list_changed();
+        self.notify_session_list_changed().await;
 
         self.persist_session(session_id).await
     }
@@ -4282,7 +4294,7 @@ Here is your task:
 
         if !had_title {
             let _ = self.persist_session(&session_id).await;
-            self.notify_session_list_changed();
+            self.notify_session_list_changed().await;
         }
     }
 
@@ -4518,7 +4530,7 @@ Here is your task:
                 },
             );
         }
-        self.notify_session_list_changed();
+        self.notify_session_list_changed().await;
 
         self.persist_session(session_id).await?;
 
@@ -4742,7 +4754,40 @@ Here is your task:
         }
     }
 
-    fn notify_session_list_changed(&self) {
+    async fn refresh_all_diff_stats(&self) {
+        let sessions_to_refresh: Vec<(SessionId, PathBuf, String, String)> = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            sessions
+                .iter()
+                .filter_map(|(id, session)| {
+                    Some((
+                        id.clone(),
+                        session.worktree_path.as_ref()?.clone(),
+                        session.config.branch_name.clone(),
+                        session.config.base_branch.clone(),
+                    ))
+                })
+                .collect()
+        };
+
+        let mut refreshed = Vec::with_capacity(sessions_to_refresh.len());
+        for (id, worktree_path, branch_name, base_branch) in sessions_to_refresh {
+            let diff_stats =
+                Self::compute_worktree_diff_stats(worktree_path, branch_name, base_branch).await;
+            refreshed.push((id, diff_stats));
+        }
+
+        let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+        for (id, diff_stats) in refreshed {
+            if let Some(session) = sessions.get_mut(&id) {
+                session.diff_stats = diff_stats;
+            }
+        }
+    }
+
+    async fn notify_session_list_changed(&self) {
+        self.refresh_all_diff_stats().await;
+
         let sessions = self.sessions.lock().expect("sessions mutex poisoned");
         let list: Vec<SessionSummary> = sessions.values().map(Self::to_session_summary).collect();
         let _ = self
@@ -4914,6 +4959,7 @@ impl Ship for ShipImpl {
             session_event_log: Vec::new(),
             current_task: None,
             task_history: Vec::new(),
+            diff_stats: None,
             captain_block_count: 0,
             mate_block_count: 0,
             pending_permissions: HashMap::new(),
@@ -4941,7 +4987,7 @@ impl Ship for ShipImpl {
                 .remove(&session_id);
             return CreateSessionResponse::Failed { message: error };
         }
-        self.notify_session_list_changed();
+        self.notify_session_list_changed().await;
 
         self.startup_started_at
             .lock()
@@ -5373,7 +5419,7 @@ impl Ship for ShipImpl {
             .lock()
             .expect("sessions mutex poisoned")
             .remove(&req.id);
-        self.notify_session_list_changed();
+        self.notify_session_list_changed().await;
 
         CloseSessionResponse::Closed
     }
@@ -5463,7 +5509,7 @@ impl Ship for ShipImpl {
             .lock()
             .expect("sessions mutex poisoned")
             .remove(&req.id);
-        self.notify_session_list_changed();
+        self.notify_session_list_changed().await;
 
         ArchiveSessionResponse::Archived
     }
@@ -5492,6 +5538,14 @@ impl Ship for ShipImpl {
             (path, branch, base)
         };
 
+        Self::compute_worktree_diff_stats(worktree_path, branch_name, base_branch).await
+    }
+
+    async fn compute_worktree_diff_stats(
+        worktree_path: PathBuf,
+        branch_name: String,
+        base_branch: String,
+    ) -> Option<WorktreeDiffStats> {
         // Find the merge-base so we only see changes on this branch,
         // not changes that landed on the base branch since we branched.
         let merge_base_output = TokioCommand::new("git")

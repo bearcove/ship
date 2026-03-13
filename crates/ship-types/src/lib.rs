@@ -754,6 +754,9 @@ pub mod protocol {
         pub current_task_title: Option<String>,
         pub current_task_description: Option<String>,
         pub task_status: Option<TaskStatus>,
+        pub diff_stats: Option<WorktreeDiffStats>,
+        pub tasks_done: u32,
+        pub tasks_total: u32,
         pub autonomy_mode: AutonomyMode,
         pub created_at: String,
     }
