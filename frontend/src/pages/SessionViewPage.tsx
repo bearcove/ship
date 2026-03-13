@@ -281,7 +281,6 @@ export function SessionViewPage({
               mate={mate}
               blocks={eventState.unifiedBlocks.blocks}
               startupState={startupState}
-              taskStatus={liveTask?.status ?? null}
               taskCompletedDuration={taskCompletedDuration}
               userAvatarUrl={session.user_avatar_url}
               loading={isReplaying}

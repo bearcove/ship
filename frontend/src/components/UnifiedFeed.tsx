@@ -2,13 +2,7 @@ import { Fragment, useState, useRef, useEffect } from "react";
 import { Box, Flex, ScrollArea, Spinner, Text } from "@radix-ui/themes";
 import { ArrowDown, CaretRight } from "@phosphor-icons/react";
 import captainAvatar from "../assets/avatars/captain.png";
-import type {
-  AgentSnapshot,
-  ContentBlock,
-  Role,
-  SessionStartupState,
-  TaskStatus,
-} from "../generated/ship";
+import type { AgentSnapshot, ContentBlock, Role, SessionStartupState } from "../generated/ship";
 import type { BlockEntry } from "../state/blockStore";
 import { BubbleActions, TextBlock } from "./blocks/TextBlock";
 import { ErrorBlock } from "./blocks/ErrorBlock";
@@ -27,7 +21,6 @@ import {
   feedRowAgent,
   feedRowUser,
   feedSystemMessage,
-  feedSystemMessageText,
   liveBubble,
   liveBubbleDot,
   liveBubblesRow,
@@ -155,7 +148,13 @@ function CommitDiffView({ diff }: { diff: string }) {
 
 type TaskRecapBlockType = Extract<ContentBlock, { tag: "TaskRecap" }>;
 
-function TaskRecapBlock({ block }: { block: TaskRecapBlockType }) {
+function TaskRecapBlock({
+  block,
+  duration,
+}: {
+  block: TaskRecapBlockType;
+  duration: number | null;
+}) {
   const [expandedHash, setExpandedHash] = useState<string | null>(null);
   const { commits, stats } = block;
 
@@ -226,6 +225,11 @@ function TaskRecapBlock({ block }: { block: TaskRecapBlockType }) {
           {stats.files_changed} file{stats.files_changed !== 1 ? "s" : ""}
         </Text>
       )}
+      {duration != null && (
+        <Text style={{ fontSize: "var(--font-size-1)", color: "var(--gray-9)" }}>
+          completed in {formatDuration(duration)}
+        </Text>
+      )}
     </Box>
   );
 }
@@ -239,6 +243,7 @@ function SingleBlock({
   agentForBlock,
   isLast,
   userAvatarUrl,
+  taskCompletedDuration,
 }: {
   entry: BlockEntry;
   sessionId: string;
@@ -246,6 +251,7 @@ function SingleBlock({
   agentForBlock: AgentSnapshot | null;
   isLast: boolean;
   userAvatarUrl: string | null;
+  taskCompletedDuration: number | null;
 }) {
   const { block, blockId, role } = entry;
   const isCaptain = role.tag === "Captain";
@@ -382,7 +388,7 @@ function SingleBlock({
     }
 
     case "TaskRecap":
-      return <TaskRecapBlock block={block} />;
+      return <TaskRecapBlock block={block} duration={taskCompletedDuration} />;
   }
 }
 
@@ -472,7 +478,6 @@ interface Props {
   mate: AgentSnapshot | null;
   blocks: BlockEntry[];
   startupState: SessionStartupState | null;
-  taskStatus: TaskStatus | null;
   taskCompletedDuration: number | null;
   userAvatarUrl?: string | null;
   loading?: boolean;
@@ -488,7 +493,6 @@ export function UnifiedFeed({
   mate,
   blocks,
   startupState,
-  taskStatus,
   taskCompletedDuration,
   userAvatarUrl = null,
   loading,
@@ -630,6 +634,7 @@ export function UnifiedFeed({
                   agentForBlock={agentForBlock}
                   isLast={idx === segments.length - 1}
                   userAvatarUrl={userAvatarUrl}
+                  taskCompletedDuration={taskCompletedDuration}
                 />
                 {debugMode && (
                   <Box
@@ -671,17 +676,6 @@ export function UnifiedFeed({
             );
           })}
         </Box>
-
-        {taskCompletedDuration != null &&
-          taskStatus &&
-          (taskStatus.tag === "Accepted" || taskStatus.tag === "Cancelled") && (
-            <Box className={feedSystemMessage}>
-              <Text className={feedSystemMessageText}>
-                Task {taskStatus.tag === "Accepted" ? "completed" : "cancelled"} in{" "}
-                {formatDuration(taskCompletedDuration)}
-              </Text>
-            </Box>
-          )}
 
         <Box className={liveBubblesRow}>
           {captainWorking && (
