@@ -1500,10 +1500,6 @@ Here is your task:
     ) -> Result<String, String> {
         let files = extras.files;
         let plan = extras.plan;
-        let task_id = self
-            .start_task(session_id, title.clone(), description.clone())
-            .await?;
-
         let (worktree_path, base_branch) = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let session = sessions
@@ -1515,9 +1511,16 @@ Here is your task:
             )
         };
 
-        // Keep the task branch current before the mate starts work so their prompt
-        // and any inlined file context reflect a synced worktree.
-        Self::rebase_worktree_on_base(&worktree_path, &base_branch).await;
+        // Keep the task branch current before the task is even started so the
+        // mate never begins work from a stale branch.
+        self.worktree_ops
+            .rebase_onto(&worktree_path, &base_branch)
+            .await
+            .map_err(|error| format!("pre-task sync failed: {}", error.message))?;
+
+        let task_id = self
+            .start_task(session_id, title.clone(), description.clone())
+            .await?;
 
         if !keep {
             self.restart_mate(session_id).await?;
@@ -6092,6 +6095,7 @@ fn rejection_metadata(reason: &'static str) -> Metadata<'static> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::ffi::OsString;
     use std::path::PathBuf;
     use std::process::Command;
@@ -6102,11 +6106,11 @@ mod tests {
     use ship_core::{ProjectRegistry, SessionStore};
     use ship_service::Ship;
     use ship_types::{
-        AgentDiscovery, AgentKind, CaptainAssignExtras, ContentBlock, CreateSessionRequest,
-        CreateSessionResponse, CurrentTask, McpServerConfig, McpStdioServerConfig, PlanStep,
-        PlanStepInput, PlanStepStatus, ProjectName, PromptContentPart, SessionEvent,
-        SessionEventEnvelope, SessionId, SessionStartupState, SubscribeMessage, TaskId, TaskRecord,
-        TaskStatus,
+        AgentDiscovery, AgentKind, AgentSnapshot, AgentState, AutonomyMode, CaptainAssignExtras,
+        ContentBlock, CreateSessionRequest, CreateSessionResponse, CurrentTask, McpServerConfig,
+        McpStdioServerConfig, PlanStep, PlanStepInput, PlanStepStatus, ProjectName,
+        PromptContentPart, Role, SessionConfig, SessionEvent, SessionEventEnvelope, SessionId,
+        SessionStartupState, SubscribeMessage, TaskId, TaskRecord, TaskStatus,
     };
     use tokio::sync::{broadcast, mpsc};
     use tokio::time::timeout;
@@ -6219,6 +6223,92 @@ mod tests {
         (dir, ship, session_id)
     }
 
+    async fn create_ready_session_for_assign_test(
+        test_name: &str,
+        branch_name: &str,
+    ) -> (PathBuf, ShipImpl, SessionId) {
+        let dir = make_temp_dir(test_name);
+        let config_dir = dir.join("config");
+        let project_root = dir.join("project");
+        std::fs::create_dir_all(project_root.join(".ship")).expect("project ship dir should exist");
+
+        let mut registry = ProjectRegistry::load_in(config_dir)
+            .await
+            .expect("project registry should load");
+        registry
+            .add(&project_root)
+            .await
+            .expect("project should be added");
+
+        let ship = ShipImpl::new(
+            registry,
+            dir.join("sessions"),
+            AgentDiscovery {
+                claude: true,
+                codex: true,
+            },
+        );
+
+        let session_id = SessionId::new();
+        let (events_tx, _) = broadcast::channel(256);
+        let idle_agent = |role| AgentSnapshot {
+            role,
+            kind: match role {
+                Role::Captain => AgentKind::Claude,
+                Role::Mate => AgentKind::Codex,
+            },
+            state: AgentState::Idle,
+            context_remaining_percent: None,
+            model_id: None,
+            available_models: Vec::new(),
+            effort_config_id: None,
+            effort_value_id: None,
+            available_effort_values: Vec::new(),
+        };
+        let session = super::ActiveSession {
+            id: session_id.clone(),
+            created_at: chrono::Utc::now().to_rfc3339(),
+            config: SessionConfig {
+                project: ProjectName("project".to_owned()),
+                base_branch: "main".to_owned(),
+                branch_name: branch_name.to_owned(),
+                captain_kind: AgentKind::Claude,
+                mate_kind: AgentKind::Codex,
+                autonomy_mode: AutonomyMode::HumanInTheLoop,
+                mcp_servers: Vec::new(),
+            },
+            worktree_path: Some(project_root.clone()),
+            captain_handle: None,
+            mate_handle: None,
+            captain: idle_agent(Role::Captain),
+            mate: idle_agent(Role::Mate),
+            startup_state: SessionStartupState::Ready,
+            session_event_log: Vec::new(),
+            current_task: None,
+            task_history: Vec::new(),
+            captain_block_count: 0,
+            mate_block_count: 0,
+            pending_permissions: HashMap::new(),
+            pending_edits: HashMap::new(),
+            pending_steer: None,
+            pending_human_review: None,
+            title: None,
+            archived_at: None,
+            captain_acp_session_id: None,
+            mate_acp_session_id: None,
+            events_tx,
+            next_event_seq: 0,
+            captain_prompt_gen: 0,
+            mate_prompt_gen: 0,
+        };
+        ship.sessions
+            .lock()
+            .expect("sessions mutex poisoned")
+            .insert(session_id.clone(), session);
+
+        (dir, ship, session_id)
+    }
+
     fn init_git_repo(path: &std::path::Path) {
         let status = std::process::Command::new("git")
             .arg("init")
@@ -6283,10 +6373,9 @@ mod tests {
     // r[verify captain.tool.assign]
     #[tokio::test]
     async fn captain_tool_assign_syncs_worktree_with_base_before_prompting_mate() {
-        let (dir, ship, session_id) = create_session_for_workflow_test("captain-assign-sync").await;
+        let (dir, ship, session_id) =
+            create_ready_session_for_assign_test("captain-assign-sync", "task").await;
         let project_root = dir.join("project");
-        let origin = dir.join("origin.git");
-        let upstream = dir.join("upstream");
         init_git_repo(&project_root);
 
         std::fs::write(project_root.join("tracked.txt"), "v1\n")
@@ -6313,89 +6402,46 @@ mod tests {
         );
         assert!(
             Command::new("git")
-                .args(["clone", "--bare"])
+                .arg("-C")
                 .arg(&project_root)
-                .arg(&origin)
+                .args(["checkout", "-b", "task"])
                 .status()
-                .expect("git clone --bare should run")
+                .expect("git checkout should run")
                 .success(),
-            "git clone --bare should succeed"
+            "git checkout -b should succeed"
         );
         assert!(
             Command::new("git")
                 .arg("-C")
                 .arg(&project_root)
-                .args(["remote", "add", "origin"])
-                .arg(&origin)
+                .args(["checkout", "main"])
                 .status()
-                .expect("git remote add should run")
+                .expect("git checkout should run")
                 .success(),
-            "git remote add should succeed"
+            "git checkout main should succeed"
         );
+        std::fs::write(project_root.join("tracked.txt"), "v2\n")
+            .expect("updated tracked file should be written");
         assert!(
             Command::new("git")
                 .arg("-C")
                 .arg(&project_root)
-                .args(["push", "-u", "origin", "main"])
-                .status()
-                .expect("git push should run")
-                .success(),
-            "git push should succeed"
-        );
-        assert!(
-            Command::new("git")
-                .args(["clone"])
-                .arg(&origin)
-                .arg(&upstream)
-                .status()
-                .expect("git clone should run")
-                .success(),
-            "git clone should succeed"
-        );
-        for (key, value) in [
-            ("user.name", "Ship Tests"),
-            ("user.email", "ship-tests@example.com"),
-        ] {
-            assert!(
-                Command::new("git")
-                    .arg("-C")
-                    .arg(&upstream)
-                    .args(["config", key, value])
-                    .status()
-                    .expect("git config should run")
-                    .success(),
-                "git config should succeed"
-            );
-        }
-        std::fs::write(upstream.join("tracked.txt"), "v2\n")
-            .expect("upstream tracked file should be written");
-        assert!(
-            Command::new("git")
-                .arg("-C")
-                .arg(&upstream)
-                .args(["commit", "-am", "advance origin"])
+                .args(["commit", "-am", "advance base"])
                 .status()
                 .expect("git commit should run")
                 .success(),
-            "upstream git commit should succeed"
+            "git commit on main should succeed"
         );
         assert!(
             Command::new("git")
                 .arg("-C")
-                .arg(&upstream)
-                .args(["push", "origin", "main"])
+                .arg(&project_root)
+                .args(["checkout", "task"])
                 .status()
-                .expect("git push should run")
+                .expect("git checkout should run")
                 .success(),
-            "upstream git push should succeed"
+            "git checkout task should succeed"
         );
-
-        {
-            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
-            let session = sessions.get_mut(&session_id).expect("session should exist");
-            session.worktree_path = Some(project_root.clone());
-            session.current_task = None;
-        }
 
         let assigned = ship
             .captain_tool_assign(
@@ -6419,6 +6465,119 @@ mod tests {
             std::fs::read_to_string(project_root.join("tracked.txt"))
                 .expect("synced tracked file should be readable"),
             "v2\n"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    // r[verify task.assign]
+    // r[verify captain.tool.assign]
+    #[tokio::test]
+    async fn captain_tool_assign_fails_when_pre_task_sync_fails() {
+        let (dir, ship, session_id) =
+            create_ready_session_for_assign_test("captain-assign-sync-fails", "task").await;
+        let project_root = dir.join("project");
+        init_git_repo(&project_root);
+
+        std::fs::write(project_root.join("tracked.txt"), "base\n")
+            .expect("tracked file should be written");
+        assert!(
+            Command::new("git")
+                .arg("-C")
+                .arg(&project_root)
+                .args(["add", "."])
+                .status()
+                .expect("git add should run")
+                .success(),
+            "git add should succeed"
+        );
+        assert!(
+            Command::new("git")
+                .arg("-C")
+                .arg(&project_root)
+                .args(["commit", "-m", "initial"])
+                .status()
+                .expect("git commit should run")
+                .success(),
+            "git commit should succeed"
+        );
+        assert!(
+            Command::new("git")
+                .arg("-C")
+                .arg(&project_root)
+                .args(["checkout", "-b", "task"])
+                .status()
+                .expect("git checkout should run")
+                .success(),
+            "git checkout -b should succeed"
+        );
+        std::fs::write(project_root.join("tracked.txt"), "task\n")
+            .expect("task branch file should be written");
+        assert!(
+            Command::new("git")
+                .arg("-C")
+                .arg(&project_root)
+                .args(["commit", "-am", "task change"])
+                .status()
+                .expect("git commit should run")
+                .success(),
+            "git commit on task should succeed"
+        );
+        assert!(
+            Command::new("git")
+                .arg("-C")
+                .arg(&project_root)
+                .args(["checkout", "main"])
+                .status()
+                .expect("git checkout should run")
+                .success(),
+            "git checkout main should succeed"
+        );
+        std::fs::write(project_root.join("tracked.txt"), "main\n")
+            .expect("main branch file should be written");
+        assert!(
+            Command::new("git")
+                .arg("-C")
+                .arg(&project_root)
+                .args(["commit", "-am", "main change"])
+                .status()
+                .expect("git commit should run")
+                .success(),
+            "git commit on main should succeed"
+        );
+        assert!(
+            Command::new("git")
+                .arg("-C")
+                .arg(&project_root)
+                .args(["checkout", "task"])
+                .status()
+                .expect("git checkout should run")
+                .success(),
+            "git checkout task should succeed"
+        );
+
+        let error = ship
+            .captain_tool_assign(
+                &session_id,
+                "Sync before assign".to_owned(),
+                "Ensure the worktree is current before the mate starts.".to_owned(),
+                true,
+                CaptainAssignExtras {
+                    files: Vec::new(),
+                    plan: Vec::new(),
+                },
+            )
+            .await
+            .expect_err("captain assign should fail when sync fails");
+
+        assert!(
+            error.contains("pre-task sync failed:"),
+            "unexpected assign error: {error}"
+        );
+        let session = Ship::get_session(&ship, session_id.clone()).await;
+        assert!(
+            session.current_task.is_none(),
+            "task should not start on sync failure"
         );
 
         let _ = std::fs::remove_dir_all(dir);
