@@ -708,8 +708,8 @@ export const sessionHeaderRoot = style({
 export const sessionHeaderRow1 = style({
   display: "flex",
   alignItems: "center",
-  gap: "var(--space-1)",
-  padding: "var(--space-3) var(--space-3) var(--space-2) var(--space-3)",
+  gap: "var(--space-2)",
+  padding: "var(--space-3) var(--space-3) var(--space-1) var(--space-3)",
 });
 
 export const sessionHeaderTitle = style({
@@ -725,7 +725,7 @@ export const sessionHeaderRow2 = style({
   display: "flex",
   alignItems: "center",
   gap: "var(--space-2)",
-  padding: "var(--space-2) var(--space-3) var(--space-3) var(--space-3)",
+  padding: "var(--space-1) var(--space-3) var(--space-3) var(--space-3)",
   width: "100%",
   border: 0,
   background: "transparent",
