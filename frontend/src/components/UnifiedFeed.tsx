@@ -172,14 +172,10 @@ function TaskRecapBlock({
         paddingBottom: "var(--space-2)",
       }}
     >
-      <Text style={{ fontSize: "var(--font-size-1)", color: "var(--gray-9)", fontWeight: 500 }}>
-        Work accepted
+      <Text style={{ fontSize: "var(--font-size-1)", color: "var(--gray-9)" }}>
+        <span style={{ fontWeight: 500 }}>Work accepted</span>
+        {duration != null && <span> · completed in {formatDuration(duration)}</span>}
       </Text>
-      {duration != null && (
-        <Text style={{ fontSize: "var(--font-size-1)", color: "var(--gray-9)" }}>
-          completed in {formatDuration(duration)}
-        </Text>
-      )}
       {commits.length > 0 && (
         <Box
           style={{
