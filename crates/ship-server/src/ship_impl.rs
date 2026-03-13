@@ -6094,6 +6094,7 @@ fn rejection_metadata(reason: &'static str) -> Metadata<'static> {
 mod tests {
     use std::ffi::OsString;
     use std::path::PathBuf;
+    use std::process::Command;
     use std::sync::{Mutex, MutexGuard};
     use std::time::Duration;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -6101,10 +6102,11 @@ mod tests {
     use ship_core::{ProjectRegistry, SessionStore};
     use ship_service::Ship;
     use ship_types::{
-        AgentDiscovery, AgentKind, ContentBlock, CreateSessionRequest, CreateSessionResponse,
-        CurrentTask, McpServerConfig, McpStdioServerConfig, PlanStep, PlanStepInput,
-        PlanStepStatus, ProjectName, PromptContentPart, SessionEvent, SessionEventEnvelope,
-        SessionId, SessionStartupState, SubscribeMessage, TaskId, TaskRecord, TaskStatus,
+        AgentDiscovery, AgentKind, CaptainAssignExtras, ContentBlock, CreateSessionRequest,
+        CreateSessionResponse, CurrentTask, McpServerConfig, McpStdioServerConfig, PlanStep,
+        PlanStepInput, PlanStepStatus, ProjectName, PromptContentPart, SessionEvent,
+        SessionEventEnvelope, SessionId, SessionStartupState, SubscribeMessage, TaskId, TaskRecord,
+        TaskStatus,
     };
     use tokio::sync::{broadcast, mpsc};
     use tokio::time::timeout;
@@ -6250,6 +6252,176 @@ mod tests {
             .expect("edit_id should appear as edit_id=<id> in response text")
             .trim()
             .to_owned()
+    }
+
+    // r[verify captain.system-prompt]
+    #[test]
+    fn captain_bootstrap_prompt_makes_git_captain_owned() {
+        let prompt = ShipImpl::captain_bootstrap_prompt();
+
+        assert!(prompt.contains("Git and branch state are captain-owned."));
+        assert!(prompt.contains("mate must never run git commands of any kind"));
+        assert!(prompt.contains("Ship will sync the task worktree onto the base branch for you."));
+    }
+
+    // r[verify mate.system-prompt]
+    #[test]
+    fn mate_task_preamble_forbids_git_commands() {
+        let prompt = ShipImpl::mate_task_preamble("Implement the change.", "", None);
+
+        assert!(prompt.contains("Do not run git commands of any kind."));
+        assert!(prompt.contains("`git status`, `git diff`,"));
+        assert!(
+            prompt.contains(
+                "Ship handles commits and rebases itself, and git state is captain-owned."
+            )
+        );
+        assert!(prompt.contains("ask the captain with mate_ask_captain instead of touching git."));
+    }
+
+    // r[verify task.assign]
+    // r[verify captain.tool.assign]
+    #[tokio::test]
+    async fn captain_tool_assign_syncs_worktree_with_base_before_prompting_mate() {
+        let (dir, ship, session_id) = create_session_for_workflow_test("captain-assign-sync").await;
+        let project_root = dir.join("project");
+        let origin = dir.join("origin.git");
+        let upstream = dir.join("upstream");
+        init_git_repo(&project_root);
+
+        std::fs::write(project_root.join("tracked.txt"), "v1\n")
+            .expect("tracked file should be written");
+        assert!(
+            Command::new("git")
+                .arg("-C")
+                .arg(&project_root)
+                .args(["add", "."])
+                .status()
+                .expect("git add should run")
+                .success(),
+            "git add should succeed"
+        );
+        assert!(
+            Command::new("git")
+                .arg("-C")
+                .arg(&project_root)
+                .args(["commit", "-m", "initial"])
+                .status()
+                .expect("git commit should run")
+                .success(),
+            "git commit should succeed"
+        );
+        assert!(
+            Command::new("git")
+                .args(["clone", "--bare"])
+                .arg(&project_root)
+                .arg(&origin)
+                .status()
+                .expect("git clone --bare should run")
+                .success(),
+            "git clone --bare should succeed"
+        );
+        assert!(
+            Command::new("git")
+                .arg("-C")
+                .arg(&project_root)
+                .args(["remote", "add", "origin"])
+                .arg(&origin)
+                .status()
+                .expect("git remote add should run")
+                .success(),
+            "git remote add should succeed"
+        );
+        assert!(
+            Command::new("git")
+                .arg("-C")
+                .arg(&project_root)
+                .args(["push", "-u", "origin", "main"])
+                .status()
+                .expect("git push should run")
+                .success(),
+            "git push should succeed"
+        );
+        assert!(
+            Command::new("git")
+                .args(["clone"])
+                .arg(&origin)
+                .arg(&upstream)
+                .status()
+                .expect("git clone should run")
+                .success(),
+            "git clone should succeed"
+        );
+        for (key, value) in [
+            ("user.name", "Ship Tests"),
+            ("user.email", "ship-tests@example.com"),
+        ] {
+            assert!(
+                Command::new("git")
+                    .arg("-C")
+                    .arg(&upstream)
+                    .args(["config", key, value])
+                    .status()
+                    .expect("git config should run")
+                    .success(),
+                "git config should succeed"
+            );
+        }
+        std::fs::write(upstream.join("tracked.txt"), "v2\n")
+            .expect("upstream tracked file should be written");
+        assert!(
+            Command::new("git")
+                .arg("-C")
+                .arg(&upstream)
+                .args(["commit", "-am", "advance origin"])
+                .status()
+                .expect("git commit should run")
+                .success(),
+            "upstream git commit should succeed"
+        );
+        assert!(
+            Command::new("git")
+                .arg("-C")
+                .arg(&upstream)
+                .args(["push", "origin", "main"])
+                .status()
+                .expect("git push should run")
+                .success(),
+            "upstream git push should succeed"
+        );
+
+        {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(&session_id).expect("session should exist");
+            session.worktree_path = Some(project_root.clone());
+            session.current_task = None;
+        }
+
+        let assigned = ship
+            .captain_tool_assign(
+                &session_id,
+                "Sync before assign".to_owned(),
+                "Ensure the worktree is current before the mate starts.".to_owned(),
+                true,
+                CaptainAssignExtras {
+                    files: Vec::new(),
+                    plan: Vec::new(),
+                },
+            )
+            .await
+            .expect("captain assign should succeed");
+
+        assert!(
+            assigned.starts_with("Task "),
+            "unexpected assign result: {assigned}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(project_root.join("tracked.txt"))
+                .expect("synced tracked file should be readable"),
+            "v2\n"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     // r[verify server.agent-discovery]
@@ -6817,6 +6989,25 @@ mod tests {
 
     // r[verify mate.tool.run-command]
     #[tokio::test]
+    async fn mate_run_command_blocks_git_status_before_launching_shell() {
+        let _guard = lock_mate_tool_tests();
+        let (dir, ship, session_id) =
+            create_session_for_workflow_test("mate-run-command-git-guard").await;
+
+        let guarded = ship
+            .mate_tool_run_command(&session_id, "git status".to_owned(), None)
+            .await
+            .expect_err("git commands should be redirected");
+        assert_eq!(
+            guarded,
+            "The command `git status` has been blocked. Git commands are captain-owned and not allowed for the mate. Ship handles commits and rebases itself. Use mate_ask_captain if you need git information or a git action."
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    // r[verify mate.tool.run-command]
+    #[tokio::test]
     async fn mate_run_command_executes_reports_failures_guards_cwd_and_truncates() {
         let _guard = lock_mate_tool_tests();
         let (dir, ship, session_id) = create_session_for_workflow_test("mate-run-command").await;
@@ -6845,14 +7036,12 @@ mod tests {
         assert_eq!(failed, "exit code: 1");
 
         let guarded = ship
-            .mate_tool_run_command(&session_id, "git checkout .".to_owned(), None)
+            .mate_tool_run_command(&session_id, "git status".to_owned(), None)
             .await
-            .expect_err("dangerous command should be redirected");
+            .expect_err("git commands should be redirected");
         assert_eq!(
             guarded,
-            "The command `git checkout .` has been blocked because it could affect the worktree \
-in ways that are hard to undo. Use mate_ask_captain to explain what you need, \
-and the captain will help you find the right approach."
+            "The command `git status` has been blocked. Git commands are captain-owned and not allowed for the mate. Ship handles commits and rebases itself. Use mate_ask_captain if you need git information or a git action."
         );
 
         let custom_cwd = ship
