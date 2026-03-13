@@ -1206,6 +1206,14 @@ export const composerOverlay = style({
   pointerEvents: "none",
   maskImage: "linear-gradient(to bottom, transparent 0%, black 30%, black 100%)",
   WebkitMaskImage: "linear-gradient(to bottom, transparent 0%, black 30%, black 100%)",
+  "@media": {
+    "(max-width: 700px)": {
+      left: 50,
+      right: 90,
+      width: "auto",
+      transform: "none",
+    },
+  },
 });
 
 export const composerInlineBtn = style({
