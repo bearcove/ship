@@ -417,58 +417,46 @@ function StartupFeedState({ startupState }: { startupState: SessionStartupState 
 
 // ─── Live bubbles ─────────────────────────────────────────────────────────────
 
-function LiveBubble() {
-  return (
-    <Box className={feedRowAgent} style={{ paddingBottom: 0 }}>
-      <Box className={liveBubble}>
-        <span className={liveBubbleDot} />
-        <span className={liveBubbleDot} />
-        <span className={liveBubbleDot} />
-      </Box>
-    </Box>
-  );
-}
-
-function CaptainThinkingBubble({
+function ThinkingBubble({
+  avatarSrc,
+  agentName,
   thinkingTokens,
   toolsOk,
   toolsFailed,
 }: {
+  avatarSrc: string;
+  agentName: string;
   thinkingTokens: number;
   toolsOk: number;
   toolsFailed: number;
 }) {
   return (
     <Box className={feedRowAgent} style={{ paddingBottom: 0 }}>
-      <Box className={liveBubble}>
-        <img
-          src={captainAvatar}
-          alt="Captain"
-          style={{ width: 16, height: 16, borderRadius: "50%", flexShrink: 0 }}
-        />
-        <Spinner size="1" />
-        {thinkingTokens > 0 ? (
-          <Text size="1" color="gray">
-            ~{thinkingTokens} tokens
+      <div className={thinkingBubbleOuter}>
+        <div className={thinkingBubbleInner}>
+          <img
+            src={avatarSrc}
+            alt={agentName}
+            style={{ width: 20, height: 20, borderRadius: "50%", flexShrink: 0 }}
+          />
+          <span className={liveBubbleDot} />
+          <span className={liveBubbleDot} />
+          <span className={liveBubbleDot} />
+          <Text size="2" color="gray">
+            {thinkingTokens} tokens
           </Text>
-        ) : (
-          <>
-            <span className={liveBubbleDot} />
-            <span className={liveBubbleDot} />
-            <span className={liveBubbleDot} />
-          </>
-        )}
-        {toolsOk > 0 && (
-          <Text size="1" style={{ color: "var(--green-11)" }}>
-            {toolsOk}✓
-          </Text>
-        )}
-        {toolsFailed > 0 && (
-          <Text size="1" style={{ color: "var(--red-11)" }}>
-            {toolsFailed}✗
-          </Text>
-        )}
-      </Box>
+          {toolsOk > 0 && (
+            <Text size="2" style={{ color: "var(--green-11)" }}>
+              {toolsOk}✓
+            </Text>
+          )}
+          {toolsFailed > 0 && (
+            <Text size="2" style={{ color: "var(--red-11)" }}>
+              {toolsFailed}✗
+            </Text>
+          )}
+        </div>
+      </div>
     </Box>
   );
 }
@@ -574,6 +562,36 @@ export function UnifiedFeed({
       }
     }
     thinkingTokens = Math.ceil(thinkingChars / 4);
+  }
+
+  let mateThinkingTokens = 0;
+  let mateToolsOk = 0;
+  let mateToolsFailed = 0;
+  if (mateWorking) {
+    let lastMateMsgIdx = -1;
+    for (let i = visibleBlocks.length - 1; i >= 0; i--) {
+      const b = visibleBlocks[i];
+      if (
+        b.role.tag === "Mate" &&
+        b.block.tag === "Text" &&
+        b.block.source.tag === "AgentMessage"
+      ) {
+        lastMateMsgIdx = i;
+        break;
+      }
+    }
+    const mateTurnBlocks = visibleBlocks.slice(lastMateMsgIdx + 1);
+    let mateThinkingChars = 0;
+    for (const b of mateTurnBlocks) {
+      if (b.role.tag !== "Mate") continue;
+      if (b.block.tag === "Text" && b.block.source.tag === "AgentThought") {
+        mateThinkingChars += b.block.text.length;
+      } else if (b.block.tag === "ToolCall") {
+        if (b.block.status.tag === "Success") mateToolsOk++;
+        else if (b.block.status.tag === "Failure") mateToolsFailed++;
+      }
+    }
+    mateThinkingTokens = Math.ceil(mateThinkingChars / 4);
   }
 
   let lastUnresolvedPermBlockId: string | undefined;
@@ -682,13 +700,23 @@ export function UnifiedFeed({
 
         <Box className={liveBubblesRow}>
           {captainWorking && (
-            <CaptainThinkingBubble
+            <ThinkingBubble
+              avatarSrc={captainAvatar}
+              agentName="Captain"
               thinkingTokens={thinkingTokens}
               toolsOk={toolsOk}
               toolsFailed={toolsFailed}
             />
           )}
-          {mateWorking && <LiveBubble />}
+          {mateWorking && (
+            <ThinkingBubble
+              avatarSrc={mateAvatar}
+              agentName="Mate"
+              thinkingTokens={mateThinkingTokens}
+              toolsOk={mateToolsOk}
+              toolsFailed={mateToolsFailed}
+            />
+          )}
         </Box>
       </Box>
     </Box>
