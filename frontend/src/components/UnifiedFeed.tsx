@@ -1,6 +1,6 @@
 import { Fragment, useState, useRef, useEffect } from "react";
 import { Box, Flex, Spinner, Text } from "@radix-ui/themes";
-import { ArrowDown, CaretRight, CaretDown } from "@phosphor-icons/react";
+import { ArrowDown } from "@phosphor-icons/react";
 import type {
   AgentKind,
   AgentSnapshot,
@@ -12,7 +12,6 @@ import type {
 import type { BlockEntry } from "../state/blockStore";
 import { AgentKindIcon } from "./AgentKindIcon";
 import { TextBlock } from "./blocks/TextBlock";
-import { ToolCallBlock } from "./blocks/ToolCallBlock";
 import { ErrorBlock } from "./blocks/ErrorBlock";
 import { PermissionBlock } from "./blocks/PermissionBlock";
 import { ImageBlock } from "./blocks/ImageBlock";
@@ -36,10 +35,6 @@ import {
   feedRowUser,
   feedSystemMessage,
   feedSystemMessageText,
-  feedToolGroup,
-  feedToolGroupBody,
-  feedToolGroupHeader,
-  feedToolGroupHeaderExpanded,
   liveBubble,
   liveBubbleDot,
   liveBubblesRow,
@@ -86,8 +81,7 @@ function formatDuration(totalSeconds: number): string {
 // ─── Feed segmentation ────────────────────────────────────────────────────────
 
 type SingleSegment = { kind: "single"; entry: BlockEntry };
-type ToolGroupSegment = { kind: "tool-group"; role: Role; entries: BlockEntry[] };
-type FeedSegment = SingleSegment | ToolGroupSegment;
+type FeedSegment = SingleSegment;
 
 function buildSegments(blocks: BlockEntry[]): FeedSegment[] {
   const visible = blocks.filter(
@@ -100,7 +94,6 @@ function buildSegments(blocks: BlockEntry[]): FeedSegment[] {
 }
 
 function segmentLastTimestamp(seg: FeedSegment): string | null | undefined {
-  if (seg.kind === "tool-group") return seg.entries.at(-1)?.timestamp;
   return seg.entry.timestamp;
 }
 
@@ -108,7 +101,6 @@ function segmentLastTimestamp(seg: FeedSegment): string | null | undefined {
 // Captain-to-mate relay messages (role=Mate, source=Human) are attributed to the
 // Captain so they group with other captain output and show the captain avatar.
 function segmentAgentRole(seg: FeedSegment): Role | null {
-  if (seg.kind === "tool-group") return seg.role;
   const { block, role } = seg.entry;
   if (block.tag === "Text" && block.source.tag === "Human" && !isSystemInjection(block)) {
     if (role.tag === "Captain") return null; // real user message → right side, no avatar
@@ -142,111 +134,6 @@ function Avatar({ role, show, kind }: { role: Role; show: boolean; kind?: AgentK
 function UserAvatar({ url }: { url: string | null }) {
   if (!url) return <div className={userAvatarSpacer} />;
   return <img src={url} className={userAvatar} alt="You" />;
-}
-
-// ─── Tool group ───────────────────────────────────────────────────────────────
-
-function ToolGroup({
-  entries,
-  role,
-  showAvatar,
-  kind,
-}: {
-  entries: BlockEntry[];
-  role: Role;
-  showAvatar: boolean;
-  kind?: AgentKind;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const count = entries.length;
-  const anyPending = entries.some(
-    (e) => (e.block as Extract<ContentBlock, { tag: "ToolCall" }>).status.tag === "Running",
-  );
-
-  return (
-    <Box className={feedRowAgent}>
-      <Avatar role={role} show={showAvatar} kind={kind} />
-      <Box className={feedToolGroup}>
-        <div
-          className={`${feedToolGroupHeader}${expanded ? ` ${feedToolGroupHeaderExpanded}` : ""}`}
-          onClick={() => setExpanded((v) => !v)}
-        >
-          {anyPending ? (
-            <Spinner size="1" />
-          ) : expanded ? (
-            <CaretDown size={11} />
-          ) : (
-            <CaretRight size={11} />
-          )}
-          <Text size="1" color="gray">
-            {count} tool call{count !== 1 ? "s" : ""}
-          </Text>
-        </div>
-        {expanded && (
-          <Box className={feedToolGroupBody}>
-            {entries.map((e) => (
-              <ToolCallBlock
-                key={e.blockId}
-                block={e.block as Extract<ContentBlock, { tag: "ToolCall" }>}
-              />
-            ))}
-          </Box>
-        )}
-      </Box>
-    </Box>
-  );
-}
-
-// ─── Thought block ────────────────────────────────────────────────────────────
-
-function ThoughtBlock({
-  block,
-  role,
-  showAvatar,
-  kind,
-  prevTimestamp,
-  timestamp,
-}: {
-  block: TextBlockType;
-  role: Role;
-  showAvatar: boolean;
-  kind?: AgentKind;
-  prevTimestamp?: string | null;
-  timestamp?: string | null;
-}) {
-  const [expanded, setExpanded] = useState(false);
-
-  let durationLabel = "Thought";
-  if (prevTimestamp && timestamp) {
-    const secs = Math.round(
-      (new Date(timestamp).getTime() - new Date(prevTimestamp).getTime()) / 1000,
-    );
-    if (secs > 0) durationLabel = `Thought for ${secs}s`;
-  }
-
-  return (
-    <Box className={feedRowAgent}>
-      <Avatar role={role} show={showAvatar} kind={kind} />
-      <Box className={feedToolGroup}>
-        <div
-          className={`${feedToolGroupHeader}${expanded ? ` ${feedToolGroupHeaderExpanded}` : ""}`}
-          onClick={() => setExpanded((v) => !v)}
-          role="button"
-          aria-expanded={expanded}
-        >
-          {expanded ? <CaretDown size={11} /> : <CaretRight size={11} />}
-          <Text size="1" color="gray">
-            {durationLabel}
-          </Text>
-        </div>
-        {expanded && (
-          <Box className={feedToolGroupBody}>
-            <TextBlock block={block} />
-          </Box>
-        )}
-      </Box>
-    </Box>
-  );
 }
 
 // ─── Single block ─────────────────────────────────────────────────────────────
@@ -575,19 +462,6 @@ export function UnifiedFeed({
 
           {segments.map((seg, idx) => {
             const showAvatar = showAvatarAt.has(idx);
-
-            if (seg.kind === "tool-group") {
-              return (
-                <ToolGroup
-                  key={idx}
-                  entries={seg.entries}
-                  role={seg.role}
-                  showAvatar={showAvatar}
-                  kind={kindForRole(seg.role)}
-                />
-              );
-            }
-
             const agentRole = segmentAgentRole(seg);
             const agentForBlock =
               agentRole?.tag === "Captain"
