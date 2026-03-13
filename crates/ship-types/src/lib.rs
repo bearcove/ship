@@ -400,6 +400,8 @@ pub mod events {
     pub struct CommitSummary {
         pub hash: String,
         pub subject: String,
+        #[facet(default)]
+        pub diff: Option<String>,
     }
 
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]

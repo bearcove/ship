@@ -345,6 +345,7 @@ export type PermissionResolution =
 export interface CommitSummary {
   hash: string;
   subject: string;
+  diff: string | null;
 }
 
 export interface TaskRecapStats {
@@ -1193,7 +1194,7 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0x00e1943ac1b3096fn) {
+    } else if (method.id === 0x017215b776fc13cbn) {
       try {
         const result = await this.handler.subscribeEvents(args[0] as SessionId, args[1] as Tx<SubscribeMessage>);
         (args[1] as { close(): void }).close(); // close output before reply
@@ -1284,7 +1285,7 @@ const ship_schema_registry: SchemaRegistry = new Map<string, Schema>([
   ["ToolCallContent", { kind: 'enum', variants: [{ name: 'Text', fields: { 'text': { kind: 'string' } } }, { name: 'Diff', fields: { 'path': { kind: 'string' }, 'display_path': { kind: 'option', inner: { kind: 'string' } }, 'unified_diff': { kind: 'string' } } }, { name: 'Terminal', fields: { 'terminal_id': { kind: 'string' }, 'snapshot': { kind: 'option', inner: { kind: 'ref', name: 'TerminalSnapshot' } } } }, { name: 'Raw', fields: { 'data': { kind: 'ref', name: 'JsonValue' } } }] }],
   ["ToolCallError", { kind: 'struct', fields: { 'message': { kind: 'string' }, 'details': { kind: 'option', inner: { kind: 'ref', name: 'JsonValue' } } } }],
   ["PermissionResolution", { kind: 'enum', variants: [{ name: 'Approved', fields: null }, { name: 'Denied', fields: null }] }],
-  ["CommitSummary", { kind: 'struct', fields: { 'hash': { kind: 'string' }, 'subject': { kind: 'string' } } }],
+  ["CommitSummary", { kind: 'struct', fields: { 'hash': { kind: 'string' }, 'subject': { kind: 'string' }, 'diff': { kind: 'option', inner: { kind: 'string' } } } }],
   ["TaskRecapStats", { kind: 'struct', fields: { 'files_changed': { kind: 'u32' }, 'insertions': { kind: 'u32' }, 'deletions': { kind: 'u32' } } }],
   ["ContentBlock", { kind: 'enum', variants: [{ name: 'Text', fields: { 'text': { kind: 'string' }, 'source': { kind: 'ref', name: 'TextSource' } } }, { name: 'ToolCall', fields: { 'tool_call_id': { kind: 'option', inner: { kind: 'string' } }, 'tool_name': { kind: 'string' }, 'arguments': { kind: 'string' }, 'kind': { kind: 'option', inner: { kind: 'ref', name: 'ToolCallKind' } }, 'target': { kind: 'option', inner: { kind: 'ref', name: 'ToolTarget' } }, 'raw_input': { kind: 'option', inner: { kind: 'ref', name: 'JsonValue' } }, 'raw_output': { kind: 'option', inner: { kind: 'ref', name: 'JsonValue' } }, 'locations': { kind: 'vec', element: { kind: 'ref', name: 'ToolCallLocation' } }, 'status': { kind: 'ref', name: 'ToolCallStatus' }, 'content': { kind: 'vec', element: { kind: 'ref', name: 'ToolCallContent' } }, 'error': { kind: 'option', inner: { kind: 'ref', name: 'ToolCallError' } } } }, { name: 'PlanUpdate', fields: { 'steps': { kind: 'vec', element: { kind: 'ref', name: 'PlanStep' } } } }, { name: 'Error', fields: { 'message': { kind: 'string' } } }, { name: 'Permission', fields: { 'permission_id': { kind: 'option', inner: { kind: 'string' } }, 'tool_call_id': { kind: 'option', inner: { kind: 'string' } }, 'tool_name': { kind: 'string' }, 'description': { kind: 'string' }, 'arguments': { kind: 'string' }, 'kind': { kind: 'option', inner: { kind: 'ref', name: 'ToolCallKind' } }, 'target': { kind: 'option', inner: { kind: 'ref', name: 'ToolTarget' } }, 'raw_input': { kind: 'option', inner: { kind: 'ref', name: 'JsonValue' } }, 'options': { kind: 'option', inner: { kind: 'vec', element: { kind: 'ref', name: 'PermissionOption' } } }, 'resolution': { kind: 'option', inner: { kind: 'ref', name: 'PermissionResolution' } } } }, { name: 'Image', fields: { 'mime_type': { kind: 'string' }, 'data': { kind: 'bytes' } } }, { name: 'TaskRecap', fields: { 'commits': { kind: 'vec', element: { kind: 'ref', name: 'CommitSummary' } }, 'stats': { kind: 'option', inner: { kind: 'ref', name: 'TaskRecapStats' } } } }] }],
   ["BlockPatch", { kind: 'enum', variants: [{ name: 'TextAppend', fields: { 'text': { kind: 'string' } } }, { name: 'ToolCallUpdate', fields: { 'tool_name': { kind: 'option', inner: { kind: 'string' } }, 'kind': { kind: 'option', inner: { kind: 'ref', name: 'ToolCallKind' } }, 'target': { kind: 'option', inner: { kind: 'ref', name: 'ToolTarget' } }, 'raw_input': { kind: 'option', inner: { kind: 'ref', name: 'JsonValue' } }, 'raw_output': { kind: 'option', inner: { kind: 'ref', name: 'JsonValue' } }, 'status': { kind: 'ref', name: 'ToolCallStatus' }, 'locations': { kind: 'option', inner: { kind: 'vec', element: { kind: 'ref', name: 'ToolCallLocation' } } }, 'content': { kind: 'option', inner: { kind: 'vec', element: { kind: 'ref', name: 'ToolCallContent' } } }, 'error': { kind: 'option', inner: { kind: 'ref', name: 'ToolCallError' } } } }, { name: 'PlanReplace', fields: { 'steps': { kind: 'vec', element: { kind: 'ref', name: 'PlanStep' } } } }, { name: 'PermissionResolve', fields: { 'resolution': { kind: 'ref', name: 'PermissionResolution' } } }] }],
@@ -1440,7 +1441,7 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: 'subscribeEvents',
-      id: 0x00e1943ac1b3096fn,
+      id: 0x017215b776fc13cbn,
       args: { kind: 'tuple', elements: [{ kind: 'string' }, { kind: 'tx', element: { kind: 'ref', name: 'SubscribeMessage' } }] },
       result: { kind: 'enum', variants: [{ name: 'Ok', fields: { kind: 'struct', fields: {} } }, { name: 'Err', fields: { kind: 'enum', variants: [{ name: 'User', fields: null }, { name: 'UnknownMethod', fields: null }, { name: 'InvalidPayload', fields: null }, { name: 'Cancelled', fields: null }] } }] },
     },
