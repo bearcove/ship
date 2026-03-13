@@ -20,7 +20,7 @@ use ship_core::{
 };
 use ship_service::{CaptainMcp, CaptainMcpDispatcher, MateMcp, MateMcpDispatcher, Ship};
 use ship_types::{
-    AgentDiscovery, AgentKind, AgentSnapshot, AgentState, ArchiveSessionRequest,
+    AgentAcpInfo, AgentDiscovery, AgentKind, AgentSnapshot, AgentState, ArchiveSessionRequest,
     ArchiveSessionResponse, AutonomyMode, BlockId, CaptainAssignExtras, CloseSessionRequest,
     CloseSessionResponse, CommitSummary, ContentBlock, CreateSessionRequest, CreateSessionResponse,
     CurrentTask, GlobalEvent, HumanReviewRequest, McpDiffContent, McpServerConfig,
@@ -425,6 +425,8 @@ impl ShipImpl {
                 archived_at: None,
                 captain_acp_session_id: persisted.captain_acp_session_id,
                 mate_acp_session_id: persisted.mate_acp_session_id,
+                captain_acp_info: None,
+                mate_acp_info: None,
                 events_tx,
                 next_event_seq,
                 captain_prompt_gen: 0,
@@ -524,6 +526,8 @@ impl ShipImpl {
             pending_human_review: session.pending_human_review.clone(),
             created_at: session.created_at.clone(),
             user_avatar_url,
+            captain_acp_info: session.captain_acp_info.clone(),
+            mate_acp_info: session.mate_acp_info.clone(),
         }
     }
 
@@ -547,6 +551,8 @@ impl ShipImpl {
             pending_human_review: None,
             created_at: String::new(),
             user_avatar_url,
+            captain_acp_info: None,
+            mate_acp_info: None,
         }
     }
 
@@ -569,6 +575,7 @@ impl ShipImpl {
             SessionEvent::HumanReviewRequested { .. } => "HumanReviewRequested",
             SessionEvent::HumanReviewCleared => "HumanReviewCleared",
             SessionEvent::SessionTitleChanged { .. } => "SessionTitleChanged",
+            SessionEvent::AgentAcpInfoChanged { .. } => "AgentAcpInfoChanged",
         }
     }
 
@@ -586,7 +593,8 @@ impl ShipImpl {
             | SessionEvent::MateGuidanceQueued { .. }
             | SessionEvent::HumanReviewRequested { .. }
             | SessionEvent::HumanReviewCleared
-            | SessionEvent::SessionTitleChanged { .. } => None,
+            | SessionEvent::SessionTitleChanged { .. }
+            | SessionEvent::AgentAcpInfoChanged { .. } => None,
         }
     }
 
@@ -604,7 +612,8 @@ impl ShipImpl {
             | SessionEvent::MateGuidanceQueued { .. }
             | SessionEvent::HumanReviewRequested { .. }
             | SessionEvent::HumanReviewCleared
-            | SessionEvent::SessionTitleChanged { .. } => None,
+            | SessionEvent::SessionTitleChanged { .. }
+            | SessionEvent::AgentAcpInfoChanged { .. } => None,
         }
     }
 
@@ -622,7 +631,8 @@ impl ShipImpl {
             | SessionEvent::MateGuidanceQueued { .. }
             | SessionEvent::HumanReviewRequested { .. }
             | SessionEvent::HumanReviewCleared
-            | SessionEvent::SessionTitleChanged { .. } => None,
+            | SessionEvent::SessionTitleChanged { .. }
+            | SessionEvent::AgentAcpInfoChanged { .. } => None,
         }
     }
 
@@ -1017,25 +1027,17 @@ Continue where you left off — wait for the human to give you direction."
         let captain_ship_mcp = self.install_captain_mcp_server(session_id).await?;
 
         // 4. Get stored ACP session ID and other config
-        let (captain_kind, captain_acp_id, extra_servers) = {
+        let (captain_kind, captain_acp_id) = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let s = sessions
                 .get(session_id)
                 .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-            (
-                s.config.captain_kind,
-                s.captain_acp_session_id.clone(),
-                s.config.mcp_servers.clone(),
-            )
+            (s.config.captain_kind, s.captain_acp_session_id.clone())
         };
 
         let captain_config = AgentSessionConfig {
             worktree_path,
-            mcp_servers: {
-                let mut servers = extra_servers;
-                servers.push(captain_ship_mcp);
-                servers
-            },
+            mcp_servers: vec![captain_ship_mcp],
             resume_session_id: captain_acp_id,
         };
 
@@ -1047,6 +1049,22 @@ Continue where you left off — wait for the human to give you direction."
             .map_err(|e| e.message)?;
 
         let was_resumed = captain_spawn.was_resumed;
+
+        let captain_acp_info = AgentAcpInfo {
+            acp_session_id: captain_spawn.acp_session_id.clone(),
+            was_resumed: captain_spawn.was_resumed,
+            protocol_version: captain_spawn.protocol_version,
+            agent_name: captain_spawn.agent_name.clone(),
+            agent_version: captain_spawn.agent_version.clone(),
+            cap_load_session: captain_spawn.cap_load_session,
+            cap_resume_session: captain_spawn.cap_resume_session,
+            cap_prompt_image: captain_spawn.cap_prompt_image,
+            cap_prompt_audio: captain_spawn.cap_prompt_audio,
+            cap_prompt_embedded_context: captain_spawn.cap_prompt_embedded_context,
+            cap_mcp_http: captain_spawn.cap_mcp_http,
+            cap_mcp_sse: captain_spawn.cap_mcp_sse,
+            last_event_at: None,
+        };
 
         // 6. Update session
         {
@@ -1060,6 +1078,13 @@ Continue where you left off — wait for the human to give you direction."
                 if !captain_spawn.available_models.is_empty() {
                     s.captain.available_models = captain_spawn.available_models;
                 }
+                apply_event(
+                    s,
+                    ship_types::SessionEvent::AgentAcpInfoChanged {
+                        role: Role::Captain,
+                        info: captain_acp_info,
+                    },
+                );
             }
         }
         let _ = self.persist_session(session_id).await;
@@ -1500,7 +1525,7 @@ Continue where you left off — wait for the human to give you direction."
     }
 
     async fn restart_mate(&self, session_id: &SessionId) -> Result<(), String> {
-        let (old_handle, mate_kind, mate_acp_id, extra_servers) = {
+        let (old_handle, mate_kind, mate_acp_id) = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let session = sessions
                 .get(session_id)
@@ -1509,7 +1534,6 @@ Continue where you left off — wait for the human to give you direction."
                 session.mate_handle.clone(),
                 session.config.mate_kind,
                 session.mate_acp_session_id.clone(),
-                session.config.mcp_servers.clone(),
             )
         };
 
@@ -1522,11 +1546,7 @@ Continue where you left off — wait for the human to give you direction."
         let mate_ship_mcp = self.install_mate_mcp_server(session_id).await?;
         let mate_config = AgentSessionConfig {
             worktree_path,
-            mcp_servers: {
-                let mut servers = extra_servers;
-                servers.push(mate_ship_mcp);
-                servers
-            },
+            mcp_servers: vec![mate_ship_mcp],
             resume_session_id: mate_acp_id,
         };
 
@@ -1536,6 +1556,22 @@ Continue where you left off — wait for the human to give you direction."
             .map_err(|error| error.message)?;
 
         let was_resumed = mate_spawn.was_resumed;
+
+        let mate_acp_info = AgentAcpInfo {
+            acp_session_id: mate_spawn.acp_session_id.clone(),
+            was_resumed: mate_spawn.was_resumed,
+            protocol_version: mate_spawn.protocol_version,
+            agent_name: mate_spawn.agent_name.clone(),
+            agent_version: mate_spawn.agent_version.clone(),
+            cap_load_session: mate_spawn.cap_load_session,
+            cap_resume_session: mate_spawn.cap_resume_session,
+            cap_prompt_image: mate_spawn.cap_prompt_image,
+            cap_prompt_audio: mate_spawn.cap_prompt_audio,
+            cap_prompt_embedded_context: mate_spawn.cap_prompt_embedded_context,
+            cap_mcp_http: mate_spawn.cap_mcp_http,
+            cap_mcp_sse: mate_spawn.cap_mcp_sse,
+            last_event_at: None,
+        };
 
         {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
@@ -1547,6 +1583,13 @@ Continue where you left off — wait for the human to give you direction."
                 session.mate.effort_config_id = mate_spawn.effort_config_id;
                 session.mate.effort_value_id = mate_spawn.effort_value_id;
                 session.mate.available_effort_values = mate_spawn.available_effort_values;
+                apply_event(
+                    session,
+                    ship_types::SessionEvent::AgentAcpInfoChanged {
+                        role: Role::Mate,
+                        info: mate_acp_info,
+                    },
+                );
             }
         }
         let _ = self.persist_session(session_id).await;
@@ -4170,7 +4213,7 @@ Here is your task:
 
         let step_started_at = Instant::now();
         let session_git_names = SessionGitNames::from_session_id(&session_id);
-        let (project, base_branch, resolved_mcp_servers) = {
+        let (project, base_branch) = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let Some(session) = sessions.get(&session_id) else {
                 return;
@@ -4178,7 +4221,6 @@ Here is your task:
             (
                 session.config.project.clone(),
                 session.config.base_branch.clone(),
-                session.config.mcp_servers.clone(),
             )
         };
         self.log_startup_step_elapsed(&session_id, "read-session-config", step_started_at);
@@ -4255,20 +4297,12 @@ Here is your task:
         };
         let captain_config = AgentSessionConfig {
             worktree_path: worktree_path.clone(),
-            mcp_servers: {
-                let mut servers = resolved_mcp_servers.clone();
-                servers.push(captain_ship_mcp);
-                servers
-            },
+            mcp_servers: vec![captain_ship_mcp],
             resume_session_id: captain_resume_id,
         };
         let mate_config = AgentSessionConfig {
             worktree_path: worktree_path.clone(),
-            mcp_servers: {
-                let mut servers = resolved_mcp_servers.clone();
-                servers.push(mate_ship_mcp);
-                servers
-            },
+            mcp_servers: vec![mate_ship_mcp],
             resume_session_id: mate_resume_id,
         };
         let captain_started_at = Instant::now();
@@ -4307,6 +4341,36 @@ Here is your task:
                 return;
             }
         };
+        let captain_acp_info = AgentAcpInfo {
+            acp_session_id: captain_spawn.acp_session_id.clone(),
+            was_resumed: captain_spawn.was_resumed,
+            protocol_version: captain_spawn.protocol_version,
+            agent_name: captain_spawn.agent_name.clone(),
+            agent_version: captain_spawn.agent_version.clone(),
+            cap_load_session: captain_spawn.cap_load_session,
+            cap_resume_session: captain_spawn.cap_resume_session,
+            cap_prompt_image: captain_spawn.cap_prompt_image,
+            cap_prompt_audio: captain_spawn.cap_prompt_audio,
+            cap_prompt_embedded_context: captain_spawn.cap_prompt_embedded_context,
+            cap_mcp_http: captain_spawn.cap_mcp_http,
+            cap_mcp_sse: captain_spawn.cap_mcp_sse,
+            last_event_at: None,
+        };
+        let mate_acp_info = AgentAcpInfo {
+            acp_session_id: mate_spawn.acp_session_id.clone(),
+            was_resumed: mate_spawn.was_resumed,
+            protocol_version: mate_spawn.protocol_version,
+            agent_name: mate_spawn.agent_name.clone(),
+            agent_version: mate_spawn.agent_version.clone(),
+            cap_load_session: mate_spawn.cap_load_session,
+            cap_resume_session: mate_spawn.cap_resume_session,
+            cap_prompt_image: mate_spawn.cap_prompt_image,
+            cap_prompt_audio: mate_spawn.cap_prompt_audio,
+            cap_prompt_embedded_context: mate_spawn.cap_prompt_embedded_context,
+            cap_mcp_http: mate_spawn.cap_mcp_http,
+            cap_mcp_sse: mate_spawn.cap_mcp_sse,
+            last_event_at: None,
+        };
         {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             if let Some(session) = sessions.get_mut(&session_id) {
@@ -4333,6 +4397,13 @@ Here is your task:
                 );
                 apply_event(
                     session,
+                    ship_types::SessionEvent::AgentAcpInfoChanged {
+                        role: Role::Captain,
+                        info: captain_acp_info,
+                    },
+                );
+                apply_event(
+                    session,
                     ship_types::SessionEvent::AgentModelChanged {
                         role: Role::Mate,
                         model_id: mate_spawn.model_id,
@@ -4346,6 +4417,13 @@ Here is your task:
                         effort_config_id: mate_spawn.effort_config_id,
                         effort_value_id: mate_spawn.effort_value_id,
                         available_effort_values: mate_spawn.available_effort_values,
+                    },
+                );
+                apply_event(
+                    session,
+                    ship_types::SessionEvent::AgentAcpInfoChanged {
+                        role: Role::Mate,
+                        info: mate_acp_info,
                     },
                 );
             }
@@ -5627,6 +5705,8 @@ impl Ship for ShipImpl {
             archived_at: None,
             captain_acp_session_id: None,
             mate_acp_session_id: None,
+            captain_acp_info: None,
+            mate_acp_info: None,
             events_tx,
             next_event_seq: 0,
             captain_prompt_gen: 0,

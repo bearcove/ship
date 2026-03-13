@@ -175,6 +175,24 @@ pub mod agent {
         pub effort_value_id: Option<String>,
         pub available_effort_values: Vec<EffortValue>,
     }
+
+    // r[acp.debug-info]
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct AgentAcpInfo {
+        pub acp_session_id: String,
+        pub was_resumed: bool,
+        pub protocol_version: u16,
+        pub agent_name: Option<String>,
+        pub agent_version: Option<String>,
+        pub cap_load_session: bool,
+        pub cap_resume_session: bool,
+        pub cap_prompt_image: bool,
+        pub cap_prompt_audio: bool,
+        pub cap_prompt_embedded_context: bool,
+        pub cap_mcp_http: bool,
+        pub cap_mcp_sse: bool,
+        pub last_event_at: Option<String>,
+    }
 }
 
 pub mod structured {
@@ -342,7 +360,7 @@ pub mod session {
 
 pub mod events {
     use crate::TaskId;
-    use crate::agent::{AgentState, EffortValue, PlanStep, Role};
+    use crate::agent::{AgentAcpInfo, AgentState, EffortValue, PlanStep, Role};
     use crate::ids::BlockId;
     use crate::protocol::{ProjectInfo, SessionSummary};
     use crate::session::SessionStartupState;
@@ -572,6 +590,11 @@ pub mod events {
         SessionTitleChanged {
             title: String,
         },
+        // r[acp.debug-info]
+        AgentAcpInfoChanged {
+            role: Role,
+            info: AgentAcpInfo,
+        },
     }
 
     // r[event.envelope]
@@ -601,7 +624,7 @@ pub mod events {
 }
 
 pub mod protocol {
-    use crate::agent::{AgentKind, AgentSnapshot};
+    use crate::agent::{AgentAcpInfo, AgentKind, AgentSnapshot};
     use crate::ids::{ProjectName, SessionId};
     use crate::session::SessionStartupState;
     use crate::task::{TaskRecord, TaskStatus};
@@ -815,6 +838,10 @@ pub mod protocol {
         pub pending_human_review: Option<HumanReviewRequest>,
         pub created_at: String,
         pub user_avatar_url: Option<String>,
+        #[facet(default)]
+        pub captain_acp_info: Option<AgentAcpInfo>,
+        #[facet(default)]
+        pub mate_acp_info: Option<AgentAcpInfo>,
     }
 
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
@@ -913,8 +940,8 @@ pub mod persistence {
 }
 
 pub use agent::{
-    AgentKind, AgentSnapshot, AgentState, AssignFileRef, CaptainAssignExtras, EffortValue,
-    PermissionRequest, PlanStep, PlanStepInput, PlanStepStatus, Role,
+    AgentAcpInfo, AgentKind, AgentSnapshot, AgentState, AssignFileRef, CaptainAssignExtras,
+    EffortValue, PermissionRequest, PlanStep, PlanStepInput, PlanStepStatus, Role,
 };
 pub use events::{
     BlockPatch, CommitSummary, ContentBlock, GlobalEvent, PermissionResolution, SessionEvent,

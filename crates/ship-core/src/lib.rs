@@ -120,6 +120,17 @@ pub struct AgentSpawnInfo {
     pub acp_session_id: String,
     /// Whether the ACP session was resumed from a previous run
     pub was_resumed: bool,
+    /// Negotiated ACP protocol version
+    pub protocol_version: u16,
+    pub agent_name: Option<String>,
+    pub agent_version: Option<String>,
+    pub cap_load_session: bool,
+    pub cap_resume_session: bool,
+    pub cap_prompt_image: bool,
+    pub cap_prompt_audio: bool,
+    pub cap_prompt_embedded_context: bool,
+    pub cap_mcp_http: bool,
+    pub cap_mcp_sse: bool,
 }
 
 // r[testability.agent-trait]

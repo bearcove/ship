@@ -11,7 +11,7 @@ export function ReconnectingIndicator() {
         gap: "0.5rem",
         padding: "0.4rem 0.75rem",
         borderRadius: "var(--radius-3)",
-        background: "var(--orange-9)",
+        background: "var(--accent-9)",
         color: "white",
         fontSize: "0.8rem",
         fontWeight: 500,

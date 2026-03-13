@@ -486,6 +486,9 @@ fn log_message(started_at: Instant, message: &SubscribeMessage) {
                 SessionEvent::SessionTitleChanged { title } => {
                     format!("session title changed: {title}")
                 }
+                SessionEvent::AgentAcpInfoChanged { role, .. } => {
+                    format!("agent acp info changed role={role:?}")
+                }
             };
             println!(
                 "[probe +{:>5}ms] seq={} {}",

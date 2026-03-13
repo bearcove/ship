@@ -109,6 +109,8 @@ function makeSession(): SessionDetail {
     pending_human_review: null,
     created_at: "2026-01-01T00:00:00Z",
     user_avatar_url: null,
+    captain_acp_info: null,
+    mate_acp_info: null,
   };
 }
 

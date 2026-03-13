@@ -11,6 +11,7 @@ import { SessionTaskDrawer } from "../components/SessionTaskDrawer";
 import { PlanPanel } from "../components/PlanPanel";
 import { SteerReview } from "../components/SteerReview";
 import { HumanReview } from "../components/HumanReview";
+import { SessionDebugPanel } from "../components/SessionDebugPanel";
 import {
   agentRail,
   hamburgerBtn,
@@ -344,6 +345,12 @@ export function SessionViewPage({
               debugMode={debugMode}
             />
             {matePlan && matePlan.length > 0 && <PlanPanel steps={matePlan} />}
+            {debugMode && (
+              <SessionDebugPanel
+                captainAcpInfo={eventState.captainAcpInfo}
+                mateAcpInfo={eventState.mateAcpInfo}
+              />
+            )}
             <UnifiedComposer
               sessionId={session.id}
               captain={captain}

@@ -99,11 +99,11 @@ function formatDuration(totalSeconds: number): string {
 type SingleSegment = { kind: "single"; entry: BlockEntry };
 type FeedSegment = SingleSegment;
 
-function buildSegments(blocks: BlockEntry[]): FeedSegment[] {
+function buildSegments(blocks: BlockEntry[], debugMode: boolean): FeedSegment[] {
   const visible = blocks.filter(
     (b) =>
       b.block.tag !== "PlanUpdate" &&
-      b.block.tag !== "ToolCall" &&
+      (debugMode || b.block.tag !== "ToolCall") &&
       !(b.block.tag === "Text" && b.block.source.tag === "AgentThought") &&
       b.role.tag !== "Mate",
   );
@@ -254,7 +254,139 @@ function TaskRecapBlock({
   );
 }
 
+// ─── Raw block debug ──────────────────────────────────────────────────────────
+
+function RawBlockDebug({ entry }: { entry: BlockEntry }) {
+  const [expanded, setExpanded] = useState(false);
+  const json = JSON.stringify(
+    { blockId: entry.blockId, role: entry.role, block: entry.block },
+    null,
+    2,
+  );
+  return (
+    <Box
+      px="2"
+      pt="1"
+      pb="2"
+      style={{ border: "1px dashed var(--gray-a5)", borderRadius: "var(--radius-2)" }}
+    >
+      <Text size="1" color="gray">
+        raw block
+      </Text>
+      <Box
+        style={{
+          fontFamily: "monospace",
+          fontSize: "var(--font-size-1)",
+          whiteSpace: "pre",
+          marginTop: "var(--space-1)",
+          background: "var(--gray-a2)",
+          borderRadius: "var(--radius-1)",
+          padding: "var(--space-1)",
+          maxHeight: expanded ? undefined : "8rem",
+          overflow: expanded ? "visible" : "hidden",
+        }}
+      >
+        {json}
+      </Box>
+      <Box
+        as="button"
+        onClick={() => setExpanded((v) => !v)}
+        style={{
+          all: "unset",
+          cursor: "pointer",
+          fontSize: "var(--font-size-1)",
+          color: "var(--gray-10)",
+          marginTop: "var(--space-1)",
+          display: "block",
+        }}
+      >
+        {expanded ? "▲ collapse" : "▼ expand"}
+      </Box>
+    </Box>
+  );
+}
+
 // ─── Single block ─────────────────────────────────────────────────────────────
+
+type ToolCallBlockType = Extract<ContentBlock, { tag: "ToolCall" }>;
+
+function ToolCallDebugBlock({ block, role }: { block: ToolCallBlockType; role: Role }) {
+  const [expanded, setExpanded] = useState(false);
+  const statusColor =
+    block.status.tag === "Success"
+      ? "var(--green-9)"
+      : block.status.tag === "Failure"
+        ? "var(--red-9)"
+        : "var(--gray-9)";
+  const prettyArgs = (() => {
+    try {
+      return JSON.stringify(JSON.parse(block.arguments), null, 2);
+    } catch {
+      return block.arguments;
+    }
+  })();
+  const hasArgs = block.arguments && block.arguments !== "{}";
+  return (
+    <Box
+      px="2"
+      py="1"
+      style={{
+        borderLeft: `2px solid ${statusColor}`,
+        background: "var(--gray-a2)",
+        borderRadius: "var(--radius-2)",
+        fontFamily: "monospace",
+      }}
+    >
+      <Flex align="center" gap="2">
+        <Text size="1" style={{ color: statusColor, fontWeight: 600 }}>
+          {block.status.tag}
+        </Text>
+        <Text size="1" style={{ fontWeight: 500 }}>
+          {block.tool_name}
+        </Text>
+        <Text size="1" color="gray" style={{ opacity: 0.7 }}>
+          {role.tag}
+        </Text>
+      </Flex>
+      {hasArgs && (
+        <>
+          <Box
+            style={{
+              fontSize: "var(--font-size-1)",
+              whiteSpace: "pre-wrap",
+              overflowX: "auto",
+              marginTop: "var(--space-1)",
+              color: "var(--gray-11)",
+              maxHeight: expanded ? undefined : "8rem",
+              overflow: expanded ? "visible" : "hidden",
+            }}
+          >
+            {prettyArgs}
+          </Box>
+          <Box
+            as="button"
+            onClick={() => setExpanded((v) => !v)}
+            style={{
+              all: "unset",
+              cursor: "pointer",
+              fontSize: "var(--font-size-1)",
+              color: "var(--gray-10)",
+              marginTop: "var(--space-1)",
+              display: "block",
+            }}
+          >
+            {expanded ? "▲ collapse" : "▼ expand"}
+          </Box>
+        </>
+      )}
+      {block.error && (
+        <Text size="1" style={{ color: "var(--red-11)", marginTop: "var(--space-1)" }}>
+          {block.error.message}
+        </Text>
+      )}
+    </Box>
+  );
+}
 
 function SingleBlock({
   entry,
@@ -264,6 +396,7 @@ function SingleBlock({
   isLast,
   userAvatarUrl,
   taskCompletedDuration,
+  debugMode = false,
 }: {
   entry: BlockEntry;
   sessionId: string;
@@ -272,6 +405,7 @@ function SingleBlock({
   isLast: boolean;
   userAvatarUrl: string | null;
   taskCompletedDuration: number | null;
+  debugMode?: boolean;
 }) {
   const { block, blockId, role } = entry;
   const isCaptain = role.tag === "Captain";
@@ -353,7 +487,8 @@ function SingleBlock({
     }
 
     case "ToolCall":
-      return null;
+      if (!debugMode) return null;
+      return <ToolCallDebugBlock block={block} role={role} />;
 
     case "Error":
       return <ErrorBlock block={block} agentState={agentForBlock?.state ?? { tag: "Idle" }} />;
@@ -632,7 +767,7 @@ export function UnifiedFeed({
     }
   }
 
-  const segments = buildSegments(visibleBlocks);
+  const segments = buildSegments(visibleBlocks, debugMode);
 
   return (
     <Box className={unifiedFeedRoot}>
@@ -687,43 +822,9 @@ export function UnifiedFeed({
                   isLast={idx === segments.length - 1}
                   userAvatarUrl={userAvatarUrl}
                   taskCompletedDuration={taskCompletedDuration}
+                  debugMode={debugMode}
                 />
-                {debugMode && (
-                  <Box
-                    px="2"
-                    pt="1"
-                    pb="2"
-                    style={{ border: "1px dashed var(--gray-a5)", borderRadius: "var(--radius-2)" }}
-                  >
-                    <Text size="1" color="gray">
-                      raw block
-                    </Text>
-                    <Box
-                      style={{
-                        minHeight: "4rem",
-                        maxHeight: "12rem",
-                        overflowY: "auto",
-                        fontFamily: "monospace",
-                        fontSize: "var(--font-size-1)",
-                        whiteSpace: "pre",
-                        marginTop: "var(--space-1)",
-                        background: "var(--gray-a2)",
-                        borderRadius: "var(--radius-1)",
-                        padding: "var(--space-1)",
-                      }}
-                    >
-                      {JSON.stringify(
-                        {
-                          blockId: seg.entry.blockId,
-                          role: seg.entry.role,
-                          block: seg.entry.block,
-                        },
-                        null,
-                        2,
-                      )}
-                    </Box>
-                  </Box>
-                )}
+                {debugMode && <RawBlockDebug entry={seg.entry} />}
               </Fragment>
             );
           })}

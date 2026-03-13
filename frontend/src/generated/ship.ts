@@ -211,6 +211,22 @@ export interface HumanReviewRequest {
   worktree_path: string;
 }
 
+export interface AgentAcpInfo {
+  acp_session_id: string;
+  was_resumed: boolean;
+  protocol_version: number;
+  agent_name: string | null;
+  agent_version: string | null;
+  cap_load_session: boolean;
+  cap_resume_session: boolean;
+  cap_prompt_image: boolean;
+  cap_prompt_audio: boolean;
+  cap_prompt_embedded_context: boolean;
+  cap_mcp_http: boolean;
+  cap_mcp_sse: boolean;
+  last_event_at: string | null;
+}
+
 export interface SessionDetail {
   id: SessionId;
   slug: string;
@@ -227,6 +243,8 @@ export interface SessionDetail {
   pending_human_review: HumanReviewRequest | null;
   created_at: string;
   user_avatar_url: string | null;
+  captain_acp_info: AgentAcpInfo | null;
+  mate_acp_info: AgentAcpInfo | null;
 }
 
 export interface McpHeader {
@@ -431,7 +449,8 @@ export type SessionEvent =
   | { tag: "MateGuidanceQueued"; role: Role; message: string }
   | { tag: "HumanReviewRequested"; message: string; diff: string; worktree_path: string }
   | { tag: "HumanReviewCleared" }
-  | { tag: "SessionTitleChanged"; title: string };
+  | { tag: "SessionTitleChanged"; title: string }
+  | { tag: "AgentAcpInfoChanged"; role: Role; info: AgentAcpInfo };
 
 export interface SessionEventEnvelope {
   seq: bigint;
@@ -1177,7 +1196,7 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0x96f234db108a7bd7n) {
+    } else if (method.id === 0xaaafa54cb5429151n) {
       try {
         const result = await this.handler.getSession(args[0] as SessionId);
         call.reply(result);
@@ -1325,7 +1344,7 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0x0c4bb7ad6ecf01ddn) {
+    } else if (method.id === 0x9017d59848d59cf1n) {
       try {
         const result = await this.handler.subscribeEvents(
           args[0] as SessionId,
@@ -1734,6 +1753,27 @@ const ship_schema_registry: SchemaRegistry = new Map<string, Schema>([
     },
   ],
   [
+    "AgentAcpInfo",
+    {
+      kind: "struct",
+      fields: {
+        acp_session_id: { kind: "string" },
+        was_resumed: { kind: "bool" },
+        protocol_version: { kind: "u16" },
+        agent_name: { kind: "option", inner: { kind: "string" } },
+        agent_version: { kind: "option", inner: { kind: "string" } },
+        cap_load_session: { kind: "bool" },
+        cap_resume_session: { kind: "bool" },
+        cap_prompt_image: { kind: "bool" },
+        cap_prompt_audio: { kind: "bool" },
+        cap_prompt_embedded_context: { kind: "bool" },
+        cap_mcp_http: { kind: "bool" },
+        cap_mcp_sse: { kind: "bool" },
+        last_event_at: { kind: "option", inner: { kind: "string" } },
+      },
+    },
+  ],
+  [
     "SessionDetail",
     {
       kind: "struct",
@@ -1756,6 +1796,8 @@ const ship_schema_registry: SchemaRegistry = new Map<string, Schema>([
         },
         created_at: { kind: "string" },
         user_avatar_url: { kind: "option", inner: { kind: "string" } },
+        captain_acp_info: { kind: "option", inner: { kind: "ref", name: "AgentAcpInfo" } },
+        mate_acp_info: { kind: "option", inner: { kind: "ref", name: "AgentAcpInfo" } },
       },
     },
   ],
@@ -2205,6 +2247,13 @@ const ship_schema_registry: SchemaRegistry = new Map<string, Schema>([
         },
         { name: "HumanReviewCleared", fields: null },
         { name: "SessionTitleChanged", fields: { title: { kind: "string" } } },
+        {
+          name: "AgentAcpInfoChanged",
+          fields: {
+            role: { kind: "ref", name: "Role" },
+            info: { kind: "ref", name: "AgentAcpInfo" },
+          },
+        },
       ],
     },
   ],
@@ -2399,7 +2448,7 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: "getSession",
-      id: 0x96f234db108a7bd7n,
+      id: 0xaaafa54cb5429151n,
       args: { kind: "tuple", elements: [{ kind: "string" }] },
       result: {
         kind: "enum",
@@ -2842,7 +2891,7 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: "subscribeEvents",
-      id: 0x0c4bb7ad6ecf01ddn,
+      id: 0x9017d59848d59cf1n,
       args: {
         kind: "tuple",
         elements: [

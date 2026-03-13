@@ -1,4 +1,5 @@
 import type {
+  AgentAcpInfo,
   AgentSnapshot,
   HumanReviewRequest,
   PlanStep,
@@ -22,6 +23,8 @@ import {
 export interface SessionViewState {
   captain: AgentSnapshot | null;
   mate: AgentSnapshot | null;
+  captainAcpInfo: AgentAcpInfo | null;
+  mateAcpInfo: AgentAcpInfo | null;
   captainBlocks: BlockStore;
   mateBlocks: BlockStore;
   unifiedBlocks: BlockStore;
@@ -49,6 +52,8 @@ export function initialSessionViewState(): SessionViewState {
   return {
     captain: null,
     mate: null,
+    captainAcpInfo: null,
+    mateAcpInfo: null,
     captainBlocks: createBlockStore(),
     mateBlocks: createBlockStore(),
     unifiedBlocks: createBlockStore(),
@@ -90,6 +95,8 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         ...state,
         captain: action.session.captain,
         mate: action.session.mate,
+        captainAcpInfo: action.session.captain_acp_info ?? null,
+        mateAcpInfo: action.session.mate_acp_info ?? null,
         startupState: action.session.startup_state,
         currentTaskId: action.session.current_task?.id ?? null,
         currentTaskTitle: action.session.current_task?.title ?? null,
@@ -151,6 +158,8 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
       let {
         captain,
         mate,
+        captainAcpInfo,
+        mateAcpInfo,
         startupState,
         currentTaskId,
         currentTaskTitle,
@@ -257,6 +266,14 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
           case "SessionTitleChanged":
             title = ev.title;
             break;
+          // r[acp.debug-info]
+          case "AgentAcpInfoChanged":
+            if (ev.role.tag === "Captain") {
+              captainAcpInfo = ev.info;
+            } else {
+              mateAcpInfo = ev.info;
+            }
+            break;
         }
       }
 
@@ -265,6 +282,8 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         ...state,
         captain,
         mate,
+        captainAcpInfo,
+        mateAcpInfo,
         captainBlocks,
         mateBlocks,
         unifiedBlocks,
@@ -464,6 +483,14 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
           return nextState;
         }
 
+        // r[acp.debug-info]
+        case "AgentAcpInfoChanged": {
+          const isCaptain = ev.role.tag === "Captain";
+          if (isCaptain) {
+            return { ...nextState, captainAcpInfo: ev.info };
+          }
+          return { ...nextState, mateAcpInfo: ev.info };
+        }
         case "MateGuidanceQueued": {
           return nextState;
         }

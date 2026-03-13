@@ -27,8 +27,22 @@ use crate::{SystemBinaryPathProbe, resolve_agent_launcher};
 
 type ModelInfo = (Option<String>, Vec<String>);
 type EffortInfo = (Option<String>, Option<String>, Vec<EffortValue>);
-/// (model_info, effort_info, acp_session_id, was_resumed)
-type ReadyResult = Result<(ModelInfo, EffortInfo, String, bool), String>;
+
+struct AcpCapabilities {
+    protocol_version: u16,
+    agent_name: Option<String>,
+    agent_version: Option<String>,
+    cap_load_session: bool,
+    cap_resume_session: bool,
+    cap_prompt_image: bool,
+    cap_prompt_audio: bool,
+    cap_prompt_embedded_context: bool,
+    cap_mcp_http: bool,
+    cap_mcp_sse: bool,
+}
+
+/// (model_info, effort_info, acp_session_id, was_resumed, acp_capabilities)
+type ReadyResult = Result<(ModelInfo, EffortInfo, String, bool, AcpCapabilities), String>;
 
 struct AcpHandle {
     command_tx: mpsc::UnboundedSender<DriverCommand>,
@@ -134,6 +148,7 @@ impl AgentDriver for AcpAgentDriver {
                 (effort_config_id, effort_value_id, available_effort_values),
                 acp_session_id,
                 was_resumed,
+                acp_caps,
             ))) => {
                 self.handles
                     .lock()
@@ -156,6 +171,16 @@ impl AgentDriver for AcpAgentDriver {
                     available_effort_values,
                     acp_session_id,
                     was_resumed,
+                    protocol_version: acp_caps.protocol_version,
+                    agent_name: acp_caps.agent_name,
+                    agent_version: acp_caps.agent_version,
+                    cap_load_session: acp_caps.cap_load_session,
+                    cap_resume_session: acp_caps.cap_resume_session,
+                    cap_prompt_image: acp_caps.cap_prompt_image,
+                    cap_prompt_audio: acp_caps.cap_prompt_audio,
+                    cap_prompt_embedded_context: acp_caps.cap_prompt_embedded_context,
+                    cap_mcp_http: acp_caps.cap_mcp_http,
+                    cap_mcp_sse: acp_caps.cap_mcp_sse,
                 })
             }
             Ok(Err(message)) => Err(AgentError { message }),
@@ -480,6 +505,30 @@ async fn run_acp_worker(
         .is_some();
     let agent_supports_load = init_response.agent_capabilities.load_session;
 
+    let acp_caps = AcpCapabilities {
+        protocol_version: init_response
+            .protocol_version
+            .to_string()
+            .parse::<u16>()
+            .unwrap_or(0),
+        agent_name: init_response.agent_info.as_ref().map(|i| i.name.clone()),
+        agent_version: init_response.agent_info.as_ref().map(|i| i.version.clone()),
+        cap_load_session: init_response.agent_capabilities.load_session,
+        cap_resume_session: init_response
+            .agent_capabilities
+            .session_capabilities
+            .resume
+            .is_some(),
+        cap_prompt_image: init_response.agent_capabilities.prompt_capabilities.image,
+        cap_prompt_audio: init_response.agent_capabilities.prompt_capabilities.audio,
+        cap_prompt_embedded_context: init_response
+            .agent_capabilities
+            .prompt_capabilities
+            .embedded_context,
+        cap_mcp_http: init_response.agent_capabilities.mcp_capabilities.http,
+        cap_mcp_sse: init_response.agent_capabilities.mcp_capabilities.sse,
+    };
+
     // Try to reconnect to a previous session if we have a stored ACP session ID.
     // Two mechanisms: resume (in-process reconnect) and load (reload from disk).
     let resume_id = config.resume_session_id.clone();
@@ -567,6 +616,7 @@ async fn run_acp_worker(
         (effort_config_id, effort_value_id, available_effort_values),
         acp_session_id_str,
         was_resumed,
+        acp_caps,
     )));
 
     while let Some(command) = command_rx.recv().await {

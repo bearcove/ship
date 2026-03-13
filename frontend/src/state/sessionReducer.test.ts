@@ -105,6 +105,8 @@ describe("sessionReducer event handling", () => {
         title: null,
         created_at: "2026-01-01T00:00:00Z",
         user_avatar_url: null,
+        captain_acp_info: null,
+        mate_acp_info: null,
       },
     });
     expect(state.captain?.kind.tag).toBe("Claude");
@@ -227,6 +229,8 @@ describe("sessionReducer event handling", () => {
         title: null,
         created_at: "2026-01-01T00:00:00Z",
         user_avatar_url: null,
+        captain_acp_info: null,
+        mate_acp_info: null,
       },
     });
 

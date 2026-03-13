@@ -4,9 +4,9 @@ use std::path::{Path, PathBuf};
 
 use futures_util::StreamExt;
 use ship_types::{
-    AgentSnapshot, AgentState, AutonomyMode, BlockId, BlockPatch, CloseSessionResponse,
-    ContentBlock, CreateSessionRequest, CurrentTask, HumanReviewRequest, PermissionRequest,
-    PermissionResolution, PersistedSession, Role, SessionConfig, SessionEvent,
+    AgentAcpInfo, AgentSnapshot, AgentState, AutonomyMode, BlockId, BlockPatch,
+    CloseSessionResponse, ContentBlock, CreateSessionRequest, CurrentTask, HumanReviewRequest,
+    PermissionRequest, PermissionResolution, PersistedSession, Role, SessionConfig, SessionEvent,
     SessionEventEnvelope, SessionId, SessionStartupStage, SessionStartupState, SessionSummary,
     TaskContentRecord, TaskId, TaskRecord, TaskStatus, WorktreeDiffStats,
 };
@@ -100,6 +100,8 @@ pub struct ActiveSession {
     pub archived_at: Option<String>,
     pub captain_acp_session_id: Option<String>,
     pub mate_acp_session_id: Option<String>,
+    pub captain_acp_info: Option<AgentAcpInfo>,
+    pub mate_acp_info: Option<AgentAcpInfo>,
     pub events_tx: broadcast::Sender<SessionEventEnvelope>,
     pub next_event_seq: u64,
     pub captain_prompt_gen: u64,
@@ -199,6 +201,8 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             archived_at: None,
             captain_acp_session_id: None,
             mate_acp_session_id: None,
+            captain_acp_info: None,
+            mate_acp_info: None,
             events_tx,
             next_event_seq: 0,
             captain_prompt_gen: 0,
@@ -973,6 +977,34 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         }
         drop(stream);
 
+        // Update last_event_at in the AcpInfo for the drained role and broadcast the change.
+        let now = chrono::Utc::now().to_rfc3339();
+        let updated_info = {
+            let session = self
+                .sessions
+                .get(session_id)
+                .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
+            match role {
+                Role::Captain => session.captain_acp_info.as_ref().map(|i| {
+                    let mut i = i.clone();
+                    i.last_event_at = Some(now.clone());
+                    i
+                }),
+                Role::Mate => session.mate_acp_info.as_ref().map(|i| {
+                    let mut i = i.clone();
+                    i.last_event_at = Some(now);
+                    i
+                }),
+            }
+        };
+        if let Some(info) = updated_info {
+            let session = self
+                .sessions
+                .get_mut(session_id)
+                .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
+            apply_event(session, SessionEvent::AgentAcpInfoChanged { role, info });
+        }
+
         self.persist_session(session_id).await?;
         Ok(())
     }
@@ -1387,6 +1419,11 @@ pub fn apply_event_to_materialized_state(session: &mut ActiveSession, event: &Se
         SessionEvent::SessionTitleChanged { title } => {
             session.title = Some(title.clone());
         }
+        // r[acp.debug-info]
+        SessionEvent::AgentAcpInfoChanged { role, info } => match role {
+            Role::Captain => session.captain_acp_info = Some(info.clone()),
+            Role::Mate => session.mate_acp_info = Some(info.clone()),
+        },
     }
 }
 
