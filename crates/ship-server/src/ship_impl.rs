@@ -5758,34 +5758,19 @@ impl Ship for ShipImpl {
         }
     }
 
+    async fn interrupt_mate(&self, session: SessionId) {
+        if let Err(error) = self.cancel_mate_prompt(&session).await {
+            Self::log_error("interrupt_mate", &error);
+        }
+    }
+
     // r[proto.stop-agents]
     async fn stop_agents(&self, session: SessionId) {
-        enum StopTarget {
-            Captain,
-            Mate,
+        if let Err(error) = self.cancel_captain_prompt(&session).await {
+            Self::log_error("stop_agents_interrupt_captain", &error);
         }
-
-        let target = {
-            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
-            let Some(active) = sessions.get(&session) else {
-                return;
-            };
-            if matches!(&active.captain.state, AgentState::Working { .. }) {
-                Some(StopTarget::Captain)
-            } else if matches!(&active.mate.state, AgentState::Working { .. }) {
-                Some(StopTarget::Mate)
-            } else {
-                None
-            }
-        };
-
-        let result = match target {
-            Some(StopTarget::Captain) => self.cancel_captain_prompt(&session).await,
-            Some(StopTarget::Mate) => self.cancel_mate_prompt(&session).await,
-            None => Ok(()),
-        };
-        if let Err(error) = result {
-            Self::log_error("stop_agents", &error);
+        if let Err(error) = self.cancel_mate_prompt(&session).await {
+            Self::log_error("stop_agents_interrupt_mate", &error);
         }
     }
 
