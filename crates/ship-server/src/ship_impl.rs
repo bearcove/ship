@@ -4134,7 +4134,9 @@ Here is your task:
         }
         self.persist_session(session_id).await?;
 
-        let injected = format!("The mate has submitted their work for review: {summary}");
+        let injected = format!(
+            "<system-notification>\nThe mate has submitted their work for review: {summary}\n</system-notification>"
+        );
         self.append_human_message(
             session_id,
             Role::Captain,
