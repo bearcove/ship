@@ -94,6 +94,7 @@ function segmentAgentRole(seg: FeedSegment): Role | null {
   if (block.tag === "Image" && role.tag === "Captain") {
     return null; // user-sent image → right side
   }
+  if (block.tag === "TaskRecap") return null; // system notice, no avatar
   return role;
 }
 
@@ -235,6 +236,48 @@ function SingleBlock({
               <Text className={feedTimestamp}>{formatTime(entry.timestamp)}</Text>
             )}
           </Box>
+        </Box>
+      );
+    }
+
+    case "TaskRecap": {
+      const { commits, stats } = block;
+      return (
+        <Box
+          className={feedSystemMessage}
+          style={{
+            flexDirection: "column",
+            alignItems: "center",
+            gap: "var(--space-1)",
+            paddingTop: "var(--space-2)",
+            paddingBottom: "var(--space-2)",
+          }}
+        >
+          <Text className={feedSystemMessageText} style={{ fontWeight: 500 }}>
+            Work accepted
+          </Text>
+          {commits.length > 0 && (
+            <Box
+              style={{
+                fontFamily: "var(--font-mono, monospace)",
+                fontSize: "var(--font-size-1)",
+                color: "var(--gray-10)",
+                textAlign: "center",
+              }}
+            >
+              {commits.map((c) => (
+                <Box key={c.hash}>
+                  <Text style={{ color: "var(--gray-8)" }}>{c.hash}</Text> <Text>{c.subject}</Text>
+                </Box>
+              ))}
+            </Box>
+          )}
+          {stats && (
+            <Text className={feedSystemMessageText}>
+              +{stats.insertions} −{stats.deletions} across {stats.files_changed} file
+              {stats.files_changed !== 1 ? "s" : ""}
+            </Text>
+          )}
         </Box>
       );
     }
