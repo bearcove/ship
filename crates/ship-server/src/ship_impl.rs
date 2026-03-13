@@ -1698,6 +1698,7 @@ Here is your task:
     // r[captain.tool.assign]
     // r[captain.tool.assign.files]
     // r[captain.tool.assign.plan]
+    // r[captain.tool.assign.dirty-session-strategy]
     async fn captain_tool_assign(
         &self,
         session_id: &SessionId,
@@ -6568,6 +6569,7 @@ impl CaptainMcpSessionService {
 
 impl CaptainMcp for CaptainMcpSessionService {
     // r[captain.tool.assign]
+    // r[captain.tool.assign.dirty-session-strategy]
     async fn captain_assign(
         &self,
         title: String,
@@ -7159,6 +7161,7 @@ mod tests {
                 CaptainAssignExtras {
                     files: Vec::new(),
                     plan: Vec::new(),
+                    dirty_session_strategy: None,
                 },
             )
             .await
@@ -7239,6 +7242,7 @@ mod tests {
                 CaptainAssignExtras {
                     files: Vec::new(),
                     plan: Vec::new(),
+                    dirty_session_strategy: None,
                 },
             )
             .await
@@ -7322,6 +7326,7 @@ mod tests {
                 CaptainAssignExtras {
                     files: Vec::new(),
                     plan: Vec::new(),
+                    dirty_session_strategy: None,
                 },
             )
             .await

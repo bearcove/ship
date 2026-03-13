@@ -115,6 +115,7 @@ pub trait CaptainMcp {
     // r[captain.tool.assign]
     // r[captain.tool.assign.files]
     // r[captain.tool.assign.plan]
+    // r[captain.tool.assign.dirty-session-strategy]
     async fn captain_assign(
         &self,
         title: String,

@@ -14,7 +14,9 @@ use rust_mcp_sdk::schema::{
 use rust_mcp_sdk::{McpServer, StdioTransport, ToMcpServerHandler, TransportOptions};
 use serde_json::{Value, json};
 use ship_service::CaptainMcpClient;
-use ship_types::{AssignFileRef, CaptainAssignExtras, PlanStepInput, SessionId};
+use ship_types::{
+    AssignFileRef, CaptainAssignExtras, DirtySessionStrategy, PlanStepInput, SessionId,
+};
 
 pub struct CaptainMcpServerArgs {
     pub session_id: SessionId,
@@ -62,6 +64,23 @@ impl ServerHandler for CaptainMcpHandler {
                     .get("keep")
                     .and_then(Value::as_bool)
                     .unwrap_or(false);
+                // r[captain.tool.assign.dirty-session-strategy]
+                let dirty_session_strategy = match arguments
+                    .get("dirty_session_strategy")
+                    .and_then(Value::as_str)
+                {
+                    Some("continue_in_place") => Some(DirtySessionStrategy::ContinueInPlace),
+                    Some("save_and_start_clean") => Some(DirtySessionStrategy::SaveAndStartClean),
+                    Some(other) => {
+                        return Ok(tool_result(
+                            format!(
+                                "invalid dirty_session_strategy: {other}. Expected one of: continue_in_place, save_and_start_clean"
+                            ),
+                            true,
+                        ));
+                    }
+                    None => None,
+                };
                 // r[captain.tool.assign.files]
                 let files = arguments
                     .get("files")
@@ -101,7 +120,11 @@ impl ServerHandler for CaptainMcpHandler {
                         title.to_owned(),
                         description.to_owned(),
                         keep,
-                        CaptainAssignExtras { files, plan },
+                        CaptainAssignExtras {
+                            files,
+                            plan,
+                            dirty_session_strategy,
+                        },
                     )
                     .await
                     .map_err(call_tool_rpc_error)?
@@ -279,6 +302,7 @@ fn tool_definitions() -> Vec<ToolDefinition> {
             name: "captain_assign",
             description: "Assign a task to the mate. The mate will start working on it immediately. \
 Set keep=true to reuse the mate's existing context; omit or set false to restart the mate with a fresh context (default). \
+If the session already has leftover branch or worktree state, pass dirty_session_strategy to choose whether to continue in place or save that state and start clean. \
 IMPORTANT: Always pass files and plan. Every file you read during research must be listed in files — the mate \
 receives the contents directly and skips re-reading them. Your step-by-step plan must be passed via plan — the mate \
 skips research and goes straight to execution. Omitting files or plan wastes the mate's time and context window.",
@@ -288,6 +312,19 @@ skips research and goes straight to execution. Omitting files or plan wastes the
                     "title": { "type": "string", "description": "Short title for the task (under 60 chars). Shown in the UI sidebar and headers." },
                     "description": { "type": "string", "description": "Full task description with all details the mate needs." },
                     "keep": { "type": "boolean", "description": "Reuse the mate's existing context (default false)." },
+                    "dirty_session_strategy": {
+                        "description": "Required when the session branch or worktree has leftover state that would otherwise be discarded before the new task starts.",
+                        "oneOf": [
+                            {
+                                "const": "continue_in_place",
+                                "description": "Continue the new task in the current worktree with the leftover state intact."
+                            },
+                            {
+                                "const": "save_and_start_clean",
+                                "description": "Save the leftover state on a timestamped branch, then reset the session branch/worktree to base before starting the new task."
+                            }
+                        ]
+                    },
                     "files": {
                         "type": "array",
                         "description": "Files to inline into the mate's prompt. The mate receives the file contents directly — no need to re-read them.",

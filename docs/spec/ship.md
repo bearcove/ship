@@ -1067,12 +1067,12 @@ it in the captain's `NewSessionRequest`. No public network listener is
 required.
 
 r[captain.tool.assign]
-The captain MUST have access to a `captain_assign` tool that takes a
-`description` argument (string) and an optional `keep` argument (boolean,
-default false). When called, the backend creates a new task and starts the mate
-working on it immediately. If `keep` is false or omitted, the mate's ACP
-session is torn down and a new one is started (fresh context). If `keep` is
-true, the existing mate ACP session is reused.
+The captain MUST have access to a `captain_assign` tool that takes required
+`title` and `description` arguments (strings) plus an optional `keep` argument
+(boolean, default false). When called, the backend creates a new task and
+starts the mate working on it immediately. If `keep` is false or omitted, the
+mate's ACP session is torn down and a new one is started (fresh context). If
+`keep` is true, the existing mate ACP session is reused.
 
 r[captain.tool.assign.files]
 `captain_assign` MAY include a `files` argument: an array of objects with a
@@ -1083,11 +1083,24 @@ directly into the mate's initial prompt, formatted as fenced code blocks. This
 eliminates redundant read_file calls at the start of a task.
 
 r[captain.tool.assign.plan]
-`captain_assign` MAY include a `plan` argument: an array of step description
-strings. If provided, the backend pre-populates the task's `mate_plan` with
-those steps (all `Pending`) before the mate starts, and the mate's initial
-prompt instructs it to skip research and planning and proceed directly to step
-1. The mate MUST NOT call `set_plan` when a plan is pre-supplied.
+`captain_assign` MAY include a `plan` argument: an array of objects with
+required `title` and `description` strings. If provided, the backend
+pre-populates the task's `mate_plan` with those steps (all `Pending`) before
+the mate starts, and the mate's initial prompt instructs it to skip research
+and planning and proceed directly to step 1. The mate MUST NOT call `set_plan`
+when a plan is pre-supplied.
+
+r[captain.tool.assign.dirty-session-strategy]
+`captain_assign` MAY include a `dirty_session_strategy` argument only for
+handling leftover session state before a new task begins. Leftover state
+includes uncommitted worktree changes and commits on the session branch that
+are not yet in the base branch. The MCP contract MUST expose exactly two
+allowed values: `continue_in_place` and `save_and_start_clean`. If no leftover
+state exists, the backend MUST preserve the existing behavior of resetting the
+session branch/worktree to the base branch before starting the task. If
+leftover state exists and `dirty_session_strategy` is omitted, the backend MUST
+reject the assign call with an error that explains the leftover state and asks
+the captain to choose one of the two explicit strategies.
 
 r[captain.tool.assign.nonblocking]
 `captain_assign` MUST return to the captain immediately after the task record is

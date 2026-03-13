@@ -113,14 +113,24 @@ pub mod agent {
         pub end_line: Option<u64>,
     }
 
+    // r[captain.tool.assign.dirty-session-strategy]
+    #[repr(u8)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, facet::Facet)]
+    pub enum DirtySessionStrategy {
+        ContinueInPlace,
+        SaveAndStartClean,
+    }
+
     // r[captain.tool.assign.files]
     // r[captain.tool.assign.plan]
+    // r[captain.tool.assign.dirty-session-strategy]
     /// Extra optional parameters for captain_assign, bundled to stay within
     /// roam's 4-tuple serialization limit.
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub struct CaptainAssignExtras {
         pub files: Vec<AssignFileRef>,
         pub plan: Vec<PlanStepInput>,
+        pub dirty_session_strategy: Option<DirtySessionStrategy>,
     }
 
     // r[approval.request.content]
@@ -941,7 +951,8 @@ pub mod persistence {
 
 pub use agent::{
     AgentAcpInfo, AgentKind, AgentSnapshot, AgentState, AssignFileRef, CaptainAssignExtras,
-    EffortValue, PermissionRequest, PlanStep, PlanStepInput, PlanStepStatus, Role,
+    DirtySessionStrategy, EffortValue, PermissionRequest, PlanStep, PlanStepInput, PlanStepStatus,
+    Role,
 };
 pub use events::{
     BlockPatch, CommitSummary, ContentBlock, GlobalEvent, PermissionResolution, SessionEvent,
