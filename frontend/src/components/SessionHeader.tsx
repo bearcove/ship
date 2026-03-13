@@ -228,7 +228,7 @@ export function SessionHeader({
           className={sessionHeaderRow2}
           onClick={() => setExpanded((v) => !v)}
         >
-          <Text weight="medium" className={sessionHeaderTitle}>
+          <Text size="3" weight="medium" className={sessionHeaderTitle}>
             {displayTitle}
           </Text>
           {inProgressStep && (
