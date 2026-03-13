@@ -697,6 +697,12 @@ export const sessionHeaderRoot = style({
   flexShrink: 0,
   borderBottom: "1px solid var(--gray-a4)",
   position: "relative",
+  cursor: "pointer",
+  selectors: {
+    "&:hover": {
+      background: "var(--gray-a2)",
+    },
+  },
 });
 
 export const sessionHeaderRow1 = style({
@@ -704,12 +710,6 @@ export const sessionHeaderRow1 = style({
   alignItems: "center",
   gap: "var(--space-1)",
   padding: "var(--space-3) var(--space-3) var(--space-2) var(--space-3)",
-  cursor: "pointer",
-  selectors: {
-    "&:hover": {
-      background: "var(--gray-a2)",
-    },
-  },
 });
 
 export const sessionHeaderTitle = style({
@@ -731,12 +731,6 @@ export const sessionHeaderRow2 = style({
   background: "transparent",
   color: "inherit",
   textAlign: "left",
-  cursor: "pointer",
-  selectors: {
-    "&:hover": {
-      background: "var(--gray-a2)",
-    },
-  },
 });
 
 export const sessionHeaderRow2Title = style({
