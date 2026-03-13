@@ -170,6 +170,29 @@ impl WorktreeOps for GitWorktreeOps {
         })
     }
 
+    async fn reset_to_base(
+        &self,
+        worktree_path: &Path,
+        base_branch: &str,
+    ) -> Result<(), WorktreeError> {
+        let repo_root = repo_root_for_worktree(worktree_path)?;
+        ensure_valid_base_ref(repo_root, base_branch).await?;
+
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(worktree_path)
+            .arg("reset")
+            .arg("--hard")
+            .arg(base_branch)
+            .output()
+            .await
+            .map_err(|error| WorktreeError {
+                message: error.to_string(),
+            })?;
+
+        ensure_success(output)
+    }
+
     async fn merge_ff_only(&self, repo_root: &Path, branch: &str) -> Result<(), WorktreeError> {
         let output = Command::new("git")
             .arg("-C")

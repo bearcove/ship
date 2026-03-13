@@ -197,6 +197,15 @@ pub trait WorktreeOps: Send + Sync {
         onto_branch: &str,
     ) -> Result<(), WorktreeError>;
 
+    /// Reset the already-checked-out worktree branch in place so it matches
+    /// `base_branch`. This is server-owned state management for starting fresh
+    /// task work on the stable session branch.
+    async fn reset_to_base(
+        &self,
+        worktree_path: &Path,
+        base_branch: &str,
+    ) -> Result<(), WorktreeError>;
+
     /// Fast-forward merge `branch` into the repo root's current branch.
     async fn merge_ff_only(&self, repo_root: &Path, branch: &str) -> Result<(), WorktreeError>;
 

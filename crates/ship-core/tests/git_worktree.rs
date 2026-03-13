@@ -159,6 +159,74 @@ async fn git_worktree_create_status_and_remove() {
     let _ = std::fs::remove_dir_all(&root);
 }
 
+fn git_stdout(args: &[&str], cwd: &Path) -> String {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(cwd)
+        .output()
+        .expect("git command should start");
+
+    assert!(
+        output.status.success(),
+        "git {:?} failed: {}",
+        args,
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    String::from_utf8_lossy(&output.stdout).trim().to_owned()
+}
+
+// r[verify backend.git-shell]
+// r[verify testability.git-trait]
+#[tokio::test]
+async fn git_worktree_reset_to_base_rewinds_existing_session_branch_in_place() {
+    let root = make_temp_dir("git-worktree-reset");
+    let repo = root.join("repo");
+    std::fs::create_dir_all(&repo).expect("repo dir should be created");
+
+    run_git(&["init"], &repo);
+    run_git(&["config", "user.name", "Ship Test"], &repo);
+    run_git(&["config", "user.email", "ship@example.com"], &repo);
+    std::fs::write(repo.join("README.md"), "seed\n").expect("seed file should write");
+    run_git(&["add", "README.md"], &repo);
+    run_git(&["commit", "-m", "seed"], &repo);
+    run_git(&["branch", "-M", "main"], &repo);
+
+    let ops = GitWorktreeOps;
+    let session_id = SessionId("01J0000000RSET000000000000".to_owned());
+    let names = SessionGitNames::from_session_id(&session_id);
+    let worktree_path = ops
+        .create_worktree(&names.branch_name, &names.worktree_dir, "main", &repo)
+        .await
+        .expect("create_worktree should succeed");
+
+    std::fs::write(repo.join("README.md"), "base advanced\n")
+        .expect("updated base file should write");
+    run_git(&["commit", "-am", "advance base"], &repo);
+
+    assert_eq!(
+        std::fs::read_to_string(worktree_path.join("README.md"))
+            .expect("worktree file should be readable before reset"),
+        "seed\n"
+    );
+
+    ops.reset_to_base(&worktree_path, "main")
+        .await
+        .expect("reset_to_base should succeed");
+
+    assert_eq!(
+        std::fs::read_to_string(worktree_path.join("README.md"))
+            .expect("worktree file should be readable after reset"),
+        "base advanced\n"
+    );
+    assert_eq!(
+        git_stdout(&["branch", "--show-current"], &worktree_path),
+        names.branch_name
+    );
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
 // r[verify worktree.base-branch]
 #[tokio::test]
 async fn git_worktree_rejects_invalid_or_unborn_base_branch() {

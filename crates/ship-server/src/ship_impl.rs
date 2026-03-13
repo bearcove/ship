@@ -1487,7 +1487,7 @@ want to keep the captain informed without waiting for a reply.
 
 Do not run git commands of any kind. That includes `git status`, `git diff`, \
 `git log`, `git rebase`, `git checkout`, `git add`, `git commit`, and \
-`git push`. Ship handles commits and rebases itself, and git state is \
+`git push`. Ship handles commits and server-side branch resets/rebases itself, and git state is \
 captain-owned. If you think you need git information or a git action, stop and \
 ask the captain with mate_ask_captain instead of touching git.
 
@@ -1522,23 +1522,36 @@ Here is your task:
     ) -> Result<String, String> {
         let files = extras.files;
         let plan = extras.plan;
-        let (worktree_path, base_branch) = {
+        let session = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let session = sessions
                 .get(session_id)
                 .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-            (
-                Self::current_task_worktree_path(session)?.to_path_buf(),
-                session.config.base_branch.clone(),
-            )
+            if session.current_task.is_some() {
+                return Err("session already has an active non-terminal task".to_owned());
+            }
+            session.clone()
         };
+        let worktree_path = Self::current_task_worktree_path(&session)?.to_path_buf();
+        if !worktree_path.exists() {
+            return Err(format!(
+                "session worktree not found: {}",
+                worktree_path.display()
+            ));
+        }
+        let discard_blockers = self.session_discard_blockers(&session).await?;
+        if !discard_blockers.is_empty() {
+            return Err(format!(
+                "pre-task reset is unsafe:\n{}",
+                discard_blockers.join("\n")
+            ));
+        }
 
-        // Keep the task branch current before the task is even started so the
-        // mate never begins work from a stale branch.
+        // Start each new task from the base branch on the existing session branch.
         self.worktree_ops
-            .rebase_onto(&worktree_path, &base_branch)
+            .reset_to_base(&worktree_path, &session.config.base_branch)
             .await
-            .map_err(|error| format!("pre-task sync failed: {}", error.message))?;
+            .map_err(|error| format!("pre-task reset failed: {}", error.message))?;
 
         let task_id = self
             .start_task(session_id, title.clone(), description.clone())
@@ -4300,7 +4313,7 @@ Here is your task:
 
         if program == "git" {
             return Some(
-                "Git commands are captain-owned and not allowed for the mate. Ship handles commits and rebases itself. Use mate_ask_captain if you need git information or a git action.",
+                "Git commands are captain-owned and not allowed for the mate. Ship handles commits and server-side branch resets/rebases itself. Use mate_ask_captain if you need git information or a git action.",
             );
         }
 
@@ -5100,6 +5113,40 @@ Here is your task:
             .global_events_tx
             .send(GlobalEvent::ProjectListChanged { projects });
     }
+
+    async fn session_discard_blockers(
+        &self,
+        session: &ActiveSession,
+    ) -> Result<Vec<String>, String> {
+        let repo_root = self.resolve_project_root(&session.config.project).await?;
+        let mut blockers = Vec::new();
+
+        if let Some(worktree_path) = session.worktree_path.as_ref()
+            && worktree_path.exists()
+        {
+            match self
+                .worktree_ops
+                .has_uncommitted_changes(worktree_path)
+                .await
+            {
+                Ok(true) => blockers.push("(uncommitted changes in worktree)".to_owned()),
+                Ok(false) => {}
+                Err(error) => return Err(error.message),
+            }
+        }
+
+        let commits = self
+            .worktree_ops
+            .branch_unmerged_commits(
+                &session.config.branch_name,
+                &session.config.base_branch,
+                &repo_root,
+            )
+            .await
+            .map_err(|error| error.message)?;
+        blockers.extend(commits);
+        Ok(blockers)
+    }
 }
 
 async fn compute_worktree_diff_stats(
@@ -5786,54 +5833,13 @@ impl Ship for ShipImpl {
         };
 
         if !req.force {
-            let repo_root = match self.resolve_project_root(&session.config.project).await {
-                Ok(root) => root,
-                Err(error) => {
-                    Self::log_error("archive_session_resolve_project", &error);
-                    return ArchiveSessionResponse::Failed { message: error };
+            let unmerged_commits = match self.session_discard_blockers(&session).await {
+                Ok(blockers) => blockers,
+                Err(message) => {
+                    Self::log_error("archive_session_safety_check", &message);
+                    return ArchiveSessionResponse::Failed { message };
                 }
             };
-
-            let mut unmerged_commits: Vec<String> = Vec::new();
-
-            if let Some(worktree_path) = session.worktree_path.as_ref()
-                && worktree_path.exists()
-            {
-                match self
-                    .worktree_ops
-                    .has_uncommitted_changes(worktree_path)
-                    .await
-                {
-                    Ok(true) => {
-                        unmerged_commits.push("(uncommitted changes in worktree)".to_owned());
-                    }
-                    Ok(false) => {}
-                    Err(error) => {
-                        Self::log_error("archive_session_uncommitted_check", &error.message);
-                        return ArchiveSessionResponse::Failed {
-                            message: error.message,
-                        };
-                    }
-                }
-            }
-
-            match self
-                .worktree_ops
-                .branch_unmerged_commits(
-                    &session.config.branch_name,
-                    &session.config.base_branch,
-                    &repo_root,
-                )
-                .await
-            {
-                Ok(commits) => unmerged_commits.extend(commits),
-                Err(error) => {
-                    Self::log_error("archive_session_unmerged_check", &error.message);
-                    return ArchiveSessionResponse::Failed {
-                        message: error.message,
-                    };
-                }
-            }
 
             if !unmerged_commits.is_empty() {
                 return ArchiveSessionResponse::RequiresConfirmation { unmerged_commits };
@@ -6630,7 +6636,7 @@ mod tests {
                 autonomy_mode: AutonomyMode::HumanInTheLoop,
                 mcp_servers: Vec::new(),
             },
-            worktree_path: Some(project_root.clone()),
+            worktree_path: Some(project_root.join(".ship").join(format!("@{branch_name}"))),
             captain_handle: None,
             mate_handle: None,
             captain: idle_agent(Role::Captain),
@@ -6703,9 +6709,8 @@ mod tests {
     fn captain_bootstrap_prompt_makes_git_captain_owned() {
         let prompt = ShipImpl::captain_bootstrap_prompt();
 
-        assert!(prompt.contains("Git and branch state are captain-owned."));
-        assert!(prompt.contains("mate must never run git commands of any kind"));
-        assert!(prompt.contains("Ship will sync the task worktree onto the base branch for you."));
+        assert!(prompt.contains("Git is not your workflow control surface"));
+        assert!(prompt.contains("Ship manages workflow state internally"));
     }
 
     // r[verify mate.system-prompt]
@@ -6717,7 +6722,7 @@ mod tests {
         assert!(prompt.contains("`git status`, `git diff`,"));
         assert!(
             prompt.contains(
-                "Ship handles commits and rebases itself, and git state is captain-owned."
+                "Ship handles commits and server-side branch resets/rebases itself, and git state is captain-owned."
             )
         );
         assert!(prompt.contains("ask the captain with mate_ask_captain instead of touching git."));
@@ -6726,10 +6731,11 @@ mod tests {
     // r[verify task.assign]
     // r[verify captain.tool.assign]
     #[tokio::test]
-    async fn captain_tool_assign_syncs_worktree_with_base_before_prompting_mate() {
+    async fn captain_tool_assign_resets_worktree_to_base_before_prompting_mate() {
         let (dir, ship, session_id) =
-            create_ready_session_for_assign_test("captain-assign-sync", "task").await;
+            create_ready_session_for_assign_test("captain-assign-reset", "task").await;
         let project_root = dir.join("project");
+        let worktree_path = project_root.join(".ship").join("@task");
         init_git_repo(&project_root);
 
         std::fs::write(project_root.join("tracked.txt"), "v1\n")
@@ -6758,21 +6764,11 @@ mod tests {
             Command::new("git")
                 .arg("-C")
                 .arg(&project_root)
-                .args(["checkout", "-b", "task"])
+                .args(["worktree", "add", "-b", "task", ".ship/@task", "main"])
                 .status()
-                .expect("git checkout should run")
+                .expect("git worktree add should run")
                 .success(),
-            "git checkout -b should succeed"
-        );
-        assert!(
-            Command::new("git")
-                .arg("-C")
-                .arg(&project_root)
-                .args(["checkout", "main"])
-                .status()
-                .expect("git checkout should run")
-                .success(),
-            "git checkout main should succeed"
+            "git worktree add should succeed"
         );
         std::fs::write(project_root.join("tracked.txt"), "v2\n")
             .expect("updated tracked file should be written");
@@ -6786,22 +6782,17 @@ mod tests {
                 .success(),
             "git commit on main should succeed"
         );
-        assert!(
-            Command::new("git")
-                .arg("-C")
-                .arg(&project_root)
-                .args(["checkout", "task"])
-                .status()
-                .expect("git checkout should run")
-                .success(),
-            "git checkout task should succeed"
+        assert_eq!(
+            std::fs::read_to_string(worktree_path.join("tracked.txt"))
+                .expect("worktree tracked file should be readable before reset"),
+            "v1\n"
         );
 
         let assigned = ship
             .captain_tool_assign(
                 &session_id,
-                "Sync before assign".to_owned(),
-                "Ensure the worktree is current before the mate starts.".to_owned(),
+                "Reset before assign".to_owned(),
+                "Ensure the worktree is reset before the mate starts.".to_owned(),
                 true,
                 CaptainAssignExtras {
                     files: Vec::new(),
@@ -6816,10 +6807,18 @@ mod tests {
             "unexpected assign result: {assigned}"
         );
         assert_eq!(
-            std::fs::read_to_string(project_root.join("tracked.txt"))
-                .expect("synced tracked file should be readable"),
+            std::fs::read_to_string(worktree_path.join("tracked.txt"))
+                .expect("reset tracked file should be readable"),
             "v2\n"
         );
+        let branch = Command::new("git")
+            .arg("-C")
+            .arg(&worktree_path)
+            .args(["branch", "--show-current"])
+            .output()
+            .expect("git branch should run");
+        assert!(branch.status.success(), "git branch should succeed");
+        assert_eq!(String::from_utf8_lossy(&branch.stdout).trim(), "task");
 
         let _ = std::fs::remove_dir_all(dir);
     }
@@ -6827,10 +6826,11 @@ mod tests {
     // r[verify task.assign]
     // r[verify captain.tool.assign]
     #[tokio::test]
-    async fn captain_tool_assign_fails_when_pre_task_sync_fails() {
+    async fn captain_tool_assign_fails_when_session_worktree_is_dirty() {
         let (dir, ship, session_id) =
-            create_ready_session_for_assign_test("captain-assign-sync-fails", "task").await;
+            create_ready_session_for_assign_test("captain-assign-dirty", "task").await;
         let project_root = dir.join("project");
+        let worktree_path = project_root.join(".ship").join("@task");
         init_git_repo(&project_root);
 
         std::fs::write(project_root.join("tracked.txt"), "base\n")
@@ -6859,62 +6859,20 @@ mod tests {
             Command::new("git")
                 .arg("-C")
                 .arg(&project_root)
-                .args(["checkout", "-b", "task"])
+                .args(["worktree", "add", "-b", "task", ".ship/@task", "main"])
                 .status()
-                .expect("git checkout should run")
+                .expect("git worktree add should run")
                 .success(),
-            "git checkout -b should succeed"
+            "git worktree add should succeed"
         );
-        std::fs::write(project_root.join("tracked.txt"), "task\n")
-            .expect("task branch file should be written");
-        assert!(
-            Command::new("git")
-                .arg("-C")
-                .arg(&project_root)
-                .args(["commit", "-am", "task change"])
-                .status()
-                .expect("git commit should run")
-                .success(),
-            "git commit on task should succeed"
-        );
-        assert!(
-            Command::new("git")
-                .arg("-C")
-                .arg(&project_root)
-                .args(["checkout", "main"])
-                .status()
-                .expect("git checkout should run")
-                .success(),
-            "git checkout main should succeed"
-        );
-        std::fs::write(project_root.join("tracked.txt"), "main\n")
-            .expect("main branch file should be written");
-        assert!(
-            Command::new("git")
-                .arg("-C")
-                .arg(&project_root)
-                .args(["commit", "-am", "main change"])
-                .status()
-                .expect("git commit should run")
-                .success(),
-            "git commit on main should succeed"
-        );
-        assert!(
-            Command::new("git")
-                .arg("-C")
-                .arg(&project_root)
-                .args(["checkout", "task"])
-                .status()
-                .expect("git checkout should run")
-                .success(),
-            "git checkout task should succeed"
-        );
+        std::fs::write(worktree_path.join("dirty.txt"), "dirty\n")
+            .expect("dirty file should be written");
 
         let error = ship
             .captain_tool_assign(
                 &session_id,
-                "Sync before assign".to_owned(),
-                "Ensure the worktree is current before the mate starts.".to_owned(),
+                "Reset before assign".to_owned(),
+                "Ensure the worktree is reset before the mate starts.".to_owned(),
                 true,
                 CaptainAssignExtras {
                     files: Vec::new(),
@@ -6922,16 +6880,99 @@ mod tests {
                 },
             )
             .await
-            .expect_err("captain assign should fail when sync fails");
+            .expect_err("captain assign should fail on dirty worktree");
 
         assert!(
-            error.contains("pre-task sync failed:"),
+            error.contains("pre-task reset is unsafe:")
+                && error.contains("(uncommitted changes in worktree)"),
             "unexpected assign error: {error}"
         );
         let session = Ship::get_session(&ship, session_id.clone()).await;
         assert!(
             session.current_task.is_none(),
-            "task should not start on sync failure"
+            "task should not start on dirty worktree"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    // r[verify task.assign]
+    // r[verify captain.tool.assign]
+    #[tokio::test]
+    async fn captain_tool_assign_fails_when_session_branch_has_unmerged_commits() {
+        let (dir, ship, session_id) =
+            create_ready_session_for_assign_test("captain-assign-unmerged", "task").await;
+        let project_root = dir.join("project");
+        let worktree_path = project_root.join(".ship").join("@task");
+        init_git_repo(&project_root);
+
+        std::fs::write(project_root.join("tracked.txt"), "base\n")
+            .expect("tracked file should be written");
+        assert!(
+            Command::new("git")
+                .arg("-C")
+                .arg(&project_root)
+                .args(["add", "."])
+                .status()
+                .expect("git add should run")
+                .success(),
+            "git add should succeed"
+        );
+        assert!(
+            Command::new("git")
+                .arg("-C")
+                .arg(&project_root)
+                .args(["commit", "-m", "initial"])
+                .status()
+                .expect("git commit should run")
+                .success(),
+            "git commit should succeed"
+        );
+        assert!(
+            Command::new("git")
+                .arg("-C")
+                .arg(&project_root)
+                .args(["worktree", "add", "-b", "task", ".ship/@task", "main"])
+                .status()
+                .expect("git worktree add should run")
+                .success(),
+            "git worktree add should succeed"
+        );
+        std::fs::write(worktree_path.join("tracked.txt"), "task\n")
+            .expect("task branch file should be written");
+        assert!(
+            Command::new("git")
+                .arg("-C")
+                .arg(&worktree_path)
+                .args(["commit", "-am", "task change"])
+                .status()
+                .expect("git commit should run")
+                .success(),
+            "git commit on task should succeed"
+        );
+
+        let error = ship
+            .captain_tool_assign(
+                &session_id,
+                "Reset before assign".to_owned(),
+                "Ensure the worktree is reset before the mate starts.".to_owned(),
+                true,
+                CaptainAssignExtras {
+                    files: Vec::new(),
+                    plan: Vec::new(),
+                },
+            )
+            .await
+            .expect_err("captain assign should fail on unmerged commits");
+
+        assert!(
+            error.contains("pre-task reset is unsafe:") && error.contains("task change"),
+            "unexpected assign error: {error}"
+        );
+        let session = Ship::get_session(&ship, session_id.clone()).await;
+        assert!(
+            session.current_task.is_none(),
+            "task should not start when the session branch has unmerged commits"
         );
 
         let _ = std::fs::remove_dir_all(dir);
@@ -7518,7 +7559,7 @@ mod tests {
             .expect_err("git commands should be redirected");
         assert_eq!(
             guarded,
-            "The command `git status` has been blocked. Git commands are captain-owned and not allowed for the mate. Ship handles commits and rebases itself. Use mate_ask_captain if you need git information or a git action."
+            "The command `git status` has been blocked. Git commands are captain-owned and not allowed for the mate. Ship handles commits and server-side branch resets/rebases itself. Use mate_ask_captain if you need git information or a git action."
         );
 
         let _ = std::fs::remove_dir_all(dir);
@@ -7559,7 +7600,7 @@ mod tests {
             .expect_err("git commands should be redirected");
         assert_eq!(
             guarded,
-            "The command `git status` has been blocked. Git commands are captain-owned and not allowed for the mate. Ship handles commits and rebases itself. Use mate_ask_captain if you need git information or a git action."
+            "The command `git status` has been blocked. Git commands are captain-owned and not allowed for the mate. Ship handles commits and server-side branch resets/rebases itself. Use mate_ask_captain if you need git information or a git action."
         );
 
         let custom_cwd = ship

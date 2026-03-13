@@ -239,8 +239,10 @@ struct FakeWorktreeInner {
     dirty_flags: HashMap<PathBuf, bool>,
     branches: Vec<String>,
     deleted_branches: Vec<(String, bool, PathBuf)>,
+    reset_requests: Vec<(PathBuf, String)>,
     remove_errors: HashMap<PathBuf, String>,
     delete_branch_errors: HashMap<String, String>,
+    reset_errors: HashMap<PathBuf, String>,
     unmerged_commits: HashMap<String, Vec<String>>,
 }
 
@@ -328,6 +330,22 @@ impl FakeWorktreeOps {
             .deleted_branches
             .clone()
     }
+
+    pub fn set_reset_error(&self, path: PathBuf, message: impl Into<String>) {
+        self.inner
+            .lock()
+            .expect("fake worktree ops mutex poisoned")
+            .reset_errors
+            .insert(path, message.into());
+    }
+
+    pub fn reset_requests(&self) -> Vec<(PathBuf, String)> {
+        self.inner
+            .lock()
+            .expect("fake worktree ops mutex poisoned")
+            .reset_requests
+            .clone()
+    }
 }
 
 impl WorktreeOps for FakeWorktreeOps {
@@ -409,6 +427,24 @@ impl WorktreeOps for FakeWorktreeOps {
         _worktree_path: &Path,
         _onto_branch: &str,
     ) -> Result<(), WorktreeError> {
+        Ok(())
+    }
+
+    async fn reset_to_base(
+        &self,
+        worktree_path: &Path,
+        base_branch: &str,
+    ) -> Result<(), WorktreeError> {
+        let mut inner = self.inner.lock().expect("fake worktree ops mutex poisoned");
+        if let Some(message) = inner.reset_errors.get(worktree_path) {
+            return Err(WorktreeError {
+                message: message.clone(),
+            });
+        }
+        inner
+            .reset_requests
+            .push((worktree_path.to_path_buf(), base_branch.to_owned()));
+        inner.dirty_flags.insert(worktree_path.to_path_buf(), false);
         Ok(())
     }
 
