@@ -445,6 +445,7 @@ fn log_message(started_at: Instant, message: &SubscribeMessage) {
                     task_id,
                     title,
                     description,
+                    ..
                 } => {
                     format!(
                         "task started id={} title={title:?} description={description:?}",

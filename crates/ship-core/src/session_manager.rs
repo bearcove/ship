@@ -603,10 +603,10 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                     title: title.clone(),
                     description: description.clone(),
                     status: TaskStatus::Assigned,
+                    steps: Vec::new(),
                     assigned_at: Some(chrono::Utc::now().to_rfc3339()),
                     completed_at: None,
                 },
-                mate_plan: None,
                 pending_mate_guidance: None,
                 content_history: Vec::new(),
                 event_log: Vec::new(),
@@ -618,6 +618,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                     task_id: task_id.clone(),
                     title: title.clone(),
                     description: description.clone(),
+                    steps: Vec::new(),
                 },
             );
             apply_event(
@@ -1314,11 +1315,13 @@ pub fn apply_event_to_materialized_state(session: &mut ActiveSession, event: &Se
             task_id,
             title,
             description,
+            steps,
         } => {
             if let Some(task) = session.current_task.as_mut() {
                 task.record.id = task_id.clone();
                 task.record.title = title.clone();
                 task.record.description = description.clone();
+                task.record.steps = steps.clone();
             }
         }
         SessionEvent::ContextUpdated {

@@ -276,6 +276,7 @@ pub mod structured {
 }
 
 pub mod task {
+    use crate::agent::PlanStep;
     use crate::ids::TaskId;
 
     // r[task.status.enum]
@@ -303,6 +304,8 @@ pub mod task {
         pub title: String,
         pub description: String,
         pub status: TaskStatus,
+        #[facet(default)]
+        pub steps: Vec<PlanStep>,
         #[facet(default)]
         pub assigned_at: Option<String>,
         #[facet(default)]
@@ -531,6 +534,8 @@ pub mod events {
             task_id: TaskId,
             title: String,
             description: String,
+            #[facet(default)]
+            steps: Vec<PlanStep>,
         },
         AgentModelChanged {
             role: Role,
@@ -845,7 +850,7 @@ pub mod transcription {
 }
 
 pub mod persistence {
-    use crate::agent::{AgentKind, AgentSnapshot, PlanStep, Role};
+    use crate::agent::{AgentKind, AgentSnapshot, Role};
     use crate::events::{ContentBlock, SessionEventEnvelope};
     use crate::ids::{BlockId, ProjectName, SessionId};
     use crate::protocol::{AutonomyMode, McpServerConfig};
@@ -874,7 +879,6 @@ pub mod persistence {
     #[derive(Debug, Clone, facet::Facet)]
     pub struct CurrentTask {
         pub record: TaskRecord,
-        pub mate_plan: Option<Vec<PlanStep>>,
         pub pending_mate_guidance: Option<String>,
         pub content_history: Vec<TaskContentRecord>,
         // r[backend.persistence-contents]

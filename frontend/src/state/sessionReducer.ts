@@ -1,6 +1,7 @@
 import type {
   AgentSnapshot,
   HumanReviewRequest,
+  PlanStep,
   SessionDetail,
   SessionEventEnvelope,
   SessionStartupState,
@@ -31,6 +32,7 @@ export interface SessionViewState {
   currentTaskStatus: TaskStatus | null;
   currentTaskStartedAt: string | null;
   currentTaskCompletedAt: string | null;
+  currentTaskSteps: PlanStep[];
   connected: boolean;
   phase: "loading" | "replaying" | "live";
   lastSeq: number | null;
@@ -57,6 +59,7 @@ export function initialSessionViewState(): SessionViewState {
     currentTaskStatus: null,
     currentTaskStartedAt: null,
     currentTaskCompletedAt: null,
+    currentTaskSteps: [],
     connected: true,
     phase: "loading",
     lastSeq: null,
@@ -94,6 +97,8 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         currentTaskStatus: action.session.current_task?.status ?? null,
         currentTaskStartedAt: action.session.current_task?.assigned_at ?? null,
         currentTaskCompletedAt: action.session.current_task?.completed_at ?? null,
+        currentTaskSteps:
+          (action.session.current_task as unknown as { steps?: PlanStep[] })?.steps ?? [],
         title: action.session.title ?? null,
         pendingHumanReview: action.session.pending_human_review ?? null,
       };
@@ -153,6 +158,7 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         currentTaskStatus,
         currentTaskStartedAt,
         currentTaskCompletedAt,
+        currentTaskSteps,
         title,
       } = state;
 
@@ -169,6 +175,9 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
             const store = ev.role.tag === "Captain" ? captainBlocks : mateBlocks;
             patchBlockMut(store, ev.block_id, ev.patch);
             patchBlockMut(unifiedBlocks, ev.block_id, ev.patch);
+            if (ev.role.tag !== "Captain" && ev.patch.tag === "PlanReplace") {
+              currentTaskSteps = ev.patch.steps;
+            }
             break;
           }
           case "AgentStateChanged": {
@@ -203,6 +212,7 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
             currentTaskStatus = { tag: "Assigned" };
             currentTaskStartedAt = envelope.timestamp;
             currentTaskCompletedAt = null;
+            currentTaskSteps = (ev as unknown as { steps?: PlanStep[] }).steps ?? [];
             break;
           case "AgentModelChanged": {
             if (ev.role.tag === "Captain" && captain) {
@@ -265,6 +275,7 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         currentTaskStatus,
         currentTaskStartedAt,
         currentTaskCompletedAt,
+        currentTaskSteps,
         title,
         lastSeq: Number(lastEnvelope.seq),
         lastEventKind: lastEnvelope.event.tag,
@@ -332,6 +343,7 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
             ...nextState,
             mateBlocks: patched,
             unifiedBlocks: unifiedPatched ?? nextState.unifiedBlocks,
+            ...(ev.patch.tag === "PlanReplace" ? { currentTaskSteps: ev.patch.steps } : {}),
           };
         }
 
@@ -388,6 +400,7 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
             currentTaskStatus: { tag: "Assigned" },
             currentTaskStartedAt: envelope.timestamp,
             currentTaskCompletedAt: null,
+            currentTaskSteps: (ev as unknown as { steps?: PlanStep[] }).steps ?? [],
           };
 
         case "AgentModelChanged": {

@@ -3,7 +3,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Badge, Box, Code, Flex, Text } from "@radix-ui/themes";
 import { CaretDown, CaretRight } from "@phosphor-icons/react";
-import type { TaskRecord, TaskStatus, WorktreeDiffStats } from "../generated/ship";
+import type { PlanStep, TaskRecord, TaskStatus, WorktreeDiffStats } from "../generated/ship";
 import { taskDescriptionRoot } from "../styles/session-view.css";
 import { MarkdownCodeBlock } from "./blocks/TextBlock";
 
@@ -142,8 +142,7 @@ interface Props {
   taskHistory: TaskRecord[];
   branchName: string;
   diffStats: WorktreeDiffStats | null;
-  tasksDone: number;
-  tasksTotal: number;
+  planSteps: PlanStep[];
 }
 
 // r[view.task-panel]
@@ -152,8 +151,7 @@ export function SessionTaskDrawer({
   taskHistory,
   branchName,
   diffStats,
-  tasksDone,
-  tasksTotal,
+  planSteps,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
   const contentId = useId();
@@ -207,12 +205,12 @@ export function SessionTaskDrawer({
               align="center"
               gap="1"
               data-testid="session-task-drawer-progress"
-              aria-label={`Task progress ${tasksDone} of ${tasksTotal}`}
+              aria-label={`Task progress: ${planSteps.filter((s) => s.status.tag === "Completed").length} of ${planSteps.length} steps done`}
               style={{ flexShrink: 0 }}
             >
-              {tasksTotal > 0
-                ? Array.from({ length: tasksTotal }, (_, index) => {
-                    const complete = index < tasksDone;
+              {planSteps.length > 0
+                ? planSteps.map((step, index) => {
+                    const complete = step.status.tag === "Completed";
                     return (
                       <span
                         key={index}

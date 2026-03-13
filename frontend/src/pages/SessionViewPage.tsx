@@ -224,7 +224,7 @@ export function SessionViewPage({
         )
       : null;
 
-  const liveTask: TaskRecord | null =
+  const liveTask =
     eventState.currentTaskId &&
     eventState.currentTaskTitle &&
     eventState.currentTaskDescription &&
@@ -236,14 +236,26 @@ export function SessionViewPage({
           status: eventState.currentTaskStatus,
           assigned_at: eventState.currentTaskStartedAt,
           completed_at: eventState.currentTaskCompletedAt,
+          steps: eventState.currentTaskSteps,
         }
-      : session.current_task;
+      : session.current_task
+        ? {
+            ...session.current_task,
+            steps:
+              (
+                session.current_task as unknown as {
+                  steps?: import("../generated/ship").PlanStep[];
+                }
+              ).steps ?? [],
+          }
+        : null;
   const matePlan = mate?.state.tag === "Working" ? (mate.state.plan ?? null) : null;
   const sessionDetail = session;
   const tasksDone =
     sessionDetail.task_history.filter((task) => task.status.tag === "Accepted").length +
     (liveTask?.status.tag === "Accepted" ? 1 : 0);
   const tasksTotal = sessionDetail.task_history.length + (liveTask ? 1 : 0);
+  const planSteps = liveTask?.steps ?? [];
   const archiveSessionSummary: SessionSummary = {
     id: session.id,
     slug: session.slug,
@@ -317,8 +329,7 @@ export function SessionViewPage({
               taskHistory={session.task_history}
               branchName={session.branch_name}
               diffStats={diffStats}
-              tasksDone={tasksDone}
-              tasksTotal={tasksTotal}
+              planSteps={planSteps}
             />
             <UnifiedFeed
               sessionId={session.id}

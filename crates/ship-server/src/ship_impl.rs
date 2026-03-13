@@ -1664,7 +1664,7 @@ Here is your task:
         extras: CaptainAssignExtras,
     ) -> Result<String, String> {
         let files = extras.files;
-        let plan = extras.plan;
+        let plan_steps = Self::build_plan_steps(extras.plan);
         let session = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let session = sessions
@@ -1697,7 +1697,12 @@ Here is your task:
             .map_err(|error| format!("pre-task reset failed: {}", error.message))?;
 
         let task_id = self
-            .start_task(session_id, title.clone(), description.clone())
+            .start_task(
+                session_id,
+                title.clone(),
+                description.clone(),
+                plan_steps.clone(),
+            )
             .await?;
 
         // r[captain.tool.assign.nonblocking]
@@ -1712,17 +1717,7 @@ Here is your task:
                 }
 
                 // Pre-populate the plan if the captain supplied one.
-                let pre_supplied_plan = if !plan.is_empty() {
-                    let plan_steps = Self::build_plan_steps(plan);
-                    {
-                        let mut sessions = this.sessions.lock().expect("sessions mutex poisoned");
-                        if let Some(session) = sessions.get_mut(&session_id_bg) {
-                            if let Some(task) = session.current_task.as_mut() {
-                                task.mate_plan = Some(plan_steps.clone());
-                            }
-                        }
-                    }
-                    this.persist_session(&session_id_bg).await?;
+                let pre_supplied_plan = if !plan_steps.is_empty() {
                     Some(plan_steps)
                 } else {
                     None
@@ -1831,7 +1826,7 @@ Here is your task:
                 let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
                 if let Some(session) = sessions.get_mut(session_id) {
                     if let Some(task) = session.current_task.as_mut() {
-                        task.mate_plan = Some(old_plan);
+                        task.record.steps = old_plan;
                     }
                 }
             }
@@ -3808,7 +3803,7 @@ Here is your task:
         let has_plan = session
             .current_task
             .as_ref()
-            .is_some_and(|task| task.mate_plan.is_some());
+            .is_some_and(|task| !task.record.steps.is_empty());
         if has_plan {
             Ok(())
         } else {
@@ -3879,10 +3874,10 @@ Here is your task:
                 .current_task
                 .as_ref()
                 .ok_or_else(|| "session has no active task".to_owned())?;
-            (task.record.description.clone(), task.mate_plan.clone())
+            (task.record.description.clone(), task.record.steps.clone())
         };
 
-        if old_plan.is_none() {
+        if old_plan.is_empty() {
             // First time — set plan and notify captain non-blocking.
             {
                 let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
@@ -3893,7 +3888,7 @@ Here is your task:
                     .current_task
                     .as_mut()
                     .ok_or_else(|| "session has no active task".to_owned())?;
-                task.mate_plan = Some(new_plan.clone());
+                task.record.steps = new_plan.clone();
                 task.pending_mate_guidance = None;
                 set_agent_state(
                     session,
@@ -3914,7 +3909,6 @@ Here is your task:
             Ok(format!("Plan set for task '{task_description}'."))
         } else {
             // Mid-task plan change — tentatively set new plan and block for captain review.
-            let old_plan = old_plan.unwrap();
             {
                 let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
                 let session = sessions
@@ -3924,7 +3918,7 @@ Here is your task:
                     .current_task
                     .as_mut()
                     .ok_or_else(|| "session has no active task".to_owned())?;
-                task.mate_plan = Some(new_plan.clone());
+                task.record.steps = new_plan.clone();
                 task.pending_mate_guidance = None;
                 set_agent_state(
                     session,
@@ -3991,10 +3985,10 @@ Here is your task:
                     .as_mut()
                     .ok_or_else(|| "session has no active task".to_owned())?;
                 let task_title = task.record.title.clone();
-                let plan = task
-                    .mate_plan
-                    .as_mut()
-                    .ok_or_else(|| PLAN_REQUIRED_MESSAGE.to_owned())?;
+                let plan = &mut task.record.steps;
+                if plan.is_empty() {
+                    return Err(PLAN_REQUIRED_MESSAGE.to_owned());
+                }
                 let Some(step) = plan.get_mut(step_index) else {
                     return Err(format!("plan step {step_index} does not exist"));
                 };
@@ -4108,7 +4102,7 @@ Here is your task:
                 .current_task
                 .as_mut()
                 .ok_or_else(|| "session has no active task".to_owned())?;
-            if task.mate_plan.is_none() {
+            if task.record.steps.is_empty() {
                 task.pending_mate_guidance = Some(PLAN_REQUIRED_MESSAGE.to_owned());
                 return Err(PLAN_REQUIRED_MESSAGE.to_owned());
             }
@@ -4575,7 +4569,7 @@ Here is your task:
             && session
                 .current_task
                 .as_ref()
-                .is_some_and(|task| task.mate_plan.is_none())
+                .is_some_and(|task| task.record.steps.is_empty())
         {
             Self::queue_mate_guidance(session, PLAN_REQUIRED_MESSAGE);
         }
@@ -5047,6 +5041,7 @@ Here is your task:
         session_id: &SessionId,
         title: String,
         description: String,
+        steps: Vec<PlanStep>,
     ) -> Result<TaskId, String> {
         let task_id = TaskId::new();
         tracing::info!(session_id = %session_id.0, task_id = %task_id.0, "starting task");
@@ -5069,10 +5064,10 @@ Here is your task:
                     title: title.clone(),
                     description: description.clone(),
                     status: TaskStatus::Assigned,
+                    steps: steps.clone(),
                     assigned_at: Some(chrono::Utc::now().to_rfc3339()),
                     completed_at: None,
                 },
-                mate_plan: None,
                 pending_mate_guidance: None,
                 content_history: Vec::new(),
                 event_log: Vec::new(),
@@ -5084,6 +5079,7 @@ Here is your task:
                     task_id: task_id.clone(),
                     title: title.clone(),
                     description: description.clone(),
+                    steps: steps.clone(),
                 },
             );
             apply_event(
@@ -6851,14 +6847,14 @@ mod tests {
                     title: "Investigate workflow".to_owned(),
                     description: "Investigate workflow".to_owned(),
                     status: TaskStatus::Assigned,
+                    steps: vec![PlanStep {
+                        title: "Test step".to_owned(),
+                        description: "Test step".to_owned(),
+                        status: PlanStepStatus::Pending,
+                    }],
                     assigned_at: Some(chrono::Utc::now().to_rfc3339()),
                     completed_at: None,
                 },
-                mate_plan: Some(vec![PlanStep {
-                    title: "Test step".to_owned(),
-                    description: "Test step".to_owned(),
-                    status: PlanStepStatus::Pending,
-                }]),
                 pending_mate_guidance: None,
                 content_history: Vec::new(),
                 event_log: Vec::new(),
@@ -7475,6 +7471,7 @@ mod tests {
                 task_id: task_id.clone(),
                 title: "Replay task".to_owned(),
                 description: "Replay task".to_owned(),
+                steps: Vec::new(),
             },
         }];
 
@@ -7505,6 +7502,7 @@ mod tests {
                     task_id: task_id.clone(),
                     title: "Replay task".to_owned(),
                     description: "Replay task".to_owned(),
+                    steps: Vec::new(),
                 },
             })
         );
@@ -7523,6 +7521,7 @@ mod tests {
                     task_id: live_task_id.clone(),
                     title: "Live task".to_owned(),
                     description: "Live task".to_owned(),
+                    steps: Vec::new(),
                 },
             })
             .expect("live send should succeed");
@@ -7540,6 +7539,7 @@ mod tests {
                     task_id: live_task_id,
                     title: "Live task".to_owned(),
                     description: "Live task".to_owned(),
+                    steps: Vec::new(),
                 },
             })
         );
@@ -7719,7 +7719,7 @@ mod tests {
             let session = sessions.get_mut(&session_id).expect("session should exist");
             session.worktree_path = Some(project_root.clone());
             // Clear the plan that the test helper sets up
-            session.current_task.as_mut().unwrap().mate_plan = None;
+            session.current_task.as_mut().unwrap().record.steps = Vec::new();
         }
 
         // run_command is exploration — no plan required
@@ -7785,7 +7785,7 @@ mod tests {
             let session = sessions.get_mut(&session_id).expect("session should exist");
             session.worktree_path = Some(project_root.clone());
             // Clear the plan the test helper pre-sets so set_plan takes the first-call path.
-            session.current_task.as_mut().unwrap().mate_plan = None;
+            session.current_task.as_mut().unwrap().record.steps = Vec::new();
         }
 
         // set_plan stores the plan and notifies the captain non-blocking on first call.
@@ -7809,7 +7809,7 @@ mod tests {
             let sessions = ship.sessions.lock().expect("sessions mutex poisoned");
             let session = sessions.get(&session_id).expect("session should exist");
             let task = session.current_task.as_ref().expect("task should exist");
-            let plan = task.mate_plan.as_ref().expect("plan should be persisted");
+            let plan = &task.record.steps;
             assert_eq!(plan.len(), 2);
             assert!(task.content_history.iter().any(|entry| matches!(
                 &entry.block,
@@ -7836,10 +7836,7 @@ mod tests {
             let sessions = ship.sessions.lock().expect("sessions mutex poisoned");
             let session = sessions.get(&session_id).expect("session should exist");
             let task = session.current_task.as_ref().expect("task should exist");
-            let plan = task
-                .mate_plan
-                .as_ref()
-                .expect("plan should still be persisted");
+            let plan = &task.record.steps;
             assert_eq!(plan[0].status, PlanStepStatus::Completed);
         }
 
