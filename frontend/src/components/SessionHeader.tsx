@@ -132,7 +132,12 @@ function HistoryItem({ task }: { task: TaskRecord }) {
         </div>
       </button>
       {expanded && (
-        <div id={bodyId} role="region" aria-labelledby={headerId} className={sessionHeaderHistoryBody}>
+        <div
+          id={bodyId}
+          role="region"
+          aria-labelledby={headerId}
+          className={sessionHeaderHistoryBody}
+        >
           <div className={`${feedBubble} ${taskDescriptionRoot}`}>
             <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
               {task.description}
@@ -182,7 +187,7 @@ export function SessionHeader({
   const [newSessionOpen, setNewSessionOpen] = useState(false);
   const contentId = useId();
 
-  const displayTitle = title ?? branchName;
+  const displayTitle = liveTask?.title ?? title ?? branchName;
   const history = useMemo(() => [...taskHistory].reverse(), [taskHistory]);
 
   const progressDots =
@@ -203,15 +208,18 @@ export function SessionHeader({
 
   const diffBadge = diffStats ? (
     <div className={sessionHeaderDiffFlex}>
-      <Text size="1" className={sessionHeaderDiffAdd}>+{String(diffStats.lines_added)}</Text>
-      <Text size="1" className={sessionHeaderDiffRemove}>-{String(diffStats.lines_removed)}</Text>
+      <Text size="1" className={sessionHeaderDiffAdd}>
+        +{String(diffStats.lines_added)}
+      </Text>
+      <Text size="1" className={sessionHeaderDiffRemove}>
+        -{String(diffStats.lines_removed)}
+      </Text>
     </div>
   ) : null;
 
   return (
     <>
       <div className={sessionHeaderRoot}>
-
         {/* Row 1: title + ⋯ menu */}
         <div className={sessionHeaderRow1}>
           <Text size="2" weight="medium" className={sessionHeaderTitle}>
@@ -252,9 +260,13 @@ export function SessionHeader({
           )}
 
           {liveTask ? (
-            <Text size="2" className={sessionHeaderRow2Title}>{liveTask.title}</Text>
+            <Text size="2" className={sessionHeaderRow2Title}>
+              {liveTask.title}
+            </Text>
           ) : (
-            <Text size="2" color="gray" className={sessionHeaderRow2Title}>No active task</Text>
+            <Text size="2" color="gray" className={sessionHeaderRow2Title}>
+              No active task
+            </Text>
           )}
 
           {progressDots}
@@ -264,10 +276,11 @@ export function SessionHeader({
         {/* Expanded panel */}
         <div id={contentId} className={sessionHeaderExpanded} data-open={expanded}>
           <div className={sessionHeaderPanelInner}>
-
             {/* Plan */}
             <div>
-              <Text className={sessionHeaderSectionLabel} as="div">Plan</Text>
+              <Text className={sessionHeaderSectionLabel} as="div">
+                Plan
+              </Text>
               {matePlan && matePlan.length > 0 ? (
                 <Flex direction="column" gap="1">
                   {matePlan.map((step, i) => (
@@ -287,25 +300,33 @@ export function SessionHeader({
                   ))}
                 </Flex>
               ) : (
-                <Text size="2" color="gray">No plan yet.</Text>
+                <Text size="2" color="gray">
+                  No plan yet.
+                </Text>
               )}
             </div>
 
             {/* Agents */}
             {(captain ?? mate) && (
               <div>
-                <Text className={sessionHeaderSectionLabel} as="div">Agents</Text>
+                <Text className={sessionHeaderSectionLabel} as="div">
+                  Agents
+                </Text>
                 <Flex direction="column" gap="2">
                   {captain && (
                     <div className={sessionHeaderAgentRow}>
-                      <Text size="1" color="gray" className={sessionHeaderAgentLabel}>Captain</Text>
+                      <Text size="1" color="gray" className={sessionHeaderAgentLabel}>
+                        Captain
+                      </Text>
                       <AgentModelPicker sessionId={sessionId} agent={captain} />
                       <AgentEffortPicker sessionId={sessionId} agent={captain} />
                     </div>
                   )}
                   {mate && (
                     <div className={sessionHeaderAgentRow}>
-                      <Text size="1" color="gray" className={sessionHeaderAgentLabel}>Mate</Text>
+                      <Text size="1" color="gray" className={sessionHeaderAgentLabel}>
+                        Mate
+                      </Text>
                       <AgentModelPicker sessionId={sessionId} agent={mate} />
                       <AgentEffortPicker sessionId={sessionId} agent={mate} />
                     </div>
@@ -316,16 +337,28 @@ export function SessionHeader({
 
             {/* Branch + diff */}
             <div>
-              <Text className={sessionHeaderSectionLabel} as="div">Branch</Text>
+              <Text className={sessionHeaderSectionLabel} as="div">
+                Branch
+              </Text>
               <div className={sessionHeaderBranchMeta}>
-                <Code variant="ghost" size="1">{branchName}</Code>
+                <Code variant="ghost" size="1">
+                  {branchName}
+                </Code>
                 {diffStats && (
                   <>
-                    <Text size="1" color="gray">·</Text>
-                    <Text size="1" className={sessionHeaderDiffAdd}>+{String(diffStats.lines_added)}</Text>
-                    <Text size="1" className={sessionHeaderDiffRemove}>-{String(diffStats.lines_removed)}</Text>
+                    <Text size="1" color="gray">
+                      ·
+                    </Text>
+                    <Text size="1" className={sessionHeaderDiffAdd}>
+                      +{String(diffStats.lines_added)}
+                    </Text>
+                    <Text size="1" className={sessionHeaderDiffRemove}>
+                      -{String(diffStats.lines_removed)}
+                    </Text>
                     {diffStats.files_changed > 0n && (
-                      <Text size="1" color="gray">· {String(diffStats.files_changed)} files</Text>
+                      <Text size="1" color="gray">
+                        · {String(diffStats.files_changed)} files
+                      </Text>
                     )}
                   </>
                 )}
@@ -335,7 +368,9 @@ export function SessionHeader({
             {/* Current task description */}
             {liveTask && (
               <div>
-                <Text className={sessionHeaderSectionLabel} as="div">Current task</Text>
+                <Text className={sessionHeaderSectionLabel} as="div">
+                  Current task
+                </Text>
                 <div className={`${feedBubble} ${taskDescriptionRoot}`}>
                   <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
                     {liveTask.description}
@@ -347,7 +382,9 @@ export function SessionHeader({
             {/* Task history */}
             {history.length > 0 && (
               <div>
-                <Text className={sessionHeaderSectionLabel} as="div">History</Text>
+                <Text className={sessionHeaderSectionLabel} as="div">
+                  History
+                </Text>
                 <Flex direction="column">
                   {history.map((task) => (
                     <HistoryItem key={task.id} task={task} />
@@ -355,7 +392,6 @@ export function SessionHeader({
                 </Flex>
               </div>
             )}
-
           </div>
         </div>
       </div>
