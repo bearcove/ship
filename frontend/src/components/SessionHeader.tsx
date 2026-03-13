@@ -232,7 +232,7 @@ export function SessionHeader({
                 <DotsThree size={18} weight="bold" />
               </IconButton>
             </DropdownMenu.Trigger>
-            <DropdownMenu.Content size="1" align="end">
+            <DropdownMenu.Content size="2" align="end">
               <DropdownMenu.Item onClick={() => setNewSessionOpen(true)}>
                 <Plus size={13} />
                 New session
