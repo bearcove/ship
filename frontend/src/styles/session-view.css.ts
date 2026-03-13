@@ -360,6 +360,21 @@ export const thinkingBubble = style({
   padding: "8px 0",
 });
 
+const shimmerMove = keyframes({
+  from: { backgroundPosition: "200% center" },
+  to: { backgroundPosition: "-200% center" },
+});
+
+export const shimmerText = style({
+  background: "linear-gradient(90deg, var(--gray-10) 30%, var(--gray-1) 50%, var(--gray-10) 70%)",
+  backgroundSize: "200% auto",
+  WebkitBackgroundClip: "text",
+  backgroundClip: "text",
+  WebkitTextFillColor: "transparent",
+  color: "transparent",
+  animation: `${shimmerMove} 3s linear infinite`,
+});
+
 export const thinkingStopBtn = style({
   display: "flex",
   alignItems: "center",

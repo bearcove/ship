@@ -24,6 +24,7 @@ import {
   feedSystemMessage,
   liveBubblesRow,
   thinkingBubble,
+  shimmerText,
   thinkingStopBtn,
   startupFeedBody,
   startupFeedItem,
@@ -448,16 +449,16 @@ function ThinkingBubble({
           style={{ width: 36, height: 36, borderRadius: "50%", flexShrink: 0 }}
         />
         {toolsOk > 0 && (
-          <Text size="2" color="gray">
+          <Text size="2" className={shimmerText}>
             {toolsOk}✓
           </Text>
         )}
         {toolsFailed > 0 && (
-          <Text size="2" color="gray">
+          <Text size="2" className={shimmerText}>
             {toolsFailed}✗
           </Text>
         )}
-        <Text size="2" color="gray" style={{ marginLeft: "auto" }}>
+        <Text size="2" className={shimmerText} style={{ marginLeft: "auto" }}>
           {thinkingTokens} tokens
         </Text>
       </div>
