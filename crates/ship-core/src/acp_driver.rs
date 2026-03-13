@@ -792,24 +792,19 @@ fn build_initialize_request(role: Role) -> InitializeRequest {
         .client_capabilities(client_capabilities)
 }
 
-// r[captain.capabilities]
-// r[mate.capabilities]
-// Both agents run in sandboxed worktrees. Built-in Read and Terminal are
-// safe — only write_text_file routes through us so we can reject it
-// (writes must go through the write_file MCP tool for rustfmt validation).
 fn captain_client_capabilities() -> ClientCapabilities {
     ClientCapabilities::new()
-        .terminal(false)
+        .terminal(true)
         .fs(FileSystemCapability::new()
-            .read_text_file(false)
+            .read_text_file(true)
             .write_text_file(true))
 }
 
 fn mate_client_capabilities() -> ClientCapabilities {
     ClientCapabilities::new()
-        .terminal(false)
+        .terminal(true)
         .fs(FileSystemCapability::new()
-            .read_text_file(false)
+            .read_text_file(true)
             .write_text_file(true))
 }
 
