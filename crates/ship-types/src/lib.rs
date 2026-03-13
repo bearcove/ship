@@ -96,6 +96,8 @@ pub mod agent {
         pub title: String,
         pub description: String,
         pub status: PlanStepStatus,
+        #[facet(default)]
+        pub started_at: Option<String>,
     }
 
     /// Input for creating a plan step (used by captain_assign and set_plan).
@@ -862,6 +864,8 @@ pub mod protocol {
         pub lines_added: u64,
         pub lines_removed: u64,
         pub files_changed: u64,
+        pub uncommitted_lines_added: u64,
+        pub uncommitted_lines_removed: u64,
     }
 }
 
