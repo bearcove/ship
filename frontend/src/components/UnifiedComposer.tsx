@@ -38,7 +38,6 @@ import {
   transcriptPreview,
 } from "../styles/session-view.css";
 import { Waveform } from "./Waveform";
-import { useWorktreeDiffStats } from "../hooks/useWorktreeDiffStats";
 import { useDocumentDrop } from "../hooks/useDocumentDrop";
 import { useTranscription } from "../hooks/useTranscription";
 
@@ -169,7 +168,6 @@ function formatElapsed(ms: number): string {
 // r[ui.composer.image-attach]
 // r[view.agent-panel.activity]
 export function UnifiedComposer({ sessionId, captain, mate, startupState, taskStatus }: Props) {
-  const diffStats = useWorktreeDiffStats(sessionId);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -440,12 +438,21 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
   const isRecording = transcription.state.tag === "recording";
   const isProcessing = transcription.state.tag === "processing";
   const isWorking = captainStateTag === "Working" || mateStateTag === "Working";
+  const hasAgentStateChips = [captain, mate].some((agent) => {
+    if (!agent) return false;
+    const state = agent.state;
+    return (
+      state.tag === "Error" ||
+      state.tag === "ContextExhausted" ||
+      (agent.context_remaining_percent !== null && agent.context_remaining_percent < 20)
+    );
+  });
 
   return (
     <Flex className={composerRoot} direction="column" gap="2">
       {isDragOver && <div className={pageDropOverlay}>Drop image to attach</div>}
 
-      {(isWorking || mateUnavailable || diffStats) && (
+      {(isWorking || mateUnavailable || hasAgentStateChips) && (
         <Flex
           className={composerStatusRow}
           align="center"
@@ -458,38 +465,6 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
             <Text size="1" color="gray">
               No active task
             </Text>
-          )}
-          {diffStats && (
-            <Flex
-              align="center"
-              gap="2"
-              data-testid="composer-diff-stats"
-              style={{ marginLeft: "auto", fontFamily: "var(--code-font-family)" }}
-            >
-              <Text
-                size="1"
-                color="gray"
-                style={{
-                  fontFamily: "var(--code-font-family)",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                  maxWidth: 140,
-                }}
-              >
-                {diffStats.branch_name}
-              </Text>
-              {diffStats.files_changed > 0n && (
-                <>
-                  <Text size="1" style={{ color: "var(--green-10)" }}>
-                    +{String(diffStats.lines_added)}
-                  </Text>
-                  <Text size="1" style={{ color: "var(--red-10)" }}>
-                    &minus;{String(diffStats.lines_removed)}
-                  </Text>
-                </>
-              )}
-            </Flex>
           )}
         </Flex>
       )}

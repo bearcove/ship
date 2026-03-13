@@ -5,8 +5,10 @@ import { Archive, ArrowLeft, List, Plus, Warning } from "@phosphor-icons/react";
 import { useSession } from "../hooks/useSession";
 import { useSessionState } from "../hooks/useSessionState";
 import { refreshSessionList } from "../hooks/useSessionList";
+import { useWorktreeDiffStats } from "../hooks/useWorktreeDiffStats";
 import { UnifiedFeed } from "../components/UnifiedFeed";
 import { UnifiedComposer } from "../components/UnifiedComposer";
+import { SessionTaskDrawer } from "../components/SessionTaskDrawer";
 import { PlanPanel } from "../components/PlanPanel";
 import { SteerReview } from "../components/SteerReview";
 import { HumanReview } from "../components/HumanReview";
@@ -205,6 +207,7 @@ export function SessionViewPage({
   const mate = eventState.mate ?? session.mate;
   const startupState = eventState.startupState ?? session.startup_state;
   const pendingHumanReview = eventState.pendingHumanReview;
+  const diffStats = useWorktreeDiffStats(session.id);
   const isReplaying = eventState.phase !== "live";
   const replayLabel = eventState.connected
     ? eventState.replayEventCount > 0
@@ -236,9 +239,9 @@ export function SessionViewPage({
       : session.current_task;
   const matePlan = mate?.state.tag === "Working" ? (mate.state.plan ?? null) : null;
   const sessionDetail = session;
-  const tasksDone = sessionDetail.task_history.filter(
-    (task) => task.status.tag === "Accepted",
-  ).length;
+  const tasksDone =
+    sessionDetail.task_history.filter((task) => task.status.tag === "Accepted").length +
+    (liveTask?.status.tag === "Accepted" ? 1 : 0);
   const tasksTotal = sessionDetail.task_history.length + (liveTask ? 1 : 0);
   const archiveSessionSummary: SessionSummary = {
     id: session.id,
@@ -307,6 +310,14 @@ export function SessionViewPage({
               onOpenSidebar={onOpenSidebar}
               onArchive={() => void handleArchive(false)}
               archiving={archiving}
+            />
+            <SessionTaskDrawer
+              liveTask={liveTask}
+              taskHistory={session.task_history}
+              branchName={session.branch_name}
+              diffStats={diffStats}
+              tasksDone={tasksDone}
+              tasksTotal={tasksTotal}
             />
             <UnifiedFeed
               sessionId={session.id}
