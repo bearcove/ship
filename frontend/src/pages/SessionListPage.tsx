@@ -341,10 +341,14 @@ export function NewSessionDialog({
   open,
   onOpenChange,
   preselectedProject,
+  preselectedCaptainKind,
+  preselectedMateKind,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   preselectedProject?: string;
+  preselectedCaptainKind?: AgentKind;
+  preselectedMateKind?: AgentKind;
 }) {
   const navigate = useNavigate();
   const projects = useProjects().filter((p) => p.valid);
@@ -352,8 +356,10 @@ export function NewSessionDialog({
 
   const defaultProject = preselectedProject ?? (projects.length === 1 ? projects[0].name : "");
   const [projectName, setProjectName] = useState(defaultProject);
-  const [captainKind, setCaptainKind] = useState<AgentKind>({ tag: "Claude" });
-  const [mateKind, setMateKind] = useState<AgentKind>({ tag: "Claude" });
+  const [captainKind, setCaptainKind] = useState<AgentKind>(
+    preselectedCaptainKind ?? { tag: "Claude" },
+  );
+  const [mateKind, setMateKind] = useState<AgentKind>(preselectedMateKind ?? { tag: "Claude" });
   const [branch, setBranch] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -366,6 +372,8 @@ export function NewSessionDialog({
     setProjectName(defaultProject);
     setBranch("");
     setCreateError(null);
+    if (preselectedCaptainKind) setCaptainKind(preselectedCaptainKind);
+    if (preselectedMateKind) setMateKind(preselectedMateKind);
   }, [defaultProject, open]);
 
   useEffect(() => {
