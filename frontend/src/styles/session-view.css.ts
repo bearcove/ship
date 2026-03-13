@@ -508,6 +508,13 @@ export const sessionTopBarDivider = style({
   flexShrink: 0,
 });
 
+export const sessionTopBarActions = style({
+  display: "flex",
+  alignItems: "center",
+  gap: "var(--space-2)",
+  flexShrink: 0,
+});
+
 export const agentHeader = style({
   display: "flex",
   flexDirection: "column",
