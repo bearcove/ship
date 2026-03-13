@@ -1,5 +1,5 @@
 import { useId, useMemo, useState } from "react";
-import { Badge, Code, DropdownMenu, Flex, IconButton, Spinner, Text } from "@radix-ui/themes";
+import { Badge, Box, Code, DropdownMenu, Flex, IconButton, Spinner, Text } from "@radix-ui/themes";
 import {
   Archive,
   CaretDown,
@@ -22,14 +22,13 @@ import type {
 } from "../generated/ship";
 import { AgentModelPicker } from "./AgentModelPicker";
 import { AgentEffortPicker } from "./AgentEffortPicker";
+import { AgentKindIcon } from "./AgentKindIcon";
 import { MarkdownCodeBlock } from "./blocks/TextBlock";
 import {
   feedBubble,
   planStepRow,
   planStepText,
-  sessionHeaderAgentLabel,
-  sessionHeaderAgentRow,
-  sessionHeaderBranchMeta,
+  sessionHeaderAgentsRow,
   sessionHeaderCaret,
   sessionHeaderHistoryCaret,
   sessionHeaderDiffAdd,
@@ -42,6 +41,7 @@ import {
   sessionHeaderHistoryItem,
   sessionHeaderHistoryTitle,
   sessionHeaderHistoryTitleRow,
+  sessionHeaderInlineAvatar,
   sessionHeaderPanelInner,
   sessionHeaderProgressFlex,
   sessionHeaderRoot,
@@ -307,64 +307,41 @@ export function SessionHeader({
               )}
             </div>
 
-            {/* Agents */}
-            {(captain ?? mate) && (
-              <div>
-                <Text className={sessionHeaderSectionLabel} as="div">
-                  Agents
-                </Text>
-                <Flex direction="column" gap="2">
-                  {captain && (
-                    <div className={sessionHeaderAgentRow}>
-                      <Text size="1" color="gray" className={sessionHeaderAgentLabel}>
-                        Captain
-                      </Text>
-                      <AgentModelPicker sessionId={sessionId} agent={captain} />
-                      <AgentEffortPicker sessionId={sessionId} agent={captain} />
-                    </div>
-                  )}
-                  {mate && (
-                    <div className={sessionHeaderAgentRow}>
-                      <Text size="1" color="gray" className={sessionHeaderAgentLabel}>
-                        Mate
-                      </Text>
-                      <AgentModelPicker sessionId={sessionId} agent={mate} />
-                      <AgentEffortPicker sessionId={sessionId} agent={mate} />
-                    </div>
-                  )}
-                </Flex>
-              </div>
-            )}
-
-            {/* Branch + diff */}
-            <div>
-              <Text className={sessionHeaderSectionLabel} as="div">
-                Branch
-              </Text>
-              <div className={sessionHeaderBranchMeta}>
-                <Code variant="ghost" size="1">
-                  {branchName}
-                </Code>
-                {diffStats && (
-                  <>
-                    <Text size="1" color="gray">
-                      ·
-                    </Text>
-                    <Text size="1" className={sessionHeaderDiffAdd}>
-                      +{String(diffStats.lines_added)}
-                    </Text>
-                    <Text size="1" className={sessionHeaderDiffRemove}>
-                      -{String(diffStats.lines_removed)}
-                    </Text>
-                    {diffStats.files_changed > 0n && (
-                      <Text size="1" color="gray">
-                        · {String(diffStats.files_changed)} files
-                      </Text>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
+            {/* Agents + Branch */}
+            <Flex align="center" gap="2" className={sessionHeaderAgentsRow}>
+              {captain && (
+                <>
+                  <Box className={sessionHeaderInlineAvatar}>
+                    <AgentKindIcon kind={captain.kind} />
+                  </Box>
+                  <AgentModelPicker sessionId={sessionId} agent={captain} />
+                  <AgentEffortPicker sessionId={sessionId} agent={captain} />
+                </>
+              )}
+              {mate && (
+                <>
+                  <Box className={sessionHeaderInlineAvatar}>
+                    <AgentKindIcon kind={mate.kind} />
+                  </Box>
+                  <AgentModelPicker sessionId={sessionId} agent={mate} />
+                  <AgentEffortPicker sessionId={sessionId} agent={mate} />
+                </>
+              )}
+              <Box style={{ flex: 1 }} />
+              <Code variant="ghost" size="1">
+                {branchName}
+              </Code>
+              {diffStats && (
+                <>
+                  <Text size="1" className={sessionHeaderDiffAdd}>
+                    +{String(diffStats.lines_added)}
+                  </Text>
+                  <Text size="1" className={sessionHeaderDiffRemove}>
+                    -{String(diffStats.lines_removed)}
+                  </Text>
+                </>
+              )}
+            </Flex>
 
             {/* Current task description */}
             {liveTask && (
