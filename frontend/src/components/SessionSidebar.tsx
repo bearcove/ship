@@ -127,6 +127,7 @@ export function SessionSidebar({
   const [newSessionOpen, setNewSessionOpen] = useState(false);
   const { soundEnabled, setSoundEnabled } = useSoundEnabled();
   const clientLogs = useClientLogs();
+  const currentSession = sessions.find((s) => s.slug === currentSessionId);
 
   return (
     <>
@@ -147,7 +148,7 @@ export function SessionSidebar({
                 setNewSessionOpen(true);
               }}
             >
-              <Flex align="center" gap="1">
+              <Flex align="center" gap="1" pt="2">
                 <PlusIcon size={14} />
                 <Text size="2">New session</Text>
               </Flex>
@@ -237,7 +238,13 @@ export function SessionSidebar({
         </Flex>
 
         <AddProjectDialog open={addProjectOpen} onOpenChange={setAddProjectOpen} />
-        <NewSessionDialog open={newSessionOpen} onOpenChange={setNewSessionOpen} />
+        <NewSessionDialog
+          open={newSessionOpen}
+          onOpenChange={setNewSessionOpen}
+          preselectedProject={currentSession?.project}
+          preselectedCaptainKind={currentSession?.captain.kind}
+          preselectedMateKind={currentSession?.mate.kind}
+        />
       </Box>
     </>
   );
