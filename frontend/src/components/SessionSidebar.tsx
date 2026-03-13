@@ -140,19 +140,25 @@ export function SessionSidebar({
                 Ship
               </Text>
             </Link>
-            <Link
-              to="#"
-              style={{ textDecoration: "none", color: "inherit" }}
-              onClick={(e) => {
-                e.preventDefault();
-                setNewSessionOpen(true);
+            <button
+              style={{
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                textDecoration: "none",
+                color: "inherit",
+                padding: 0,
+                font: "inherit",
+                display: "flex",
+                alignItems: "center",
+                gap: "var(--space-1)",
+                paddingTop: "var(--space-2)",
               }}
+              onClick={() => setNewSessionOpen(true)}
             >
-              <Flex align="center" gap="1" pt="2">
-                <PlusIcon size={14} />
-                <Text size="2">New session</Text>
-              </Flex>
-            </Link>
+              <PlusIcon size={14} />
+              <Text size="2">New session</Text>
+            </button>
           </Flex>
         </div>
 
