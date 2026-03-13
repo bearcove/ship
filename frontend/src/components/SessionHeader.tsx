@@ -265,7 +265,7 @@ export function SessionHeader({
             {displayTitle}
           </Text>
           <Popover.Root open={switcherOpen} onOpenChange={setSwitcherOpen}>
-            <Popover.Trigger>
+            <Popover.Trigger asChild>
               <IconButton
                 variant="ghost"
                 color="gray"
@@ -308,7 +308,7 @@ export function SessionHeader({
             </Popover.Content>
           </Popover.Root>
           <DropdownMenu.Root>
-            <DropdownMenu.Trigger>
+            <DropdownMenu.Trigger asChild>
               <IconButton
                 variant="ghost"
                 color="gray"
