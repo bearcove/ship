@@ -704,6 +704,12 @@ export const sessionHeaderRow1 = style({
   alignItems: "center",
   gap: "var(--space-1)",
   padding: "var(--space-3) var(--space-3) var(--space-2) var(--space-3)",
+  cursor: "pointer",
+  selectors: {
+    "&:hover": {
+      background: "var(--gray-a2)",
+    },
+  },
 });
 
 export const sessionHeaderTitle = style({
