@@ -125,7 +125,12 @@ pub trait CaptainMcp {
     ) -> McpToolCallResponse;
 
     // r[captain.tool.steer]
-    async fn captain_steer(&self, message: String) -> McpToolCallResponse;
+    async fn captain_steer(
+        &self,
+        message: String,
+        new_plan: Option<Vec<PlanStepInput>>,
+        add_steps: Option<Vec<PlanStepInput>>,
+    ) -> McpToolCallResponse;
 
     // r[captain.tool.accept]
     async fn captain_accept(&self, summary: Option<String>) -> McpToolCallResponse;

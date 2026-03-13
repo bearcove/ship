@@ -1893,7 +1893,44 @@ Here is your task:
         &self,
         session_id: &SessionId,
         message: String,
+        new_plan: Option<Vec<PlanStepInput>>,
+        add_steps: Option<Vec<PlanStepInput>>,
     ) -> Result<String, String> {
+        if new_plan.is_some() && add_steps.is_some() {
+            return Err(
+                "new_plan and add_steps are mutually exclusive; provide at most one.".to_owned(),
+            );
+        }
+
+        // Apply plan changes before dispatching the steer.
+        let plan_change_note = if let Some(steps) = new_plan {
+            let new_steps = Self::build_plan_steps(steps);
+            {
+                let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                if let Some(session) = sessions.get_mut(session_id) {
+                    if let Some(task) = session.current_task.as_mut() {
+                        task.record.steps = new_steps;
+                    }
+                }
+            }
+            self.persist_session(session_id).await?;
+            Some("Plan replaced by captain.".to_owned())
+        } else if let Some(steps) = add_steps {
+            let extra_steps = Self::build_plan_steps(steps);
+            {
+                let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                if let Some(session) = sessions.get_mut(session_id) {
+                    if let Some(task) = session.current_task.as_mut() {
+                        task.record.steps.extend(extra_steps);
+                    }
+                }
+            }
+            self.persist_session(session_id).await?;
+            Some("Steps appended to plan by captain.".to_owned())
+        } else {
+            None
+        };
+
         // If the mate is blocked on a mid-task plan change, reject it and redirect.
         let pending_plan_change = self
             .pending_mcp_ops
@@ -1950,7 +1987,11 @@ Here is your task:
             }
         }
 
-        Ok("Steer sent to the mate.".to_owned())
+        if let Some(note) = plan_change_note {
+            Ok(format!("{note} Steer sent to the mate."))
+        } else {
+            Ok("Steer sent to the mate.".to_owned())
+        }
     }
 
     // r[captain.tool.accept]
@@ -6737,10 +6778,15 @@ impl CaptainMcp for CaptainMcpSessionService {
     }
 
     // r[captain.tool.steer]
-    async fn captain_steer(&self, message: String) -> McpToolCallResponse {
+    async fn captain_steer(
+        &self,
+        message: String,
+        new_plan: Option<Vec<PlanStepInput>>,
+        add_steps: Option<Vec<PlanStepInput>>,
+    ) -> McpToolCallResponse {
         Self::response(
             self.ship
-                .captain_tool_steer(&self.session_id, message)
+                .captain_tool_steer(&self.session_id, message, new_plan, add_steps)
                 .await,
         )
     }
