@@ -88,7 +88,8 @@ function buildSegments(blocks: BlockEntry[]): FeedSegment[] {
     (b) =>
       b.block.tag !== "PlanUpdate" &&
       b.block.tag !== "ToolCall" &&
-      !(b.block.tag === "Text" && b.block.source.tag === "AgentThought"),
+      !(b.block.tag === "Text" && b.block.source.tag === "AgentThought") &&
+      b.role.tag !== "Mate",
   );
   return visible.map((entry) => ({ kind: "single", entry }));
 }
