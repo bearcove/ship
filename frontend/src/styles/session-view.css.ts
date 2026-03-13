@@ -158,6 +158,119 @@ export const feedSystemMessageText = style({
   color: "var(--gray-9)",
 });
 
+export const taskRecapBoundary = style({
+  display: "flex",
+  flexDirection: "column",
+  gap: "var(--space-2)",
+  width: "auto",
+  marginLeft: "calc(var(--space-3) * -1)",
+  marginRight: "calc(var(--space-3) * -1)",
+  padding: "var(--space-2) var(--space-3) var(--space-3)",
+  borderTop: "2px solid var(--green-8)",
+  borderBottom: "1px solid var(--gray-a4)",
+  background: "linear-gradient(180deg, var(--green-a3) 0%, var(--gray-a2) 100%)",
+});
+
+export const taskRecapHeader = style({
+  display: "flex",
+  alignItems: "flex-start",
+  justifyContent: "space-between",
+  gap: "var(--space-3)",
+  flexWrap: "wrap",
+});
+
+export const taskRecapEyebrow = style({
+  display: "block",
+  fontSize: "11px",
+  lineHeight: 1.3,
+  textTransform: "uppercase",
+  letterSpacing: "0.08em",
+  fontWeight: 700,
+  color: "var(--green-11)",
+});
+
+export const taskRecapTitle = style({
+  display: "block",
+  marginTop: "2px",
+  fontSize: "var(--font-size-2)",
+  lineHeight: "var(--line-height-2)",
+  fontWeight: 600,
+  color: "var(--gray-12)",
+});
+
+export const taskRecapSummary = style({
+  flexShrink: 0,
+  fontFamily: monoFontStack,
+  fontSize: "var(--font-size-1)",
+  lineHeight: 1.5,
+  color: "var(--gray-12)",
+});
+
+export const taskRecapCommitList = style({
+  display: "flex",
+  flexDirection: "column",
+  gap: "var(--space-1)",
+  width: "100%",
+  minWidth: 0,
+});
+
+export const taskRecapCommitRow = style({
+  display: "flex",
+  flexDirection: "column",
+  gap: "var(--space-1)",
+  width: "100%",
+  minWidth: 0,
+});
+
+export const taskRecapCommitToggle = style({
+  display: "flex",
+  alignItems: "center",
+  gap: "var(--space-2)",
+  width: "100%",
+  minWidth: 0,
+  padding: "var(--space-1) 0",
+  border: "none",
+  background: "transparent",
+  color: "var(--gray-12)",
+  textAlign: "left",
+  font: "inherit",
+  cursor: "pointer",
+  selectors: {
+    "&:hover": {
+      color: "var(--gray-12)",
+    },
+  },
+});
+
+export const taskRecapCommitStatic = style({
+  display: "flex",
+  alignItems: "center",
+  gap: "var(--space-2)",
+  width: "100%",
+  minWidth: 0,
+  padding: "var(--space-1) 0",
+});
+
+export const taskRecapCommitHash = style({
+  flexShrink: 0,
+  fontFamily: monoFontStack,
+  fontSize: "var(--font-size-1)",
+  color: "var(--green-11)",
+});
+
+export const taskRecapCommitSubject = style({
+  minWidth: 0,
+  fontSize: "var(--font-size-2)",
+  lineHeight: "var(--line-height-2)",
+  color: "var(--gray-12)",
+});
+
+export const taskRecapCaret = style({
+  flexShrink: 0,
+  color: "var(--green-11)",
+  transition: "transform 0.15s ease",
+});
+
 export const feedToolGroupHeader = style({
   display: "flex",
   alignItems: "center",

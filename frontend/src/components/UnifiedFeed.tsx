@@ -39,6 +39,18 @@ import {
   diffAdd,
   diffRemove,
   diffContext,
+  taskRecapBoundary,
+  taskRecapHeader,
+  taskRecapEyebrow,
+  taskRecapTitle,
+  taskRecapSummary,
+  taskRecapCommitList,
+  taskRecapCommitRow,
+  taskRecapCommitToggle,
+  taskRecapCommitStatic,
+  taskRecapCommitHash,
+  taskRecapCommitSubject,
+  taskRecapCaret,
 } from "../styles/session-view.css";
 
 type TextBlockType = Extract<ContentBlock, { tag: "Text" }>;
@@ -161,72 +173,63 @@ function TaskRecapBlock({
   const { commits, stats } = block;
 
   return (
-    <Box
-      className={feedSystemMessage}
-      style={{
-        flexDirection: "column",
-        alignItems: "center",
-        gap: "var(--space-1)",
-        paddingTop: "var(--space-2)",
-        paddingBottom: "var(--space-2)",
-      }}
-    >
-      <Text style={{ fontSize: "var(--font-size-1)", color: "var(--gray-9)" }}>
-        <span style={{ fontWeight: 500 }}>Work accepted</span>
-        {duration != null && <span> · completed in {formatDuration(duration)}</span>}
-      </Text>
+    <Box className={taskRecapBoundary}>
+      <Flex className={taskRecapHeader} align="start" justify="between" gap="3">
+        <Box style={{ minWidth: 0 }}>
+          <Text className={taskRecapEyebrow}>Phase break</Text>
+          <Text className={taskRecapTitle}>Previous task accepted</Text>
+          {duration != null && (
+            <Text style={{ fontSize: "var(--font-size-1)", color: "var(--gray-9)" }}>
+              Completed in {formatDuration(duration)}
+            </Text>
+          )}
+        </Box>
+        {stats && (
+          <Text className={taskRecapSummary}>
+            <span style={{ color: "var(--green-11)" }}>+{stats.insertions}</span>{" "}
+            <span style={{ color: "var(--red-11)" }}>−{stats.deletions}</span> across{" "}
+            {stats.files_changed} file{stats.files_changed !== 1 ? "s" : ""}
+          </Text>
+        )}
+      </Flex>
       {commits.length > 0 && (
-        <Box
-          style={{
-            fontFamily: "var(--font-mono, monospace)",
-            fontSize: "var(--font-size-1)",
-            color: "var(--gray-10)",
-            textAlign: "center",
-            width: "100%",
-            minWidth: 0,
-          }}
-        >
-          {commits.map((c) => (
-            <Box key={c.hash}>
-              <Box
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "var(--space-1)",
-                  cursor: c.diff ? "pointer" : undefined,
-                }}
-                onClick={() => c.diff && setExpandedHash(expandedHash === c.hash ? null : c.hash)}
-              >
+        <Box className={taskRecapCommitList}>
+          {commits.map((c) => {
+            const expanded = expandedHash === c.hash;
+            const commitLine = (
+              <>
                 {c.diff && (
                   <CaretRight
-                    size={10}
-                    style={{
-                      color: "var(--gray-8)",
-                      transition: "transform 0.15s ease",
-                      transform: expandedHash === c.hash ? "rotate(90deg)" : "rotate(0deg)",
-                      flexShrink: 0,
-                    }}
+                    size={12}
+                    className={taskRecapCaret}
+                    style={{ transform: expanded ? "rotate(90deg)" : "rotate(0deg)" }}
                   />
                 )}
-                <Text style={{ color: "var(--gray-8)" }}>{c.hash}</Text> <Text>{c.subject}</Text>
+                <Text className={taskRecapCommitHash}>{c.hash}</Text>
+                <Text className={taskRecapCommitSubject}>{c.subject}</Text>
+              </>
+            );
+
+            return (
+              <Box key={c.hash} className={taskRecapCommitRow}>
+                {c.diff ? (
+                  <button
+                    type="button"
+                    className={taskRecapCommitToggle}
+                    onClick={() => setExpandedHash(expanded ? null : c.hash)}
+                  >
+                    {commitLine}
+                  </button>
+                ) : (
+                  <Flex className={taskRecapCommitStatic} align="center" gap="2">
+                    {commitLine}
+                  </Flex>
+                )}
+                {expanded && c.diff && <CommitDiffView diff={c.diff} />}
               </Box>
-              {expandedHash === c.hash && c.diff && <CommitDiffView diff={c.diff} />}
-            </Box>
-          ))}
+            );
+          })}
         </Box>
-      )}
-      {stats && (
-        <Text
-          style={{
-            fontSize: "var(--font-size-1)",
-            color: "var(--gray-9)",
-            fontFamily: "var(--font-mono, monospace)",
-          }}
-        >
-          <span style={{ color: "var(--green-9)" }}>+{stats.insertions}</span>{" "}
-          <span style={{ color: "var(--red-9)" }}>−{stats.deletions}</span> across{" "}
-          {stats.files_changed} file{stats.files_changed !== 1 ? "s" : ""}
-        </Text>
       )}
     </Box>
   );
