@@ -250,27 +250,22 @@ export function SessionHeader({
               </DropdownMenu.Item>
             </DropdownMenu.Content>
           </DropdownMenu.Root>
-          {expanded ? (
-            <CaretDown size={11} className={sessionHeaderCaret} />
-          ) : (
-            <CaretRight size={11} className={sessionHeaderCaret} />
-          )}
         </div>
 
         {/* Row 2: in-progress step + progress + diff badge + chevron (clickable) */}
         <div className={sessionHeaderRow2} onClick={() => setExpanded((v) => !v)}>
-          {inProgressStep && (
-            <Text size="1" color="gray" className={sessionHeaderRow2Title}>
-              {inProgressStep.title || inProgressStep.description}
-            </Text>
-          )}
-          {progressDots}
-          {diffBadge}
-          {expanded ? (
-            <CaretDown size={11} className={sessionHeaderCaret} />
-          ) : (
-            <CaretRight size={11} className={sessionHeaderCaret} />
-          )}
+          <Text size="1" color="gray" className={sessionHeaderRow2Title}>
+            {inProgressStep?.title || inProgressStep?.description || "No plan yet"}
+          </Text>
+          <Flex align="center" gap="2">
+            {progressDots}
+            {diffBadge}
+            {expanded ? (
+              <CaretDown size={11} className={sessionHeaderCaret} />
+            ) : (
+              <CaretRight size={11} className={sessionHeaderCaret} />
+            )}
+          </Flex>
         </div>
 
         {/* Expanded panel */}
