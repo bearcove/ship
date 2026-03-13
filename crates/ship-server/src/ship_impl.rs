@@ -4836,26 +4836,62 @@ Here is your task:
             .await
     }
 
-    async fn interrupt_captain_with_parts(
-        &self,
-        session_id: &SessionId,
-        parts: Vec<PromptContentPart>,
-    ) -> Result<ship_core::StopReason, String> {
+    async fn cancel_captain_prompt(&self, session_id: &SessionId) -> Result<(), String> {
         let handle = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let session = sessions
                 .get(session_id)
                 .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-            session
-                .captain_handle
-                .clone()
-                .ok_or_else(|| "captain agent not ready".to_owned())?
+            session.captain_handle.clone()
         };
 
+        if let Some(handle) = handle {
+            self.agent_driver
+                .cancel(&handle)
+                .await
+                .map_err(|error| error.message)?;
+        }
+
+        Ok(())
+    }
+
+    async fn cancel_mate_prompt(&self, session_id: &SessionId) -> Result<(), String> {
+        let handle = {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions
+                .get_mut(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            if let Some(task) = session.current_task.as_mut() {
+                task.pending_mate_guidance = None;
+            }
+            if matches!(&session.mate.state, AgentState::Working { .. }) {
+                session.mate_handle.clone()
+            } else {
+                None
+            }
+        };
+
+        self.persist_session(session_id).await?;
+
+        if let Some(handle) = handle {
+            self.agent_driver
+                .cancel(&handle)
+                .await
+                .map_err(|error| error.message)?;
+        }
+
+        Ok(())
+    }
+
+    async fn interrupt_captain_with_parts(
+        &self,
+        session_id: &SessionId,
+        parts: Vec<PromptContentPart>,
+    ) -> Result<ship_core::StopReason, String> {
         // Cancel any in-flight prompt — this makes the current prompt()
         // call return with StopReason::Cancelled, which resets the
         // prompt_in_flight flag.
-        let _ = self.agent_driver.cancel(&handle).await;
+        let _ = self.cancel_captain_prompt(session_id).await;
 
         self.prompt_agent(session_id, Role::Captain, parts).await
     }
@@ -4986,9 +5022,10 @@ Here is your task:
                 let session = sessions
                     .get_mut(session_id)
                     .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-                transition_task(session, TaskStatus::Cancelled)
-                    .map_err(|error| error.to_string())?;
-                archive_terminal_task(session);
+                if matches!(current_task_status(session), Ok(TaskStatus::Working)) {
+                    transition_task(session, TaskStatus::Assigned)
+                        .map_err(|error| error.to_string())?;
+                }
             }
             ship_core::StopReason::ContextExhausted => {
                 let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
@@ -5716,32 +5753,39 @@ impl Ship for ShipImpl {
 
     // r[proto.interrupt-captain]
     async fn interrupt_captain(&self, session: SessionId) {
-        let handle = {
-            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
-            let Some(active) = sessions.get(&session) else {
-                return;
-            };
-            active.captain_handle.clone()
-        };
-        if let Some(handle) = handle {
-            let _ = self.agent_driver.cancel(&handle).await;
+        if let Err(error) = self.cancel_captain_prompt(&session).await {
+            Self::log_error("interrupt_captain", &error);
         }
     }
 
     // r[proto.stop-agents]
     async fn stop_agents(&self, session: SessionId) {
-        let (captain_handle, mate_handle) = {
+        enum StopTarget {
+            Captain,
+            Mate,
+        }
+
+        let target = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let Some(active) = sessions.get(&session) else {
                 return;
             };
-            (active.captain_handle.clone(), active.mate_handle.clone())
+            if matches!(&active.captain.state, AgentState::Working { .. }) {
+                Some(StopTarget::Captain)
+            } else if matches!(&active.mate.state, AgentState::Working { .. }) {
+                Some(StopTarget::Mate)
+            } else {
+                None
+            }
         };
-        if let Some(handle) = captain_handle {
-            let _ = self.agent_driver.cancel(&handle).await;
-        }
-        if let Some(handle) = mate_handle {
-            let _ = self.agent_driver.cancel(&handle).await;
+
+        let result = match target {
+            Some(StopTarget::Captain) => self.cancel_captain_prompt(&session).await,
+            Some(StopTarget::Mate) => self.cancel_mate_prompt(&session).await,
+            None => Ok(()),
+        };
+        if let Err(error) = result {
+            Self::log_error("stop_agents", &error);
         }
     }
 
