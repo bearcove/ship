@@ -64,15 +64,22 @@ requester session, target project, requested outcome, and current coordination
 state.
 
 r[dependency.request.approval]
-Ship MUST NOT create a dependency child session until the human explicitly
-approves the dependency request. Proposing the request and creating the child
-session are separate steps.
+When dependency child-session creation is proposed, Ship MUST place the
+dependency request in a pending human-action phase. Ship MUST NOT create the
+dependency child session until the human explicitly approves the request.
+Proposing the request and creating the child session are separate steps.
 
 r[dependency.request.blocked]
 A requesting session MAY enter a coordination-blocked state while a dependency
 request is awaiting approval or being worked by a linked child session. This
 blocked state is distinct from `task.status.enum`; it does not change the
 underlying task lifecycle values.
+
+r[session.coordination-state]
+The session model MUST expose a first-class coordination state separate from
+`task.status.enum`. At minimum it MUST distinguish `Clear`,
+`BlockedAwaitingDependencyApproval`, `BlockedOnDependencyWork`, and
+`BlockedAwaitingDependencyFulfillment`.
 
 r[dependency.request.persistence]
 Dependency requests, parent/child session links, and coordination-blocked
@@ -94,8 +101,9 @@ requester to consume, including downstream actions such as merge, publish,
 release, vendoring, or version updates.
 
 r[dependency.request.fulfillment-approval]
-Transitioning a dependency request into its usable state MUST require explicit
-human approval for the relevant downstream action. Ship MUST NOT infer merge,
+When a dependency request is proposed for transition into its usable state,
+Ship MUST place it in a pending human-action phase and require explicit human
+approval for the relevant downstream action. Ship MUST NOT infer merge,
 publish, release, or update approval from child-session completion alone.
 
 r[dependency.request.unblock]
@@ -182,11 +190,20 @@ r[view.session-list]
 The UI MUST display a session list showing all sessions, their agent states,
 and current tasks at a glance.
 
+r[view.session-list.coordination]
+The session list MUST indicate when a session is coordination-blocked or
+awaiting human action on a dependency request, including whether the pending
+action is dependency-session creation or fulfillment.
+
 ### Session View
 
 r[view.session]
 The UI MUST display a session view with captain and mate panels side by side,
 plus task controls.
+
+r[view.session.coordination]
+The session view MUST display the session's current coordination state and any
+linked dependency requests relevant to that session.
 
 ### Agent Panel
 
@@ -235,6 +252,10 @@ Session identifiers MUST be ULIDs wrapped in a `SessionId` newtype.
 r[proto.id.task]
 Task identifiers MUST be ULIDs wrapped in a `TaskId` newtype.
 
+r[proto.id.dependency-request]
+Dependency request identifiers MUST be ULIDs wrapped in a
+`DependencyRequestId` newtype.
+
 ### Operations
 
 r[proto.id.project]
@@ -267,7 +288,9 @@ uses this to populate the branch selector in the create-session dialog.
 
 r[proto.list-sessions]
 The protocol MUST support a `list_sessions` operation that returns summaries
-of all active sessions.
+of all active sessions. Each summary MUST include the session's current
+coordination state so the UI can distinguish clear sessions from ones blocked
+on dependency approval, dependency work, or dependency fulfillment.
 
 r[proto.subscribe-global-events]
 The protocol MUST support a `subscribe_global_events` operation that streams
@@ -305,6 +328,14 @@ Escape key.
 r[proto.resolve-permission]
 The protocol MUST support a `resolve_permission` operation to respond to agent
 permission requests.
+
+r[proto.resolve-dependency-request]
+The protocol MUST support a `resolve_dependency_request` operation that takes a
+requester session ID, a dependency request ID, and a human decision. It is
+used both to approve or reject dependency child-session creation and to
+approve or reject the later fulfillment/usable-state transition. The backend
+MUST persist the decision, update the dependency request record and derived
+coordination state, and emit the corresponding dependency/coordination events.
 
 r[proto.reply-to-human]
 The protocol MUST support a `reply_to_human` operation that takes a session ID
@@ -348,18 +379,20 @@ be skipped with a warning rather than preventing all sessions from loading.
 r[proto.get-session]
 The protocol MUST support a `get_session` operation that returns the session's
 structural state: agent snapshots, current task metadata and status, task
-history summaries, autonomy mode, and control status. This provides the
-skeleton; content blocks come via event replay.
+history summaries, autonomy mode, control status, current coordination state,
+and dependency request summaries. This provides the skeleton; content blocks
+come via event replay.
 
 r[proto.hydration-flow]
 Frontend hydration MUST follow this sequence:
 1. Call `get_session` for structural state (project, branch, agent kinds,
-   autonomy mode, task metadata, agent snapshots). This populates the UI
-   shell immediately — the user sees the layout before content loads.
+   autonomy mode, task metadata, agent snapshots, coordination state, and
+   dependency request summaries). This populates the UI shell immediately —
+   the user sees the layout before content loads.
 2. Open the event subscription channel via `subscribe_events`. The backend
    replays the current task's event log (per `event.subscribe.replay`),
    which the client-side reducer (per `event.client.reducer`) processes to
-   build the block stores and derive agent/task states.
+   build the block stores and derive agent/task/coordination states.
 3. After replay, the backend sends `ReplayComplete`. The frontend
    transitions from "loading" to "live" and begins processing live events.
 
@@ -511,12 +544,13 @@ r[event.subscribe.replay]
 When a new subscriber connects, the backend MUST replay all `SessionEvent`s
 from the current task's event log before streaming live events. This includes
 block events (`BlockAppend`, `BlockPatch`) AND top-level events
-(`AgentStateChanged`, `TaskStatusChanged`, `ContextUpdated`, `TaskStarted`).
-The replay starts from the `TaskStarted` event for the current task — NOT
-from `seq 0`. This ensures late-joining browsers see the full current-task
-state without a separate hydration call. Replay events use the same types and
-sequence numbers as originally emitted — the frontend does not distinguish
-between replayed and live events.
+(`AgentStateChanged`, `TaskStatusChanged`, `ContextUpdated`, `TaskStarted`,
+`CoordinationStateChanged`, `DependencyRequestChanged`). The replay starts
+from the `TaskStarted` event for the current task — NOT from `seq 0`. This
+ensures late-joining browsers see the full current-task state without a
+separate hydration call. Replay events use the same types and sequence
+numbers as originally emitted — the frontend does not distinguish between
+replayed and live events.
 
 ### Event Envelope
 
@@ -620,6 +654,17 @@ The system MUST emit a `TaskStarted` event when a new task is assigned. The
 payload includes the task ID and task description. On receiving this, the
 frontend MUST clear both block stores. The sequence number does NOT reset —
 it continues from the session's current value.
+
+r[event.coordination-state-changed]
+The system MUST emit `CoordinationStateChanged` when a session's first-class
+coordination state changes. The payload includes the new coordination state
+and the blocking dependency request ID, if any. This is a top-level event.
+
+r[event.dependency-request-changed]
+The system MUST emit `DependencyRequestChanged` whenever a dependency request
+linked to the session is created or changes phase, linkage, pending human
+approval status, or resolution. The frontend uses this to render dependency
+request approval UI and restore dependency state after replay.
 
 r[event.agent-effort-changed]
 The system MUST emit an `AgentEffortChanged` event when an agent's thinking
@@ -726,15 +771,15 @@ immutable state at the end.
 r[event.replay.snapshot-optimization]
 As a post-v1 optimization, the backend MAY replace event-by-event replay
 with a single `Snapshot` control message containing the full materialized
-session state: both block stores, agent states, task status, context levels,
-and the current sequence number. This gives the subscriber enough to
-initialize its `SessionViewState` without processing individual events. If
-implemented, `Snapshot` MUST be followed by `ReplayComplete`, and the
-subscriber MUST set `lastSeq` from the snapshot so it can detect gaps in
-subsequent live events. Like `ReplayComplete`, `Snapshot` is a
-subscription-local control message, not a `SessionEvent`. This is NOT
-required for v1 and MUST NOT be implemented until the event-by-event replay
-is proven to be a bottleneck.
+session state: both block stores, agent states, task status, coordination
+state, dependency request summaries, context levels, and the current sequence
+number. This gives the subscriber enough to initialize its `SessionViewState`
+without processing individual events. If implemented, `Snapshot` MUST be
+followed by `ReplayComplete`, and the subscriber MUST set `lastSeq` from the
+snapshot so it can detect gaps in subsequent live events. Like
+`ReplayComplete`, `Snapshot` is a subscription-local control message, not a
+`SessionEvent`. This is NOT required for v1 and MUST NOT be implemented until
+the event-by-event replay is proven to be a bottleneck.
 
 ### Multi-Subscriber Replay Behavior
 
@@ -814,6 +859,8 @@ containing:
 - `mateState`: current `AgentState` for the mate
 - `taskStatus`: current task status (or null if no active task)
 - `taskId`: current task ID (or null)
+- `coordinationState`: current session coordination state
+- `dependencyRequests`: current dependency request summaries for the session
 - `captainContext`: context remaining percentage (or null)
 - `mateContext`: context remaining percentage (or null)
 - `lastSeq`: last processed sequence number
@@ -832,6 +879,9 @@ The reducer MUST handle every `SessionEvent` variant:
   the patch, produce a new block object (immutable update)
 - `AgentStateChanged` → update `captainState` or `mateState`
 - `TaskStatusChanged` → update `taskStatus`
+- `CoordinationStateChanged` → update `coordinationState`
+- `DependencyRequestChanged` → upsert the dependency request summary in
+  `dependencyRequests`
 - `ContextUpdated` → update `captainContext` or `mateContext`
 - `TaskStarted` (per `event.task-started`) → clear both block stores, set
   new `taskId` and `taskStatus`. `lastSeq` is NOT reset.
@@ -857,10 +907,11 @@ previous connection.
 r[event.client.hydration-sequence]
 On navigating to a session view, the frontend MUST:
 1. Call `get_session` to get the structural skeleton (project, branch,
-   agent kinds, autonomy mode, task metadata). This populates the UI
-   chrome immediately.
+   agent kinds, autonomy mode, task metadata, coordination state, and
+   dependency request summaries). This populates the UI chrome immediately.
 2. Open the event subscription channel. The backend replays events, which
-   the reducer processes to build the block stores and update agent states.
+   the reducer processes to build the block stores and update agent,
+   coordination, and dependency-request state.
 3. On `ReplayComplete`, the UI transitions from "loading" to "live".
 
 This two-phase approach (per `proto.hydration-flow`) means the user sees
@@ -1355,6 +1406,12 @@ r[approval.request.blocking]
 The ACP `request_permission` call MUST block until the human responds. The
 agent is paused during this time.
 
+r[approval.dependency-request]
+Dependency-session creation and dependency fulfillment approvals MUST use the
+explicit dependency-request flow (`proto.resolve-dependency-request`,
+`event.dependency-request-changed`, `ui.dependency-request.panel`), not ACP
+permission requests or `reply_to_human`.
+
 ### Permission Policies
 
 r[approval.policy.read-default]
@@ -1525,6 +1582,16 @@ button), and two actions: Approve (sends `"approved"` via `reply_to_human`)
 and Request Changes (opens a text field to enter feedback, then sends that
 text via `reply_to_human`). The panel is dismissed when `HumanReviewCleared`
 is received.
+
+## Dependency Request Panel
+
+r[ui.dependency-request.panel]
+When a dependency request enters a pending human-action phase, the UI MUST
+display a blocking approval panel in the requester session showing the action
+kind (`CreateChildSession` or `MarkDependencyUsable`), the requested outcome,
+and the target project or linked child session. Approve and reject actions
+MUST call `resolve_dependency_request`. The panel updates or disappears when
+the dependency request leaves its pending human-action phase.
 
 ## Session Titles
 

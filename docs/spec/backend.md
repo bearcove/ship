@@ -297,9 +297,10 @@ backend re-sends the log entries in order.
 
 r[backend.materialized-state]
 The backend MUST also maintain a materialized `SessionState` that represents
-the current state of the session: agent states, current task status, block
-stores (per role), context levels, pending permissions. This materialized
-state is updated synchronously after each event is appended to the log.
+the current state of the session: agent states, current task status,
+coordination state, dependency request summaries, block stores (per role),
+context levels, and pending permissions. This materialized state is updated
+synchronously after each event is appended to the log.
 
 r[backend.event-pipeline]
 Every ACP notification MUST flow through a single pipeline:
@@ -318,6 +319,8 @@ The persisted session record in the durable store MUST contain:
 - Session config (project, branch, agent kinds, autonomy mode)
 - Materialized agent states (for quick `get_session` responses on restart)
 - Current task metadata (id, description, status)
+- Current coordination state and dependency request summaries relevant to the
+  session, including any pending human-action phase
 - Current task event log (the full list of events, for replay)
 - Task history (completed tasks with metadata, no event logs — those are
   discarded when a task completes)
