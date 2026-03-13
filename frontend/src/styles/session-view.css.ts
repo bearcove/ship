@@ -46,12 +46,17 @@ export const unifiedFeedStream = style({
   display: "flex",
   flexDirection: "column",
   gap: "var(--space-2)",
-  padding: "var(--space-3)",
+  paddingTop: "var(--space-3)",
   paddingBottom: "var(--space-2)",
+});
+
+export const feedContentColumn = style({
   maxWidth: "640px",
   width: "100%",
   marginLeft: "auto",
   marginRight: "auto",
+  paddingLeft: "var(--space-3)",
+  paddingRight: "var(--space-3)",
 });
 
 export const agentAvatarWrapper = style({
@@ -342,7 +347,7 @@ export const liveBubblesRow = style({
   display: "flex",
   flexDirection: "column",
   alignItems: "center",
-  padding: "0 var(--space-3) var(--space-2)",
+  paddingBottom: "var(--space-2)",
   gap: "var(--space-2)",
   flexShrink: 0,
 });
@@ -478,6 +483,10 @@ export const appColLeft = style({
 
 export const appColCenter = style({
   overflow: "hidden",
+  background: "var(--color-background)",
+  borderLeft: "1px solid var(--gray-a5)",
+  borderRight: "1px solid var(--gray-a5)",
+  boxShadow: "0 0 40px rgba(0, 0, 0, 0.08)",
 });
 
 export const appColRight = style({

@@ -6,7 +6,6 @@ export const sidebarRoot = style({
   flexShrink: 0,
   display: "flex",
   flexDirection: "column",
-  borderRight: "1px solid var(--gray-a5)",
   overflow: "hidden",
   "@media": {
     "(max-width: 700px)": {

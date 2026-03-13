@@ -46,6 +46,7 @@ import {
   unifiedFeedRoot,
   unifiedFeedScroll,
   unifiedFeedStream,
+  feedContentColumn,
   userAvatar,
   userAvatarSpacer,
   feedBubbleWithActions,
@@ -789,66 +790,68 @@ export function UnifiedFeed({
             <ArrowDown size={16} />
           </button>
         )}
-        <Box className={unifiedFeedStream}>
-          {showStartupFeed && startupState && <StartupFeedState startupState={startupState} />}
+        <Box className={feedContentColumn}>
+          <Box className={unifiedFeedStream}>
+            {showStartupFeed && startupState && <StartupFeedState startupState={startupState} />}
 
-          {truncated && (
-            <Flex align="center" justify="center" py="2">
-              <Text size="1" color="gray">
-                Showing last {MAX_RENDERED_BLOCKS} of {blocks.length} blocks
-              </Text>
-            </Flex>
-          )}
+            {truncated && (
+              <Flex align="center" justify="center" py="2">
+                <Text size="1" color="gray">
+                  Showing last {MAX_RENDERED_BLOCKS} of {blocks.length} blocks
+                </Text>
+              </Flex>
+            )}
 
-          {segments.map((seg, idx) => {
-            const agentRole = segmentAgentRole(seg);
-            const agentForBlock =
-              agentRole?.tag === "Captain"
-                ? captain
-                : agentRole?.tag === "Mate"
-                  ? mate
-                  : seg.entry.role.tag === "Captain"
-                    ? captain
-                    : mate;
-            return (
-              <Fragment key={seg.entry.blockId}>
-                <SingleBlock
-                  entry={seg.entry}
-                  sessionId={sessionId}
-                  lastUnresolvedPermBlockId={lastUnresolvedPermBlockId}
-                  agentForBlock={agentForBlock}
-                  isLast={idx === segments.length - 1}
-                  userAvatarUrl={userAvatarUrl}
-                  taskCompletedDuration={taskCompletedDuration}
-                  debugMode={debugMode}
-                />
-                {debugMode && <RawBlockDebug entry={seg.entry} />}
-              </Fragment>
-            );
-          })}
-        </Box>
+            {segments.map((seg, idx) => {
+              const agentRole = segmentAgentRole(seg);
+              const agentForBlock =
+                agentRole?.tag === "Captain"
+                  ? captain
+                  : agentRole?.tag === "Mate"
+                    ? mate
+                    : seg.entry.role.tag === "Captain"
+                      ? captain
+                      : mate;
+              return (
+                <Fragment key={seg.entry.blockId}>
+                  <SingleBlock
+                    entry={seg.entry}
+                    sessionId={sessionId}
+                    lastUnresolvedPermBlockId={lastUnresolvedPermBlockId}
+                    agentForBlock={agentForBlock}
+                    isLast={idx === segments.length - 1}
+                    userAvatarUrl={userAvatarUrl}
+                    taskCompletedDuration={taskCompletedDuration}
+                    debugMode={debugMode}
+                  />
+                  {debugMode && <RawBlockDebug entry={seg.entry} />}
+                </Fragment>
+              );
+            })}
+          </Box>
 
-        <Box className={liveBubblesRow}>
-          {captainWorking && (
-            <ThinkingBubble
-              sessionId={sessionId}
-              avatarSrc={captainAvatar}
-              agentName="Captain"
-              thinkingTokens={thinkingTokens}
-              toolsOk={toolsOk}
-              toolsFailed={toolsFailed}
-            />
-          )}
-          {mateWorking && (
-            <ThinkingBubble
-              sessionId={sessionId}
-              avatarSrc={mateAvatar}
-              agentName="Mate"
-              thinkingTokens={mateThinkingTokens}
-              toolsOk={mateToolsOk}
-              toolsFailed={mateToolsFailed}
-            />
-          )}
+          <Box className={liveBubblesRow}>
+            {captainWorking && (
+              <ThinkingBubble
+                sessionId={sessionId}
+                avatarSrc={captainAvatar}
+                agentName="Captain"
+                thinkingTokens={thinkingTokens}
+                toolsOk={toolsOk}
+                toolsFailed={toolsFailed}
+              />
+            )}
+            {mateWorking && (
+              <ThinkingBubble
+                sessionId={sessionId}
+                avatarSrc={mateAvatar}
+                agentName="Mate"
+                thinkingTokens={mateThinkingTokens}
+                toolsOk={mateToolsOk}
+                toolsFailed={mateToolsFailed}
+              />
+            )}
+          </Box>
         </Box>
       </Box>
     </Box>

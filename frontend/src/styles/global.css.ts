@@ -55,7 +55,7 @@ globalStyle("html", {
   backgroundColor: "#111113",
   "@media": {
     "(prefers-color-scheme: light)": {
-      backgroundColor: "#ffffff",
+      backgroundColor: "#ebebeb",
     },
   },
 });
@@ -66,6 +66,12 @@ globalStyle(".radix-themes", {
     "--heading-font-family": sansFontStack,
     "--code-font-family": monoFontStack,
     "--strong-font-family": sansFontStack,
+  },
+  backgroundColor: "#f0eff2",
+  "@media": {
+    "(prefers-color-scheme: dark)": {
+      backgroundColor: "#111113",
+    },
   },
 });
 
