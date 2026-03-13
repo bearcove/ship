@@ -1471,6 +1471,73 @@ export const textBlockCodeFallback = style({
   overflowX: "auto",
 });
 
+// ─── Task description prose ───────────────────────────────────────────────────
+// Mirrors textBlockRoot's conventions at font-size-2 / line-height-2
+
+export const taskDescriptionRoot = style({
+  fontSize: "var(--font-size-2)",
+  lineHeight: "var(--line-height-2)",
+  color: "var(--gray-12)",
+});
+
+globalStyle(`${taskDescriptionRoot} :where(p, ul, ol, blockquote)`, {
+  margin: "0 0 var(--space-2)",
+});
+
+globalStyle(
+  `${taskDescriptionRoot} :where(p:last-child, ul:last-child, ol:last-child, blockquote:last-child)`,
+  {
+    marginBottom: "0",
+  },
+);
+
+globalStyle(`${taskDescriptionRoot} :where(ul, ol)`, {
+  paddingLeft: "var(--space-4)",
+});
+
+globalStyle(`${taskDescriptionRoot} :where(pre)`, {
+  margin: 0,
+});
+
+globalStyle(`${taskDescriptionRoot} a`, {
+  color: "var(--gray-12)",
+  textDecoration: "underline",
+  textDecorationColor: "var(--gray-a7)",
+  textUnderlineOffset: "2px",
+});
+
+globalStyle(`${taskDescriptionRoot} blockquote`, {
+  borderLeft: "3px solid var(--gray-a6)",
+  paddingLeft: "var(--space-3)",
+  color: "var(--gray-11)",
+});
+
+globalStyle(`${taskDescriptionRoot} table`, {
+  borderCollapse: "collapse",
+  width: "100%",
+  margin: "var(--space-2) 0",
+  fontSize: "var(--font-size-1)",
+});
+
+globalStyle(`${taskDescriptionRoot} :where(th, td)`, {
+  border: "1px solid var(--gray-a5)",
+  padding: "var(--space-1) var(--space-2)",
+  textAlign: "left",
+});
+
+globalStyle(`${taskDescriptionRoot} th`, {
+  background: "var(--gray-a3)",
+  fontWeight: "var(--font-weight-medium)",
+});
+
+globalStyle(`${taskDescriptionRoot} code:not(pre > code)`, {
+  fontFamily: monoFontStack,
+  fontSize: "0.875em",
+  background: "var(--gray-a3)",
+  borderRadius: "var(--radius-1)",
+  padding: "0.1em 0.3em",
+});
+
 export const steerReviewCard = style({
   margin: "var(--space-2) var(--space-4)",
   flexShrink: 0,

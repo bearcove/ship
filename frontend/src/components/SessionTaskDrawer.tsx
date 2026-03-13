@@ -1,7 +1,10 @@
 import { useId, useMemo, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Badge, Box, Code, Flex, Text } from "@radix-ui/themes";
 import { CaretDown, CaretRight } from "@phosphor-icons/react";
 import type { TaskRecord, TaskStatus, WorktreeDiffStats } from "../generated/ship";
+import { taskDescriptionRoot } from "../styles/session-view.css";
 
 const STATUS_COLOR = {
   Assigned: "blue",
@@ -24,29 +27,107 @@ function TaskStatusBadge({ status }: { status: TaskStatus }) {
   );
 }
 
-function TaskListItem({ task, label }: { task: TaskRecord; label: string }) {
+const mdComponents: React.ComponentProps<typeof ReactMarkdown>["components"] = {
+  code({ children, className }: { children?: React.ReactNode; className?: string }) {
+    const isBlock =
+      Boolean(className?.startsWith("language-")) || String(children ?? "").includes("\n");
+    if (isBlock) {
+      return (
+        <pre>
+          <code>{children}</code>
+        </pre>
+      );
+    }
+    return <Code size="1">{children}</Code>;
+  },
+};
+
+function TaskListItem({
+  task,
+  label,
+  defaultExpanded = false,
+}: {
+  task: TaskRecord;
+  label: string;
+  defaultExpanded?: boolean;
+}) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  const headerId = useId();
+  const bodyId = useId();
+
   return (
     <Flex
       direction="column"
-      gap="1"
       style={{
-        padding: "var(--space-2) 0",
         borderTop: "1px solid var(--gray-a4)",
         minWidth: 0,
       }}
     >
-      <Flex align="center" gap="2" wrap="wrap">
-        <Text size="1" color="gray">
-          {label}
-        </Text>
-        <TaskStatusBadge status={task.status} />
-      </Flex>
-      <Text size="2" weight="medium" style={{ lineHeight: 1.35 }}>
-        {task.title}
-      </Text>
-      <Text size="1" color="gray" style={{ lineHeight: 1.4 }}>
-        {task.description}
-      </Text>
+      <button
+        type="button"
+        id={headerId}
+        aria-expanded={expanded}
+        aria-controls={bodyId}
+        onClick={() => setExpanded((v) => !v)}
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          gap: "var(--space-2)",
+          width: "100%",
+          padding: "var(--space-2) 0",
+          border: 0,
+          background: "transparent",
+          color: "inherit",
+          textAlign: "left",
+          cursor: "pointer",
+        }}
+      >
+        {expanded ? (
+          <CaretDown size={11} style={{ color: "var(--gray-10)", flexShrink: 0, marginTop: 3 }} />
+        ) : (
+          <CaretRight size={11} style={{ color: "var(--gray-10)", flexShrink: 0, marginTop: 3 }} />
+        )}
+        <Flex direction="column" gap="1" style={{ minWidth: 0, flex: 1 }}>
+          <Flex align="center" gap="2" wrap="wrap">
+            <Text size="1" color="gray">
+              {label}
+            </Text>
+            <TaskStatusBadge status={task.status} />
+          </Flex>
+          <Text size="2" weight="medium" as="div" style={{ lineHeight: 1.35 }}>
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+              {task.title}
+            </ReactMarkdown>
+          </Text>
+        </Flex>
+      </button>
+
+      {expanded && (
+        <Box
+          id={bodyId}
+          role="region"
+          aria-labelledby={headerId}
+          style={{
+            paddingLeft: "calc(11px + var(--space-2))",
+            paddingBottom: "var(--space-2)",
+          }}
+        >
+          <Box
+            style={{
+              background: "var(--gray-a2)",
+              border: "1px solid var(--gray-a4)",
+              borderRadius: "var(--radius-3)",
+              padding: "var(--space-3)",
+            }}
+          >
+            <div className={taskDescriptionRoot}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+                {task.description}
+              </ReactMarkdown>
+            </div>
+          </Box>
+        </Box>
+      )}
     </Flex>
   );
 }
@@ -108,57 +189,53 @@ export function SessionTaskDrawer({
           <CaretRight size={12} style={{ color: "var(--gray-10)", flexShrink: 0 }} />
         )}
         <Flex direction="column" gap="1" style={{ minWidth: 0, flex: 1 }}>
-          <Flex align="center" gap="2" wrap="wrap">
+          <Flex align="center" gap="2" style={{ minWidth: 0 }}>
             <Text
               size="2"
               weight="medium"
               data-testid="session-task-drawer-title"
-              style={{ minWidth: 0, lineHeight: 1.35 }}
+              style={{ minWidth: 0, lineHeight: 1.35, flex: 1 }}
             >
               {summary}
             </Text>
-            <Text size="1" color="gray">
-              {tasksDone}/{tasksTotal}
-            </Text>
-          </Flex>
-          <Flex
-            align="center"
-            gap="1"
-            wrap="wrap"
-            data-testid="session-task-drawer-progress"
-            aria-label={`Task progress ${tasksDone} of ${tasksTotal}`}
-          >
-            {tasksTotal > 0 ? (
-              Array.from({ length: tasksTotal }, (_, index) => {
-                const complete = index < tasksDone;
-                return (
-                  <span
-                    key={index}
-                    data-testid="session-task-drawer-dot"
-                    data-complete={complete ? "true" : "false"}
-                    style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: "999px",
-                      background: complete ? "var(--accent-9)" : "var(--gray-6)",
-                      flexShrink: 0,
-                    }}
-                  />
-                );
-              })
-            ) : (
-              <Text size="1" color="gray">
-                No tasks yet
-              </Text>
-            )}
+            <Flex
+              align="center"
+              gap="1"
+              data-testid="session-task-drawer-progress"
+              aria-label={`Task progress ${tasksDone} of ${tasksTotal}`}
+              style={{ flexShrink: 0 }}
+            >
+              {tasksTotal > 0
+                ? Array.from({ length: tasksTotal }, (_, index) => {
+                    const complete = index < tasksDone;
+                    return (
+                      <span
+                        key={index}
+                        data-testid="session-task-drawer-dot"
+                        data-complete={complete ? "true" : "false"}
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: "999px",
+                          background: complete ? "var(--accent-9)" : "var(--gray-6)",
+                          flexShrink: 0,
+                        }}
+                      />
+                    );
+                  })
+                : null}
+            </Flex>
           </Flex>
         </Flex>
       </button>
+
       {expanded && (
         <Box
           id={contentId}
           data-testid="session-task-drawer-content"
           style={{
+            maxHeight: "28rem",
+            overflowY: "auto",
             padding: "0 var(--space-3) var(--space-3)",
             display: "flex",
             flexDirection: "column",
@@ -203,7 +280,7 @@ export function SessionTaskDrawer({
               Active
             </Text>
             {liveTask ? (
-              <TaskListItem task={liveTask} label="Current task" />
+              <TaskListItem task={liveTask} label="Current task" defaultExpanded={true} />
             ) : (
               <Text size="2" color="gray" style={{ paddingTop: "var(--space-2)" }}>
                 No active task
@@ -217,7 +294,12 @@ export function SessionTaskDrawer({
             </Text>
             {history.length > 0 ? (
               history.map((task) => (
-                <TaskListItem key={task.id} task={task} label="Previous task" />
+                <TaskListItem
+                  key={task.id}
+                  task={task}
+                  label="Previous task"
+                  defaultExpanded={false}
+                />
               ))
             ) : (
               <Text size="2" color="gray" style={{ paddingTop: "var(--space-2)" }}>
