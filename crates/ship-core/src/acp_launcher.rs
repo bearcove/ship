@@ -7,11 +7,13 @@ use ship_types::{AgentDiscovery, AgentKind};
 const NPX_BINARY: &str = "pnpx";
 const CLAUDE_AGENT_BINARY: &str = "claude-agent-acp";
 const CODEX_AGENT_BINARY: &str = "codex-acp";
+const OPENCODE_BINARY: &str = "opencode";
 const CLAUDE_AGENT_NPX_PACKAGE: &str = "@zed-industries/claude-agent-acp";
 const CODEX_AGENT_NPX_PACKAGE: &str = "@zed-industries/codex-acp";
 const EMPTY_ARGS: &[&str] = &[];
 const CLAUDE_AGENT_NPX_ARGS: &[&str] = &[CLAUDE_AGENT_NPX_PACKAGE];
 const CODEX_AGENT_NPX_ARGS: &[&str] = &[CODEX_AGENT_NPX_PACKAGE];
+const OPENCODE_ARGS: &[&str] = &["acp"];
 
 pub trait BinaryPathProbe {
     fn is_available(&self, binary: &str) -> bool;
@@ -43,33 +45,43 @@ pub fn discover_agents(probe: &impl BinaryPathProbe) -> AgentDiscovery {
     AgentDiscovery {
         claude: resolve_agent_launcher(AgentKind::Claude, probe).is_some(),
         codex: resolve_agent_launcher(AgentKind::Codex, probe).is_some(),
+        opencode: resolve_agent_launcher(AgentKind::OpenCode, probe).is_some(),
     }
 }
 
 // r[acp.binary.claude]
 // r[acp.binary.codex]
+// r[acp.binary.opencode]
 pub fn resolve_agent_launcher(
     kind: AgentKind,
     probe: &impl BinaryPathProbe,
 ) -> Option<AgentLauncher> {
-    let binary = match kind {
-        AgentKind::Claude => CLAUDE_AGENT_BINARY,
-        AgentKind::Codex => CODEX_AGENT_BINARY,
-    };
-
-    if probe.is_available(binary) {
-        return Some(AgentLauncher::new(binary, EMPTY_ARGS));
+    match kind {
+        AgentKind::Claude => {
+            if probe.is_available(CLAUDE_AGENT_BINARY) {
+                return Some(AgentLauncher::new(CLAUDE_AGENT_BINARY, EMPTY_ARGS));
+            }
+            if probe.is_available(NPX_BINARY) {
+                return Some(AgentLauncher::new(NPX_BINARY, CLAUDE_AGENT_NPX_ARGS));
+            }
+            None
+        }
+        AgentKind::Codex => {
+            if probe.is_available(CODEX_AGENT_BINARY) {
+                return Some(AgentLauncher::new(CODEX_AGENT_BINARY, EMPTY_ARGS));
+            }
+            if probe.is_available(NPX_BINARY) {
+                return Some(AgentLauncher::new(NPX_BINARY, CODEX_AGENT_NPX_ARGS));
+            }
+            None
+        }
+        AgentKind::OpenCode => {
+            if probe.is_available(OPENCODE_BINARY) {
+                return Some(AgentLauncher::new(OPENCODE_BINARY, OPENCODE_ARGS));
+            }
+            None
+        }
     }
-
-    if probe.is_available(NPX_BINARY) {
-        let args = match kind {
-            AgentKind::Claude => CLAUDE_AGENT_NPX_ARGS,
-            AgentKind::Codex => CODEX_AGENT_NPX_ARGS,
-        };
-        return Some(AgentLauncher::new(NPX_BINARY, args));
-    }
-
-    None
 }
 
 fn is_binary_available_on_path(binary: &str, path_var: Option<OsString>) -> bool {
@@ -110,7 +122,7 @@ mod tests {
 
     use super::{
         AgentLauncher, BinaryPathProbe, CLAUDE_AGENT_BINARY, CODEX_AGENT_BINARY, NPX_BINARY,
-        discover_agents, is_binary_available_on_path, resolve_agent_launcher,
+        OPENCODE_BINARY, discover_agents, is_binary_available_on_path, resolve_agent_launcher,
     };
 
     fn make_temp_dir(test_name: &str) -> PathBuf {
@@ -145,6 +157,7 @@ mod tests {
         claude: bool,
         codex: bool,
         pnpx: bool,
+        opencode: bool,
     }
 
     impl BinaryPathProbe for FakeProbe {
@@ -153,6 +166,7 @@ mod tests {
                 CLAUDE_AGENT_BINARY => self.claude,
                 CODEX_AGENT_BINARY => self.codex,
                 NPX_BINARY => self.pnpx,
+                OPENCODE_BINARY => self.opencode,
                 other => panic!("unexpected binary lookup: {other}"),
             }
         }
@@ -185,6 +199,7 @@ mod tests {
             claude: true,
             codex: false,
             pnpx: false,
+            opencode: false,
         });
 
         assert_eq!(
@@ -192,6 +207,7 @@ mod tests {
             AgentDiscovery {
                 claude: true,
                 codex: false,
+                opencode: false,
             }
         );
     }
@@ -203,6 +219,7 @@ mod tests {
             claude: false,
             codex: true,
             pnpx: true,
+            opencode: false,
         });
 
         assert_eq!(
@@ -210,6 +227,7 @@ mod tests {
             AgentDiscovery {
                 claude: true,
                 codex: true,
+                opencode: false,
             }
         );
     }
@@ -224,6 +242,7 @@ mod tests {
                     claude: true,
                     codex: false,
                     pnpx: true,
+                    opencode: false,
                 }
             ),
             Some(AgentLauncher::new(CLAUDE_AGENT_BINARY, &[]))
@@ -235,6 +254,7 @@ mod tests {
                     claude: false,
                     codex: false,
                     pnpx: true,
+                    opencode: false,
                 }
             ),
             Some(AgentLauncher::new(
@@ -254,6 +274,7 @@ mod tests {
                     claude: false,
                     codex: true,
                     pnpx: true,
+                    opencode: false,
                 }
             ),
             Some(AgentLauncher::new(CODEX_AGENT_BINARY, &[]))
@@ -265,12 +286,43 @@ mod tests {
                     claude: false,
                     codex: false,
                     pnpx: true,
+                    opencode: false,
                 }
             ),
             Some(AgentLauncher::new(
                 NPX_BINARY,
                 &["@zed-industries/codex-acp"]
             ))
+        );
+    }
+
+    // r[verify acp.binary.opencode]
+    #[test]
+    fn opencode_launcher_resolution_uses_direct_binary_with_acp_arg_and_no_pnpx_fallback() {
+        assert_eq!(
+            resolve_agent_launcher(
+                AgentKind::OpenCode,
+                &FakeProbe {
+                    claude: false,
+                    codex: false,
+                    pnpx: true,
+                    opencode: true,
+                }
+            ),
+            Some(AgentLauncher::new(OPENCODE_BINARY, &["acp"]))
+        );
+        assert_eq!(
+            resolve_agent_launcher(
+                AgentKind::OpenCode,
+                &FakeProbe {
+                    claude: false,
+                    codex: false,
+                    pnpx: true,
+                    opencode: false,
+                }
+            ),
+            None,
+            "opencode has no pnpx fallback"
         );
     }
 
@@ -282,26 +334,43 @@ mod tests {
                 claude: false,
                 codex: false,
                 pnpx: false,
+                opencode: false,
             },
             FakeProbe {
                 claude: true,
                 codex: false,
                 pnpx: false,
+                opencode: false,
             },
             FakeProbe {
                 claude: false,
                 codex: true,
                 pnpx: false,
+                opencode: false,
             },
             FakeProbe {
                 claude: false,
                 codex: false,
                 pnpx: true,
+                opencode: false,
             },
             FakeProbe {
                 claude: true,
                 codex: true,
                 pnpx: true,
+                opencode: false,
+            },
+            FakeProbe {
+                claude: false,
+                codex: false,
+                pnpx: false,
+                opencode: true,
+            },
+            FakeProbe {
+                claude: true,
+                codex: true,
+                pnpx: true,
+                opencode: true,
             },
         ];
 
@@ -314,6 +383,10 @@ mod tests {
             assert_eq!(
                 discovery.codex,
                 resolve_agent_launcher(AgentKind::Codex, &probe).is_some()
+            );
+            assert_eq!(
+                discovery.opencode,
+                resolve_agent_launcher(AgentKind::OpenCode, &probe).is_some()
             );
         }
     }
