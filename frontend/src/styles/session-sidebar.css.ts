@@ -99,11 +99,14 @@ export const sessionRow = style({
   fontSize: "var(--font-size-2)",
   paddingLeft: "var(--space-3)",
   paddingRight: "var(--space-3)",
-  paddingTop: "5px",
-  paddingBottom: "5px",
+  paddingTop: "var(--space-2)",
+  paddingBottom: "var(--space-2)",
   textDecoration: "none",
   color: "inherit",
   selectors: {
+    "& + &": {
+      borderTop: "1px solid var(--gray-a3)",
+    },
     '&[data-active="true"]': {
       background: "var(--accent-a5)",
       borderLeft: "3px solid var(--accent-9)",
@@ -120,7 +123,9 @@ export const sessionRow = style({
 
 export const sessionRowTitle = style({
   flex: 1,
-  fontSize: "var(--font-size-2)",
+  fontSize: "var(--font-size-3)",
+  lineHeight: "var(--line-height-3)",
+  fontWeight: "var(--font-weight-medium)",
   color: "var(--gray-12)",
 });
 
