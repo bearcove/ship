@@ -86,7 +86,7 @@ export function AgentPresetPicker({
     ? presets.find((preset) => preset.id === pendingPresetId) ?? null
     : null;
   const displayPreset = pendingPreset ?? activePreset;
-  const currentPresetId = pendingPresetId ?? agent.preset_id;
+  const currentPresetId = pendingPresetId ?? activePreset?.id ?? agent.preset_id;
   const currentLabel = displayPreset?.label ?? agent.model_id ?? "Preset unavailable";
   const currentModelId = displayPreset?.model_id ?? agent.model_id;
 

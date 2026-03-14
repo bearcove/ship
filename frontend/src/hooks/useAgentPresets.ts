@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { AgentPreset } from "../generated/ship";
-import { getShipClient } from "../api/client";
+import { getShipClient, onClientReady } from "../api/client";
 
 type AgentPresetsSnapshot = {
   presets: AgentPreset[];
@@ -49,7 +49,6 @@ async function loadAgentPresets() {
         error: error instanceof Error ? error.message : "Failed to load presets",
         loading: false,
       };
-      hasLoaded = true;
     } finally {
       inflight = null;
       notifyListeners();
@@ -70,12 +69,19 @@ export function useAgentPresets() {
     listeners.add(update);
     update();
 
+    const unsubscribe = onClientReady(() => {
+      if (!snapshot.loading) {
+        void loadAgentPresets();
+      }
+    });
+
     if (!hasLoaded && !snapshot.loading) {
       void loadAgentPresets();
     }
 
     return () => {
       listeners.delete(update);
+      unsubscribe();
     };
   }, []);
 

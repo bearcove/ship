@@ -24,6 +24,7 @@ const apiMocks = vi.hoisted(() => ({
     >
   >(async () => ({ tag: "Ok" })),
   retryAgent: vi.fn(async () => undefined),
+  onClientReady: vi.fn(() => () => {}),
 }));
 
 vi.mock("../api/client", () => ({
@@ -32,6 +33,7 @@ vi.mock("../api/client", () => ({
     setAgentPreset: apiMocks.setAgentPreset,
     retryAgent: apiMocks.retryAgent,
   }),
+  onClientReady: apiMocks.onClientReady,
 }));
 
 const configuredPresets: AgentPreset[] = [
@@ -91,6 +93,8 @@ beforeEach(() => {
   apiMocks.setAgentPreset.mockResolvedValue({ tag: "Ok" });
   apiMocks.retryAgent.mockReset();
   apiMocks.retryAgent.mockResolvedValue(undefined);
+  apiMocks.onClientReady.mockReset();
+  apiMocks.onClientReady.mockReturnValue(() => {});
 });
 
 // r[verify frontend.test.vitest]
@@ -160,6 +164,19 @@ describe("AgentHeader", () => {
 
     expect(await screen.findByText("Claude Sonnet")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Select preset" })).not.toBeInTheDocument();
+  });
+
+  it("treats an inferred preset as the active selection when preset_id is still null", async () => {
+    renderHeader(makeAgent({ preset_id: null }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Select preset" }));
+
+    const activeOption = await screen.findByRole("option", { name: /Claude Sonnet/i });
+    expect(activeOption).toHaveAttribute("aria-selected", "true");
+
+    fireEvent.mouseDown(activeOption);
+
+    expect(apiMocks.setAgentPreset).not.toHaveBeenCalled();
   });
 
   // r[verify ui.error.agent]

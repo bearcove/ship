@@ -19,6 +19,7 @@ const apiMocks = vi.hoisted(() => ({
   openInEditor: vi.fn(async () => undefined),
   openInTerminal: vi.fn(async () => undefined),
   navigate: vi.fn(),
+  onClientReady: vi.fn(() => () => {}),
 }));
 
 vi.mock("../api/client", () => ({
@@ -28,6 +29,7 @@ vi.mock("../api/client", () => ({
     openInEditor: apiMocks.openInEditor,
     openInTerminal: apiMocks.openInTerminal,
   }),
+  onClientReady: apiMocks.onClientReady,
 }));
 
 vi.mock("react-router-dom", () => ({
@@ -140,6 +142,8 @@ beforeEach(() => {
   apiMocks.openInTerminal.mockReset();
   apiMocks.openInTerminal.mockResolvedValue(undefined);
   apiMocks.navigate.mockReset();
+  apiMocks.onClientReady.mockReset();
+  apiMocks.onClientReady.mockReturnValue(() => {});
 });
 
 describe("SessionHeader", () => {
