@@ -10,6 +10,7 @@ import { ErrorBlock } from "./blocks/ErrorBlock";
 import { PermissionBlock } from "./blocks/PermissionBlock";
 import { ImageBlock } from "./blocks/ImageBlock";
 import { getShipClient } from "../api/client";
+import { AgentKindIcon } from "./AgentKindIcon";
 import { encode } from "gpt-tokenizer";
 
 const tokenCache = new Map<string, number>();
@@ -631,7 +632,7 @@ function ThinkingBubble({
   avatarSrc,
   agentName,
   agent,
-  lastThought,
+  lastUtterance,
   thinkingTokens,
   toolsOk,
   toolsFailed,
@@ -640,7 +641,7 @@ function ThinkingBubble({
   avatarSrc: string;
   agentName: string;
   agent: AgentSnapshot;
-  lastThought: string;
+  lastUtterance: string;
   thinkingTokens: number;
   toolsOk: number;
   toolsFailed: number;
@@ -657,49 +658,47 @@ function ThinkingBubble({
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      {hovered && lastThought && (
+      {hovered && (
         <div
           style={{
             position: "absolute",
             bottom: "100%",
             left: 0,
-            right: 0,
-            marginBottom: 8,
-            padding: "var(--space-3)",
+            maxWidth: 360,
+            marginBottom: 6,
+            padding: "var(--space-2) var(--space-3)",
             background: "var(--color-panel-solid)",
-            border: "1px solid var(--gray-a5)",
-            borderRadius: "var(--radius-3)",
-            boxShadow: "0 4px 16px var(--black-a4)",
+            border: "1px solid var(--gray-a4)",
+            borderRadius: "16px",
+            boxShadow: "0 1px 4px var(--black-a2)",
             zIndex: 10,
-            maxHeight: 240,
+            maxHeight: 200,
             overflow: "hidden",
           }}
         >
           <Flex align="center" gap="2" mb="2">
-            <img
-              src={avatarSrc}
-              alt={agentName}
-              style={{ width: 20, height: 20, borderRadius: "50%" }}
-            />
+            <AgentKindIcon kind={agent.kind} />
             <Text size="2" weight="bold">{agentName}</Text>
             <Text size="1" color="gray">{modelLabel}</Text>
             {effortLabel && (
               <Text size="1" color="gray">({effortLabel})</Text>
             )}
           </Flex>
-          <Text
-            size="2"
-            style={{
-              color: "var(--gray-11)",
-              whiteSpace: "pre-wrap",
-              display: "-webkit-box",
-              WebkitLineClamp: 8,
-              WebkitBoxOrient: "vertical",
-              overflow: "hidden",
-            }}
-          >
-            {lastThought}
-          </Text>
+          {lastUtterance && (
+            <Text
+              size="2"
+              style={{
+                color: "var(--gray-11)",
+                whiteSpace: "pre-wrap",
+                display: "-webkit-box",
+                WebkitLineClamp: 8,
+                WebkitBoxOrient: "vertical",
+                overflow: "hidden",
+              }}
+            >
+              {lastUtterance}
+            </Text>
+          )}
         </div>
       )}
       <div className={thinkingBubble}>
@@ -825,7 +824,7 @@ export function UnifiedFeed({
     let tokens = 0;
     let ok = 0;
     let failed = 0;
-    let lastThought = "";
+    let lastUtterance = "";
     let lastMsgIdx = -1;
     for (let i = visibleBlocks.length - 1; i >= 0; i--) {
       const b = visibleBlocks[i];
@@ -838,7 +837,7 @@ export function UnifiedFeed({
       if (b.role.tag !== roleTag) continue;
       if (b.block.tag === "Text" && b.block.source.tag === "AgentThought") {
         tokens += countTokens(b.block.text);
-        lastThought = b.block.text;
+        lastUtterance = b.block.text;
       } else if (b.block.tag === "ToolCall") {
         if (b.block.status.tag === "Success") ok++;
         else if (b.block.status.tag === "Failure") failed++;
@@ -848,7 +847,12 @@ export function UnifiedFeed({
         }
       }
     }
-    return { tokens, ok, failed, lastThought };
+    // If no thought in current turn, use last speech
+    if (!lastUtterance && lastMsgIdx >= 0) {
+      const b = visibleBlocks[lastMsgIdx];
+      if (b.block.tag === "Text") lastUtterance = b.block.text;
+    }
+    return { tokens, ok, failed, lastUtterance };
   }
 
   const captainTurn = captainWorking ? computeTurnStats("Captain") : null;
@@ -948,7 +952,7 @@ export function UnifiedFeed({
                 avatarSrc={captainAvatar}
                 agentName="Captain"
                 agent={captain}
-                lastThought={captainTurn.lastThought}
+                lastUtterance={captainTurn.lastUtterance}
                 thinkingTokens={captainTurn.tokens}
                 toolsOk={captainTurn.ok}
                 toolsFailed={captainTurn.failed}
@@ -960,7 +964,7 @@ export function UnifiedFeed({
                 avatarSrc={mateAvatar}
                 agentName="Mate"
                 agent={mate}
-                lastThought={mateTurn.lastThought}
+                lastUtterance={mateTurn.lastUtterance}
                 thinkingTokens={mateTurn.tokens}
                 toolsOk={mateTurn.ok}
                 toolsFailed={mateTurn.failed}
