@@ -63,6 +63,7 @@ export function TranscriptionProvider({ children }: { children: React.ReactNode 
     stopElapsedTimer: () => void;
     flushAudio: () => void;
   } | null>(null);
+  const teardownRef = useRef<() => Promise<void>>(() => Promise.resolve());
 
   const startRecording = useCallback((sessionId: string) => {
     if (activeRef.current) return;
@@ -168,9 +169,32 @@ export function TranscriptionProvider({ children }: { children: React.ReactNode 
               gotError = true;
               break;
             }
-            allSegments.push(msg.value);
+
+            const segment = msg.value;
+            const trimmed = segment.text.trim();
+            const lower = trimmed.toLowerCase();
+            // Detect whole-word "over" at the end (not "moreover", "crossover", etc.)
+            const endsWithOver = lower === "over" || lower.endsWith(" over");
+
+            if (endsWithOver) {
+              // Strip "over" from the segment text
+              const stripped = trimmed.slice(0, trimmed.length - 4).trimEnd();
+              segment.text = stripped;
+            }
+
+            // Only push the segment if it still has content after stripping
+            if (segment.text.trim()) {
+              allSegments.push(segment);
+            }
             const fullText = allSegments.map((s) => s.text.trim()).join(" ");
             setResult({ text: fullText, segments: [...allSegments] });
+
+            if (endsWithOver) {
+              // Trigger the same flow as stopAndSend
+              setSendAfterTranscription(true);
+              void teardownRef.current();
+              break;
+            }
           }
           await callPromise;
           if (!gotError) {
@@ -186,7 +210,9 @@ export function TranscriptionProvider({ children }: { children: React.ReactNode 
     })();
   }, []);
 
-  const doStop = useCallback(async () => {
+  // Shared teardown: flush audio, stop mic, close channels, transition to processing.
+  // Callable from both doStop and the "over" detection in the segment loop.
+  const teardown = useCallback(async () => {
     const active = activeRef.current;
     if (!active) return;
     activeRef.current = null;
@@ -215,6 +241,11 @@ export function TranscriptionProvider({ children }: { children: React.ReactNode 
       );
     }, 15_000);
   }, []);
+  teardownRef.current = teardown;
+
+  const doStop = useCallback(async () => {
+    await teardown();
+  }, [teardown]);
 
   const stopRecording = useCallback(() => {
     void doStop();
