@@ -742,19 +742,13 @@ export const sessionHeaderRows = style({
 });
 
 export const sessionHeaderSideButtons = style({
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "stretch",
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  alignSelf: "stretch",
   borderLeft: "1px solid var(--gray-a4)",
-  "@media": {
-    "(max-width: 480px)": {
-      display: "none",
-    },
-  },
 });
 
 export const sessionHeaderSideButton = style({
-  flex: 1,
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
@@ -767,6 +761,14 @@ export const sessionHeaderSideButton = style({
     "&:hover": {
       color: "var(--gray-12)",
       background: "var(--gray-a3)",
+    },
+  },
+});
+
+export const sessionHeaderSideButtonDesktopOnly = style({
+  "@media": {
+    "(max-width: 480px)": {
+      display: "none",
     },
   },
 });
