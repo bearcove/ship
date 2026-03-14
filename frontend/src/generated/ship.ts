@@ -147,7 +147,8 @@ export type TaskStatus =
   | { tag: 'SteerPending' }
   | { tag: 'RebaseConflict' }
   | { tag: 'Accepted' }
-  | { tag: 'Cancelled' };
+  | { tag: 'Cancelled' }
+  | { tag: 'WaitingForHuman' };
 
 export interface WorktreeDiffStats {
   branch_name: string;
@@ -180,6 +181,7 @@ export interface SessionSummary {
   autonomy_mode: AutonomyMode;
   created_at: string;
   is_admiral: boolean;
+  is_read: boolean;
 }
 
 export interface AgentDiscovery {
@@ -610,6 +612,9 @@ export type OpenInEditorResponse = void;
 export type OpenInTerminalRequest = [SessionId];
 export type OpenInTerminalResponse = void;
 
+export type MarkSessionReadRequest = [SessionId];
+export type MarkSessionReadResponse = void;
+
 export type SubscribeEventsRequest = [
   SessionId, // session
   Tx<SubscribeMessage>, // output
@@ -662,6 +667,7 @@ export interface ShipCaller {
   getWorktreeDiffStats(session: SessionId): CallBuilder<WorktreeDiffStats | null>;
   openInEditor(session: SessionId): CallBuilder<void>;
   openInTerminal(session: SessionId): CallBuilder<void>;
+  markSessionRead(session: SessionId): CallBuilder<void>;
   subscribeEvents(session: SessionId, output: Tx<SubscribeMessage>): CallBuilder<void>;
   subscribeGlobalEvents(output: Tx<GlobalEvent>): CallBuilder<void>;
   /**
@@ -1088,8 +1094,22 @@ export class ShipClient implements ShipCaller {
     });
   }
 
-  subscribeEvents(session: SessionId, output: Tx<SubscribeMessage>): CallBuilder<void> {
+  markSessionRead(session: SessionId): CallBuilder<void> {
     const descriptor = ship_descriptor.methods[29];
+    return new CallBuilder(async (metadata) => {
+      const value = await this.caller.call({
+        method: "Ship.markSessionRead",
+        args: { session },
+        descriptor,
+        schemaRegistry: ship_descriptor.schema_registry,
+        metadata,
+      });
+      return value as void;
+    });
+  }
+
+  subscribeEvents(session: SessionId, output: Tx<SubscribeMessage>): CallBuilder<void> {
+    const descriptor = ship_descriptor.methods[30];
     // Bind any Tx/Rx channels in arguments and collect channel IDs
     const channels = bindChannels(
       descriptor.args.elements,
@@ -1112,7 +1132,7 @@ export class ShipClient implements ShipCaller {
   }
 
   subscribeGlobalEvents(output: Tx<GlobalEvent>): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[30];
+    const descriptor = ship_descriptor.methods[31];
     // Bind any Tx/Rx channels in arguments and collect channel IDs
     const channels = bindChannels(
       descriptor.args.elements,
@@ -1140,7 +1160,7 @@ export class ShipClient implements ShipCaller {
    * Server sends back transcribed segments via `segments_out`.
    */
   transcribeAudio(audioIn: Rx<Uint8Array>, segmentsOut: Tx<TranscribeMessage>): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[31];
+    const descriptor = ship_descriptor.methods[32];
     // Bind any Tx/Rx channels in arguments and collect channel IDs
     const channels = bindChannels(
       descriptor.args.elements,
@@ -1164,7 +1184,7 @@ export class ShipClient implements ShipCaller {
 
   /** Synthesize text to speech and stream 24kHz mono f32 LE PCM bytes. */
   speakText(text: string, audioOut: Tx<Uint8Array>): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[32];
+    const descriptor = ship_descriptor.methods[33];
     // Bind any Tx/Rx channels in arguments and collect channel IDs
     const channels = bindChannels(
       descriptor.args.elements,
@@ -1230,6 +1250,7 @@ export interface ShipHandler {
   getWorktreeDiffStats(session: SessionId): Promise<WorktreeDiffStats | null> | WorktreeDiffStats | null;
   openInEditor(session: SessionId): Promise<void> | void;
   openInTerminal(session: SessionId): Promise<void> | void;
+  markSessionRead(session: SessionId): Promise<void> | void;
   subscribeEvents(session: SessionId, output: Tx<SubscribeMessage>): Promise<void> | void;
   subscribeGlobalEvents(output: Tx<GlobalEvent>): Promise<void> | void;
   transcribeAudio(audioIn: Rx<Uint8Array>, segmentsOut: Tx<TranscribeMessage>): Promise<void> | void;
@@ -1266,7 +1287,7 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0xc696942db18dfeaan) {
+    } else if (method.id === 0x6bd4aac67832b4dan) {
       try {
         const result = await this.handler.listSessions();
         call.reply(result);
@@ -1301,7 +1322,7 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0x8e2f9b74296031e6n) {
+    } else if (method.id === 0x11cfc77091b26304n) {
       try {
         const result = await this.handler.getSession(args[0] as SessionId);
         call.reply(result);
@@ -1448,7 +1469,14 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0xa97a4db759e05e5dn) {
+    } else if (method.id === 0x2db925112fafb521n) {
+      try {
+        const result = await this.handler.markSessionRead(args[0] as SessionId);
+        call.reply(result);
+      } catch {
+        call.replyInternalError();
+      }
+    } else if (method.id === 0x620a70ccd2fc653bn) {
       try {
         const result = await this.handler.subscribeEvents(args[0] as SessionId, args[1] as Tx<SubscribeMessage>);
         (args[1] as { close(): void }).close(); // close output before reply
@@ -1456,7 +1484,7 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0x215961c43fabd04an) {
+    } else if (method.id === 0xfdd89cd9e8a3e1afn) {
       try {
         const result = await this.handler.subscribeGlobalEvents(args[0] as Tx<GlobalEvent>);
         (args[0] as { close(): void }).close(); // close output before reply
@@ -1507,10 +1535,10 @@ const ship_schema_registry: SchemaRegistry = new Map<string, Schema>([
   ["AgentSnapshot", { kind: 'struct', fields: { 'role': { kind: 'ref', name: 'Role' }, 'kind': { kind: 'ref', name: 'AgentKind' }, 'state': { kind: 'ref', name: 'AgentState' }, 'context_remaining_percent': { kind: 'option', inner: { kind: 'u8' } }, 'preset_id': { kind: 'option', inner: { kind: 'string' } }, 'provider': { kind: 'option', inner: { kind: 'string' } }, 'model_id': { kind: 'option', inner: { kind: 'string' } }, 'available_models': { kind: 'vec', element: { kind: 'string' } }, 'effort_config_id': { kind: 'option', inner: { kind: 'string' } }, 'effort_value_id': { kind: 'option', inner: { kind: 'string' } }, 'available_effort_values': { kind: 'vec', element: { kind: 'ref', name: 'EffortValue' } } } }],
   ["SessionStartupStage", { kind: 'enum', variants: [{ name: 'ResolvingMcp', fields: null }, { name: 'CreatingWorktree', fields: null }, { name: 'StartingCaptain', fields: null }, { name: 'StartingMate', fields: null }, { name: 'GreetingCaptain', fields: null }] }],
   ["SessionStartupState", { kind: 'enum', variants: [{ name: 'Pending', fields: null }, { name: 'Running', fields: { 'stage': { kind: 'ref', name: 'SessionStartupStage' }, 'message': { kind: 'string' } } }, { name: 'Ready', fields: null }, { name: 'Failed', fields: { 'stage': { kind: 'ref', name: 'SessionStartupStage' }, 'message': { kind: 'string' } } }] }],
-  ["TaskStatus", { kind: 'enum', variants: [{ name: 'Assigned', fields: null }, { name: 'Working', fields: null }, { name: 'ReviewPending', fields: null }, { name: 'SteerPending', fields: null }, { name: 'RebaseConflict', fields: null }, { name: 'Accepted', fields: null }, { name: 'Cancelled', fields: null }] }],
+  ["TaskStatus", { kind: 'enum', variants: [{ name: 'Assigned', fields: null }, { name: 'Working', fields: null }, { name: 'ReviewPending', fields: null }, { name: 'SteerPending', fields: null }, { name: 'RebaseConflict', fields: null }, { name: 'Accepted', fields: null }, { name: 'Cancelled', fields: null }, { name: 'WaitingForHuman', fields: null }] }],
   ["WorktreeDiffStats", { kind: 'struct', fields: { 'branch_name': { kind: 'string' }, 'lines_added': { kind: 'u64' }, 'lines_removed': { kind: 'u64' }, 'files_changed': { kind: 'u64' }, 'uncommitted_lines_added': { kind: 'u64' }, 'uncommitted_lines_removed': { kind: 'u64' } } }],
   ["AutonomyMode", { kind: 'enum', variants: [{ name: 'HumanInTheLoop', fields: null }, { name: 'Autonomous', fields: null }] }],
-  ["SessionSummary", { kind: 'struct', fields: { 'id': { kind: 'string' }, 'slug': { kind: 'string' }, 'project': { kind: 'string' }, 'branch_name': { kind: 'string' }, 'title': { kind: 'option', inner: { kind: 'string' } }, 'captain': { kind: 'ref', name: 'AgentSnapshot' }, 'mate': { kind: 'ref', name: 'AgentSnapshot' }, 'startup_state': { kind: 'ref', name: 'SessionStartupState' }, 'current_task_title': { kind: 'option', inner: { kind: 'string' } }, 'current_task_description': { kind: 'option', inner: { kind: 'string' } }, 'task_status': { kind: 'option', inner: { kind: 'ref', name: 'TaskStatus' } }, 'diff_stats': { kind: 'option', inner: { kind: 'ref', name: 'WorktreeDiffStats' } }, 'tasks_done': { kind: 'u32' }, 'tasks_total': { kind: 'u32' }, 'autonomy_mode': { kind: 'ref', name: 'AutonomyMode' }, 'created_at': { kind: 'string' }, 'is_admiral': { kind: 'bool' } } }],
+  ["SessionSummary", { kind: 'struct', fields: { 'id': { kind: 'string' }, 'slug': { kind: 'string' }, 'project': { kind: 'string' }, 'branch_name': { kind: 'string' }, 'title': { kind: 'option', inner: { kind: 'string' } }, 'captain': { kind: 'ref', name: 'AgentSnapshot' }, 'mate': { kind: 'ref', name: 'AgentSnapshot' }, 'startup_state': { kind: 'ref', name: 'SessionStartupState' }, 'current_task_title': { kind: 'option', inner: { kind: 'string' } }, 'current_task_description': { kind: 'option', inner: { kind: 'string' } }, 'task_status': { kind: 'option', inner: { kind: 'ref', name: 'TaskStatus' } }, 'diff_stats': { kind: 'option', inner: { kind: 'ref', name: 'WorktreeDiffStats' } }, 'tasks_done': { kind: 'u32' }, 'tasks_total': { kind: 'u32' }, 'autonomy_mode': { kind: 'ref', name: 'AutonomyMode' }, 'created_at': { kind: 'string' }, 'is_admiral': { kind: 'bool' }, 'is_read': { kind: 'bool' } } }],
   ["AgentDiscovery", { kind: 'struct', fields: { 'claude': { kind: 'bool' }, 'codex': { kind: 'bool' }, 'opencode': { kind: 'bool' } } }],
   ["AgentPreset", { kind: 'struct', fields: { 'id': { kind: 'string' }, 'label': { kind: 'string' }, 'kind': { kind: 'ref', name: 'AgentKind' }, 'provider': { kind: 'string' }, 'model_id': { kind: 'string' }, 'logo': { kind: 'option', inner: { kind: 'string' } } } }],
   ["ServerInfo", { kind: 'struct', fields: { 'http_urls': { kind: 'vec', element: { kind: 'string' } } } }],
@@ -1586,7 +1614,7 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: 'listSessions',
-      id: 0xc696942db18dfeaan,
+      id: 0x6bd4aac67832b4dan,
       args: { kind: 'tuple', elements: [] },
       result: { kind: 'enum', variants: [{ name: 'Ok', fields: { kind: 'vec', element: { kind: 'ref', name: 'SessionSummary' } } }, { name: 'Err', fields: { kind: 'enum', variants: [{ name: 'User', fields: null }, { name: 'UnknownMethod', fields: null }, { name: 'InvalidPayload', fields: null }, { name: 'Cancelled', fields: null }] } }] },
     },
@@ -1616,7 +1644,7 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: 'getSession',
-      id: 0x8e2f9b74296031e6n,
+      id: 0x11cfc77091b26304n,
       args: { kind: 'tuple', elements: [{ kind: 'string' }] },
       result: { kind: 'enum', variants: [{ name: 'Ok', fields: { kind: 'ref', name: 'SessionDetail' } }, { name: 'Err', fields: { kind: 'enum', variants: [{ name: 'User', fields: null }, { name: 'UnknownMethod', fields: null }, { name: 'InvalidPayload', fields: null }, { name: 'Cancelled', fields: null }] } }] },
     },
@@ -1741,14 +1769,20 @@ export const ship_descriptor: ServiceDescriptor = {
       result: { kind: 'enum', variants: [{ name: 'Ok', fields: { kind: 'struct', fields: {} } }, { name: 'Err', fields: { kind: 'enum', variants: [{ name: 'User', fields: null }, { name: 'UnknownMethod', fields: null }, { name: 'InvalidPayload', fields: null }, { name: 'Cancelled', fields: null }] } }] },
     },
     {
+      name: 'markSessionRead',
+      id: 0x2db925112fafb521n,
+      args: { kind: 'tuple', elements: [{ kind: 'string' }] },
+      result: { kind: 'enum', variants: [{ name: 'Ok', fields: { kind: 'struct', fields: {} } }, { name: 'Err', fields: { kind: 'enum', variants: [{ name: 'User', fields: null }, { name: 'UnknownMethod', fields: null }, { name: 'InvalidPayload', fields: null }, { name: 'Cancelled', fields: null }] } }] },
+    },
+    {
       name: 'subscribeEvents',
-      id: 0xa97a4db759e05e5dn,
+      id: 0x620a70ccd2fc653bn,
       args: { kind: 'tuple', elements: [{ kind: 'string' }, { kind: 'tx', element: { kind: 'ref', name: 'SubscribeMessage' } }] },
       result: { kind: 'enum', variants: [{ name: 'Ok', fields: { kind: 'struct', fields: {} } }, { name: 'Err', fields: { kind: 'enum', variants: [{ name: 'User', fields: null }, { name: 'UnknownMethod', fields: null }, { name: 'InvalidPayload', fields: null }, { name: 'Cancelled', fields: null }] } }] },
     },
     {
       name: 'subscribeGlobalEvents',
-      id: 0x215961c43fabd04an,
+      id: 0xfdd89cd9e8a3e1afn,
       args: { kind: 'tuple', elements: [{ kind: 'tx', element: { kind: 'ref', name: 'GlobalEvent' } }] },
       result: { kind: 'enum', variants: [{ name: 'Ok', fields: { kind: 'struct', fields: {} } }, { name: 'Err', fields: { kind: 'enum', variants: [{ name: 'User', fields: null }, { name: 'UnknownMethod', fields: null }, { name: 'InvalidPayload', fields: null }, { name: 'Cancelled', fields: null }] } }] },
     },
