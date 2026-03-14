@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Box, Button, Callout, Flex, Spinner, Text } from "@radix-ui/themes";
 import { Warning } from "@phosphor-icons/react";
@@ -38,7 +38,7 @@ export function SessionViewPage({ debugMode }: { debugMode: boolean; onOpenSideb
   const [archiveConfirm, setArchiveConfirm] = useState<string[] | null>(null);
   const [duplicateOpen, setDuplicateOpen] = useState(false);
   const [slideDirection, setSlideDirection] = useState<"left" | "right" | null>(null);
-  const rootRef = useRef<HTMLElement | null>(null);
+  const [rootEl, setRootEl] = useState<HTMLDivElement | null>(null);
 
   const allSessions = useSessionList();
   const currentIndex = allSessions.findIndex((s) => s.id === sessionId);
@@ -60,7 +60,7 @@ export function SessionViewPage({ debugMode }: { debugMode: boolean; onOpenSideb
     [nextSession, prevSession, navigate],
   );
 
-  useSwipeGesture(rootRef, handleSwipe);
+  useSwipeGesture(rootEl, handleSwipe);
   // r[event.client.hydration-sequence]: Step 1 — structural state
   const { session, error } = useSession(sessionId ?? "");
   // r[event.client.hydration-sequence]: Step 2/3 — event subscription + replay
@@ -222,7 +222,7 @@ export function SessionViewPage({ debugMode }: { debugMode: boolean; onOpenSideb
         preselectedMateKind={session.mate.kind}
       />
       <Flex
-        ref={rootRef}
+        ref={setRootEl}
         className={[
           sessionViewRoot,
           slideDirection === "left" ? slideInFromRight : "",
