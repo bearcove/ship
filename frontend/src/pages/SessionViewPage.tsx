@@ -40,7 +40,7 @@ export function SessionViewPage({ debugMode, allSessions }: { debugMode: boolean
   const [slideDirection, setSlideDirection] = useState<"left" | "right" | null>(null);
   const [rootEl, setRootEl] = useState<HTMLDivElement | null>(null);
 
-  const currentIndex = allSessions.findIndex((s) => s.id === sessionId);
+  const currentIndex = allSessions.findIndex((s) => s.slug === sessionId);
   const prevSession = currentIndex > 0 ? allSessions[currentIndex - 1] : null;
   const nextSession = currentIndex >= 0 && currentIndex < allSessions.length - 1 ? allSessions[currentIndex + 1] : null;
 
@@ -232,7 +232,7 @@ export function SessionViewPage({ debugMode, allSessions }: { debugMode: boolean
         onAnimationEnd={() => {
           const target = slideDirection === "right" ? prevSession : nextSession;
           setSlideDirection(null);
-          if (target) navigate(`/sessions/${target.id}`);
+          if (target) navigate(`/sessions/${target.slug}`);
         }}
       >
         <Flex style={{ flex: 1, overflow: "hidden", minHeight: 0 }}>
