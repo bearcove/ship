@@ -332,26 +332,9 @@ impl WorktreeOps for GitWorktreeOps {
     }
 
     async fn rebase_continue(&self, worktree_path: &Path) -> Result<RebaseOutcome, WorktreeError> {
-        let unmerged_paths = self.unmerged_paths(worktree_path).await?;
-        if !unmerged_paths.is_empty() {
-            return Err(WorktreeError {
-                message: format!(
-                    "cannot continue rebase with unresolved paths:\n{}",
-                    unmerged_paths.join("\n")
-                ),
-            });
-        }
-
-        let marker_paths = self.tracked_conflict_marker_paths(worktree_path).await?;
-        if !marker_paths.is_empty() {
-            return Err(WorktreeError {
-                message: format!(
-                    "cannot continue rebase while conflict markers remain in tracked files:\n{}",
-                    marker_paths.join("\n")
-                ),
-            });
-        }
-
+        // Stage first so that resolved files are no longer marked as unmerged.
+        // Previously we checked unmerged_paths before staging, which blocked
+        // continue_rebase even after the user had resolved all conflicts.
         let add_output = Command::new("git")
             .arg("-C")
             .arg(worktree_path)
@@ -367,6 +350,18 @@ impl WorktreeOps for GitWorktreeOps {
             let stderr = String::from_utf8_lossy(&add_output.stderr);
             return Err(WorktreeError {
                 message: format!("git add -A failed: {}", stderr.trim()),
+            });
+        }
+
+        // After staging, check for conflict markers that would indicate
+        // the user resolved the merge status but left markers in the file.
+        let marker_paths = self.tracked_conflict_marker_paths(worktree_path).await?;
+        if !marker_paths.is_empty() {
+            return Err(WorktreeError {
+                message: format!(
+                    "cannot continue rebase while conflict markers remain in tracked files:\n{}",
+                    marker_paths.join("\n")
+                ),
             });
         }
 

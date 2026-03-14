@@ -74,7 +74,7 @@ export function AgentModelPicker({
     return (
       <>
         <Flex className={agentHeaderControlRow}>
-          <Text size="1" color="gray" className={agentHeaderPickerStatic}>
+          <Text size="2" color="gray" className={agentHeaderPickerStatic}>
             {agent.model_id}
           </Text>
         </Flex>
@@ -103,7 +103,7 @@ export function AgentModelPicker({
               className={`${agentHeaderPickerTrigger} ${agentHeaderPickerTextGrow}`}
               aria-label="Select model"
             >
-              <Text size="1" color="gray" className={agentHeaderPickerText}>
+              <Text size="2" color="gray" className={agentHeaderPickerText}>
                 {agent.model_id}
               </Text>
             </button>
@@ -152,14 +152,14 @@ export function AgentModelPicker({
                         closePicker();
                       }}
                     >
-                      <Text size="1" className={agentHeaderModelPickerOptionText}>
+                      <Text size="2" className={agentHeaderModelPickerOptionText}>
                         {modelId}
                       </Text>
                     </Box>
                   ))
                 ) : (
                   <Box px="3" py="2">
-                    <Text size="1" color="gray">
+                    <Text size="2" color="gray">
                       No matching models
                     </Text>
                   </Box>
@@ -170,7 +170,7 @@ export function AgentModelPicker({
         </Popover.Root>
       </Flex>
       {error && (
-        <Text size="1" color="red">
+        <Text size="2" color="red">
           {error}
         </Text>
       )}

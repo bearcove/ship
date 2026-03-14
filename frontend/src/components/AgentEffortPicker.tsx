@@ -68,12 +68,12 @@ export function AgentEffortPicker({
     return (
       <>
         <Flex className={agentHeaderControlRow}>
-          <Text size="1" color="gray" className={agentHeaderPickerStatic}>
+          <Text size="2" color="gray" className={agentHeaderPickerStatic}>
             {currentEffort?.name ?? currentEffortId}
           </Text>
         </Flex>
         {error && (
-          <Text size="1" color="red">
+          <Text size="2" color="red">
             {error}
           </Text>
         )}
@@ -88,11 +88,11 @@ export function AgentEffortPicker({
           <DropdownMenu.Trigger
             className={`${agentHeaderPickerTrigger} ${agentHeaderPickerTextGrow}`}
           >
-            <Text size="1" color="gray" className={agentHeaderPickerText}>
+            <Text size="2" color="gray" className={agentHeaderPickerText}>
               {currentEffort?.name ?? currentEffortId}
             </Text>
           </DropdownMenu.Trigger>
-          <DropdownMenu.Content size="1">
+          <DropdownMenu.Content size="2">
             {available_effort_values.map((effort) => (
               <DropdownMenu.Item
                 key={effort.id}
@@ -106,7 +106,7 @@ export function AgentEffortPicker({
         </DropdownMenu.Root>
       </Flex>
       {error && (
-        <Text size="1" color="red">
+        <Text size="2" color="red">
           {error}
         </Text>
       )}

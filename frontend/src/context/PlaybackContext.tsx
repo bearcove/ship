@@ -6,6 +6,7 @@ type PlaybackState = "idle" | "loading" | "playing";
 
 interface PlaybackContextValue {
   state: PlaybackState;
+  activeText: string | null;
   analyser: AnalyserNode | null;
   speak: (text: string) => void;
   stop: () => void;
@@ -15,6 +16,7 @@ const PlaybackContext = createContext<PlaybackContextValue>(null!);
 
 export function PlaybackProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<PlaybackState>("idle");
+  const [activeText, setActiveText] = useState<string | null>(null);
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
   const sourceRef = useRef<AudioBufferSourceNode | null>(null);
   const ctxRef = useRef<AudioContext | null>(null);
@@ -28,6 +30,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
       ctxRef.current = null;
     }
     setAnalyser(null);
+    setActiveText(null);
     setState("idle");
   }, []);
 
@@ -43,6 +46,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
       // so it isn't blocked on mobile browsers (iOS Safari requires this)
       const audioCtx = new AudioContext({ sampleRate: 24000 });
       ctxRef.current = audioCtx;
+      setActiveText(text);
       setState("loading");
 
       void (async () => {
@@ -121,7 +125,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <PlaybackContext.Provider value={{ state, analyser, speak, stop }}>
+    <PlaybackContext.Provider value={{ state, activeText, analyser, speak, stop }}>
       {children}
     </PlaybackContext.Provider>
   );

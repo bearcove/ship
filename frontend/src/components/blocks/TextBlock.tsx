@@ -106,6 +106,7 @@ export function BubbleActions({ block, speakable, isLast, timestamp }: BubbleAct
     });
   };
 
+  const isThisActive = playback.state !== "idle" && playback.activeText === block.text;
   const isBusy = playback.state !== "idle";
 
   return (
@@ -114,12 +115,12 @@ export function BubbleActions({ block, speakable, isLast, timestamp }: BubbleAct
         <IconButton
           size="2"
           variant="ghost"
-          onClick={() => playback.speak(block.text)}
-          aria-label="Speak"
-          disabled={isBusy}
+          onClick={() => isThisActive ? playback.stop() : playback.speak(block.text)}
+          aria-label={isThisActive ? "Stop" : "Speak"}
+          disabled={isBusy && !isThisActive}
         >
-          {isBusy ? (
-            <CircleNotch size={16} style={{ animation: `${spinAnimation} 1s linear infinite` }} />
+          {isThisActive ? (
+            <CircleNotch size={16} style={{ animation: `${spinAnimation} 2.5s linear infinite` }} />
           ) : (
             <SpeakerHigh size={16} />
           )}

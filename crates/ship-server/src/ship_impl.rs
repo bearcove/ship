@@ -2565,6 +2565,21 @@ Here is your task:
             worktree_path: worktree_path.display().to_string(),
         };
 
+        // Register the reply channel BEFORE emitting the event, so that
+        // any listener that reacts to HumanReviewRequested can immediately
+        // call reply_to_human without racing.
+        let (tx, rx) = tokio::sync::oneshot::channel::<String>();
+        {
+            let mut ops = self
+                .pending_mcp_ops
+                .lock()
+                .expect("pending_mcp_ops mutex poisoned");
+            let entry = ops
+                .entry(session_id.clone())
+                .or_insert_with(PendingMcpOps::new);
+            entry.human_reply = Some(tx);
+        }
+
         {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let session = sessions
@@ -2583,18 +2598,6 @@ Here is your task:
         self.persist_session(session_id)
             .await
             .map_err(|e| format!("persist failed: {e}"))?;
-
-        let (tx, rx) = tokio::sync::oneshot::channel::<String>();
-        {
-            let mut ops = self
-                .pending_mcp_ops
-                .lock()
-                .expect("pending_mcp_ops mutex poisoned");
-            let entry = ops
-                .entry(session_id.clone())
-                .or_insert_with(PendingMcpOps::new);
-            entry.human_reply = Some(tx);
-        }
 
         let reply = match rx.await {
             Ok(reply) => reply,
@@ -4468,11 +4471,11 @@ Here is your task:
     // Checks that the mate has created a plan before allowing substantive work.
     // Returns Ok(()) if a plan exists, Err with a human-readable message otherwise.
     fn require_mate_plan(session: &ActiveSession) -> Result<(), String> {
-        let has_plan = session
-            .current_task
-            .as_ref()
-            .is_some_and(|task| !task.record.steps.is_empty());
-        if has_plan {
+        let task = session.current_task.as_ref();
+        let has_plan = task.is_some_and(|task| !task.record.steps.is_empty());
+        let in_rebase_conflict =
+            task.is_some_and(|task| task.record.status == TaskStatus::RebaseConflict);
+        if has_plan || in_rebase_conflict {
             Ok(())
         } else {
             Err(PLAN_REQUIRED_MESSAGE.to_owned())
@@ -7927,7 +7930,7 @@ mod tests {
     use ship_types::{
         AgentDiscovery, AgentKind, AgentSnapshot, AgentState, AutonomyMode, CaptainAssignExtras,
         ContentBlock, CreateSessionRequest, CreateSessionResponse, CurrentTask,
-        DirtySessionStrategy, McpServerConfig, McpStdioServerConfig, PlanStep, PlanStepInput,
+        DirtySessionStrategy, HumanReviewRequest, McpServerConfig, McpStdioServerConfig, PlanStep, PlanStepInput,
         PlanStepStatus, ProjectName, PromptContentPart, Role, SessionConfig, SessionEvent,
         SessionEventEnvelope, SessionId, SessionStartupState, SubscribeMessage, TaskId, TaskRecord,
         TaskStatus,
@@ -9844,6 +9847,14 @@ mod tests {
         let (dir, ship, session_id, _project_root, worktree_path) =
             create_clean_review_session("captain-notify-human-review-diff").await;
 
+        // Subscribe to session events before spawning notify_human so we
+        // don't miss the HumanReviewRequested event.
+        let mut events_rx = {
+            let sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let active = sessions.get(&session_id).expect("session should exist");
+            active.events_tx.subscribe()
+        };
+
         let ship_for_notify = ship.clone();
         let session_for_notify = session_id.clone();
         let notify = tokio::spawn(async move {
@@ -9852,18 +9863,26 @@ mod tests {
                 .await
         });
 
-        let pending_review = timeout(Duration::from_secs(1), async {
-            loop {
-                let detail = Ship::get_session(&ship, session_id.clone()).await;
-                if let Some(review) = detail.pending_human_review {
-                    break review;
-                }
-                tokio::time::sleep(Duration::from_millis(10)).await;
+        // Wait for the HumanReviewRequested event — no polling.
+        let review = loop {
+            let envelope = events_rx.recv().await.expect("event channel should not close");
+            if let SessionEvent::HumanReviewRequested { message, diff, worktree_path: _ } = envelope.event {
+                break HumanReviewRequest { message, diff, worktree_path: worktree_path.display().to_string() };
             }
-        })
-        .await
-        .expect("human review should be recorded");
+        };
 
+        // Send the reply to unblock notify_human.
+        ship.reply_to_human(session_id.clone(), "looks good".to_owned())
+            .await;
+
+        let response = notify
+            .await
+            .expect("notify_human task should join")
+            .expect("notify_human should succeed");
+
+        let pending_review = review;
+
+        assert_eq!(response, "looks good");
         assert!(
             worktree_path.join("base.txt").exists(),
             "notify_human should rebase onto the updated base branch before saving review state"
@@ -9879,13 +9898,7 @@ mod tests {
             pending_review.diff
         );
 
-        ship.reply_to_human(session_id.clone(), "looks good".to_owned())
-            .await;
-        let response = notify
-            .await
-            .expect("notify_human task should join")
-            .expect("notify_human should complete after the reply");
-        assert_eq!(response, "looks good");
+        // Review state should be cleared after the reply.
         assert!(
             Ship::get_session(&ship, session_id.clone())
                 .await
