@@ -386,15 +386,12 @@ export function SessionHeader({
               </Popover.Content>
             </Popover.Root>
             <DropdownMenu.Root>
-              <DropdownMenu.Trigger asChild>
-                <button
-                  type="button"
-                  className={sessionHeaderSideButton}
-                  aria-label="Session menu"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <DotsThree size={20} weight="bold" />
-                </button>
+              <DropdownMenu.Trigger
+                className={sessionHeaderSideButton}
+                aria-label="Session menu"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <DotsThree size={20} weight="bold" />
               </DropdownMenu.Trigger>
               <DropdownMenu.Content size="2" align="end">
                 <DropdownMenu.Item onClick={() => setNewSessionOpen(true)}>
