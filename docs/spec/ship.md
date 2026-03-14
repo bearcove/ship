@@ -1048,10 +1048,12 @@ the captain's conversation long-lived across prompts within the session.
 
 r[captain.capabilities]
 The captain agent MUST NOT be configured with raw ACP filesystem or terminal
-capabilities. It reviews output, it does not execute. The captain does have
-access to Ship's captain MCP tools (`captain_assign`, `captain_steer`,
-`captain_accept`, `captain_cancel`, `captain_notify_human`) — these are MCP
-tools, not ACP filesystem/terminal capabilities.
+capabilities. The captain does have access to Ship's captain MCP tools
+(`captain_assign`, `captain_steer`, `captain_accept`, `captain_cancel`,
+`captain_notify_human`, `read_file`, `run_command`, `write_file`,
+`edit_prepare`, `edit_confirm`, `commit`) — these are Ship-mediated MCP tools,
+not raw ACP filesystem/terminal capabilities. The captain writes to the same
+session worktree as the mate via these tools.
 
 ### Captain Tools
 
@@ -1142,11 +1144,32 @@ The captain MUST have access to a `captain_notify_human` tool that takes a
 then returns the human's reply text to the captain.
 
 r[captain.tool.read-only]
-The captain MUST have access to read-only file tools: `read_file`,
-`search_files`, and `list_files`. These operate on the session worktree with
-the same semantics as the mate equivalents (see r[mate.tool.read-file],
-r[mate.tool.search-files], r[mate.tool.list-files]). The captain MUST NOT
-have access to write, edit, or run-command tools.
+The captain MUST have access to `read_file` and `run_command` tools. These
+operate on the session worktree with the same semantics as the mate equivalents
+(see r[mate.tool.read-file], r[mate.tool.run-command]).
+
+r[captain.tool.write-file]
+The captain MUST have access to a `write_file` tool that takes `path` and
+`content` arguments (both strings). It has the same semantics as the mate's
+`write_file` tool: writes to the session worktree with rustfmt validation for
+Rust files.
+
+r[captain.tool.edit-prepare]
+The captain MUST have access to an `edit_prepare` tool with the same semantics
+as the mate's `edit_prepare` tool: takes `path`, `old_string`, `new_string`
+(all required strings) and optional `replace_all` (boolean). Returns a diff
+preview and an `edit_id` without modifying the file.
+
+r[captain.tool.edit-confirm]
+The captain MUST have access to an `edit_confirm` tool with the same semantics
+as the mate's `edit_confirm` tool: takes `edit_id` (string) and applies a
+previously prepared edit, with Rust syntax validation.
+
+r[captain.tool.commit]
+The captain MUST have access to a `commit` tool with the same semantics as the
+mate's `commit` tool: takes a required `message` (string, used verbatim) and
+an optional `step_index` (integer). The captain writes to the same worktree as
+the mate; commits from either agent are interleaved on the same branch.
 
 ### Mate Tools
 
