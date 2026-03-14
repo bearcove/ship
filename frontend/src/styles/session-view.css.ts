@@ -739,7 +739,9 @@ export const sessionTopBarActions = style({
 export const sessionHeaderRoot = style({
   flexShrink: 0,
   position: "relative",
-  boxShadow: "0 0 20px var(--gray-a4)"
+  boxShadow: "0 0 20px var(--gray-a4)",
+  display: "flex",
+  flexDirection: "column",
 });
 
 export const sessionHeaderCollapsedArea = style({
