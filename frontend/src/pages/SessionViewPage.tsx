@@ -47,13 +47,13 @@ export function SessionViewPage({ debugMode }: { debugMode: boolean; onOpenSideb
 
   const handleSwipe = useCallback(
     (direction: "left" | "right") => {
-      if (direction === "left") {
-        if (!nextSession) {
+      if (direction === "right") {
+        if (!prevSession) {
           navigate("/");
           return;
         }
       } else {
-        if (!prevSession) return;
+        if (!nextSession) return;
       }
       setSlideDirection(direction);
     },
@@ -225,13 +225,13 @@ export function SessionViewPage({ debugMode }: { debugMode: boolean; onOpenSideb
         ref={setRootEl}
         className={[
           sessionViewRoot,
-          slideDirection === "left" ? slideInFromRight : "",
           slideDirection === "right" ? slideInFromLeft : "",
+          slideDirection === "left" ? slideInFromRight : "",
         ]
           .filter(Boolean)
           .join(" ")}
         onAnimationEnd={() => {
-          const target = slideDirection === "left" ? nextSession : prevSession;
+          const target = slideDirection === "right" ? prevSession : nextSession;
           setSlideDirection(null);
           if (target) navigate(`/sessions/${target.id}`);
         }}
