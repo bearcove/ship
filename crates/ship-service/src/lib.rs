@@ -94,6 +94,10 @@ pub trait Ship {
 
     async fn get_worktree_diff_stats(&self, session: SessionId) -> Option<WorktreeDiffStats>;
 
+    async fn open_in_editor(&self, session: SessionId);
+
+    async fn open_in_terminal(&self, session: SessionId);
+
     // r[event.subscribe.roam-channel]
     async fn subscribe_events(&self, session: SessionId, output: Tx<SubscribeMessage>);
 

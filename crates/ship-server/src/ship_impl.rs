@@ -2255,6 +2255,7 @@ Here is your task:
                 title: input.title,
                 description: input.description,
                 status: PlanStepStatus::Pending,
+                started_at: None,
             })
             .collect()
     }
@@ -4230,6 +4231,14 @@ Here is your task:
                 };
                 step.status = PlanStepStatus::Completed;
                 let step_description = step.description.clone();
+                // Set started_at on the next pending step
+                if let Some(next_step) = plan
+                    .iter_mut()
+                    .skip(step_index + 1)
+                    .find(|s| s.status == PlanStepStatus::Pending)
+                {
+                    next_step.started_at = Some(chrono::Utc::now().to_rfc3339());
+                }
                 let updated_plan = plan.clone();
                 set_agent_state(
                     session,
@@ -5748,11 +5757,31 @@ async fn compute_worktree_diff_stats(
         }
     }
 
+    // Uncommitted diff (staged + unstaged vs HEAD)
+    let uncommitted_output = TokioCommand::new("git")
+        .args(["diff", "--numstat", "HEAD"])
+        .current_dir(&worktree_path)
+        .output()
+        .await
+        .ok()?;
+    let uncommitted_stdout = String::from_utf8_lossy(&uncommitted_output.stdout);
+    let mut uncommitted_lines_added: u64 = 0;
+    let mut uncommitted_lines_removed: u64 = 0;
+    for line in uncommitted_stdout.lines() {
+        let parts: Vec<&str> = line.split('\t').collect();
+        if parts.len() >= 3 {
+            uncommitted_lines_added += parts[0].parse::<u64>().unwrap_or(0);
+            uncommitted_lines_removed += parts[1].parse::<u64>().unwrap_or(0);
+        }
+    }
+
     Some(WorktreeDiffStats {
         branch_name,
         lines_added,
         lines_removed,
         files_changed,
+        uncommitted_lines_added,
+        uncommitted_lines_removed,
     })
 }
 
@@ -6444,6 +6473,36 @@ impl Ship for ShipImpl {
         };
 
         compute_worktree_diff_stats(worktree_path, branch_name, base_branch).await
+    }
+
+    async fn open_in_editor(&self, session: SessionId) {
+        let worktree_path = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let Some(session) = sessions.get(&session) else {
+                return;
+            };
+            let Some(path) = session.worktree_path.as_ref() else {
+                return;
+            };
+            path.clone()
+        };
+        let _ = TokioCommand::new("zed").arg(&worktree_path).spawn();
+    }
+
+    async fn open_in_terminal(&self, session: SessionId) {
+        let worktree_path = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let Some(session) = sessions.get(&session) else {
+                return;
+            };
+            let Some(path) = session.worktree_path.as_ref() else {
+                return;
+            };
+            path.clone()
+        };
+        let _ = TokioCommand::new("open")
+            .args(["-a", "iTerm", worktree_path.to_str().unwrap_or(".")])
+            .spawn();
     }
 
     // r[event.subscribe.replay]
