@@ -237,11 +237,15 @@ export const taskRecapBoundary = style({
   flexDirection: "column",
   gap: "var(--space-2)",
   width: "100%",
-  borderTop: "2px solid var(--green-8)",
+  borderTop: "2px solid var(--gray-a6)",
   borderBottom: "1px solid var(--gray-a4)",
   paddingTop: "var(--space-3)",
-  background: "linear-gradient(180deg, var(--green-a3) 0%, var(--gray-a2) 100%)",
+  background: "linear-gradient(180deg, var(--gray-a3) 0%, var(--gray-a2) 100%)",
 });
+
+export const taskRecapBoundaryAccepted = style({});
+export const taskRecapBoundaryError = style({});
+export const taskRecapBoundaryNeutral = style({});
 
 export const taskRecapContent = style({
   maxWidth: "640px",
@@ -268,7 +272,7 @@ export const taskRecapEyebrow = style({
   textTransform: "uppercase",
   letterSpacing: "0.08em",
   fontWeight: 700,
-  color: "var(--green-11)",
+  color: "var(--gray-11)",
 });
 
 export const taskRecapTitle = style({
@@ -337,7 +341,7 @@ export const taskRecapCommitHash = style({
   flexShrink: 0,
   fontFamily: monoFontStack,
   fontSize: "var(--font-size-1)",
-  color: "var(--green-11)",
+  color: "var(--gray-11)",
 });
 
 export const taskRecapCommitSubject = style({

@@ -39,6 +39,9 @@ import {
   startupFeedBody,
   startupFeedItem,
   taskRecapBoundary,
+  taskRecapBoundaryAccepted,
+  taskRecapBoundaryError,
+  taskRecapBoundaryNeutral,
   taskRecapCaret,
   taskRecapCommitHash,
   taskRecapCommitList,
@@ -113,6 +116,8 @@ function countStructuredTokens(value: unknown): number {
 type TextBlockType = Extract<ContentBlock, { tag: "Text" }>;
 type ToolCallBlockType = Extract<ContentBlock, { tag: "ToolCall" }>;
 type TaskRecapBlockType = Extract<ContentBlock, { tag: "TaskRecap" }>;
+type WorkflowMilestoneBlockType = Extract<ContentBlock, { tag: "WorkflowMilestone" }>;
+type PhaseBreakTone = "accepted" | "error" | "neutral";
 
 type SingleSegment = { kind: "single"; entry: BlockEntry };
 type FeedSegment = SingleSegment;
@@ -198,6 +203,17 @@ function formatDuration(totalSeconds: number): string {
   const secs = totalSeconds % 60;
   if (secs === 0) return `${mins}m`;
   return `${mins}m ${secs}s`;
+}
+
+function phaseBreakToneClassName(tone: PhaseBreakTone): string {
+  switch (tone) {
+    case "accepted":
+      return taskRecapBoundaryAccepted;
+    case "error":
+      return taskRecapBoundaryError;
+    case "neutral":
+      return taskRecapBoundaryNeutral;
+  }
 }
 
 // ─── Feed segmentation ────────────────────────────────────────────────────────
@@ -380,9 +396,10 @@ function TaskRecapBlock({
 
   return (
     <Box
-      className={taskRecapBoundary}
+      className={`${taskRecapBoundary} ${phaseBreakToneClassName("accepted")}`}
       data-testid="task-recap-boundary"
       data-feed-boundary="phase-break"
+      data-phase-break-tone="accepted"
     >
       <Box className={taskRecapContent}>
         <Flex className={taskRecapHeader} align="start" justify="between" gap="3">
@@ -440,6 +457,47 @@ function TaskRecapBlock({
                 </Box>
               );
             })}
+          </Box>
+        )}
+      </Box>
+    </Box>
+  );
+}
+
+function WorkflowMilestoneBlock({
+  block,
+  tone = "neutral",
+}: {
+  block: WorkflowMilestoneBlockType;
+  tone?: PhaseBreakTone;
+}) {
+  return (
+    <Box
+      className={`${taskRecapBoundary} ${phaseBreakToneClassName(tone)}`}
+      data-testid="workflow-milestone-boundary"
+      data-feed-boundary="phase-break"
+      data-phase-break-kind={block.kind.tag}
+      data-phase-break-tone={tone}
+    >
+      <Box className={taskRecapContent}>
+        <Flex className={taskRecapHeader} align="start" justify="between" gap="3">
+          <Box style={{ minWidth: 0 }}>
+            <Text className={taskRecapEyebrow}>Phase break</Text>
+            <Text className={taskRecapTitle}>{block.title}</Text>
+            {block.summary && (
+              <Text style={{ fontSize: "var(--font-size-1)", color: "var(--gray-9)" }}>
+                {block.summary}
+              </Text>
+            )}
+          </Box>
+        </Flex>
+        {block.items.length > 0 && (
+          <Box className={taskRecapCommitList}>
+            {block.items.map((item, index) => (
+              <Box key={`${index}-${item}`} className={taskRecapCommitRow}>
+                <Text className={taskRecapCommitSubject}>{item}</Text>
+              </Box>
+            ))}
           </Box>
         )}
       </Box>
@@ -796,7 +854,7 @@ const SingleBlock = memo(function SingleBlock({
       );
 
     case "WorkflowMilestone":
-      return <WorkflowMilestoneBlock block={block} />;
+      return <WorkflowMilestoneBlock block={block} tone="neutral" />;
 
     case "TaskRecap":
       return <TaskRecapBlock block={block} duration={taskCompletedDuration} />;
