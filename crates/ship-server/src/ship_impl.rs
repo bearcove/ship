@@ -16,7 +16,8 @@ use ship_core::{
     AcpAgentDriver, ActiveSession, AgentDriver, AgentSessionConfig, GitWorktreeOps,
     JsonSessionStore, PendingEdit, ProjectRegistry, RebaseOutcome, SessionGitNames, SessionStore,
     WorktreeOps, apply_event, archive_terminal_task, coalesce_replay_events, current_task_status,
-    rebuild_materialized_from_event_log, resolve_mcp_servers, set_agent_state, transition_task,
+    load_agent_presets, rebuild_materialized_from_event_log, resolve_mcp_servers, set_agent_state,
+    transition_task,
 };
 use ship_service::{CaptainMcp, CaptainMcpDispatcher, MateMcp, MateMcpDispatcher, Ship};
 use ship_types::{
@@ -37,6 +38,10 @@ use similar::TextDiff;
 use tokio::process::Command as TokioCommand;
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
+
+const PRESET_CONTINUATION_PROMPT: &str = "Sorry for the interruption, please continue";
+const PRESET_RESPAWN_NOT_IMPLEMENTED: &str =
+    "preset switches that require respawning the agent are not implemented yet";
 
 fn extract_agent_text(events: Vec<SessionEvent>) -> String {
     let mut blocks: std::collections::HashMap<String, String> = std::collections::HashMap::new();
@@ -267,6 +272,31 @@ impl ShipImpl {
         }
 
         self.agent_driver.prompt(handle, parts).await
+    }
+
+    async fn agent_cancel(
+        &self,
+        handle: &ship_core::AgentHandle,
+    ) -> Result<(), ship_core::AgentError> {
+        #[cfg(test)]
+        if let Some(driver) = Self::test_agent_driver() {
+            return driver.cancel(handle).await;
+        }
+
+        self.agent_driver.cancel(handle).await
+    }
+
+    async fn agent_set_model(
+        &self,
+        handle: &ship_core::AgentHandle,
+        model_id: &str,
+    ) -> Result<(), ship_core::AgentError> {
+        #[cfg(test)]
+        if let Some(driver) = Self::test_agent_driver() {
+            return driver.set_model(handle, model_id).await;
+        }
+
+        self.agent_driver.set_model(handle, model_id).await
     }
 
     /// Configure the whisper model path from env var or default locations.
@@ -775,6 +805,27 @@ impl ShipImpl {
             .map_err(|error| error.message)?;
 
         Ok((project_root, mcp_servers))
+    }
+
+    async fn load_configured_agent_preset(
+        &self,
+        preset_id: &AgentPresetId,
+    ) -> Result<Option<ship_types::AgentPreset>, String> {
+        let config_dir = {
+            let registry = self.registry.lock().await;
+            registry.config_dir().to_path_buf()
+        };
+        let presets = load_agent_presets(&config_dir)
+            .await
+            .map_err(|error| error.to_string())?;
+        Ok(presets.into_iter().find(|preset| preset.id == *preset_id))
+    }
+
+    fn current_agent_provider(agent: &AgentSnapshot) -> ship_types::AgentProviderId {
+        agent
+            .provider
+            .clone()
+            .unwrap_or_else(|| agent.kind.default_provider_id())
     }
 
     async fn resolve_project_root(
@@ -6031,8 +6082,7 @@ use captain_steer. Otherwise continue your current work."
         };
 
         if let Some(handle) = handle {
-            self.agent_driver
-                .cancel(&handle)
+            self.agent_cancel(&handle)
                 .await
                 .map_err(|error| error.message)?;
         }
@@ -6059,8 +6109,7 @@ use captain_steer. Otherwise continue your current work."
         self.persist_session(session_id).await?;
 
         if let Some(handle) = handle {
-            self.agent_driver
-                .cancel(&handle)
+            self.agent_cancel(&handle)
                 .await
                 .map_err(|error| error.message)?;
         }
@@ -7188,12 +7237,104 @@ impl Ship for ShipImpl {
 
     async fn set_agent_preset(
         &self,
-        _session: SessionId,
-        _role: Role,
-        _preset_id: AgentPresetId,
+        session: SessionId,
+        role: Role,
+        preset_id: AgentPresetId,
     ) -> SetAgentPresetResponse {
-        SetAgentPresetResponse::Failed {
-            message: "set_agent_preset is not implemented yet".to_owned(),
+        let preset = match self.load_configured_agent_preset(&preset_id).await {
+            Ok(Some(preset)) => preset,
+            Ok(None) => return SetAgentPresetResponse::PresetNotFound,
+            Err(message) => return SetAgentPresetResponse::Failed { message },
+        };
+
+        let (handle, current_kind, current_provider, current_model_id, available_models) = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let Some(session_state) = sessions.get(&session) else {
+                return SetAgentPresetResponse::SessionNotFound;
+            };
+            let (agent, handle) = match role {
+                Role::Captain => (&session_state.captain, session_state.captain_handle.clone()),
+                Role::Mate => (&session_state.mate, session_state.mate_handle.clone()),
+            };
+            let Some(handle) = handle else {
+                return SetAgentPresetResponse::AgentNotSpawned;
+            };
+            (
+                handle,
+                agent.kind,
+                Self::current_agent_provider(agent),
+                agent.model_id.clone(),
+                agent.available_models.clone(),
+            )
+        };
+
+        if preset.kind != current_kind || preset.provider != current_provider {
+            return SetAgentPresetResponse::Failed {
+                message: PRESET_RESPAWN_NOT_IMPLEMENTED.to_owned(),
+            };
+        }
+
+        let Some(previous_model_id) = current_model_id else {
+            return SetAgentPresetResponse::Failed {
+                message: "current agent model is unknown; cannot switch presets safely".to_owned(),
+            };
+        };
+
+        let cancel_result = match role {
+            Role::Captain => self.cancel_captain_prompt(&session).await,
+            Role::Mate => self.cancel_mate_prompt(&session).await,
+        };
+        if let Err(message) = cancel_result {
+            return SetAgentPresetResponse::Failed { message };
+        }
+
+        if let Err(error) = self.agent_set_model(&handle, &preset.model_id).await {
+            return SetAgentPresetResponse::Failed {
+                message: error.message,
+            };
+        }
+
+        if let Err(message) = self
+            .prompt_agent_text(&session, role, PRESET_CONTINUATION_PROMPT.to_owned())
+            .await
+        {
+            if let Err(error) = self.agent_set_model(&handle, &previous_model_id).await {
+                return SetAgentPresetResponse::Failed {
+                    message: format!(
+                        "{message}; failed to restore previous model: {}",
+                        error.message
+                    ),
+                };
+            }
+            return SetAgentPresetResponse::Failed { message };
+        }
+
+        {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            if let Some(session_state) = sessions.get_mut(&session) {
+                apply_event(
+                    session_state,
+                    SessionEvent::AgentPresetChanged {
+                        role,
+                        preset_id: Some(preset.id.clone()),
+                        kind: preset.kind,
+                        provider: Some(preset.provider.clone()),
+                    },
+                );
+                apply_event(
+                    session_state,
+                    SessionEvent::AgentModelChanged {
+                        role,
+                        model_id: Some(preset.model_id.clone()),
+                        available_models,
+                    },
+                );
+            }
+        }
+
+        match self.persist_session(&session).await {
+            Ok(()) => SetAgentPresetResponse::Ok,
+            Err(message) => SetAgentPresetResponse::Failed { message },
         }
     }
 
