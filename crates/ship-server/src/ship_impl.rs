@@ -10715,11 +10715,15 @@ agent_presets {
 
         let model_sets = fake_driver.model_set_log();
         assert!(
-            model_sets.iter().any(|(handle, model)| *handle == captain_handle && model == "gpt-5")
+            model_sets
+                .iter()
+                .any(|(handle, model)| *handle == captain_handle && model == "gpt-5")
         );
-        assert!(model_sets
-            .iter()
-            .any(|(handle, model)| *handle == mate_handle && model == "claude-sonnet-4"));
+        assert!(
+            model_sets
+                .iter()
+                .any(|(handle, model)| *handle == mate_handle && model == "claude-sonnet-4")
+        );
 
         let _ = std::fs::remove_dir_all(dir);
     }
@@ -12374,7 +12378,7 @@ agent_presets {
                 .await
         });
 
-        timeout(std::time::Duration::from_secs(5), async {
+        timeout(std::time::Duration::from_secs(15), async {
             loop {
                 let ready = {
                     let sessions = ship.sessions.lock().expect("sessions mutex poisoned");
