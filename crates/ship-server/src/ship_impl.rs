@@ -294,6 +294,9 @@ const ADMIRAL_SESSION_ID: &str = "admiral";
 struct AdmiralSession {
     /// ACP agent handle for prompting the admiral.
     handle: ship_core::AgentHandle,
+    events_tx: broadcast::Sender<SessionEventEnvelope>,
+    session_event_log: Vec<SessionEventEnvelope>,
+    next_event_seq: u64,
 }
 
 // r[server.multi-repo]
