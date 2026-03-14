@@ -3,6 +3,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, beforeEach, vi } from "vitest";
 import type { SessionDetail } from "../generated/ship";
 import { SoundProvider } from "../context/SoundContext";
+import { initialSessionViewState } from "../state/sessionReducer";
 import { renderWithTheme } from "../test/render";
 import { SessionViewPage } from "./SessionViewPage";
 
@@ -12,22 +13,31 @@ const mocks = vi.hoisted(() => ({
   eventState: {
     captain: null,
     mate: null,
-    currentTaskId: null,
-    currentTaskTitle: null,
-    currentTaskDescription: null,
-    currentTaskStatus: null,
+    captainAcpInfo: null,
+    mateAcpInfo: null,
     captainBlocks: { blocks: [], index: new Map() },
     mateBlocks: { blocks: [], index: new Map() },
     unifiedBlocks: { blocks: [], index: new Map() },
     startupState: null,
+    currentTaskId: null,
+    currentTaskTitle: null,
+    currentTaskDescription: null,
+    currentTaskStatus: null,
+    currentTaskStartedAt: null,
+    currentTaskCompletedAt: null,
+    captainTurnStartedAt: null,
+    mateTurnStartedAt: null,
+    currentTaskSteps: [],
     phase: "live" as const,
     connected: true,
-    disconnectReason: null,
-    replayEventCount: 0,
-    eventCount: 0,
-    connectionAttempt: 1,
     lastSeq: null,
     lastEventKind: null,
+    eventCount: 0,
+    replayEventCount: 0,
+    disconnectReason: null,
+    connectionAttempt: 1,
+    pendingHumanReview: null,
+    title: null,
   },
   promptCaptain: vi.fn(),
   steer: vi.fn(),
@@ -149,24 +159,12 @@ beforeEach(() => {
   mocks.session = makeSession();
   mocks.sessionError = null;
   mocks.eventState = {
+    ...initialSessionViewState(),
     captain: null,
     mate: null,
-    currentTaskId: null,
-    currentTaskTitle: null,
-    currentTaskDescription: null,
-    currentTaskStatus: null,
-    captainBlocks: { blocks: [], index: new Map() },
-    mateBlocks: { blocks: [], index: new Map() },
-    unifiedBlocks: { blocks: [], index: new Map() },
-    startupState: null,
     phase: "live",
     connected: true,
-    disconnectReason: null,
-    replayEventCount: 0,
-    eventCount: 0,
     connectionAttempt: 1,
-    lastSeq: null,
-    lastEventKind: null,
   };
   mocks.promptCaptain.mockReset();
   mocks.steer.mockReset();

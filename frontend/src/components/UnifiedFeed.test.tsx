@@ -1,6 +1,7 @@
 import { fireEvent, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
-import type { ContentBlock } from "../generated/ship";
+import { encode } from "gpt-tokenizer";
+import type { AgentSnapshot, ContentBlock } from "../generated/ship";
 import type { BlockEntry } from "../state/blockStore";
 import { feedRowAnimate } from "../styles/session-view.css";
 import { renderWithTheme } from "../test/render";
@@ -31,35 +32,60 @@ function makeTaskRecapBlock(): Extract<ContentBlock, { tag: "TaskRecap" }> {
   };
 }
 
-function makeTextBlock(text: string): Extract<ContentBlock, { tag: "Text" }> {
+function makeTextBlock(
+  text: string,
+  source: Extract<ContentBlock, { tag: "Text" }>['source'] = { tag: "AgentMessage" },
+): Extract<ContentBlock, { tag: "Text" }> {
   return {
     tag: "Text",
     text,
-    source: { tag: "AgentMessage" },
+    source,
   };
 }
 
-function makeTextEntry(blockId: string, text: string): BlockEntry {
+function makeTextEntry(
+  blockId: string,
+  text: string,
+  role: BlockEntry['role'] = { tag: "Captain" },
+  source: Extract<ContentBlock, { tag: "Text" }>['source'] = { tag: "AgentMessage" },
+  timestamp = "2026-03-13T10:00:00Z",
+): BlockEntry {
   return {
     blockId,
-    role: { tag: "Captain" },
-    block: makeTextBlock(text),
-    timestamp: "2026-03-13T10:00:00Z",
+    role,
+    block: makeTextBlock(text, source),
+    timestamp,
   };
 }
 
 function feedUi(
   blocks: BlockEntry[],
-  { loading = false, sessionId = "session-1" }: { loading?: boolean; sessionId?: string } = {},
+  {
+    loading = false,
+    sessionId = "session-1",
+    captain = null,
+    mate = null,
+    captainTurnStartedAt = null,
+    mateTurnStartedAt = null,
+  }: {
+    loading?: boolean;
+    sessionId?: string;
+    captain?: AgentSnapshot | null;
+    mate?: AgentSnapshot | null;
+    captainTurnStartedAt?: string | null;
+    mateTurnStartedAt?: string | null;
+  } = {},
 ) {
   return (
     <UnifiedFeed
       sessionId={sessionId}
-      captain={null}
-      mate={null}
+      captain={captain}
+      mate={mate}
       blocks={blocks}
       startupState={null}
       taskCompletedDuration={null}
+      captainTurnStartedAt={captainTurnStartedAt}
+      mateTurnStartedAt={mateTurnStartedAt}
       loading={loading}
     />
   );
@@ -67,9 +93,70 @@ function feedUi(
 
 function renderFeed(
   blocks: BlockEntry[],
-  options: { loading?: boolean; sessionId?: string } = {},
+  options: {
+    loading?: boolean;
+    sessionId?: string;
+    captain?: AgentSnapshot | null;
+    mate?: AgentSnapshot | null;
+    captainTurnStartedAt?: string | null;
+    mateTurnStartedAt?: string | null;
+  } = {},
 ) {
   return renderWithTheme(feedUi(blocks, options));
+}
+
+function makeAgent(role: "Captain" | "Mate"): AgentSnapshot {
+  return {
+    role: { tag: role },
+    kind: { tag: role === "Captain" ? "Claude" : "Codex" },
+    state: { tag: "Working", plan: null, activity: null },
+    context_remaining_percent: 80,
+    preset_id: null,
+    provider: null,
+    model_id: null,
+    available_models: [],
+    effort_config_id: null,
+    effort_value_id: null,
+    available_effort_values: [],
+  };
+}
+
+function makeToolCallEntry(
+  blockId: string,
+  timestamp: string,
+  overrides: Partial<Extract<ContentBlock, { tag: "ToolCall" }>> = {},
+): BlockEntry {
+  return {
+    blockId,
+    role: { tag: "Captain" },
+    timestamp,
+    block: {
+      tag: "ToolCall",
+      tool_call_id: null,
+      tool_name: "commentary.exec_command",
+      arguments: "{\"cmd\":\"echo hi\"}",
+      kind: null,
+      target: null,
+      raw_input: { cmd: "echo hi" },
+      raw_output: { stdout: "done" },
+      locations: [],
+      status: { tag: "Success" },
+      content: [
+        { tag: "Text", text: "tool log" },
+        {
+          tag: "Terminal",
+          terminal_id: "t1",
+          snapshot: {
+            output: "terminal output",
+            truncated: false,
+            exit: { exit_code: 0, signal: null },
+          },
+        },
+      ],
+      error: null,
+      ...overrides,
+    },
+  };
 }
 
 beforeEach(() => {
@@ -191,5 +278,67 @@ describe("UnifiedFeed", () => {
     const animatedWrappers = Array.from(container.querySelectorAll(`.${feedRowAnimate}`));
     expect(animatedWrappers).toHaveLength(1);
     expect(animatedWrappers[0]).toHaveTextContent("Fresh live block");
+  });
+
+  it("counts the full current turn including agent messages while excluding relayed human and steer text", () => {
+    const captain = makeAgent("Captain");
+    const blocks = [
+      makeTextEntry("before", "old turn", { tag: "Captain" }, { tag: "AgentThought" }, "2026-03-13T09:59:00Z"),
+      makeTextEntry("msg", "visible reply", { tag: "Captain" }, { tag: "AgentMessage" }, "2026-03-13T10:00:00Z"),
+      makeTextEntry("steer", "relayed steer", { tag: "Captain" }, { tag: "Steer" }, "2026-03-13T10:01:00Z"),
+      makeTextEntry("human", "relayed human", { tag: "Captain" }, { tag: "Human" }, "2026-03-13T10:02:00Z"),
+      makeTextEntry("thought", "internal thought", { tag: "Captain" }, { tag: "AgentThought" }, "2026-03-13T10:03:00Z"),
+      makeToolCallEntry("tool", "2026-03-13T10:04:00Z"),
+    ];
+
+    renderFeed(blocks, {
+      captain,
+      captainTurnStartedAt: "2026-03-13T10:00:00Z",
+    });
+
+    const expectedTokens = [
+      "visible reply",
+      "internal thought",
+      "{\"cmd\":\"echo hi\"}",
+      JSON.stringify({ cmd: "echo hi" }),
+      JSON.stringify({ stdout: "done" }),
+      "tool log",
+      "terminal output",
+    ].reduce((sum, text) => sum + encode(text).length, 0);
+
+    expect(screen.getByText(`${expectedTokens} tokens`)).toBeInTheDocument();
+    expect(screen.getByText("internal thought")).toBeInTheDocument();
+  });
+
+  it("counts the entire current turn even when it extends past the 80-block render window", () => {
+    const captain = makeAgent("Captain");
+    const blocks: BlockEntry[] = [
+      makeTextEntry("turn-start", "start marker", { tag: "Captain" }, { tag: "AgentMessage" }, "2026-03-13T10:00:00Z"),
+    ];
+    for (let i = 0; i < 81; i++) {
+      const hour = String(10 + Math.floor((i + 1) / 60)).padStart(2, "0");
+      const minute = String((i + 1) % 60).padStart(2, "0");
+      blocks.push(
+        makeTextEntry(
+          `filler-${i}`,
+          `filler ${i}`,
+          { tag: "Captain" },
+          { tag: "AgentThought" },
+          `2026-03-13T${hour}:${minute}:00Z`,
+        ),
+      );
+    }
+
+    renderFeed(blocks, {
+      captain,
+      captainTurnStartedAt: "2026-03-13T10:00:00Z",
+    });
+
+    const expectedTokens =
+      encode("start marker").length +
+      Array.from({ length: 81 }, (_, i) => encode(`filler ${i}`).length).reduce((a, b) => a + b, 0);
+
+    expect(screen.getByText(`Showing last 80 of ${blocks.length} blocks`)).toBeInTheDocument();
+    expect(screen.getByText(`${expectedTokens} tokens`)).toBeInTheDocument();
   });
 });

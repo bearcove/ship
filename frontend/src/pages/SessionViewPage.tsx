@@ -326,6 +326,8 @@ export function SessionViewPage({
               blocks={eventState.unifiedBlocks.blocks}
               startupState={startupState}
               taskCompletedDuration={taskCompletedDuration}
+              captainTurnStartedAt={eventState.captainTurnStartedAt}
+              mateTurnStartedAt={eventState.mateTurnStartedAt}
               userAvatarUrl={session.user_avatar_url}
               loading={isReplaying}
               loadingLabel={replayLabel}

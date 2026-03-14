@@ -25,6 +25,46 @@ function countTokens(text: string): number {
   return count;
 }
 
+function stringifyTokenPayload(value: unknown): string | null {
+  if (value == null) return null;
+  const serialized = JSON.stringify(value);
+  return serialized == null || serialized === "null" ? null : serialized;
+}
+
+function toolCallTokenTexts(block: Extract<ContentBlock, { tag: "ToolCall" }>): string[] {
+  const texts = [block.arguments];
+  const rawInput = stringifyTokenPayload(block.raw_input);
+  if (rawInput) texts.push(rawInput);
+  const rawOutput = stringifyTokenPayload(block.raw_output);
+  if (rawOutput) texts.push(rawOutput);
+  for (const content of block.content) {
+    switch (content.tag) {
+      case "Text":
+        texts.push(content.text);
+        break;
+      case "Diff":
+        texts.push(content.unified_diff);
+        break;
+      case "Terminal":
+        if (content.snapshot?.output) {
+          texts.push(content.snapshot.output);
+        }
+        break;
+      case "Raw": {
+        const rawContent = stringifyTokenPayload(content.data);
+        if (rawContent) texts.push(rawContent);
+        break;
+      }
+    }
+  }
+  if (block.error) {
+    texts.push(block.error.message);
+    const details = stringifyTokenPayload(block.error.details);
+    if (details) texts.push(details);
+  }
+  return texts.filter((text) => text.length > 0);
+}
+
 import {
   feedBubble,
   feedBubbleCol,
@@ -740,6 +780,8 @@ interface Props {
   blocks: BlockEntry[];
   startupState: SessionStartupState | null;
   taskCompletedDuration: number | null;
+  captainTurnStartedAt?: string | null;
+  mateTurnStartedAt?: string | null;
   userAvatarUrl?: string | null;
   loading?: boolean;
   loadingLabel?: string;
@@ -778,6 +820,8 @@ export function UnifiedFeed({
   blocks,
   startupState,
   taskCompletedDuration,
+  captainTurnStartedAt = null,
+  mateTurnStartedAt = null,
   userAvatarUrl = null,
   loading,
   loadingLabel,
@@ -875,43 +919,45 @@ export function UnifiedFeed({
   const truncated = blocks.length > MAX_RENDERED_BLOCKS;
   const visibleBlocks = truncated ? blocks.slice(blocks.length - MAX_RENDERED_BLOCKS) : blocks;
 
-  function computeTurnStats(roleTag: "Captain" | "Mate") {
+  function computeTurnStats(roleTag: "Captain" | "Mate", turnStartedAt: string) {
     let tokens = 0;
     let ok = 0;
     let failed = 0;
     let lastUtterance = "";
-    let lastMsgIdx = -1;
-    for (let i = visibleBlocks.length - 1; i >= 0; i--) {
-      const b = visibleBlocks[i];
-      if (b.role.tag === roleTag && b.block.tag === "Text" && b.block.source.tag === "AgentMessage") {
-        lastMsgIdx = i;
-        break;
+    const turnStartMs = Date.parse(turnStartedAt);
+    let turnStarted = Number.isNaN(turnStartMs);
+    for (const b of blocks) {
+      if (!turnStarted) {
+        const blockMs = b.timestamp ? Date.parse(b.timestamp) : Number.NaN;
+        if (!Number.isNaN(blockMs) && blockMs >= turnStartMs) {
+          turnStarted = true;
+        } else {
+          continue;
+        }
       }
-    }
-    for (const b of visibleBlocks.slice(lastMsgIdx + 1)) {
       if (b.role.tag !== roleTag) continue;
-      if (b.block.tag === "Text" && b.block.source.tag === "AgentThought") {
-        tokens += countTokens(b.block.text);
-        lastUtterance = b.block.text;
+      if (b.block.tag === "Text") {
+        if (b.block.source.tag === "AgentThought" || b.block.source.tag === "AgentMessage") {
+          tokens += countTokens(b.block.text);
+          lastUtterance = b.block.text;
+        }
       } else if (b.block.tag === "ToolCall") {
         if (b.block.status.tag === "Success") ok++;
         else if (b.block.status.tag === "Failure") failed++;
-        tokens += countTokens(b.block.arguments);
-        if (b.block.raw_output != null) {
-          tokens += countTokens(JSON.stringify(b.block.raw_output));
+        for (const text of toolCallTokenTexts(b.block)) {
+          tokens += countTokens(text);
         }
       }
-    }
-    // If no thought in current turn, use last speech
-    if (!lastUtterance && lastMsgIdx >= 0) {
-      const b = visibleBlocks[lastMsgIdx];
-      if (b.block.tag === "Text") lastUtterance = b.block.text;
     }
     return { tokens, ok, failed, lastUtterance };
   }
 
-  const captainTurn = captainWorking ? computeTurnStats("Captain") : null;
-  const mateTurn = mateWorking ? computeTurnStats("Mate") : null;
+  const captainTurn =
+    captainWorking && captainTurnStartedAt
+      ? computeTurnStats("Captain", captainTurnStartedAt)
+      : null;
+  const mateTurn =
+    mateWorking && mateTurnStartedAt ? computeTurnStats("Mate", mateTurnStartedAt) : null;
 
   let lastUnresolvedPermBlockId: string | undefined;
   for (const entry of visibleBlocks) {
