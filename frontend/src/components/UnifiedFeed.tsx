@@ -671,7 +671,7 @@ function ThinkingBubble({
             position: "absolute",
             bottom: "100%",
             left: 0,
-            maxWidth: 360,
+            maxWidth: 480,
             marginBottom: 6,
             padding: "var(--space-2) var(--space-3)",
             background: "var(--color-panel-solid)",
@@ -683,7 +683,7 @@ function ThinkingBubble({
             overflow: "hidden",
           }}
         >
-          <Flex align="center" gap="2" mb="2">
+          <Flex align="center" gap="2" mb={lastUtterance ? "2" : "0"}>
             <AgentKindIcon kind={agent.kind} />
             <Text size="2" weight="bold">{agentName}</Text>
             <Text size="1" color="gray">{modelLabel}</Text>
