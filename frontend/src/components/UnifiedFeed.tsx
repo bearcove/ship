@@ -216,6 +216,17 @@ function phaseBreakToneClassName(tone: PhaseBreakTone): string {
   }
 }
 
+function workflowMilestoneTone(kind: WorkflowMilestoneBlockType["kind"]): PhaseBreakTone {
+  switch (kind.tag) {
+    case "RebaseConflict":
+      return "error";
+    case "PlanSet":
+    case "StepCommitted":
+    case "ReviewSubmitted":
+      return "neutral";
+  }
+}
+
 // ─── Feed segmentation ────────────────────────────────────────────────────────
 
 function buildSegments(blocks: BlockEntry[], debugMode: boolean): FeedSegment[] {
@@ -464,13 +475,9 @@ function TaskRecapBlock({
   );
 }
 
-function WorkflowMilestoneBlock({
-  block,
-  tone = "neutral",
-}: {
-  block: WorkflowMilestoneBlockType;
-  tone?: PhaseBreakTone;
-}) {
+function WorkflowMilestoneBlock({ block }: { block: WorkflowMilestoneBlockType }) {
+  const tone = workflowMilestoneTone(block.kind);
+
   return (
     <Box
       className={`${taskRecapBoundary} ${phaseBreakToneClassName(tone)}`}
@@ -854,7 +861,7 @@ const SingleBlock = memo(function SingleBlock({
       );
 
     case "WorkflowMilestone":
-      return <WorkflowMilestoneBlock block={block} tone="neutral" />;
+      return <WorkflowMilestoneBlock block={block} />;
 
     case "TaskRecap":
       return <TaskRecapBlock block={block} duration={taskCompletedDuration} />;
