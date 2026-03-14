@@ -6,6 +6,7 @@ mod fakes;
 mod git_worktree;
 mod json_store;
 mod mcp;
+mod project_config;
 mod project_registry;
 mod session_manager;
 mod session_naming;
@@ -31,6 +32,7 @@ pub use fakes::{
 pub use git_worktree::GitWorktreeOps;
 pub use json_store::JsonSessionStore;
 pub use mcp::{McpConfigError, resolve_mcp_servers};
+pub use project_config::{ProjectConfigError, load_project_hooks};
 pub use project_registry::{ProjectRegistry, ProjectRegistryError};
 pub use session_manager::{
     ActiveSession, PendingEdit, PendingPermission, SessionManager, SessionManagerError,
