@@ -316,7 +316,7 @@ pub struct ShipImpl {
     listen_http_urls: Arc<Mutex<Vec<String>>>,
     startup_started_at: Arc<Mutex<HashMap<SessionId, Instant>>>,
     user_avatar_url: Arc<Mutex<Option<String>>>,
-    whisper_ctx: Arc<Option<whisper_cpp_plus::WhisperContext>>,
+    whisper_ctx: Option<Arc<whisper_cpp_plus::WhisperContext>>,
     kyutai_model: Arc<Mutex<Option<crate::kyutai_tts::KyutaiTtsModel>>>,
     global_events_tx: broadcast::Sender<GlobalEvent>,
     activity_log: Arc<Mutex<ActivityLog>>,
@@ -353,7 +353,7 @@ impl ShipImpl {
             listen_http_urls: Arc::new(Mutex::new(Vec::new())),
             startup_started_at: Arc::new(Mutex::new(HashMap::new())),
             user_avatar_url: Arc::new(Mutex::new(None)),
-            whisper_ctx: Arc::new(None),
+            whisper_ctx: None,
             kyutai_model: Arc::new(Mutex::new(None)),
             global_events_tx,
             activity_log: Arc::new(Mutex::new(activity_log)),
@@ -471,7 +471,7 @@ impl ShipImpl {
         match whisper_cpp_plus::WhisperContext::new(path.to_str().unwrap()) {
             Ok(ctx) => {
                 tracing::info!(path = %path.display(), "whisper model loaded");
-                self.whisper_ctx = Arc::new(Some(ctx));
+                self.whisper_ctx = Some(Arc::new(ctx));
             }
             Err(e) => {
                 tracing::error!(path = %path.display(), error = %e, "failed to load whisper model");
@@ -9330,15 +9330,8 @@ impl Ship for ShipImpl {
     ) {
         tracing::info!("transcribe_audio: stream started");
 
-        // Resolve whisper model path
-        let model_path = {
-            let guard = self
-                .whisper_model_path
-                .lock()
-                .expect("whisper mutex poisoned");
-            guard.clone()
-        };
-        let Some(model_path) = model_path else {
+        // Get the shared whisper context (loaded once at startup)
+        let Some(whisper_ctx) = self.whisper_ctx.clone() else {
             tracing::warn!("transcribe_audio: no whisper model configured");
             let _ = segments_out
                 .send(TranscribeMessage::Error {
@@ -9349,7 +9342,7 @@ impl Ship for ShipImpl {
             return;
         };
 
-        let mut transcriber = match crate::transcriber::SpeechTranscriber::new(&model_path)
+        let mut transcriber = match crate::transcriber::SpeechTranscriber::new(whisper_ctx)
             .map_err(|e| e.to_string())
         {
             Ok(t) => t,
