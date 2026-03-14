@@ -18,13 +18,19 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<PlaybackState>("idle");
   const [activeText, setActiveText] = useState<string | null>(null);
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
-  const sourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const sourcesRef = useRef<AudioBufferSourceNode[]>([]);
   const ctxRef = useRef<AudioContext | null>(null);
 
   const cleanup = useCallback(() => {
-    sourceRef.current?.stop();
-    sourceRef.current?.disconnect();
-    sourceRef.current = null;
+    for (const src of sourcesRef.current) {
+      try {
+        src.stop();
+      } catch {
+        // already stopped
+      }
+      src.disconnect();
+    }
+    sourcesRef.current = [];
     if (ctxRef.current) {
       void ctxRef.current.close();
       ctxRef.current = null;
@@ -49,6 +55,10 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
       setActiveText(text);
       setState("loading");
 
+      const analyserNode = audioCtx.createAnalyser();
+      analyserNode.fftSize = 256;
+      analyserNode.connect(audioCtx.destination);
+
       void (async () => {
         try {
           const client = await getShipClient();
@@ -56,65 +66,69 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
 
           const callPromise = client.speakText(text, tx);
 
-          const chunks: Uint8Array[] = [];
+          let nextStartTime = audioCtx.currentTime;
+          let chunkCount = 0;
+          let lastSource: AudioBufferSourceNode | null = null;
+
           while (true) {
             const chunk = await rx.recv();
             if (chunk === null) break;
-            chunks.push(chunk);
+
+            // Bail if user called stop
+            if (ctxRef.current !== audioCtx) return;
+
+            // Resume context if suspended (needed for mobile) — only on first chunk
+            if (chunkCount === 0 && audioCtx.state === "suspended") {
+              await audioCtx.resume();
+            }
+
+            // Decode chunk: 24kHz mono f32 little-endian PCM
+            const sampleCount = chunk.length / 4;
+            const samples = new Float32Array(sampleCount);
+            const view = new DataView(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+            for (let i = 0; i < sampleCount; i++) {
+              samples[i] = view.getFloat32(i * 4, true);
+            }
+
+            const buffer = audioCtx.createBuffer(1, sampleCount, 24000);
+            buffer.copyToChannel(samples, 0);
+
+            const src = audioCtx.createBufferSource();
+            src.buffer = buffer;
+            src.connect(analyserNode);
+            sourcesRef.current.push(src);
+            lastSource = src;
+
+            // Schedule this chunk to play right after the previous one
+            src.start(nextStartTime);
+            nextStartTime += buffer.duration;
+
+            if (chunkCount === 0) {
+              setAnalyser(analyserNode);
+              setState("playing");
+            }
+            chunkCount++;
           }
 
           await callPromise;
 
-          // Check if we were stopped while loading
+          // Bail if user called stop while we were receiving
           if (ctxRef.current !== audioCtx) return;
 
-          if (chunks.length === 0) {
+          if (chunkCount === 0) {
             console.warn("speak_text: no audio received");
             cleanup();
             return;
           }
 
-          const totalBytes = chunks.reduce((sum, c) => sum + c.length, 0);
-          const allBytes = new Uint8Array(totalBytes);
-          let offset = 0;
-          for (const chunk of chunks) {
-            allBytes.set(chunk, offset);
-            offset += chunk.length;
+          // When the last scheduled source finishes, clean up
+          if (lastSource) {
+            lastSource.onended = () => {
+              if (ctxRef.current === audioCtx) {
+                cleanup();
+              }
+            };
           }
-
-          const sampleCount = allBytes.length / 4;
-          const samples = new Float32Array(sampleCount);
-          const view = new DataView(allBytes.buffer, allBytes.byteOffset, allBytes.byteLength);
-          for (let i = 0; i < sampleCount; i++) {
-            samples[i] = view.getFloat32(i * 4, true);
-          }
-
-          // Resume context if suspended (needed for mobile)
-          if (audioCtx.state === "suspended") {
-            await audioCtx.resume();
-          }
-
-          const buffer = audioCtx.createBuffer(1, samples.length, 24000);
-          buffer.copyToChannel(samples, 0);
-
-          const analyserNode = audioCtx.createAnalyser();
-          analyserNode.fftSize = 256;
-
-          const src = audioCtx.createBufferSource();
-          src.buffer = buffer;
-          src.connect(analyserNode);
-          analyserNode.connect(audioCtx.destination);
-          sourceRef.current = src;
-          setAnalyser(analyserNode);
-          setState("playing");
-
-          src.onended = () => {
-            // Only cleanup if this is still the active source
-            if (sourceRef.current === src) {
-              cleanup();
-            }
-          };
-          src.start();
         } catch (err) {
           console.error("speak_text failed:", err);
           cleanup();
