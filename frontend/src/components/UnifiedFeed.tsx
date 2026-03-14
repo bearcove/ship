@@ -77,6 +77,7 @@ import {
   taskRecapContent,
   taskRecapDiff,
   taskRecapDiffInner,
+  feedTimeGap,
 } from "../styles/session-view.css";
 
 type TextBlockType = Extract<ContentBlock, { tag: "Text" }>;
@@ -785,6 +786,12 @@ export function UnifiedFeed({
   const [atBottom, setAtBottom] = useState(true);
   const [dropTarget, setDropTarget] = useState<HTMLDivElement | null>(null);
   const isImageDragOver = useDocumentDrop(dropTarget, onImageDrop ?? (() => undefined));
+  const [tick, setTick] = useState(() => Date.now());
+
+  useEffect(() => {
+    const id = setInterval(() => setTick(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     onImageDragStateChange?.(isImageDragOver);
@@ -955,6 +962,25 @@ export function UnifiedFeed({
                     : mate;
             const animate = !initialBlockIds.current.has(seg.entry.blockId);
             const isTaskRecap = seg.entry.block.tag === "TaskRecap";
+
+            // Gap detection: check if >2 minutes between previous and current segment
+            let gapIndicator: React.ReactNode = null;
+            if (idx > 0) {
+              const prevTs = segments[idx - 1].entry.timestamp;
+              const curTs = seg.entry.timestamp;
+              if (prevTs && curTs) {
+                const prevTime = new Date(prevTs).getTime();
+                const curTime = new Date(curTs).getTime();
+                if (!Number.isNaN(prevTime) && !Number.isNaN(curTime) && curTime - prevTime > 2 * 60 * 1000) {
+                  gapIndicator = (
+                    <Box className={feedContentColumn}>
+                      <Text className={feedTimeGap}>{formatRelativeTime(curTs, tick)}</Text>
+                    </Box>
+                  );
+                }
+              }
+            }
+
             const blockContent = animate ? (
               <div className={feedRowAnimate}>
                 <SingleBlock
@@ -982,6 +1008,7 @@ export function UnifiedFeed({
             );
             return (
               <Fragment key={seg.entry.blockId}>
+                {gapIndicator}
                 {isTaskRecap ? blockContent : (
                   <Box className={feedContentColumn}>{blockContent}</Box>
                 )}
@@ -993,6 +1020,21 @@ export function UnifiedFeed({
               </Fragment>
             );
           })}
+          {/* Trailing gap indicator after the last segment */}
+          {segments.length > 0 && (() => {
+            const lastTs = segments[segments.length - 1].entry.timestamp;
+            if (lastTs) {
+              const lastTime = new Date(lastTs).getTime();
+              if (!Number.isNaN(lastTime) && tick - lastTime > 2 * 60 * 1000) {
+                return (
+                  <Box className={feedContentColumn}>
+                    <Text className={feedTimeGap}>{formatRelativeTime(lastTs, tick)}</Text>
+                  </Box>
+                );
+              }
+            }
+            return null;
+          })()}
         </Box>
 
         <Box className={feedContentColumn}>
