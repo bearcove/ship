@@ -14,6 +14,7 @@ export function agentKindTooltip(
 
 export function sortSessions(sessions: SessionSummary[]): SessionSummary[] {
   const priority = (session: SessionSummary) => {
+    if (session.is_admiral) return -1;
     const tag = session.task_status?.tag;
     if (tag === "ReviewPending" || tag === "SteerPending") return 0;
     if (tag === "Working" || tag === "Assigned") return 1;
