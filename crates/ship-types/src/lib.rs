@@ -962,6 +962,8 @@ pub mod protocol {
         pub created_at: String,
         #[facet(default)]
         pub is_admiral: bool,
+        #[facet(default)]
+        pub is_read: bool,
     }
 
     // r[event.human-review-requested]
@@ -1246,6 +1248,8 @@ pub mod persistence {
         /// ACP session ID for the mate agent (used for session resume)
         #[facet(default)]
         pub mate_acp_session_id: Option<String>,
+        #[facet(default)]
+        pub is_read: bool,
     }
 }
 

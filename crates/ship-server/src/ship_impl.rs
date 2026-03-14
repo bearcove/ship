@@ -581,6 +581,7 @@ impl ShipImpl {
                 next_event_seq,
                 captain_prompt_gen: 0,
                 mate_prompt_gen: 0,
+                is_read: persisted.is_read,
                 utility_handle: None,
                 utility_last_task_id: None,
                 mate_activity_buffer: Vec::new(),
@@ -6708,6 +6709,7 @@ Here is your task:
                 archived_at: session.archived_at.clone(),
                 captain_acp_session_id: session.captain_acp_session_id.clone(),
                 mate_acp_session_id: session.mate_acp_session_id.clone(),
+                is_read: session.is_read,
             }
         };
 
@@ -8461,6 +8463,7 @@ impl Ship for ShipImpl {
             next_event_seq: 0,
             captain_prompt_gen: 0,
             mate_prompt_gen: 0,
+            is_read: true,
             utility_handle: None,
             utility_last_task_id: None,
             mate_activity_buffer: Vec::new(),
@@ -10401,6 +10404,7 @@ mod tests {
             next_event_seq: 0,
             captain_prompt_gen: 0,
             mate_prompt_gen: 0,
+            is_read: true,
             diff_stats: None,
             utility_handle: None,
             utility_last_task_id: None,
@@ -11840,6 +11844,7 @@ agent_presets {
             archived_at: None,
             captain_acp_session_id: None,
             mate_acp_session_id: None,
+            is_read: true,
         };
         store
             .save_session(&completed)
@@ -11948,6 +11953,7 @@ agent_presets {
             archived_at: None,
             captain_acp_session_id: None,
             mate_acp_session_id: None,
+            is_read: true,
         };
         store
             .save_session(&active)

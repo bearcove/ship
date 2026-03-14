@@ -106,6 +106,7 @@ pub struct ActiveSession {
     pub next_event_seq: u64,
     pub captain_prompt_gen: u64,
     pub mate_prompt_gen: u64,
+    pub is_read: bool,
     // Runtime-only fields (not persisted)
     pub utility_handle: Option<crate::AgentHandle>,
     pub utility_last_task_id: Option<TaskId>,
@@ -222,6 +223,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             next_event_seq: 0,
             captain_prompt_gen: 0,
             mate_prompt_gen: 0,
+            is_read: true,
             utility_handle: None,
             utility_last_task_id: None,
             mate_activity_buffer: Vec::new(),
@@ -1139,6 +1141,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             archived_at: session.archived_at.clone(),
             captain_acp_session_id: session.captain_acp_session_id.clone(),
             mate_acp_session_id: session.mate_acp_session_id.clone(),
+            is_read: session.is_read,
         };
 
         self.store
