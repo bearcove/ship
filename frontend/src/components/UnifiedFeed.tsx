@@ -137,6 +137,9 @@ function buildSegments(blocks: BlockEntry[], debugMode: boolean): FeedSegment[] 
       b.block.tag !== "PlanUpdate" &&
       (debugMode || b.block.tag !== "ToolCall") &&
       !(b.block.tag === "Text" && b.block.source.tag === "AgentThought") &&
+      !(b.block.tag === "Text" && b.block.text.trim() === "") &&
+      !(b.block.tag === "Text" && isSystemInjection(b.block as Extract<ContentBlock, { tag: "Text" }>)) &&
+      !(b.block.tag === "Permission" && b.block.resolution?.tag === "Approved") &&
       // Allow Mate-role Human/Steer blocks through (messages relayed to the mate)
       (b.role.tag !== "Mate" ||
         (b.block.tag === "Text" && (b.block.source.tag === "Human" || b.block.source.tag === "Steer"))),
