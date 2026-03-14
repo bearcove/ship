@@ -13,7 +13,10 @@ function isEditableTarget(target: EventTarget | null): boolean {
 }
 
 // r[ui.keys.global]
-export function useGlobalKeyboard(allSessions: SessionSummary[]) {
+export function useGlobalKeyboard(
+  allSessions: SessionSummary[],
+  onSessionArchived?: (slug: string) => void,
+) {
   const navigate = useNavigate();
   const sessionMatch = useMatch("/sessions/:sessionId");
   const currentSessionId = sessionMatch?.params.sessionId;
@@ -72,6 +75,7 @@ export function useGlobalKeyboard(allSessions: SessionSummary[]) {
             const client = await getShipClient();
             const result = await client.archiveSession({ id: currentSession.id, force: true });
             if (result.tag === "Archived") {
+              if (currentSessionId) onSessionArchived?.(currentSessionId);
               navigate("/");
             }
           })();
@@ -84,5 +88,5 @@ export function useGlobalKeyboard(allSessions: SessionSummary[]) {
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [allSessions, currentSessionId, navigate]);
+  }, [allSessions, currentSessionId, navigate, onSessionArchived]);
 }

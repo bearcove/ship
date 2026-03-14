@@ -47,8 +47,27 @@ export function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [connState, setConnState] = useState(() => getConnectionState());
   const hasEverConnected = useRef(connState === "connected");
+  const [visitedSessions, setVisitedSessions] = useState<Set<string>>(() => new Set());
 
-  useGlobalKeyboard(allSessions);
+  const removeVisitedSession = useCallback((slug: string) => {
+    setVisitedSessions((prev) => {
+      if (!prev.has(slug)) return prev;
+      const next = new Set(prev);
+      next.delete(slug);
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (currentSessionId) {
+      setVisitedSessions((prev) => {
+        if (prev.has(currentSessionId)) return prev;
+        return new Set(prev).add(currentSessionId);
+      });
+    }
+  }, [currentSessionId]);
+
+  useGlobalKeyboard(allSessions, removeVisitedSession);
 
   useEffect(() => {
     writeDebugPreference(debugMode);
