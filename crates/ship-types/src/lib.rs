@@ -194,7 +194,7 @@ pub mod agent {
         pub model_id: String,
     }
 
-    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    #[derive(Debug, Clone, Default, PartialEq, Eq, facet::Facet)]
     pub struct AgentPresetsConfig {
         #[facet(default)]
         pub presets: Vec<AgentPreset>,

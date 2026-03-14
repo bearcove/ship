@@ -1,6 +1,7 @@
 mod acp_client;
 mod acp_driver;
 mod acp_launcher;
+mod agent_presets;
 mod fakes;
 mod git_worktree;
 mod json_store;
@@ -23,6 +24,7 @@ pub use acp_driver::AcpAgentDriver;
 pub use acp_launcher::{
     AgentLauncher, BinaryPathProbe, SystemBinaryPathProbe, discover_agents, resolve_agent_launcher,
 };
+pub use agent_presets::{AgentPresetConfigError, load_agent_presets};
 pub use fakes::{
     FakeAgentDriver, FakePromptScript, FakeSessionStore, FakeWorktreeOps, SpawnRecord,
 };
