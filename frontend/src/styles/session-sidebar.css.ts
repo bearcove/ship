@@ -93,6 +93,7 @@ export const projectActions = style({
 });
 
 export const sessionRow = style({
+  position: "relative",
   display: "flex",
   alignItems: "center",
   gap: "var(--space-2)",
