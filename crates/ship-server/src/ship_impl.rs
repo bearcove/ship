@@ -2823,6 +2823,16 @@ Here is your task:
                     error.message
                 )
             })?;
+        let conflict_marker_locations = self
+            .worktree_ops
+            .tracked_conflict_marker_locations(&worktree_path)
+            .await
+            .map_err(|error| {
+                format!(
+                    "failed to scan tracked files for conflict marker locations: {}",
+                    error.message
+                )
+            })?;
 
         let safe = !is_dirty
             && !rebase_in_progress
@@ -2836,6 +2846,7 @@ Here is your task:
             rebase_in_progress,
             unmerged_paths,
             conflict_marker_paths,
+            conflict_marker_locations,
             review_safe: safe,
             merge_safe: safe,
         })
@@ -2843,7 +2854,7 @@ Here is your task:
 
     fn format_captain_git_status(status: &CaptainGitStatus) -> String {
         format!(
-            "Branch: {}\nBase branch: {}\nDirty: {}\nRebase in progress: {}\nUnmerged paths: {}\nTracked files with conflict markers: {}\nSafe for review: {}\nSafe for merge: {}",
+            "Branch: {}\nBase branch: {}\nDirty: {}\nRebase in progress: {}\nUnmerged paths: {}\nTracked files with conflict markers: {}\nConflict marker locations: {}\nSafe for review: {}\nSafe for merge: {}",
             status.branch_name,
             status.base_branch,
             if status.is_dirty { "yes" } else { "no" },
@@ -2854,6 +2865,7 @@ Here is your task:
             },
             Self::format_string_list(&status.unmerged_paths),
             Self::format_string_list(&status.conflict_marker_paths),
+            Self::format_string_list(&status.conflict_marker_locations),
             if status.review_safe { "yes" } else { "no" },
             if status.merge_safe { "yes" } else { "no" },
         )
@@ -2908,8 +2920,8 @@ Here is your task:
         }
         if !status.conflict_marker_paths.is_empty() {
             blockers.push(format!(
-                "tracked files still contain conflict markers: {}",
-                Self::format_string_list(&status.conflict_marker_paths)
+                "tracked files still contain conflict markers at: {}",
+                Self::format_string_list(&status.conflict_marker_locations)
             ));
         }
         blockers
@@ -12203,6 +12215,10 @@ agent_presets {
             "unexpected status: {git_status}"
         );
         assert!(
+            git_status.contains("Conflict marker locations: tracked.txt:1"),
+            "unexpected status: {git_status}"
+        );
+        assert!(
             git_status.contains("Safe for review: no"),
             "unexpected status: {git_status}"
         );
@@ -12237,7 +12253,7 @@ agent_presets {
             "unexpected accept error: {accept_error}"
         );
         assert!(
-            accept_error.contains("tracked files still contain conflict markers: tracked.txt"),
+            accept_error.contains("tracked files still contain conflict markers at: tracked.txt:1"),
             "unexpected accept error: {accept_error}"
         );
 
@@ -12276,6 +12292,11 @@ agent_presets {
             "unexpected rebase status: {rebase_status}"
         );
         assert!(
+            rebase_status
+                .contains("Conflict marker locations: tracked.txt:1, tracked.txt:3, tracked.txt:5"),
+            "unexpected rebase status: {rebase_status}"
+        );
+        assert!(
             rebase_status.contains("Can continue: no"),
             "unexpected rebase status: {rebase_status}"
         );
@@ -12290,6 +12311,10 @@ agent_presets {
         );
         assert!(
             error.contains("tracked.txt"),
+            "unexpected continue error: {error}"
+        );
+        assert!(
+            error.contains("tracked.txt:1"),
             "unexpected continue error: {error}"
         );
 

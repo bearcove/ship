@@ -208,6 +208,10 @@ pub trait WorktreeOps: Send + Sync {
         &self,
         worktree_path: &Path,
     ) -> Result<Vec<String>, WorktreeError>;
+    async fn tracked_conflict_marker_locations(
+        &self,
+        worktree_path: &Path,
+    ) -> Result<Vec<String>, WorktreeError>;
 
     async fn review_diff(
         &self,

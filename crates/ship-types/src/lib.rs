@@ -938,6 +938,7 @@ pub mod protocol {
         pub rebase_in_progress: bool,
         pub unmerged_paths: Vec<String>,
         pub conflict_marker_paths: Vec<String>,
+        pub conflict_marker_locations: Vec<String>,
         pub review_safe: bool,
         pub merge_safe: bool,
     }

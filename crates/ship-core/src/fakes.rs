@@ -283,6 +283,7 @@ struct FakeWorktreeInner {
     rebase_in_progress: HashMap<PathBuf, bool>,
     unmerged_paths: HashMap<PathBuf, Vec<String>>,
     conflict_marker_paths: HashMap<PathBuf, Vec<String>>,
+    conflict_marker_locations: HashMap<PathBuf, Vec<String>>,
     review_diffs: HashMap<PathBuf, String>,
     rebase_abort_requests: Vec<PathBuf>,
     branches: Vec<String>,
@@ -347,6 +348,14 @@ impl FakeWorktreeOps {
             .expect("fake worktree ops mutex poisoned")
             .conflict_marker_paths
             .insert(path, files);
+    }
+
+    pub fn set_conflict_marker_locations(&self, path: PathBuf, locations: Vec<String>) {
+        self.inner
+            .lock()
+            .expect("fake worktree ops mutex poisoned")
+            .conflict_marker_locations
+            .insert(path, locations);
     }
 
     pub fn set_review_diff(&self, path: PathBuf, diff: impl Into<String>) {
@@ -538,6 +547,25 @@ impl WorktreeOps for FakeWorktreeOps {
             .get(worktree_path)
             .cloned()
             .unwrap_or_default())
+    }
+
+    async fn tracked_conflict_marker_locations(
+        &self,
+        worktree_path: &Path,
+    ) -> Result<Vec<String>, WorktreeError> {
+        let inner = self.inner.lock().expect("fake worktree ops mutex poisoned");
+        if let Some(locations) = inner.conflict_marker_locations.get(worktree_path) {
+            return Ok(locations.clone());
+        }
+        let fallback = inner
+            .conflict_marker_paths
+            .get(worktree_path)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|path| format!("{path}:1"))
+            .collect();
+        Ok(fallback)
     }
 
     async fn review_diff(

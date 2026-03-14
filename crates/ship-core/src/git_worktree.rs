@@ -123,33 +123,26 @@ impl WorktreeOps for GitWorktreeOps {
         &self,
         worktree_path: &Path,
     ) -> Result<Vec<String>, WorktreeError> {
-        let output = Command::new("git")
-            .arg("-C")
-            .arg(worktree_path)
-            .args(["ls-files", "-z"])
-            .output()
-            .await
-            .map_err(|error| WorktreeError {
-                message: error.to_string(),
-            })?;
-
-        let stdout = ensure_success_stdout(output)?;
         let mut paths = Vec::new();
-        for relative in stdout.split('\0').filter(|path| !path.is_empty()) {
-            let file_path = worktree_path.join(relative);
-            let bytes = fs_err::tokio::read(&file_path)
-                .await
-                .map_err(|error| WorktreeError {
-                    message: format!("failed to read {}: {error}", file_path.display()),
-                })?;
-            if contains_conflict_marker(&bytes, repeated_byte(b'<'))
-                || contains_conflict_marker(&bytes, repeated_byte(b'='))
-                || contains_conflict_marker(&bytes, repeated_byte(b'>'))
-            {
-                paths.push(relative.to_owned());
+        for (relative, marker_lines) in tracked_conflict_marker_details(worktree_path).await? {
+            if !marker_lines.is_empty() {
+                paths.push(relative);
             }
         }
         Ok(paths)
+    }
+
+    async fn tracked_conflict_marker_locations(
+        &self,
+        worktree_path: &Path,
+    ) -> Result<Vec<String>, WorktreeError> {
+        let mut locations = Vec::new();
+        for (relative, marker_lines) in tracked_conflict_marker_details(worktree_path).await? {
+            for line in marker_lines {
+                locations.push(format!("{relative}:{line}"));
+            }
+        }
+        Ok(locations)
     }
 
     async fn review_diff(
@@ -355,12 +348,14 @@ impl WorktreeOps for GitWorktreeOps {
 
         // After staging, check for conflict markers that would indicate
         // the user resolved the merge status but left markers in the file.
-        let marker_paths = self.tracked_conflict_marker_paths(worktree_path).await?;
-        if !marker_paths.is_empty() {
+        let marker_locations = self
+            .tracked_conflict_marker_locations(worktree_path)
+            .await?;
+        if !marker_locations.is_empty() {
             return Err(WorktreeError {
                 message: format!(
-                    "cannot continue rebase while conflict markers remain in tracked files:\n{}",
-                    marker_paths.join("\n")
+                    "cannot continue rebase while conflict markers remain in tracked files (path:line):\n{}",
+                    marker_locations.join("\n")
                 ),
             });
         }
@@ -521,11 +516,52 @@ async fn git_path_exists(worktree_path: &Path, suffix: &str) -> Result<bool, Wor
     Ok(fs_err::tokio::metadata(git_path.trim()).await.is_ok())
 }
 
-fn contains_conflict_marker(bytes: &[u8], marker: [u8; 7]) -> bool {
-    bytes.split(|&byte| byte == b'\n').any(|line| {
-        let line = line.strip_suffix(b"\r").unwrap_or(line);
-        line.starts_with(&marker)
-    })
+async fn tracked_conflict_marker_details(
+    worktree_path: &Path,
+) -> Result<Vec<(String, Vec<usize>)>, WorktreeError> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(worktree_path)
+        .args(["ls-files", "-z"])
+        .output()
+        .await
+        .map_err(|error| WorktreeError {
+            message: error.to_string(),
+        })?;
+
+    let stdout = ensure_success_stdout(output)?;
+    let mut details = Vec::new();
+    for relative in stdout.split('\0').filter(|path| !path.is_empty()) {
+        let file_path = worktree_path.join(relative);
+        let bytes = fs_err::tokio::read(&file_path)
+            .await
+            .map_err(|error| WorktreeError {
+                message: format!("failed to read {}: {error}", file_path.display()),
+            })?;
+        let marker_lines = conflict_marker_line_numbers(&bytes);
+        if !marker_lines.is_empty() {
+            details.push((relative.to_owned(), marker_lines));
+        }
+    }
+    Ok(details)
+}
+
+fn conflict_marker_line_numbers(bytes: &[u8]) -> Vec<usize> {
+    bytes
+        .split(|&byte| byte == b'\n')
+        .enumerate()
+        .filter_map(|(index, line)| {
+            let line = line.strip_suffix(b"\r").unwrap_or(line);
+            if line.starts_with(&repeated_byte(b'<'))
+                || line.starts_with(&repeated_byte(b'='))
+                || line.starts_with(&repeated_byte(b'>'))
+            {
+                Some(index + 1)
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 fn repeated_byte(byte: u8) -> [u8; 7] {
