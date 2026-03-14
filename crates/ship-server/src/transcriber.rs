@@ -109,7 +109,7 @@ impl SpeechTranscriber {
                     let end_sample = pos as usize;
 
                     let segment = if !self.speech_audio.is_empty() {
-                        transcribe_audio(&self.whisper_ctx, &self.speech_audio).map(|text| {
+                        transcribe_audio(&mut self.whisper_state, &self.speech_audio).map(|text| {
                             TranscribedSegment {
                                 text,
                                 start_sample: self.speech_start_sample.unwrap_or(0),
@@ -147,7 +147,7 @@ impl SpeechTranscriber {
             return None;
         }
 
-        let result = transcribe_audio(&self.whisper_ctx, &self.speech_audio).map(|text| {
+        let result = transcribe_audio(&mut self.whisper_state, &self.speech_audio).map(|text| {
             TranscribedSegment {
                 text,
                 start_sample: self.speech_start_sample.unwrap_or(0),
@@ -178,24 +178,13 @@ impl SpeechTranscriber {
     }
 }
 
-fn transcribe_audio(
-    whisper_ctx: &whisper_cpp_plus::WhisperContext,
-    audio: &[f32],
-) -> Option<String> {
+fn transcribe_audio(state: &mut whisper_cpp_plus::WhisperState, audio: &[f32]) -> Option<String> {
     let params =
         whisper_cpp_plus::FullParams::new(whisper_cpp_plus::SamplingStrategy::BeamSearch {
             beam_size: 5,
         })
         .language("en")
         .no_context(true);
-
-    let mut state = match whisper_ctx.create_state() {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::warn!("whisper state error: {e}");
-            return None;
-        }
-    };
 
     if let Err(e) = state.full(params, audio) {
         tracing::warn!("whisper error: {e}");
