@@ -44,6 +44,7 @@ agent_presets {
                 kind: AgentKind::Claude,
                 provider: AgentProviderId("anthropic".to_owned()),
                 model_id: "claude-sonnet-4".to_owned(),
+                logo: None,
             },
             AgentPreset {
                 id: AgentPresetId("codex::gpt-5.4".to_owned()),
@@ -51,6 +52,7 @@ agent_presets {
                 kind: AgentKind::Codex,
                 provider: AgentProviderId("openai".to_owned()),
                 model_id: "gpt-5.4".to_owned(),
+                logo: None,
             },
         ]
     );
