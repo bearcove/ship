@@ -1,4 +1,4 @@
-import { fireEvent, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "./App";
@@ -8,6 +8,7 @@ import { renderWithTheme } from "./test/render";
 vi.mock("./api/client", () => ({
   getConnectionState: () => "connected",
   onConnectionStateChanged: () => () => {},
+  onClientReady: () => () => {},
   useClientLogs: () => [],
 }));
 
@@ -31,10 +32,8 @@ vi.mock("./hooks/useAgentDiscovery", () => ({
   useAgentDiscovery: () => ({ claude: false, codex: false, opencode: false }),
 }));
 
-vi.mock("./pages/SessionListPage", () => ({
-  SessionListPage: () => <div>Session list page</div>,
+vi.mock("./components/NewSessionDialog", () => ({
   NewSessionDialog: () => null,
-  AddProjectDialog: () => null,
 }));
 
 vi.mock("./pages/SessionViewPage", () => ({
@@ -45,7 +44,7 @@ vi.mock("./pages/SessionViewPage", () => ({
 // r[verify frontend.test.rtl]
 describe("App shell navigation", () => {
   // r[verify ui.layout.shell]
-  it("uses the Ship title as a home link on the session list shell", async () => {
+  it("redirects / to /sessions/admiral", () => {
     renderWithTheme(
       <MemoryRouter initialEntries={["/"]}>
         <SoundProvider>
@@ -54,10 +53,7 @@ describe("App shell navigation", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText("Session list page")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("link", { name: "Ship" }));
-
-    expect(await screen.findByText("Session list page")).toBeInTheDocument();
+    // The / route redirects to /sessions/admiral, so SessionViewPage renders
+    expect(screen.getByText("Session view page")).toBeInTheDocument();
   });
 });
