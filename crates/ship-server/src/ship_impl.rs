@@ -5991,18 +5991,19 @@ Here is your task:
                     let session = sessions
                         .get_mut(session_id)
                         .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-                    let mut items = vec![format!("Commit: {}", commit.commit_hash)];
-                    if !commit.diff_stat.is_empty() {
-                        items.push(format!("Diff: {}", commit.diff_stat));
-                    }
+                    let commit_obj = CommitSummary {
+                        hash: commit.commit_hash.clone(),
+                        subject: commit.commit_subject.clone(),
+                        diff: commit.commit_diff.clone(),
+                    };
                     Self::append_workflow_milestone(
                         session,
                         WorkflowMilestoneKind::StepCommitted,
                         "Checkpoint committed",
                         format!("Completed step {}: {step_description}", step_index + 1),
-                        items,
                         Vec::new(),
-                        None,
+                        vec![commit_obj],
+                        commit.stats.clone(),
                     );
                 }
                 self.persist_session(session_id).await?;
