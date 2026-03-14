@@ -9143,6 +9143,19 @@ impl Ship for ShipImpl {
             .spawn();
     }
 
+    // r[proto.mark-session-read]
+    async fn mark_session_read(&self, session: SessionId) {
+        {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let Some(s) = sessions.get_mut(&session) else {
+                return;
+            };
+            s.is_read = true;
+        }
+        let _ = self.persist_session(&session).await;
+        self.broadcast_session_list();
+    }
+
     // r[event.subscribe.replay]
     async fn subscribe_events(&self, session: SessionId, output: Tx<SubscribeMessage>) {
         tracing::info!(session_id = %session.0, "subscriber connected");
