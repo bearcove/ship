@@ -11,6 +11,7 @@ import {
 import type { SessionSummary, TaskStatus } from "../generated/ship";
 import { useSoundEnabled } from "../context/SoundContext";
 import { AddProjectDialog, NewSessionDialog } from "../pages/SessionListPage";
+import { sortSessions } from "../pages/session-list-utils";
 import { useClientLogs } from "../api/client";
 import { QrCodeButton } from "./QrCodeButton";
 import {
@@ -39,16 +40,6 @@ function statusLabel(status: TaskStatus | null): string {
     case "Cancelled":
       return "Cancelled";
   }
-}
-
-function sortSessions(sessions: SessionSummary[]): SessionSummary[] {
-  const priority = (session: SessionSummary) => {
-    const tag = session.task_status?.tag;
-    if (tag === "ReviewPending" || tag === "SteerPending") return 0;
-    if (tag === "Working" || tag === "Assigned") return 1;
-    return 2;
-  };
-  return [...sessions].sort((a, b) => priority(a) - priority(b));
 }
 
 function SessionRow({

@@ -69,6 +69,7 @@ import {
 import { NewSessionDialog } from "../pages/SessionListPage";
 import { useSessionList } from "../hooks/useSessionList";
 import { getShipClient } from "../api/client";
+import { sortSessions } from "../pages/session-list-utils";
 
 const sideButtonSize = 24;
 
@@ -115,16 +116,6 @@ function statusLabel(status: TaskStatus | null): string {
     case "Accepted": return "Done";
     case "Cancelled": return "Cancelled";
   }
-}
-
-function sortSessions(sessions: SessionSummary[]): SessionSummary[] {
-  const priority = (s: SessionSummary) => {
-    const tag = s.task_status?.tag;
-    if (tag === "ReviewPending" || tag === "SteerPending") return 0;
-    if (tag === "Working" || tag === "Assigned") return 1;
-    return 2;
-  };
-  return [...sessions].sort((a, b) => priority(a) - priority(b));
 }
 
 function TaskStatusBadge({ status }: { status: TaskStatus }) {

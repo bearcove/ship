@@ -1,9 +1,10 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { describe, expect, it, beforeEach, vi } from "vitest";
-import type { SessionDetail } from "../generated/ship";
+import type { SessionDetail, SessionSummary } from "../generated/ship";
 import { SoundProvider } from "../context/SoundContext";
 import { renderWithTheme } from "../test/render";
+import { sessionViewRoot } from "../styles/session-view.css";
 import { SessionViewPage } from "./SessionViewPage";
 
 const mocks = vi.hoisted(() => ({
@@ -62,7 +63,7 @@ vi.mock("../components/ConnectionBanner", () => ({
 
 function LocationEcho() {
   const location = useLocation();
-  return <div>{`${location.pathname}${location.search}`}</div>;
+  return <div data-testid="location">{`${location.pathname}${location.search}`}</div>;
 }
 
 function makeSession(): SessionDetail {
@@ -115,20 +116,67 @@ function makeSession(): SessionDetail {
   };
 }
 
-function renderPage() {
+function makeSessionSummary(slug: string): SessionSummary {
+  const session = makeSession();
+  return {
+    id: `${slug}-id`,
+    slug,
+    project: session.project,
+    branch_name: session.branch_name,
+    title: session.title,
+    captain: session.captain,
+    mate: session.mate,
+    startup_state: session.startup_state,
+    current_task_title: session.current_task?.title ?? null,
+    current_task_description: session.current_task?.description ?? null,
+    task_status: session.current_task?.status ?? null,
+    diff_stats: null,
+    tasks_done: 0,
+    tasks_total: session.current_task ? 1 : 0,
+    autonomy_mode: session.autonomy_mode,
+    created_at: session.created_at,
+  };
+}
+
+function renderPage({
+  initialEntry = "/sessions/aaaa",
+  allSessions = [makeSessionSummary("aaaa")],
+}: {
+  initialEntry?: string;
+  allSessions?: SessionSummary[];
+} = {}) {
   return renderWithTheme(
-    <MemoryRouter initialEntries={["/sessions/session-1"]}>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <SoundProvider>
+        <LocationEcho />
         <Routes>
-          <Route path="/" element={<LocationEcho />} />
+          <Route path="/" element={<div />} />
           <Route
             path="/sessions/:sessionId"
-            element={<SessionViewPage debugMode={false} onOpenSidebar={() => {}} />}
+            element={<SessionViewPage debugMode={false} allSessions={allSessions} onOpenSidebar={() => {}} />}
           />
         </Routes>
       </SoundProvider>
     </MemoryRouter>,
   );
+}
+
+function swipeSessionView(startX: number, endX: number) {
+  const root = document.querySelector(`.${sessionViewRoot}`);
+  if (!(root instanceof HTMLDivElement)) {
+    throw new Error("session view root not found");
+  }
+
+  fireEvent.touchStart(root, {
+    touches: [{ clientX: startX, clientY: 120 }],
+  });
+  fireEvent.touchMove(root, {
+    touches: [{ clientX: endX, clientY: 120 }],
+  });
+  fireEvent.touchEnd(root, {
+    changedTouches: [{ clientX: endX, clientY: 120 }],
+  });
+  fireEvent.animationEnd(root);
 }
 
 beforeEach(() => {
@@ -168,6 +216,36 @@ describe("SessionViewPage UX slice", () => {
 
     expect(screen.getByLabelText("Steer input")).toBeInTheDocument();
     expect(screen.getByAltText("Captain")).toBeInTheDocument();
+  });
+
+  it("wraps from the first session to the last when swiping right", async () => {
+    const allSessions = [
+      makeSessionSummary("aaaa"),
+      makeSessionSummary("bbbb"),
+      makeSessionSummary("cccc"),
+    ];
+
+    renderPage({ initialEntry: "/sessions/aaaa", allSessions });
+    swipeSessionView(220, 320);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("location")).toHaveTextContent("/sessions/cccc");
+    });
+  });
+
+  it("wraps from the last session to the first when swiping left", async () => {
+    const allSessions = [
+      makeSessionSummary("aaaa"),
+      makeSessionSummary("bbbb"),
+      makeSessionSummary("cccc"),
+    ];
+
+    renderPage({ initialEntry: "/sessions/cccc", allSessions });
+    swipeSessionView(320, 220);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("location")).toHaveTextContent("/sessions/aaaa");
+    });
   });
 
   // r[verify view.agent-panel.state]

@@ -29,7 +29,7 @@ import {
 } from "../styles/session-list.css";
 import type { AgentKind, SessionSummary, TaskStatus } from "../generated/ship";
 import { getShipClient } from "../api/client";
-import { agentKindTooltip } from "./session-list-utils";
+import { agentKindTooltip, sortSessions } from "./session-list-utils";
 import { useWorktreeDiffStats } from "../hooks/useWorktreeDiffStats";
 
 // r[ui.session-list.status-colors]
@@ -723,6 +723,7 @@ export function SessionListPage() {
   const allProjects = useProjects();
   const validProjects = allProjects.filter((p) => p.valid);
   const sessions = useSessionList(projectFilter);
+  const sortedSessions = useMemo(() => sortSessions(sessions), [sessions]);
 
   const [newSessionOpen, setNewSessionOpen] = useState(false);
   const [addProjectOpen, setAddProjectOpen] = useState(false);

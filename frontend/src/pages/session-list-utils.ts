@@ -1,3 +1,5 @@
+import type { SessionSummary } from "../generated/ship";
+
 // r[ui.session-list.create]
 // r[server.agent-discovery]
 export function agentKindTooltip(
@@ -8,4 +10,15 @@ export function agentKindTooltip(
   if (kind === "codex" && !discovery.codex) return "codex-acp not found on PATH";
   if (kind === "opencode" && !discovery.opencode) return "opencode not found on PATH";
   return undefined;
+}
+
+export function sortSessions(sessions: SessionSummary[]): SessionSummary[] {
+  const priority = (session: SessionSummary) => {
+    const tag = session.task_status?.tag;
+    if (tag === "ReviewPending" || tag === "SteerPending") return 0;
+    if (tag === "Working" || tag === "Assigned") return 1;
+    return 2;
+  };
+
+  return [...sessions].sort((a, b) => priority(a) - priority(b));
 }
