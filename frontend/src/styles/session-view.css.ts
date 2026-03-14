@@ -204,6 +204,11 @@ export const feedBubbleActionBar = style({
   display: "flex",
   flexDirection: "row",
   gap: "var(--space-1)",
+  background: "var(--color-panel-solid)",
+  border: "1px solid var(--gray-a4)",
+  borderRadius: "12px",
+  padding: "var(--space-1) var(--space-2)",
+  boxShadow: "0 2px 8px var(--black-a2)",
   animation: `${actionBarEntrance} 0.15s ease-out both`,
 });
 
