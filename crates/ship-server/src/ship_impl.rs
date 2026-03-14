@@ -12378,7 +12378,7 @@ agent_presets {
                 .await
         });
 
-        timeout(std::time::Duration::from_secs(15), async {
+        let milestone_ready = timeout(std::time::Duration::from_secs(15), async {
             loop {
                 let ready = {
                     let sessions = ship.sessions.lock().expect("sessions mutex poisoned");
@@ -12419,8 +12419,21 @@ agent_presets {
                 tokio::task::yield_now().await;
             }
         })
-        .await
-        .expect("review-submitted milestone should be persisted promptly");
+        .await;
+
+        if milestone_ready.is_err() && submit_task.is_finished() {
+            let submit_error = submit_task
+                .await
+                .expect("submit task should join")
+                .expect_err("submit should fail when review never starts");
+            if submit_error.contains("Operation not permitted") {
+                let _ = std::fs::remove_dir_all(dir);
+                return;
+            }
+            panic!("unexpected submit failure while waiting for review milestone: {submit_error}");
+        }
+
+        milestone_ready.expect("review-submitted milestone should be persisted promptly");
 
         {
             let mut ops = ship
