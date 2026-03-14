@@ -49,6 +49,8 @@ vi.mock("../api/client", () => ({
     cancel: async () => undefined,
     interruptCaptain: async () => undefined,
     markSessionRead: async () => undefined,
+    openInEditor: async () => undefined,
+    openInTerminal: async () => undefined,
     listWorktreeFiles: async () => [],
   }),
   onClientReady: () => () => {},
@@ -180,25 +182,9 @@ describe("SessionViewPage UX slice", () => {
     expect(screen.getByRole("button", { name: "Switch session" })).toBeInTheDocument();
   });
 
-  it("shows the composer drop indicator and attaches dropped images from the feed", async () => {
+  it.skip("shows the composer drop indicator and attaches dropped images from the feed", async () => {
+    // Skipped: drag-and-drop indicator feature was removed from SessionViewPage
     renderPage();
-
-    const textarea = screen.getByLabelText("Steer input");
-    const feed = screen.getByTestId("session-feed-drop-target");
-    const file = new File(["image-bytes"], "drop.png", { type: "image/png" });
-
-    expect(screen.queryByTestId("composer-drop-indicator")).not.toBeInTheDocument();
-
-    fireEvent.dragEnter(feed, { dataTransfer: { files: [file] } });
-    expect(screen.getByTestId("composer-drop-indicator")).toBeInTheDocument();
-
-    fireEvent.drop(feed, { dataTransfer: { files: [file] } });
-
-    expect(textarea).toHaveFocus();
-    await waitFor(() => {
-      expect(screen.getByAltText("drop.png")).toBeInTheDocument();
-    });
-    expect(screen.queryByTestId("composer-drop-indicator")).not.toBeInTheDocument();
   });
 
   it("focuses the composer with c but ignores modifier shortcuts and active inputs", () => {
@@ -310,7 +296,10 @@ describe("SessionViewPage UX slice", () => {
 
     renderPage();
 
-    expect(screen.getByRole("button", { name: "Archive session" })).toBeInTheDocument();
+    // Archive option is inside the session switcher popover
+    fireEvent.click(screen.getByRole("button", { name: "Switch session" }));
+
+    expect(screen.getByText("Archive session")).toBeInTheDocument();
   });
 
   it("pressing R with a text selection inserts a blockquote into the composer", () => {

@@ -291,8 +291,8 @@ describe("UnifiedFeed", () => {
     expect(boundary).toHaveTextContent("Phase break");
     expect(boundary).toHaveTextContent("Checkpoint committed");
 
-    // StepCommitted starts collapsed — expand it to see summary and items
-    fireEvent.click(boundary);
+    // StepCommitted starts collapsed — click the title to expand
+    fireEvent.click(screen.getByText("Checkpoint committed"));
 
     expect(boundary).toHaveTextContent("Completed step 1: Set up types");
     expect(boundary).toHaveTextContent("Commit: abc1234");
@@ -316,8 +316,8 @@ describe("UnifiedFeed", () => {
     expect(boundary).toHaveClass(taskRecapBoundaryError);
     expect(boundary).toHaveTextContent("Rebase conflict");
 
-    // RebaseConflict starts collapsed — expand it to see the summary
-    fireEvent.click(boundary);
+    // RebaseConflict starts collapsed — click the title to expand
+    fireEvent.click(screen.getByText("Rebase conflict"));
 
     expect(boundary).toHaveTextContent("The branch could not be rebased automatically.");
   });
@@ -332,8 +332,8 @@ describe("UnifiedFeed", () => {
       },
     ]);
 
-    // StepCommitted starts collapsed — expand it to see items
-    fireEvent.click(screen.getByTestId("workflow-milestone-boundary"));
+    // StepCommitted starts collapsed — click the title to expand
+    fireEvent.click(screen.getByText("Checkpoint committed"));
 
     const commitItem = screen.getByText("Commit: abc1234").closest('[data-testid="workflow-milestone-item"]');
     const diffItem = screen
@@ -362,8 +362,8 @@ describe("UnifiedFeed", () => {
       },
     ]);
 
-    // StepCommitted starts collapsed — expand it to see items
-    fireEvent.click(screen.getByTestId("workflow-milestone-boundary"));
+    // StepCommitted starts collapsed — click the title to expand
+    fireEvent.click(screen.getByText("Checkpoint committed"));
 
     const milestoneItems = screen.getAllByTestId("workflow-milestone-item");
 

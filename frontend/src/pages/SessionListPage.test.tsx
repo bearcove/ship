@@ -97,13 +97,14 @@ function makeSession(overrides: Partial<SessionSummary> = {}): SessionSummary {
 
 function SessionListWithDialog({ entry }: { entry: string }) {
   const [open, setOpen] = useState(false);
+  const projectFromUrl = new URL(entry, "http://localhost").searchParams.get("project") ?? undefined;
   return (
     <MemoryRouter initialEntries={[entry]}>
       <Routes>
         <Route path="/" element={<SessionListPage onNewSession={() => setOpen(true)} />} />
         <Route path="/sessions/:sessionId" element={<div>Session view</div>} />
       </Routes>
-      <NewSessionDialog open={open} onOpenChange={setOpen} />
+      <NewSessionDialog open={open} onOpenChange={setOpen} preselectedProject={projectFromUrl} />
     </MemoryRouter>
   );
 }
