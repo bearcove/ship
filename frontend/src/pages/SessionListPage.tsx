@@ -356,6 +356,24 @@ export function NewSessionDialog({
   }, [defaultProject, open]);
 
   useEffect(() => {
+    if (!open) return;
+    getShipClient().then((client) => {
+      client.getNewSessionDefaults().then((defaults) => {
+        if (!defaults) return;
+        if (!preselectedProject && defaults.project) {
+          setProjectName(defaults.project);
+        }
+        if (!preselectedCaptainKind && defaults.captain_preset_id) {
+          setCaptainPresetId(defaults.captain_preset_id);
+        }
+        if (!preselectedMateKind && defaults.mate_preset_id) {
+          setMatePresetId(defaults.mate_preset_id);
+        }
+      });
+    });
+  }, [open]);
+
+  useEffect(() => {
     const fallbackKind = firstAvailableAgentKind(discovery);
     if (!fallbackKind) {
       return;
