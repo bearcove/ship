@@ -8239,18 +8239,19 @@ mod tests {
 
     use crate::captain_mcp::worktree_tools::{read_file_tool, run_command_tool};
     use ship_core::{
-        AgentError, FakeAgentDriver, FakePromptScript, JsonSessionStore, ProjectRegistry,
-        PromptResponse, SessionGitNames, SessionStore, StopReason,
+        AgentDriver, AgentError, AgentSessionConfig, FakeAgentDriver, FakePromptScript,
+        JsonSessionStore, ProjectRegistry, PromptResponse, SessionGitNames, SessionStore,
+        StopReason,
     };
     use ship_service::Ship;
     use ship_types::{
-        AgentDiscovery, AgentKind, AgentSnapshot, AgentState, AutonomyMode, CaptainAssignExtras,
-        ContentBlock, CreateSessionRequest, CreateSessionResponse, CurrentTask,
-        DirtySessionStrategy, EffortValue, HumanReviewRequest, McpServerConfig,
+        AgentDiscovery, AgentKind, AgentPresetId, AgentSnapshot, AgentState, AutonomyMode,
+        CaptainAssignExtras, ContentBlock, CreateSessionRequest, CreateSessionResponse,
+        CurrentTask, DirtySessionStrategy, EffortValue, HumanReviewRequest, McpServerConfig,
         McpStdioServerConfig, PersistedSession, PlanStep, PlanStepInput, PlanStepStatus,
         ProjectName, PromptContentPart, Role, SessionConfig, SessionEvent, SessionEventEnvelope,
-        SessionId, SessionStartupStage, SessionStartupState, SubscribeMessage, TaskId, TaskRecord,
-        TaskStatus,
+        SessionId, SessionStartupStage, SessionStartupState, SetAgentPresetResponse,
+        SubscribeMessage, TaskId, TaskRecord, TaskStatus,
     };
     use tokio::sync::{broadcast, mpsc};
     use tokio::time::timeout;
@@ -8520,6 +8521,50 @@ mod tests {
             .insert(session_id.clone(), session);
 
         (dir, ship, session_id)
+    }
+
+    fn write_agent_preset_config(root: &std::path::Path, contents: &str) {
+        std::fs::write(root.join("config").join("config.styx"), contents)
+            .expect("preset config should be written");
+    }
+
+    async fn attach_fake_agent_handle(
+        ship: &ShipImpl,
+        session_id: &SessionId,
+        role: Role,
+        kind: AgentKind,
+        fake_driver: &FakeAgentDriver,
+    ) -> ship_core::AgentHandle {
+        let worktree_path = {
+            let sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            sessions
+                .get(session_id)
+                .expect("session should exist")
+                .worktree_path
+                .clone()
+                .expect("worktree path should exist")
+        };
+        let spawn = fake_driver
+            .spawn(
+                kind,
+                role,
+                &AgentSessionConfig {
+                    worktree_path,
+                    mcp_servers: Vec::new(),
+                    resume_session_id: None,
+                },
+            )
+            .await
+            .expect("fake spawn should succeed");
+        {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(session_id).expect("session should exist");
+            match role {
+                Role::Captain => session.captain_handle = Some(spawn.handle.clone()),
+                Role::Mate => session.mate_handle = Some(spawn.handle.clone()),
+            }
+        }
+        spawn.handle
     }
 
     fn init_git_repo(path: &std::path::Path) {
@@ -9778,6 +9823,247 @@ mod tests {
                 },
             })
         );
+    }
+
+    #[tokio::test]
+    async fn set_agent_preset_same_provider_updates_model_and_reprompts() {
+        let _guard = lock_fake_agent_driver_tests();
+        let fake_driver = FakeAgentDriver::default();
+        fake_driver.push_response(StopReason::EndTurn);
+        let _driver_guard = TestAgentDriverGuard::set(fake_driver.clone());
+        let (dir, ship, session_id) = create_ready_session_for_assign_test(
+            "set-agent-preset-same-provider",
+            "preset-switch-same-provider",
+        )
+        .await;
+        write_agent_preset_config(
+            &dir,
+            r#"
+agent_presets {
+    presets (
+        {id claude::sonnet, label "Claude Sonnet", kind @Claude, provider anthropic, model_id claude-sonnet-4}
+    )
+}
+"#,
+        );
+
+        let captain_handle = attach_fake_agent_handle(
+            &ship,
+            &session_id,
+            Role::Captain,
+            AgentKind::Claude,
+            &fake_driver,
+        )
+        .await;
+        fake_driver.set_current_model_for_test(&captain_handle, "claude-3-5-sonnet");
+        {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(&session_id).expect("session should exist");
+            session.captain.model_id = Some("claude-3-5-sonnet".to_owned());
+            session.captain.available_models =
+                vec!["claude-3-5-sonnet".to_owned(), "claude-sonnet-4".to_owned()];
+        }
+
+        let spawn_count = fake_driver.spawn_records().len();
+        let prompt_count = fake_driver.prompt_log().len();
+        let cancelled_count = fake_driver.cancelled_handles().len();
+        let killed_count = fake_driver.killed_handles().len();
+
+        let result = Ship::set_agent_preset(
+            &ship,
+            session_id.clone(),
+            Role::Captain,
+            AgentPresetId("claude::sonnet".to_owned()),
+        )
+        .await;
+        assert_eq!(result, SetAgentPresetResponse::Ok);
+
+        assert_eq!(fake_driver.spawn_records().len(), spawn_count);
+        assert_eq!(fake_driver.cancelled_handles().len(), cancelled_count + 1);
+        assert_eq!(fake_driver.killed_handles().len(), killed_count);
+        assert_eq!(fake_driver.prompt_log().len(), prompt_count + 1);
+        assert_eq!(
+            fake_driver.current_model(&captain_handle).as_deref(),
+            Some("claude-sonnet-4")
+        );
+        assert_eq!(
+            fake_driver.model_set_log(),
+            vec![(captain_handle.clone(), "claude-sonnet-4".to_owned())]
+        );
+        assert!(matches!(
+            fake_driver.prompt_log().last().and_then(|(_, parts)| parts.first()),
+            Some(PromptContentPart::Text { text }) if text == super::PRESET_CONTINUATION_PROMPT
+        ));
+
+        let detail = Ship::get_session(&ship, session_id.clone()).await;
+        assert_eq!(detail.captain.kind, AgentKind::Claude);
+        assert_eq!(
+            detail.captain.preset_id,
+            Some(AgentPresetId("claude::sonnet".to_owned()))
+        );
+        assert_eq!(
+            detail.captain.provider,
+            Some(AgentKind::Claude.default_provider_id())
+        );
+        assert_eq!(detail.captain.model_id.as_deref(), Some("claude-sonnet-4"));
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn set_agent_preset_does_not_persist_when_continuation_prompt_fails() {
+        let _guard = lock_fake_agent_driver_tests();
+        let fake_driver = FakeAgentDriver::default();
+        let _driver_guard = TestAgentDriverGuard::set(fake_driver.clone());
+        let (dir, ship, session_id) = create_ready_session_for_assign_test(
+            "set-agent-preset-prompt-failure",
+            "preset-switch-prompt-failure",
+        )
+        .await;
+        write_agent_preset_config(
+            &dir,
+            r#"
+agent_presets {
+    presets (
+        {id claude::sonnet, label "Claude Sonnet", kind @Claude, provider anthropic, model_id claude-sonnet-4}
+    )
+}
+"#,
+        );
+
+        let captain_handle = attach_fake_agent_handle(
+            &ship,
+            &session_id,
+            Role::Captain,
+            AgentKind::Claude,
+            &fake_driver,
+        )
+        .await;
+        fake_driver.set_current_model_for_test(&captain_handle, "claude-3-5-sonnet");
+        fake_driver.push_script(FakePromptScript {
+            expected_handle: Some(captain_handle.clone()),
+            response: Err(AgentError {
+                message: "continue failed".to_owned(),
+            }),
+            events: Vec::new(),
+        });
+        {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(&session_id).expect("session should exist");
+            session.captain.model_id = Some("claude-3-5-sonnet".to_owned());
+            session.captain.available_models =
+                vec!["claude-3-5-sonnet".to_owned(), "claude-sonnet-4".to_owned()];
+        }
+
+        let result = Ship::set_agent_preset(
+            &ship,
+            session_id.clone(),
+            Role::Captain,
+            AgentPresetId("claude::sonnet".to_owned()),
+        )
+        .await;
+        assert_eq!(
+            result,
+            SetAgentPresetResponse::Failed {
+                message: "continue failed".to_owned(),
+            }
+        );
+        assert_eq!(
+            fake_driver.current_model(&captain_handle).as_deref(),
+            Some("claude-3-5-sonnet")
+        );
+        assert_eq!(
+            fake_driver.model_set_log(),
+            vec![
+                (captain_handle.clone(), "claude-sonnet-4".to_owned()),
+                (captain_handle, "claude-3-5-sonnet".to_owned()),
+            ]
+        );
+
+        let detail = Ship::get_session(&ship, session_id.clone()).await;
+        assert_eq!(detail.captain.preset_id, None);
+        assert_eq!(
+            detail.captain.provider,
+            Some(AgentKind::Claude.default_provider_id())
+        );
+        assert_eq!(
+            detail.captain.model_id.as_deref(),
+            Some("claude-3-5-sonnet")
+        );
+        assert_eq!(
+            detail.captain.state,
+            AgentState::Error {
+                message: "continue failed".to_owned(),
+            }
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn set_agent_preset_rejects_provider_or_kind_changes() {
+        let _guard = lock_fake_agent_driver_tests();
+        let fake_driver = FakeAgentDriver::default();
+        let _driver_guard = TestAgentDriverGuard::set(fake_driver.clone());
+        let (dir, ship, session_id) = create_ready_session_for_assign_test(
+            "set-agent-preset-rejects-respawn",
+            "preset-switch-rejects-respawn",
+        )
+        .await;
+        write_agent_preset_config(
+            &dir,
+            r#"
+agent_presets {
+    presets (
+        {id codex::gpt-5.4, label "GPT 5.4", kind @Codex, provider openai, model_id gpt-5.4}
+    )
+}
+"#,
+        );
+
+        let _captain_handle = attach_fake_agent_handle(
+            &ship,
+            &session_id,
+            Role::Captain,
+            AgentKind::Claude,
+            &fake_driver,
+        )
+        .await;
+        let spawn_count = fake_driver.spawn_records().len();
+        let prompt_count = fake_driver.prompt_log().len();
+        let cancelled_count = fake_driver.cancelled_handles().len();
+        let model_set_count = fake_driver.model_set_log().len();
+
+        let result = Ship::set_agent_preset(
+            &ship,
+            session_id.clone(),
+            Role::Captain,
+            AgentPresetId("codex::gpt-5.4".to_owned()),
+        )
+        .await;
+        assert_eq!(
+            result,
+            SetAgentPresetResponse::Failed {
+                message:
+                    "preset switches that require respawning the agent are not implemented yet"
+                        .to_owned(),
+            }
+        );
+        assert_eq!(fake_driver.spawn_records().len(), spawn_count);
+        assert_eq!(fake_driver.prompt_log().len(), prompt_count);
+        assert_eq!(fake_driver.cancelled_handles().len(), cancelled_count);
+        assert_eq!(fake_driver.model_set_log().len(), model_set_count);
+
+        let detail = Ship::get_session(&ship, session_id.clone()).await;
+        assert_eq!(detail.captain.kind, AgentKind::Claude);
+        assert_eq!(detail.captain.preset_id, None);
+        assert_eq!(
+            detail.captain.provider,
+            Some(AgentKind::Claude.default_provider_id())
+        );
+        assert_eq!(detail.captain.model_id, None);
+
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     // r[verify captain.tool.steer]

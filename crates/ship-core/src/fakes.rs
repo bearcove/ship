@@ -35,6 +35,8 @@ struct FakeAgentDriverInner {
     prompts: Vec<(AgentHandle, Vec<ship_types::PromptContentPart>)>,
     cancelled: Vec<AgentHandle>,
     killed: Vec<AgentHandle>,
+    model_sets: Vec<(AgentHandle, String)>,
+    current_models: HashMap<AgentHandle, String>,
 }
 
 // r[testability.no-subprocess-in-tests]
@@ -100,6 +102,31 @@ impl FakeAgentDriver {
             .expect("fake agent driver mutex poisoned")
             .killed
             .clone()
+    }
+
+    pub fn model_set_log(&self) -> Vec<(AgentHandle, String)> {
+        self.inner
+            .lock()
+            .expect("fake agent driver mutex poisoned")
+            .model_sets
+            .clone()
+    }
+
+    pub fn current_model(&self, handle: &AgentHandle) -> Option<String> {
+        self.inner
+            .lock()
+            .expect("fake agent driver mutex poisoned")
+            .current_models
+            .get(handle)
+            .cloned()
+    }
+
+    pub fn set_current_model_for_test(&self, handle: &AgentHandle, model_id: impl Into<String>) {
+        self.inner
+            .lock()
+            .expect("fake agent driver mutex poisoned")
+            .current_models
+            .insert(handle.clone(), model_id.into());
     }
 }
 
@@ -218,7 +245,12 @@ impl AgentDriver for FakeAgentDriver {
         Ok(())
     }
 
-    async fn set_model(&self, _handle: &AgentHandle, _model_id: &str) -> Result<(), AgentError> {
+    async fn set_model(&self, handle: &AgentHandle, model_id: &str) -> Result<(), AgentError> {
+        let mut inner = self.inner.lock().expect("fake agent driver mutex poisoned");
+        inner.model_sets.push((handle.clone(), model_id.to_owned()));
+        inner
+            .current_models
+            .insert(handle.clone(), model_id.to_owned());
         Ok(())
     }
 
