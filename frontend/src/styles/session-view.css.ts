@@ -719,8 +719,8 @@ export const sessionTopBarActions = style({
 
 export const sessionHeaderRoot = style({
   flexShrink: 0,
-  borderBottom: "1px solid var(--gray-a4)",
   position: "relative",
+  boxShadow: "0 0 20px var(--gray-a4)"
 });
 
 export const sessionHeaderCollapsedArea = style({
@@ -748,22 +748,22 @@ export const sessionHeaderSideButtons = style({
 });
 
 export const sessionHeaderSideButton = style({
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  width: "32px",
-  height: "100%",
-  padding: "0 var(--space-3)",
-  border: "none",
-  background: "transparent",
-  color: "var(--gray-11)",
-  cursor: "pointer",
-  selectors: {
-    "&:hover": {
-      color: "var(--gray-12)",
-      background: "var(--gray-a3)",
-    },
-  },
+  // display: "flex",
+  // alignItems: "center",
+  // justifyContent: "center",
+  // width: "24px",
+  // height: "100%",
+  // padding: "0 var(--space-3)",
+  // border: "none",
+  // background: "transparent",
+  // color: "var(--gray-11)",
+  // cursor: "pointer",
+  // selectors: {
+  //   "&:hover": {
+  //     color: "var(--gray-12)",
+  //     background: "var(--gray-a3)",
+  //   },
+  // },
 });
 
 export const sessionHeaderSideButtonDesktopOnly = style({
@@ -795,7 +795,6 @@ export const sessionHeaderRow2 = style({
   alignItems: "center",
   gap: "var(--space-2)",
   padding: "var(--space-1) var(--space-3) var(--space-3) var(--space-3)",
-  width: "100%",
   border: 0,
   background: "transparent",
   color: "inherit",

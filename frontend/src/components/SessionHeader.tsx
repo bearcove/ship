@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useState } from "react";
-import { Badge, Box, Code, DropdownMenu, Flex, Popover, Spinner, Text } from "@radix-ui/themes";
+import { Badge, Box, Button, Code, DropdownMenu, Flex, Popover, Spinner, Text } from "@radix-ui/themes";
 import {
   Archive,
   CaretDown,
@@ -71,6 +71,9 @@ import {
 import { NewSessionDialog } from "../pages/SessionListPage";
 import { useSessionList } from "../hooks/useSessionList";
 import { getShipClient } from "../api/client";
+import { TerminalWindowIcon } from "@phosphor-icons/react/dist/ssr";
+
+const sideButtonSize = 24;
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -327,14 +330,14 @@ export function SessionHeader({
           </div>{/* end sessionHeaderRows */}
 
           {/* Side buttons: switcher + menu (always) + Zed/iTerm (desktop only) */}
-          <div className={sessionHeaderSideButtons}>
+          <Flex align="center" gap="4" px="4">
             <Popover.Root open={switcherOpen} onOpenChange={setSwitcherOpen}>
               <Popover.Trigger
                 className={sessionHeaderSideButton}
                 aria-label="Switch session"
                 onClick={(e) => e.stopPropagation()}
               >
-                <ChatsCircle size={20} />
+                <ChatsCircle size={sideButtonSize} />
               </Popover.Trigger>
               <Popover.Content align="end" size="1" style={{ padding: "var(--space-1)" }}>
                 <div className={sessionSwitcherList}>
@@ -351,8 +354,8 @@ export function SessionHeader({
                     const currentStep =
                       mateState.tag === "Working" && mateState.plan
                         ? (mateState.plan.find((s) => s.status.tag === "InProgress") ??
-                            mateState.plan.find((s) => s.status.tag === "Pending") ??
-                            null)
+                          mateState.plan.find((s) => s.status.tag === "Pending") ??
+                          null)
                         : null;
                     const stepLabel = currentStep?.title || currentStep?.description || null;
                     return (
@@ -391,7 +394,7 @@ export function SessionHeader({
                 aria-label="Session menu"
                 onClick={(e) => e.stopPropagation()}
               >
-                <DotsThree size={20} weight="bold" />
+                <DotsThree size={sideButtonSize} weight="bold" />
               </DropdownMenu.Trigger>
               <DropdownMenu.Content size="2" align="end">
                 <DropdownMenu.Item onClick={() => setNewSessionOpen(true)}>
@@ -409,8 +412,9 @@ export function SessionHeader({
                 )}
               </DropdownMenu.Content>
             </DropdownMenu.Root>
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              color="gray"
               className={`${sessionHeaderSideButton} ${sessionHeaderSideButtonDesktopOnly}`}
               title="Open in Zed"
               aria-label="Open in Zed"
@@ -419,10 +423,11 @@ export function SessionHeader({
                 void getShipClient().then((c) => c.openInEditor(sessionId));
               }}
             >
-              <CodeSimple size={20} />
-            </button>
-            <button
-              type="button"
+              <CodeSimple size={sideButtonSize} />
+            </Button>
+            <Button
+              variant="ghost"
+              color="gray"
               className={`${sessionHeaderSideButton} ${sessionHeaderSideButtonDesktopOnly}`}
               title="Open in iTerm"
               aria-label="Open in iTerm"
@@ -431,9 +436,10 @@ export function SessionHeader({
                 void getShipClient().then((c) => c.openInTerminal(sessionId));
               }}
             >
-              <TerminalWindow size={20} />
-            </button>
-          </div>
+              <TerminalWindowIcon size={sideButtonSize} />
+            </Button>
+
+          </Flex>
         </div>{/* end sessionHeaderCollapsedArea */}
 
         {/* Expanded panel */}
@@ -540,7 +546,7 @@ export function SessionHeader({
             )}
           </div>
         </div>
-      </div>
+      </div >
 
       <NewSessionDialog
         open={newSessionOpen}
