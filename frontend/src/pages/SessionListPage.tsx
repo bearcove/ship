@@ -25,6 +25,9 @@ import {
   branchComboboxList,
   keyboardShortcutKey,
   sessionCard,
+  statusSpinner,
+  unreadCardIdle,
+  unreadCardWaitingForHuman,
 } from "../styles/session-list.css";
 import type { AgentKind, SessionSummary, TaskStatus } from "../generated/ship";
 import { getShipClient } from "../api/client";
@@ -48,7 +51,16 @@ const STATUS_COLOR: Record<
   RebaseConflict: "red",
   Accepted: "green",
   Cancelled: "red",
+  WaitingForHuman: "amber",
 };
+
+const ACTIVE_STATUSES = new Set<TaskStatus["tag"]>([
+  "Working",
+  "ReviewPending",
+  "SteerPending",
+  "RebaseConflict",
+  "Assigned",
+]);
 
 function AgentKindLabel({ kind }: { kind: AgentKind }) {
   return (
@@ -608,8 +620,21 @@ function SessionCard({
       Number(diffStats.files_changed) >
       0;
 
+  const isActive = session.task_status != null && ACTIVE_STATUSES.has(session.task_status.tag);
+  const isWaitingForHuman = session.task_status?.tag === "WaitingForHuman";
+  const isIdle = session.task_status == null || session.task_status.tag === "Accepted";
+
+  let cardClass = sessionCard;
+  if (!session.is_read) {
+    if (isWaitingForHuman) {
+      cardClass = `${sessionCard} ${unreadCardWaitingForHuman}`;
+    } else if (isIdle) {
+      cardClass = `${sessionCard} ${unreadCardIdle}`;
+    }
+  }
+
   return (
-    <Card className={sessionCard}>
+    <Card className={cardClass}>
       <Flex direction="column" gap="2">
         {/* Row 1: title + status badge */}
         <Flex align="center" gap="2">
@@ -630,9 +655,12 @@ function SessionCard({
           )}
           <Flex align="center" gap="2" ml="auto">
             <SessionRecordingBadge sessionId={session.id} />
+            {isActive && <span className={statusSpinner} />}
             {session.task_status && (
               <Badge color={STATUS_COLOR[session.task_status.tag]} size="1">
-                {session.task_status.tag}
+                {session.task_status.tag === "WaitingForHuman"
+                  ? "Needs attention"
+                  : session.task_status.tag}
               </Badge>
             )}
           </Flex>
@@ -671,6 +699,16 @@ function SessionCard({
               </Text>
               <Text size="1" color="gray">
                 · {String(diffStats.files_changed)} files
+              </Text>
+            </>
+          )}
+          {session.tasks_total > 0 && (
+            <>
+              <Text size="1" color="gray">
+                ·
+              </Text>
+              <Text size="1" color="gray">
+                {session.tasks_done}/{session.tasks_total} tasks
               </Text>
             </>
           )}

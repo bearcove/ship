@@ -53,6 +53,30 @@ export const branchComboboxItem = style({
   },
 });
 
+const spin = keyframes({
+  "0%": { transform: "rotate(0deg)" },
+  "100%": { transform: "rotate(360deg)" },
+});
+
+export const statusSpinner = style({
+  display: "inline-block",
+  width: 14,
+  height: 14,
+  border: "2px solid var(--gray-a5)",
+  borderTopColor: "var(--accent-9)",
+  borderRadius: "50%",
+  animation: `${spin} 0.8s linear infinite`,
+  flexShrink: 0,
+});
+
+export const unreadCardWaitingForHuman = style({
+  borderLeft: "3px solid var(--amber-9)",
+});
+
+export const unreadCardIdle = style({
+  borderLeft: "3px solid var(--blue-9)",
+});
+
 export const keyboardShortcutKey = style({
   display: "inline-flex",
   alignItems: "center",
