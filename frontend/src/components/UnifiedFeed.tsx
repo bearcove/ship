@@ -525,6 +525,7 @@ function toMarkdownTextBlock(text: string): TextBlockType {
 
 function WorkflowMilestoneBlock({ block }: { block: WorkflowMilestoneBlockType }) {
   const [expandedHashes, setExpandedHashes] = useState<Set<string>>(() => new Set());
+  const [collapsed, setCollapsed] = useState(() => block.kind.tag !== "TaskAccepted");
   const tone = workflowMilestoneTone(block.kind);
   const items = dedupeWorkflowMilestoneItems(block.items ?? []);
   const commits = block.commits ?? [];
@@ -547,23 +548,65 @@ function WorkflowMilestoneBlock({ block }: { block: WorkflowMilestoneBlockType }
       data-phase-break-tone={tone}
     >
       <Box className={taskRecapContent}>
-        <Flex className={taskRecapHeader} align="start" justify="between" gap="3">
+        <Flex
+          className={taskRecapHeader}
+          align="start"
+          justify="between"
+          gap="3"
+          style={{ cursor: collapsed ? "pointer" : "default" }}
+          onClick={() => {
+            if (collapsed) setCollapsed(false);
+          }}
+        >
           <Box style={{ minWidth: 0 }}>
             <Text className={taskRecapEyebrow}>Phase break</Text>
             <Box className={taskRecapTitle}>
               <TextBlock block={toMarkdownTextBlock(block.title)} />
             </Box>
-            {block.summary && <TextBlock block={toMarkdownTextBlock(block.summary)} />}
+            {!collapsed && block.summary && <TextBlock block={toMarkdownTextBlock(block.summary)} />}
           </Box>
-          {block.stats && (
-            <Text className={taskRecapSummary}>
-              <span style={{ color: "var(--green-11)" }}>+{block.stats.insertions}</span>{" "}
-              <span style={{ color: "var(--red-11)" }}>−{block.stats.deletions}</span> across{" "}
-              {block.stats.files_changed} file{block.stats.files_changed !== 1 ? "s" : ""}
-            </Text>
-          )}
+          <Flex align="center" gap="2">
+            {block.stats && (
+              <Text className={taskRecapSummary}>
+                <span style={{ color: "var(--green-11)" }}>+{block.stats.insertions}</span>{" "}
+                <span style={{ color: "var(--red-11)" }}>−{block.stats.deletions}</span> across{" "}
+                {block.stats.files_changed} file{block.stats.files_changed !== 1 ? "s" : ""}
+              </Text>
+            )}
+            {collapsed ? (
+              <CaretRight
+                size={12}
+                className={taskRecapCaret}
+                style={{ transform: "rotate(0deg)", flexShrink: 0 }}
+              />
+            ) : (
+              <button
+                type="button"
+                aria-label="Collapse phase break"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setCollapsed(true);
+                }}
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  padding: 0,
+                  margin: 0,
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                }}
+              >
+                <CaretRight
+                  size={12}
+                  className={taskRecapCaret}
+                  style={{ transform: "rotate(90deg)", flexShrink: 0 }}
+                />
+              </button>
+            )}
+          </Flex>
         </Flex>
-        {commits.length > 0 && (
+        {!collapsed && commits.length > 0 && (
           <Box className={taskRecapCommitList}>
             {commits.map((commit) => {
               const expanded = expandedHashes.has(commit.hash);
@@ -602,7 +645,7 @@ function WorkflowMilestoneBlock({ block }: { block: WorkflowMilestoneBlockType }
             })}
           </Box>
         )}
-        {commits.length === 0 && items.length > 0 && (
+        {!collapsed && commits.length === 0 && items.length > 0 && (
           <Box className={workflowMilestoneList}>
             {items.map((item, index) => {
               const isDiffLike = isWorkflowMilestoneDiffLike(item);
