@@ -7958,7 +7958,8 @@ use captain_steer. Otherwise continue your current work."
 
                     current_parts = Some(vec![PromptContentPart::Text {
                         text: "<system-notification>You stopped without submitting your work. \
-                            Call mate_submit with a summary of what you accomplished.\
+                            Call mate_submit with a summary of what you accomplished. \
+                            Do not write a text response — use the mate_submit tool.\
                             </system-notification>"
                             .to_owned(),
                     }]);
