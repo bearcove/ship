@@ -2301,7 +2301,16 @@ You are now active. Wait for messages from captains or the human.\n",
             }
 
             // r[task.recap]
-            if !recap_commits.is_empty() {
+            // r[task.accepted]
+            if recap_commits.is_empty() {
+                Self::append_workflow_milestone(
+                    active,
+                    WorkflowMilestoneKind::TaskAccepted,
+                    "Task accepted",
+                    "Work merged to base branch",
+                    Vec::new(),
+                );
+            } else {
                 apply_event(
                     active,
                     SessionEvent::BlockAppend {
@@ -2314,15 +2323,6 @@ You are now active. Wait for messages from captains or the human.\n",
                     },
                 );
             }
-
-            // r[task.accepted]
-            Self::append_workflow_milestone(
-                active,
-                WorkflowMilestoneKind::TaskAccepted,
-                "Task accepted",
-                "Work merged to base branch",
-                Vec::new(),
-            );
 
             transition_task(active, TaskStatus::Accepted).map_err(|error| error.to_string())?;
             Self::invalidate_mate_activity_summary_state(active);
