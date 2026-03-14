@@ -8,7 +8,7 @@ import {
   NotePencilIcon,
 } from "@phosphor-icons/react";
 import type { SessionSummary, TaskStatus } from "../generated/ship";
-import { AddProjectDialog, NewSessionDialog } from "../pages/SessionListPage";
+import { AddProjectDialog } from "../pages/SessionListPage";
 import { sortSessions } from "../pages/session-list-utils";
 import { useClientLogs } from "../api/client";
 import { SessionRecordingBadge } from "./SessionRecordingBadge";
@@ -115,6 +115,7 @@ interface Props {
   onToggleDebug: () => void;
   isOpen?: boolean;
   onClose?: () => void;
+  onNewSession: () => void;
 }
 
 // r[ui.session-list.nav]
@@ -125,15 +126,11 @@ export function SessionSidebar({
   onToggleDebug,
   isOpen,
   onClose,
+  onNewSession,
 }: Props) {
   const [addProjectOpen, setAddProjectOpen] = useState(false);
-  const [newSessionOpen, setNewSessionOpen] = useState(false);
   const clientLogs = useClientLogs();
   const sortedSessions = useMemo(() => sortSessions(sessions), [sessions]);
-  const currentSession = useMemo(
-    () => sessions.find((s) => s.slug === currentSessionId),
-    [currentSessionId, sessions],
-  );
 
   return (
     <>
@@ -153,7 +150,7 @@ export function SessionSidebar({
           <Box px="3" pb="2">
             <button
               type="button"
-              onClick={() => setNewSessionOpen(true)}
+              onClick={onNewSession}
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -242,13 +239,6 @@ export function SessionSidebar({
         </Flex>
 
         <AddProjectDialog open={addProjectOpen} onOpenChange={setAddProjectOpen} />
-        <NewSessionDialog
-          open={newSessionOpen}
-          onOpenChange={setNewSessionOpen}
-          preselectedProject={currentSession?.project}
-          preselectedCaptainKind={currentSession?.captain.kind}
-          preselectedMateKind={currentSession?.mate.kind}
-        />
       </Box>
     </>
   );
