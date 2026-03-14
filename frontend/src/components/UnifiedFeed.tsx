@@ -5,7 +5,7 @@ import captainAvatar from "../assets/avatars/captain.png";
 import mateAvatar from "../assets/avatars/mate.png";
 import type { AgentSnapshot, ContentBlock, Role, SessionStartupState } from "../generated/ship";
 import type { BlockEntry } from "../state/blockStore";
-import { BubbleActions, TextBlock } from "./blocks/TextBlock";
+import { TextBlock } from "./blocks/TextBlock";
 import { ErrorBlock } from "./blocks/ErrorBlock";
 import { PermissionBlock } from "./blocks/PermissionBlock";
 import { ImageBlock } from "./blocks/ImageBlock";
@@ -56,8 +56,6 @@ import {
   feedContentColumn,
   userAvatar,
   userAvatarSpacer,
-  feedBubbleWithActions,
-  feedBubbleWithActionsUser,
   feedImageUser,
   diffAdd,
   diffRemove,
@@ -465,16 +463,10 @@ function SingleBlock({
         const summaryBlock = { ...block, text: summary };
         return (
           <Box className={feedRowAgent}>
-            <Box className={feedBubbleWithActions}>
-              <Box className={feedBubbleCol}>
-                <Box className={`${feedBubble} ${feedBubbleActivitySummary}`}>
-                  <TextBlock block={summaryBlock as TextBlockType} />
-                </Box>
+            <Box className={feedBubbleCol}>
+              <Box className={`${feedBubble} ${feedBubbleActivitySummary}`}>
+                <TextBlock block={summaryBlock as TextBlockType} />
               </Box>
-              <BubbleActions
-                block={summaryBlock as TextBlockType}
-                speakable={false}
-              />
             </Box>
           </Box>
         );
@@ -484,11 +476,9 @@ function SingleBlock({
       if (isHuman && role.tag === "Captain") {
         return (
           <Box className={feedRowUser}>
-            <Box className={`${feedBubbleWithActions} ${feedBubbleWithActionsUser}`}>
-              <Box className={`${feedBubbleCol} ${feedBubbleColUser}`}>
-                <Box className={`${feedBubble} ${feedBubbleUser}`}>
-                  <TextBlock block={block as TextBlockType} />
-                </Box>
+            <Box className={`${feedBubbleCol} ${feedBubbleColUser}`}>
+              <Box className={`${feedBubble} ${feedBubbleUser}`}>
+                <TextBlock block={block as TextBlockType} />
               </Box>
             </Box>
           </Box>
@@ -499,16 +489,10 @@ function SingleBlock({
       if (block.source.tag === "Steer" && role.tag === "Mate") {
         return (
           <Box className={feedRowAgent}>
-            <Box className={feedBubbleWithActions}>
-              <Box className={feedBubbleCol}>
-                <Box className={`${feedBubble} ${feedBubbleSteer}`}>
-                  <TextBlock block={block as TextBlockType} />
-                </Box>
+            <Box className={feedBubbleCol}>
+              <Box className={`${feedBubble} ${feedBubbleSteer}`}>
+                <TextBlock block={block as TextBlockType} />
               </Box>
-              <BubbleActions
-                block={block as TextBlockType}
-                speakable
-              />
             </Box>
           </Box>
         );
@@ -518,16 +502,10 @@ function SingleBlock({
       if (isHuman && role.tag === "Mate") {
         return (
           <Box className={feedRowAgent}>
-            <Box className={feedBubbleWithActions}>
-              <Box className={feedBubbleCol}>
-                <Box className={`${feedBubble} ${feedBubbleRelay}`}>
-                  <TextBlock block={block as TextBlockType} />
-                </Box>
+            <Box className={feedBubbleCol}>
+              <Box className={`${feedBubble} ${feedBubbleRelay}`}>
+                <TextBlock block={block as TextBlockType} />
               </Box>
-              <BubbleActions
-                block={block as TextBlockType}
-                speakable
-              />
             </Box>
           </Box>
         );
@@ -541,18 +519,12 @@ function SingleBlock({
       // Agent message — left side
       return (
         <Box className={feedRowAgent}>
-          <Box className={feedBubbleWithActions}>
-            <Box className={feedBubbleCol}>
-              <Box
-                className={`${feedBubble}${isCaptain ? ` ${feedBubbleCaptain}` : ` ${feedBubbleMate}`}`}
-              >
-                <TextBlock block={block as TextBlockType} />
-              </Box>
+          <Box className={feedBubbleCol}>
+            <Box
+              className={`${feedBubble}${isCaptain ? ` ${feedBubbleCaptain}` : ` ${feedBubbleMate}`}`}
+            >
+              <TextBlock block={block as TextBlockType} />
             </Box>
-            <BubbleActions
-              block={block as TextBlockType}
-              speakable
-            />
           </Box>
         </Box>
       );
