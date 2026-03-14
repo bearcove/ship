@@ -131,6 +131,9 @@ export interface UnifiedComposerHandle {
   addImageFiles(files: FileList | File[]): void;
   setDragOver(isDragOver: boolean): void;
   insertQuote(text: string): void;
+  startRecording(): void;
+  stopRecording(): void;
+  isRecording(): boolean;
 }
 
 function parseTarget(text: string): { target: "captain" | "mate"; content: string } {
@@ -449,8 +452,11 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
       addImageFiles,
       setDragOver: setIsDragOver,
       insertQuote,
+      startRecording: () => void transcription.startRecording(),
+      stopRecording: () => void transcription.stopRecording(),
+      isRecording: () => transcription.state.tag === "recording",
     }),
-    [],
+    [transcription],
   );
 
   function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
