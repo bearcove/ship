@@ -1272,7 +1272,7 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0x088f5914081fe9ecn) {
+    } else if (method.id === 0xf9a8af816d58fc58n) {
       try {
         const result = await this.handler.createSession(args[0] as CreateSessionRequest);
         call.reply(result);
@@ -1579,7 +1579,7 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: 'createSession',
-      id: 0x088f5914081fe9ecn,
+      id: 0xf9a8af816d58fc58n,
       args: { kind: 'tuple', elements: [{ kind: 'ref', name: 'CreateSessionRequest' }] },
       result: { kind: 'enum', variants: [{ name: 'Ok', fields: { kind: 'ref', name: 'CreateSessionResponse' } }, { name: 'Err', fields: { kind: 'enum', variants: [{ name: 'User', fields: null }, { name: 'UnknownMethod', fields: null }, { name: 'InvalidPayload', fields: null }, { name: 'Cancelled', fields: null }] } }] },
     },

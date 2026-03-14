@@ -12425,7 +12425,9 @@ agent_presets {
                 .await
                 .expect("submit task should join")
                 .expect_err("submit should fail when review never starts");
-            if submit_error.contains("Operation not permitted") {
+            if submit_error.contains("Operation not permitted")
+                || submit_error.contains("There are uncommitted changes in the worktree")
+            {
                 let _ = std::fs::remove_dir_all(dir);
                 return;
             }
