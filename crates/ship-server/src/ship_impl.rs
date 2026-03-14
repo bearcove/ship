@@ -316,7 +316,7 @@ pub struct ShipImpl {
     listen_http_urls: Arc<Mutex<Vec<String>>>,
     startup_started_at: Arc<Mutex<HashMap<SessionId, Instant>>>,
     user_avatar_url: Arc<Mutex<Option<String>>>,
-    whisper_model_path: Arc<Mutex<Option<PathBuf>>>,
+    whisper_ctx: Arc<Option<whisper_cpp_plus::WhisperContext>>,
     kyutai_model: Arc<Mutex<Option<crate::kyutai_tts::KyutaiTtsModel>>>,
     global_events_tx: broadcast::Sender<GlobalEvent>,
     activity_log: Arc<Mutex<ActivityLog>>,
@@ -353,7 +353,7 @@ impl ShipImpl {
             listen_http_urls: Arc::new(Mutex::new(Vec::new())),
             startup_started_at: Arc::new(Mutex::new(HashMap::new())),
             user_avatar_url: Arc::new(Mutex::new(None)),
-            whisper_model_path: Arc::new(Mutex::new(None)),
+            whisper_ctx: Arc::new(None),
             kyutai_model: Arc::new(Mutex::new(None)),
             global_events_tx,
             activity_log: Arc::new(Mutex::new(activity_log)),
@@ -438,8 +438,9 @@ impl ShipImpl {
         self.agent_driver.kill(handle).await
     }
 
-    /// Configure the whisper model path from env var or default locations.
-    pub fn configure_whisper_model(&self) {
+    /// Resolve the whisper model path from env var or default locations,
+    /// load it into a WhisperContext, and store it for the lifetime of the server.
+    pub fn load_whisper_model(&mut self) {
         let path = if let Ok(path) = std::env::var("SHIP_WHISPER_MODEL") {
             let p = PathBuf::from(path);
             if p.exists() {
@@ -459,18 +460,23 @@ impl ShipImpl {
             candidates.into_iter().flatten().find(|p| p.exists())
         };
 
-        if let Some(ref path) = path {
-            tracing::info!(path = %path.display(), "whisper model found");
-        } else {
+        let Some(path) = path else {
             tracing::info!(
                 "no whisper model found — voice transcription disabled. Set SHIP_WHISPER_MODEL or place {WHISPER_MODEL_FILENAME} in ~/.local/share/whisper/"
             );
-        }
+            return;
+        };
 
-        *self
-            .whisper_model_path
-            .lock()
-            .expect("whisper mutex poisoned") = path;
+        tracing::info!(path = %path.display(), "loading whisper model");
+        match whisper_cpp_plus::WhisperContext::new(path.to_str().unwrap()) {
+            Ok(ctx) => {
+                tracing::info!(path = %path.display(), "whisper model loaded");
+                self.whisper_ctx = Arc::new(Some(ctx));
+            }
+            Err(e) => {
+                tracing::error!(path = %path.display(), error = %e, "failed to load whisper model");
+            }
+        }
     }
 
     pub async fn fetch_github_user_avatar(&self) {
