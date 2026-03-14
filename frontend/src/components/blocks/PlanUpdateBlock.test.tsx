@@ -13,21 +13,25 @@ const block = {
       title: "Queue the UI patch",
       description: "Queue the UI patch for review",
       status: { tag: "Pending" },
+      started_at: null,
     },
     {
       title: "Render the sticky plan",
       description: "Render the sticky plan component",
       status: { tag: "InProgress" },
+      started_at: null,
     },
     {
       title: "Ship the component tests",
       description: "Ship the component tests to CI",
       status: { tag: "Completed" },
+      started_at: null,
     },
     {
       title: "Handle regressions",
       description: "Handle regressions from the rollout",
       status: { tag: "Failed" },
+      started_at: null,
     },
   ],
 } satisfies PlanUpdateBlockType;

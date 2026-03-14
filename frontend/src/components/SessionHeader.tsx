@@ -1,5 +1,5 @@
-import { useId, useMemo, useState } from "react";
-import { Badge, Box, Code, DropdownMenu, Flex, IconButton, Popover, Spinner, Text } from "@radix-ui/themes";
+import { useEffect, useId, useMemo, useState } from "react";
+import { Badge, Box, Code, DropdownMenu, Flex, IconButton, Popover, Spinner, Text, Tooltip } from "@radix-ui/themes";
 import {
   Archive,
   CaretDown,
@@ -7,8 +7,10 @@ import {
   ChatsCircle,
   CheckCircle,
   Circle,
+  CodeSimple,
   DotsThree,
   Plus,
+  TerminalWindow,
   XCircle,
 } from "@phosphor-icons/react";
 import { useNavigate } from "react-router-dom";
@@ -63,8 +65,18 @@ import {
 } from "../styles/session-view.css";
 import { NewSessionDialog } from "../pages/SessionListPage";
 import { useSessionList } from "../hooks/useSessionList";
+import { getShipClient } from "../api/client";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
+
+function formatElapsed(isoStart: string): string {
+  const secs = Math.floor((Date.now() - new Date(isoStart).getTime()) / 1000);
+  if (secs < 60) return `${secs}s`;
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins}m ${secs % 60}s`;
+  const hrs = Math.floor(mins / 60);
+  return `${hrs}h ${mins % 60}m`;
+}
 
 function StepIcon({ status }: { status: PlanStepStatus }) {
   switch (status.tag) {
@@ -227,6 +239,20 @@ export function SessionHeader({
   const navigate = useNavigate();
   const allSessions = useSessionList();
 
+  const elapsedSource = inProgressStep?.started_at ?? liveTask?.assigned_at ?? null;
+  const [elapsedLabel, setElapsedLabel] = useState<string | null>(
+    elapsedSource ? formatElapsed(elapsedSource) : null,
+  );
+  useEffect(() => {
+    if (!elapsedSource) {
+      setElapsedLabel(null);
+      return;
+    }
+    setElapsedLabel(formatElapsed(elapsedSource));
+    const id = setInterval(() => setElapsedLabel(formatElapsed(elapsedSource)), 1000);
+    return () => clearInterval(id);
+  }, [elapsedSource]);
+
   const displayTitle = liveTask?.title ?? title ?? branchName;
   const history = useMemo(() => [...taskHistory].reverse(), [taskHistory]);
 
@@ -365,6 +391,11 @@ export function SessionHeader({
             </Text>
           </Flex>
           <Flex align="center" gap="2">
+            {elapsedLabel && (
+              <Text size="1" color="gray" style={{ flexShrink: 0 }}>
+                {elapsedLabel}
+              </Text>
+            )}
             {progressDots}
             {diffBadge}
             {expanded ? (
@@ -429,6 +460,34 @@ export function SessionHeader({
                 </>
               )}
               <Box style={{ flex: 1 }} />
+              {diffStats && (diffStats.uncommitted_lines_added > 0n || diffStats.uncommitted_lines_removed > 0n) && (
+                <>
+                  <Text size="1" color="amber">+{String(diffStats.uncommitted_lines_added)}</Text>
+                  <Text size="1" color="amber">-{String(diffStats.uncommitted_lines_removed)}</Text>
+                </>
+              )}
+              <Tooltip content="Open in Zed">
+                <IconButton
+                  variant="ghost"
+                  size="1"
+                  color="gray"
+                  aria-label="Open in Zed"
+                  onClick={() => { void getShipClient().then(c => c.openInEditor(sessionId)); }}
+                >
+                  <CodeSimple size={13} />
+                </IconButton>
+              </Tooltip>
+              <Tooltip content="Open in iTerm">
+                <IconButton
+                  variant="ghost"
+                  size="1"
+                  color="gray"
+                  aria-label="Open in iTerm"
+                  onClick={() => { void getShipClient().then(c => c.openInTerminal(sessionId)); }}
+                >
+                  <TerminalWindow size={13} />
+                </IconButton>
+              </Tooltip>
               <Code variant="ghost" size="1">
                 {branchName}
               </Code>
