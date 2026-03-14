@@ -6,7 +6,6 @@ import captainAvatar from "../assets/avatars/captain.png";
 import mateAvatar from "../assets/avatars/mate.png";
 import { getShipClient } from "../api/client";
 import type { AgentSnapshot, ContentBlock, Role, SessionStartupState } from "../generated/ship";
-import { useDocumentDrop } from "../hooks/useDocumentDrop";
 import type { BlockEntry } from "../state/blockStore";
 import {
   diffAdd,
@@ -1243,7 +1242,7 @@ export function UnifiedFeed({
 
 
   return (
-    <Box ref={setDropTarget} className={unifiedFeedRoot} data-testid="session-feed-drop-target">
+    <Box className={unifiedFeedRoot} data-testid="session-feed-drop-target">
       {loading && (
         <Flex align="center" gap="2" px="3" py="2" style={{ flexShrink: 0 }}>
           <Spinner size="1" />
