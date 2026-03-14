@@ -81,7 +81,7 @@ export function App() {
 
   const visitedSessionSlugs = useMemo(() => [...visitedSessions], [visitedSessions]);
 
-  useGlobalKeyboard(allSessions, removeVisitedSession);
+  useGlobalKeyboard(allSessions, removeVisitedSession, () => setNewSessionOpen(true));
 
   useEffect(() => {
     writeDebugPreference(debugMode);
