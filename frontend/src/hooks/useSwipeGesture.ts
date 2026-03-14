@@ -12,31 +12,35 @@ export function useSwipeGesture(
 
     let startX = 0;
     let startY = 0;
+    let locked: "horizontal" | "vertical" | null = null;
 
     function onTouchStart(e: TouchEvent) {
       const touch = e.touches[0];
       startX = touch.clientX;
       startY = touch.clientY;
-    }
-
-    function onTouchEnd(e: TouchEvent) {
-      const touch = e.changedTouches[0];
-      const dx = touch.clientX - startX;
-      const dy = touch.clientY - startY;
-
-      if (Math.abs(dx) < 50) return;
-      if (Math.abs(dy) >= Math.abs(dx)) return;
-
-      onSwipe(dx < 0 ? "left" : "right");
+      locked = null;
     }
 
     function onTouchMove(e: TouchEvent) {
       const touch = e.touches[0];
       const dx = touch.clientX - startX;
       const dy = touch.clientY - startY;
-      if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) {
+
+      if (locked === null && (Math.abs(dx) > 5 || Math.abs(dy) > 5)) {
+        locked = Math.abs(dx) > Math.abs(dy) ? "horizontal" : "vertical";
+      }
+
+      if (locked === "horizontal") {
         e.preventDefault();
       }
+    }
+
+    function onTouchEnd(e: TouchEvent) {
+      if (locked !== "horizontal") return;
+      const touch = e.changedTouches[0];
+      const dx = touch.clientX - startX;
+      if (Math.abs(dx) < 50) return;
+      onSwipe(dx < 0 ? "left" : "right");
     }
 
     el.addEventListener("touchstart", onTouchStart, { passive: true });
