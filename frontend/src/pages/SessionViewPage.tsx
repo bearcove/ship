@@ -40,22 +40,21 @@ export function SessionViewPage({ debugMode, allSessions }: { debugMode: boolean
   const [slideDirection, setSlideDirection] = useState<"left" | "right" | null>(null);
 
   const currentIndex = allSessions.findIndex((s) => s.slug === sessionId);
-  const prevSession = currentIndex > 0 ? allSessions[currentIndex - 1] : null;
-  const nextSession = currentIndex >= 0 && currentIndex < allSessions.length - 1 ? allSessions[currentIndex + 1] : null;
+  const hasSessionCycle = currentIndex >= 0 && allSessions.length > 0;
+  const prevSession = hasSessionCycle
+    ? allSessions[(currentIndex - 1 + allSessions.length) % allSessions.length]
+    : null;
+  const nextSession = hasSessionCycle
+    ? allSessions[(currentIndex + 1) % allSessions.length]
+    : null;
 
   const handleSwipe = useCallback(
     (direction: "left" | "right") => {
-      if (direction === "right") {
-        if (!prevSession) {
-          navigate("/");
-          return;
-        }
-      } else {
-        if (!nextSession) return;
-      }
+      const target = direction === "right" ? prevSession : nextSession;
+      if (!target) return;
       setSlideDirection(direction);
     },
-    [nextSession, prevSession, navigate],
+    [nextSession, prevSession],
   );
 
   const swipeHandlers = useSwipeable({
