@@ -62,8 +62,8 @@ export const feedContentColumn = style({
   width: "100%",
   marginLeft: "auto",
   marginRight: "auto",
-  paddingLeft: "var(--space-3)",
-  paddingRight: "var(--space-3)",
+  paddingLeft: "var(--space-5)",
+  paddingRight: "var(--space-5)",
 });
 
 export const agentAvatarWrapper = style({
