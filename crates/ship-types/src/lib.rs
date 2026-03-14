@@ -805,6 +805,15 @@ pub mod protocol {
         Autonomous,
     }
 
+    #[derive(Debug, Clone, facet::Facet)]
+    pub struct NewSessionDefaults {
+        pub project: ProjectName,
+        #[facet(default)]
+        pub captain_preset_id: Option<crate::agent::AgentPresetId>,
+        #[facet(default)]
+        pub mate_preset_id: Option<crate::agent::AgentPresetId>,
+    }
+
     // r[session.create]
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub struct CreateSessionRequest {
@@ -1258,9 +1267,9 @@ pub use protocol::{
     CaptainRebaseStatus, CaptainReviewDiff, CaptainReviewDiffState, CloseSessionRequest,
     CloseSessionResponse, CreateSessionRequest, CreateSessionResponse, HumanReviewRequest,
     McpDiffContent, McpEnvVar, McpHeader, McpHttpServerConfig, McpServerConfig, McpSseServerConfig,
-    McpStdioServerConfig, McpToolCallResponse, ProjectInfo, ServerInfo, SessionDetail,
-    SessionSummary, SetAgentEffortResponse, SetAgentModelResponse, SetAgentPresetResponse,
-    WorktreeDiffStats,
+    McpStdioServerConfig, McpToolCallResponse, NewSessionDefaults, ProjectInfo, ServerInfo,
+    SessionDetail, SessionSummary, SetAgentEffortResponse, SetAgentModelResponse,
+    SetAgentPresetResponse, WorktreeDiffStats,
 };
 pub use session::{SessionStartupStage, SessionStartupState};
 pub use structured::{
