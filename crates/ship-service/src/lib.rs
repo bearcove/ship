@@ -154,6 +154,25 @@ pub trait CaptainMcp {
         command: String,
         cwd: Option<String>,
     ) -> McpToolCallResponse;
+
+    // r[captain.tool.write-file]
+    async fn captain_write_file(&self, path: String, content: String) -> McpToolCallResponse;
+
+    // r[captain.tool.edit-prepare]
+    async fn captain_edit_prepare(
+        &self,
+        path: String,
+        old_string: String,
+        new_string: String,
+        replace_all: Option<bool>,
+    ) -> McpToolCallResponse;
+
+    // r[captain.tool.edit-confirm]
+    async fn captain_edit_confirm(&self, edit_id: String) -> McpToolCallResponse;
+
+    // r[captain.tool.commit]
+    async fn captain_commit(&self, step_index: Option<u64>, message: String)
+    -> McpToolCallResponse;
 }
 
 // r[mate.tool.implementation]

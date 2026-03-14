@@ -6855,6 +6855,59 @@ impl CaptainMcp for CaptainMcpSessionService {
                 .await,
         )
     }
+
+    // r[captain.tool.write-file]
+    async fn captain_write_file(&self, path: String, content: String) -> McpToolCallResponse {
+        self.ship
+            .mate_tool_write_file(&self.session_id, path, content)
+            .await
+    }
+
+    // r[captain.tool.edit-prepare]
+    async fn captain_edit_prepare(
+        &self,
+        path: String,
+        old_string: String,
+        new_string: String,
+        replace_all: Option<bool>,
+    ) -> McpToolCallResponse {
+        self.ship
+            .mate_tool_edit_prepare(&self.session_id, path, old_string, new_string, replace_all)
+            .await
+    }
+
+    // r[captain.tool.edit-confirm]
+    async fn captain_edit_confirm(&self, edit_id: String) -> McpToolCallResponse {
+        self.ship
+            .mate_tool_edit_confirm(&self.session_id, edit_id)
+            .await
+    }
+
+    // r[captain.tool.commit]
+    async fn captain_commit(
+        &self,
+        step_index: Option<u64>,
+        message: String,
+    ) -> McpToolCallResponse {
+        let step_index = match step_index {
+            Some(idx) => match usize::try_from(idx) {
+                Ok(i) => Some(i),
+                Err(_) => {
+                    return McpToolCallResponse {
+                        text: "step_index is too large".to_owned(),
+                        is_error: true,
+                        diffs: vec![],
+                    };
+                }
+            },
+            None => None,
+        };
+        Self::response(
+            self.ship
+                .mate_tool_commit(&self.session_id, step_index, message)
+                .await,
+        )
+    }
 }
 
 #[derive(Clone)]
