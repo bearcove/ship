@@ -11,6 +11,7 @@ import { WrongPortMessage } from "./components/WrongPortMessage";
 import { NotificationPrompt } from "./components/NotificationPrompt";
 import { SessionSidebar } from "./components/SessionSidebar";
 import { useSessionList } from "./hooks/useSessionList";
+import { useGlobalKeyboard } from "./hooks/useGlobalKeyboard";
 import { getConnectionState, onConnectionStateChanged } from "./api/client";
 import {
   appColumns,
@@ -46,6 +47,8 @@ export function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [connState, setConnState] = useState(() => getConnectionState());
   const hasEverConnected = useRef(connState === "connected");
+
+  useGlobalKeyboard(allSessions);
 
   useEffect(() => {
     writeDebugPreference(debugMode);
