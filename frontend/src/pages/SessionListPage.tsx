@@ -688,7 +688,7 @@ function SessionCard({
 // r[view.session-list]
 // r[ui.session-list.layout]
 // r[session.list]
-export function SessionListPage() {
+export function SessionListPage({ onNewSession }: { onNewSession?: () => void }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const rawFilter = searchParams.get("project");
   const projectFilter = rawFilter ?? undefined;
@@ -708,7 +708,6 @@ export function SessionListPage() {
   const validProjects = allProjects.filter((p) => p.valid);
   const sessions = useSessionList(projectFilter);
   const sortedSessions = useMemo(() => sortSessions(sessions), [sessions]);
-  const [newSessionOpen, setNewSessionOpen] = useState(false);
   const [addProjectOpen, setAddProjectOpen] = useState(false);
 
   const [archivingId, setArchivingId] = useState<string | null>(null);
@@ -772,7 +771,7 @@ export function SessionListPage() {
               <Select.Item value="__add_project__">Add Project</Select.Item>
             </Select.Content>
           </Select.Root>
-          <Button size="2" onClick={() => setNewSessionOpen(true)}>
+          <Button size="2" onClick={() => onNewSession?.()}>
             <Plus size={16} />
             New Session
           </Button>
@@ -859,11 +858,6 @@ export function SessionListPage() {
         </>
       )}
 
-      <NewSessionDialog
-        open={newSessionOpen}
-        onOpenChange={setNewSessionOpen}
-        preselectedProject={projectFilter}
-      />
       <AddProjectDialog open={addProjectOpen} onOpenChange={setAddProjectOpen} />
       {archiveConfirm && (
         <ArchiveSessionDialog
