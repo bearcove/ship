@@ -1,4 +1,4 @@
-import { Fragment, useState, useRef, useEffect } from "react";
+import { Fragment, type ReactNode, useState, useRef, useEffect } from "react";
 import { Box, Flex, Spinner, Text } from "@radix-ui/themes";
 import { ArrowDown, CaretRight, Stop } from "@phosphor-icons/react";
 import captainAvatar from "../assets/avatars/captain.png";
@@ -198,7 +198,7 @@ function segmentAgentRole(seg: FeedSegment): Role | null {
   if (block.tag === "Image" && role.tag === "Captain") {
     return null; // user-sent image → right side
   }
-  if (block.tag === "TaskRecap") return null; // system notice, no avatar
+  if (block.tag === "TaskRecap" || block.tag === "WorkflowMilestone") return null; // phase break, no avatar
   return role;
 }
 
@@ -245,6 +245,58 @@ function CommitDiffView({ diff }: { diff: string }) {
 }
 
 type TaskRecapBlockType = Extract<ContentBlock, { tag: "TaskRecap" }>;
+type WorkflowMilestoneBlockType = Extract<ContentBlock, { tag: "WorkflowMilestone" }>;
+
+function PhaseBreakBoundary({
+  children,
+  kind,
+  testId,
+}: {
+  children: ReactNode;
+  kind: string;
+  testId?: string;
+}) {
+  return (
+    <Box
+      className={taskRecapBoundary}
+      data-testid={testId}
+      data-feed-boundary="phase-break"
+      data-phase-break-kind={kind}
+    >
+      <Box className={taskRecapContent}>{children}</Box>
+    </Box>
+  );
+}
+
+function WorkflowMilestoneBlock({ block }: { block: WorkflowMilestoneBlockType }) {
+  return (
+    <PhaseBreakBoundary kind={block.kind.tag} testId="workflow-milestone-boundary">
+      <Flex className={taskRecapHeader} align="start" justify="between" gap="3">
+        <Box style={{ minWidth: 0 }}>
+          <Text className={taskRecapEyebrow}>Phase break</Text>
+          <Text className={taskRecapTitle}>{block.title}</Text>
+          <Text style={{ fontSize: "var(--font-size-1)", color: "var(--gray-9)", whiteSpace: "pre-wrap" }}>
+            {block.summary}
+          </Text>
+        </Box>
+      </Flex>
+      {block.items.length > 0 && (
+        <Box className={taskRecapCommitList}>
+          {block.items.map((item, index) => (
+            <Box key={`${block.kind.tag}-${index}`} className={taskRecapCommitRow}>
+              <Flex className={taskRecapCommitStatic} align="start" gap="2">
+                <Text className={taskRecapCommitHash}>{String(index + 1).padStart(2, "0")}</Text>
+                <Text className={taskRecapCommitSubject} style={{ whiteSpace: "pre-wrap" }}>
+                  {item}
+                </Text>
+              </Flex>
+            </Box>
+          ))}
+        </Box>
+      )}
+    </PhaseBreakBoundary>
+  );
+}
 
 function TaskRecapBlock({
   block,
@@ -266,12 +318,7 @@ function TaskRecapBlock({
   }
 
   return (
-    <Box
-      className={taskRecapBoundary}
-      data-testid="task-recap-boundary"
-      data-feed-boundary="phase-break"
-    >
-      <Box className={taskRecapContent}>
+    <PhaseBreakBoundary kind="TaskRecap" testId="task-recap-boundary">
       <Flex className={taskRecapHeader} align="start" justify="between" gap="3">
         <Box style={{ minWidth: 0 }}>
           <Text className={taskRecapEyebrow}>Phase break</Text>
@@ -329,8 +376,7 @@ function TaskRecapBlock({
           })}
         </Box>
       )}
-      </Box>
-    </Box>
+    </PhaseBreakBoundary>
   );
 }
 
@@ -634,6 +680,9 @@ function SingleBlock({
         </Box>
       );
     }
+
+    case "WorkflowMilestone":
+      return <WorkflowMilestoneBlock block={block} />;
 
     case "TaskRecap":
       return <TaskRecapBlock block={block} duration={taskCompletedDuration} />;
@@ -1018,7 +1067,8 @@ export function UnifiedFeed({
             if (!alreadyKnown) {
               sessionAnimationBaseline.blockIds.add(seg.entry.blockId);
             }
-            const isTaskRecap = seg.entry.block.tag === "TaskRecap";
+            const isPhaseBreak =
+              seg.entry.block.tag === "TaskRecap" || seg.entry.block.tag === "WorkflowMilestone";
 
             // Gap detection: check if >2 minutes between previous and current segment
             let gapIndicator: React.ReactNode = null;
@@ -1070,7 +1120,7 @@ export function UnifiedFeed({
             return (
               <Fragment key={seg.entry.blockId}>
                 {gapIndicator}
-                {isTaskRecap ? blockContent : (
+                {isPhaseBreak ? blockContent : (
                   <Box className={feedContentColumn}>{blockContent}</Box>
                 )}
                 {debugMode && (

@@ -32,9 +32,19 @@ function makeTaskRecapBlock(): Extract<ContentBlock, { tag: "TaskRecap" }> {
   };
 }
 
+function makeWorkflowMilestoneBlock(): Extract<ContentBlock, { tag: "WorkflowMilestone" }> {
+  return {
+    tag: "WorkflowMilestone",
+    kind: { tag: "StepCommitted" },
+    title: "Checkpoint committed",
+    summary: "Completed step 1: Set up types",
+    items: ["Commit: abc1234", "Diff: 1 file changed, 1 insertion(+)"],
+  };
+}
+
 function makeTextBlock(
   text: string,
-  source: Extract<ContentBlock, { tag: "Text" }>['source'] = { tag: "AgentMessage" },
+  source: Extract<ContentBlock, { tag: "Text" }>["source"] = { tag: "AgentMessage" },
 ): Extract<ContentBlock, { tag: "Text" }> {
   return {
     tag: "Text",
@@ -210,6 +220,27 @@ describe("UnifiedFeed", () => {
     expect(diff).toHaveTextContent("+++ b/src/feed.tsx");
     expect(diff).toHaveTextContent("+export function Boundary() {}");
     expect(diff).not.toHaveStyle({ maxHeight: "16rem" });
+  });
+
+  it("renders workflow milestones as generic phase-break boundaries", () => {
+    renderFeed([
+      {
+        blockId: "milestone-1",
+        role: { tag: "Captain" },
+        block: makeWorkflowMilestoneBlock(),
+        timestamp: "2026-03-13T10:00:00Z",
+      },
+    ]);
+
+    const boundary = screen.getByTestId("workflow-milestone-boundary");
+
+    expect(boundary).toHaveAttribute("data-feed-boundary", "phase-break");
+    expect(boundary).toHaveAttribute("data-phase-break-kind", "StepCommitted");
+    expect(boundary).toHaveTextContent("Phase break");
+    expect(boundary).toHaveTextContent("Checkpoint committed");
+    expect(boundary).toHaveTextContent("Completed step 1: Set up types");
+    expect(boundary).toHaveTextContent("Commit: abc1234");
+    expect(boundary).toHaveTextContent("Diff: 1 file changed, 1 insertion(+)");
   });
 
   it("does not animate replayed historical blocks while the feed is still loading", () => {
