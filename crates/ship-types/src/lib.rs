@@ -975,6 +975,14 @@ pub mod transcription {
         /// The transcribed text
         pub text: String,
     }
+
+    /// Messages sent over the transcription channel — either a segment or an error.
+    #[repr(u8)]
+    #[derive(Debug, Clone, PartialEq, facet::Facet)]
+    pub enum TranscribeMessage {
+        Segment(TranscribeSegment),
+        Error { message: String },
+    }
 }
 
 pub mod persistence {
@@ -1068,4 +1076,4 @@ pub use structured::{
     ToolCallError, ToolCallKind, ToolTarget,
 };
 pub use task::{TaskRecord, TaskStatus};
-pub use transcription::TranscribeSegment;
+pub use transcription::{TranscribeMessage, TranscribeSegment};
