@@ -28,7 +28,7 @@ function ActivityBubble({ entry }: { entry: ActivityEntry }) {
           </Text>
           <Text size="1" color="gray">
             <Link
-              to={`/sessions/${entry.session_id}`}
+              to={`/sessions/${entry.session_slug}`}
               style={{ color: "inherit", textDecoration: "underline" }}
             >
               {title}
