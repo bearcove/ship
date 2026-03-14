@@ -19,6 +19,7 @@ import type {
   WorktreeDiffStats,
 } from "../generated/ship";
 import { planStepRow, planStepText, taskDescriptionRoot } from "../styles/session-view.css";
+import { monoFontStack } from "../styles/global.css";
 import { MarkdownCodeBlock } from "./blocks/TextBlock";
 
 function StepIcon({ status }: { status: PlanStepStatus }) {
@@ -110,7 +111,7 @@ function TaskListItem({
           border: 0,
           background: "transparent",
           color: "inherit",
-          fontFamily: "inherit",
+          fontFamily: monoFontStack,
           textAlign: "left",
           cursor: "pointer",
         }}
@@ -227,7 +228,7 @@ export function SessionTaskDrawer({
           border: 0,
           background: "transparent",
           color: "inherit",
-          fontFamily: "inherit",
+          fontFamily: monoFontStack,
           textAlign: "left",
           cursor: "pointer",
         }}
