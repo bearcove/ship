@@ -32,7 +32,7 @@ use ship_types::{
     SessionEventEnvelope, SessionId, SessionStartupStage, SessionStartupState, SessionSummary,
     SetAgentEffortResponse, SetAgentModelResponse, SetAgentPresetResponse, SubscribeMessage,
     TaskId, TaskRecapStats, TaskRecord, TaskStatus, TextSource, ToolCallKind, ToolTarget,
-    TranscribeMessage, TranscribeSegment, WorktreeDiffStats,
+    TranscribeMessage, TranscribeSegment, WorkflowMilestoneKind, WorktreeDiffStats,
 };
 use similar::TextDiff;
 use tokio::process::Command as TokioCommand;
@@ -1132,6 +1132,9 @@ impl ShipImpl {
                             lines.push(format!(
                                 "{role:?}: [permission {resolution:?}] {tool_name} - {description}"
                             ));
+                        }
+                        ContentBlock::WorkflowMilestone { kind, title, .. } => {
+                            lines.push(format!("{role:?}: [milestone {kind:?}] {title}"));
                         }
                         ContentBlock::TaskRecap { commits, .. } => {
                             lines.push(format!(
@@ -5039,6 +5042,28 @@ Here is your task:
         .await
     }
 
+    fn append_workflow_milestone(
+        session: &mut ActiveSession,
+        kind: WorkflowMilestoneKind,
+        title: impl Into<String>,
+        summary: impl Into<String>,
+        items: Vec<String>,
+    ) {
+        apply_event(
+            session,
+            SessionEvent::BlockAppend {
+                block_id: BlockId::new(),
+                role: Role::Captain,
+                block: ContentBlock::WorkflowMilestone {
+                    kind,
+                    title: title.into(),
+                    summary: summary.into(),
+                    items,
+                },
+            },
+        );
+    }
+
     fn commit_summary(result: Option<&AutoCommitResult>) -> String {
         match result {
             Some(result) if result.diff_stat.is_empty() => {
@@ -5150,6 +5175,19 @@ Here is your task:
                         plan: Some(new_plan.clone()),
                         activity: Some("Plan set".to_owned()),
                     },
+                );
+                let step_count = new_plan.len();
+                let step_label = if step_count == 1 { "step" } else { "steps" };
+                Self::append_workflow_milestone(
+                    session,
+                    WorkflowMilestoneKind::PlanSet,
+                    "Initial plan set",
+                    format!("{step_count} {step_label} ready to execute."),
+                    new_plan
+                        .iter()
+                        .enumerate()
+                        .map(|(index, step)| format!("{}. {}", index + 1, step.description))
+                        .collect(),
                 );
             }
             self.persist_session(session_id).await?;
@@ -5286,7 +5324,25 @@ Here is your task:
         let commit_summary = Self::commit_summary(commit.as_ref());
         if let Some(step_description) = step_description {
             let step_index = step_index.expect("step_description is Some iff step_index is Some");
-            if commit.is_some() {
+            if let Some(commit) = commit.as_ref() {
+                {
+                    let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                    let session = sessions
+                        .get_mut(session_id)
+                        .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+                    let mut items = vec![format!("Commit: {}", commit.commit_hash)];
+                    if !commit.diff_stat.is_empty() {
+                        items.push(format!("Diff: {}", commit.diff_stat));
+                    }
+                    Self::append_workflow_milestone(
+                        session,
+                        WorkflowMilestoneKind::StepCommitted,
+                        "Checkpoint committed",
+                        format!("Completed step {}: {step_description}", step_index + 1),
+                        items,
+                    );
+                }
+                self.persist_session(session_id).await?;
                 let captain_message = format!(
                     "The mate completed a step from their plan.\n\nCompleted: {step_description}\n\n{commit_summary}\n\nWe will notify you when they are done and need your review.",
                 );
@@ -8765,7 +8821,7 @@ mod tests {
         McpStdioServerConfig, PersistedSession, PlanStep, PlanStepInput, PlanStepStatus,
         ProjectName, PromptContentPart, Role, SessionConfig, SessionEvent, SessionEventEnvelope,
         SessionId, SessionStartupStage, SessionStartupState, SetAgentPresetResponse,
-        SubscribeMessage, TaskId, TaskRecord, TaskStatus, TextSource,
+        SubscribeMessage, TaskId, TaskRecord, TaskStatus, TextSource, WorkflowMilestoneKind,
     };
     use tokio::sync::{broadcast, mpsc};
     use tokio::time::timeout;
@@ -11212,7 +11268,7 @@ agent_presets {
     // r[verify mate.tool.plan-create]
     // r[verify mate.tool.plan-step-complete]
     #[tokio::test]
-    async fn mate_plan_tools_persist_plan_commit_worktree_and_notify_captain() {
+    async fn mate_plan_tools_persist_plan_commit_worktree_and_emit_milestones() {
         let (dir, ship, session_id) = create_session_for_workflow_test("mate-plan-tools").await;
         let project_root = dir.join("project");
         init_git_repo(&project_root);
@@ -11225,7 +11281,7 @@ agent_presets {
             session.current_task.as_mut().unwrap().record.steps = Vec::new();
         }
 
-        // set_plan stores the plan and notifies the captain non-blocking on first call.
+        // set_plan stores the plan and emits the first workflow milestone.
         ship.mate_tool_set_plan(
             &session_id,
             vec![
@@ -11250,7 +11306,15 @@ agent_presets {
             assert_eq!(plan.len(), 2);
             assert!(task.content_history.iter().any(|entry| matches!(
                 &entry.block,
-                ContentBlock::Text { text, .. } if text.contains("<system-notification>") && text.contains("The mate has set their plan.")
+                ContentBlock::WorkflowMilestone {
+                    kind: WorkflowMilestoneKind::PlanSet,
+                    title,
+                    summary,
+                    items,
+                } if title == "Initial plan set"
+                    && summary == "2 steps ready to execute."
+                    && items.iter().any(|item| item == "1. Set up types")
+                    && items.iter().any(|item| item == "2. Implement handler")
             )));
         }
 
@@ -11275,6 +11339,18 @@ agent_presets {
             let task = session.current_task.as_ref().expect("task should exist");
             let plan = &task.record.steps;
             assert_eq!(plan[0].status, PlanStepStatus::Completed);
+            assert!(task.content_history.iter().any(|entry| matches!(
+                &entry.block,
+                ContentBlock::WorkflowMilestone {
+                    kind: WorkflowMilestoneKind::StepCommitted,
+                    title,
+                    summary,
+                    items,
+                } if title == "Checkpoint committed"
+                    && summary == "Completed step 1: Set up types"
+                    && items.iter().any(|item| item.starts_with("Commit: "))
+                    && items.iter().any(|item| item.starts_with("Diff: "))
+            )));
         }
 
         let _ = std::fs::remove_dir_all(dir);

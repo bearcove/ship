@@ -489,6 +489,15 @@ pub mod events {
         pub deletions: u32,
     }
 
+    #[repr(u8)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, facet::Facet)]
+    pub enum WorkflowMilestoneKind {
+        PlanSet,
+        StepCommitted,
+        ReviewSubmitted,
+        RebaseConflict,
+    }
+
     // r[event.content-block.types]
     #[repr(u8)]
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
@@ -531,6 +540,12 @@ pub mod events {
         Image {
             mime_type: String,
             data: Vec<u8>,
+        },
+        WorkflowMilestone {
+            kind: WorkflowMilestoneKind,
+            title: String,
+            summary: String,
+            items: Vec<String>,
         },
         // r[task.recap]
         TaskRecap {
@@ -1110,7 +1125,7 @@ pub use agent::{
 pub use events::{
     ActivityEntry, ActivityKind, BlockPatch, CommitSummary, ContentBlock, GlobalEvent,
     PermissionResolution, SessionEvent, SessionEventEnvelope, SubscribeMessage, TaskRecapStats,
-    TextSource, ToolCallContent, ToolCallLocation, ToolCallStatus,
+    TextSource, ToolCallContent, ToolCallLocation, ToolCallStatus, WorkflowMilestoneKind,
 };
 pub use ids::{BlockId, ProjectName, SessionId, TaskId};
 pub use persistence::{CurrentTask, PersistedSession, SessionConfig, TaskContentRecord};
