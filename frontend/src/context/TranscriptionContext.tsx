@@ -22,11 +22,14 @@ interface TranscriptionContextValue {
   analyser: AnalyserNode | null;
   targetSessionId: string | null;
   sendAfterTranscription: boolean;
+  voiceMode: boolean;
+  voiceSubmitText: string | null;
   startRecording(sessionId: string): void;
   stopRecording(): void;
   stopAndSend(): void;
   cancelRecording(): void;
   clearResult(): void;
+  clearVoiceSubmit(): void;
   dismissError(): void;
   isRecording(): boolean;
 }
@@ -56,6 +59,8 @@ export function TranscriptionProvider({ children }: { children: React.ReactNode 
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
   const [targetSessionId, setTargetSessionId] = useState<string | null>(null);
   const [sendAfterTranscription, setSendAfterTranscription] = useState(false);
+  const [voiceMode, setVoiceMode] = useState(false);
+  const [voiceSubmitText, setVoiceSubmitText] = useState<string | null>(null);
   const activeRef = useRef<{
     audioContext: AudioContext;
     mediaStream: MediaStream;
@@ -231,6 +236,7 @@ export function TranscriptionProvider({ children }: { children: React.ReactNode 
     await active.audioContext.close();
 
     setState({ tag: "processing" });
+    setVoiceMode(false);
 
     // Safety timeout: if still "processing" after 15s, transition to error
     setTimeout(() => {
@@ -274,6 +280,7 @@ export function TranscriptionProvider({ children }: { children: React.ReactNode 
     setState({ tag: "idle" });
     setTargetSessionId(null);
     setSendAfterTranscription(false);
+    setVoiceMode(false);
     setResult(null);
   }, []);
 
@@ -283,10 +290,15 @@ export function TranscriptionProvider({ children }: { children: React.ReactNode 
     setSendAfterTranscription(false);
   }, []);
 
+  const clearVoiceSubmit = useCallback(() => {
+    setVoiceSubmitText(null);
+  }, []);
+
   const dismissError = useCallback(() => {
     setState((prev) => (prev.tag === "error" ? { tag: "idle" } : prev));
     setTargetSessionId(null);
     setSendAfterTranscription(false);
+    setVoiceMode(false);
   }, []);
 
   const isRecording = useCallback(() => {
@@ -300,11 +312,14 @@ export function TranscriptionProvider({ children }: { children: React.ReactNode 
       analyser,
       targetSessionId,
       sendAfterTranscription,
+      voiceMode,
+      voiceSubmitText,
       startRecording,
       stopRecording,
       stopAndSend,
       cancelRecording,
       clearResult,
+      clearVoiceSubmit,
       dismissError,
       isRecording,
     }),
@@ -314,11 +329,14 @@ export function TranscriptionProvider({ children }: { children: React.ReactNode 
       analyser,
       targetSessionId,
       sendAfterTranscription,
+      voiceMode,
+      voiceSubmitText,
       startRecording,
       stopRecording,
       stopAndSend,
       cancelRecording,
       clearResult,
+      clearVoiceSubmit,
       dismissError,
       isRecording,
     ],
