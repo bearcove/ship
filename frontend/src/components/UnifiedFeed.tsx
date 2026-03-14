@@ -766,14 +766,21 @@ export function UnifiedFeed({
     };
   }, [onImageDragStateChange]);
 
-  // Track which blocks existed when the session was loaded so we only
-  // animate genuinely new bubbles, not the entire history on switch.
+  // Track which blocks belong to the historical baseline so only blocks that
+  // arrive after replay completes get the entrance animation.
   const initialBlockIds = useRef<Set<string>>(new Set(blocks.map((b) => b.blockId)));
   const prevSessionId = useRef(sessionId);
   if (prevSessionId.current !== sessionId) {
     initialBlockIds.current = new Set(blocks.map((b) => b.blockId));
     prevSessionId.current = sessionId;
   }
+
+  useEffect(() => {
+    if (!loading) return;
+    for (const block of blocks) {
+      initialBlockIds.current.add(block.blockId);
+    }
+  }, [blocks, loading]);
 
   const humanMsgCount = blocks.filter(
     (b) => b.block.tag === "Text" && b.block.source.tag === "Human",
