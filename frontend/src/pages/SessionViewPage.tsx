@@ -1,3 +1,4 @@
+import TurndownService from "turndown";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSwipeable } from "react-swipeable";
 import { useNavigate } from "react-router-dom";
@@ -28,6 +29,8 @@ import { ArchiveSessionDialog, NewSessionDialog } from "./SessionListPage";
 import type { SessionSummary } from "../generated/ship";
 import { useWorktreeDiffStats } from "../hooks/useWorktreeDiffStats";
 import { sortSessions } from "./session-list-utils";
+
+const turndown = new TurndownService();
 
 // r[view.session]
 // r[ui.layout.session-view]
@@ -127,6 +130,20 @@ export function SessionViewPage({
           next = idx >= orderedSessions.length - 1 ? 0 : idx + 1;
         }
         navigate(`/sessions/${orderedSessions[next].slug}`);
+        return;
+      }
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "r") {
+        const sel = window.getSelection();
+        if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
+        const fragment = sel.getRangeAt(0).cloneContents();
+        const div = document.createElement("div");
+        div.appendChild(fragment);
+        const html = div.innerHTML;
+        if (!html.trim()) return;
+        e.preventDefault();
+        const markdown = turndown.turndown(html);
+        composerRef.current?.insertQuote(markdown);
+        sel.removeAllRanges();
         return;
       }
       if (!e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "c") {

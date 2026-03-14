@@ -130,6 +130,7 @@ export interface UnifiedComposerHandle {
   focusComposer(): void;
   addImageFiles(files: FileList | File[]): void;
   setDragOver(isDragOver: boolean): void;
+  insertQuote(text: string): void;
 }
 
 function parseTarget(text: string): { target: "captain" | "mate"; content: string } {
@@ -432,12 +433,22 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
     textareaRef.current?.focus();
   }
 
+  function insertQuote(rawText: string) {
+    const quoted = rawText
+      .split("\n")
+      .map((line) => `> ${line}`)
+      .join("\n") + "\n\n";
+    setText((prev) => (prev.trim() ? quoted + prev : quoted));
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }
+
   useImperativeHandle(
     ref,
     () => ({
       focusComposer,
       addImageFiles,
       setDragOver: setIsDragOver,
+      insertQuote,
     }),
     [],
   );
