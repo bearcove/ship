@@ -8857,11 +8857,6 @@ impl Ship for ShipImpl {
             }
         }
 
-        if let Err(error) = self.cleanup_session_resources(&session, true).await {
-            Self::log_error("archive_session_cleanup", &error);
-            return ArchiveSessionResponse::Failed { message: error };
-        }
-
         {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             if let Some(session) = sessions.get_mut(&req.id) {
@@ -8884,6 +8879,14 @@ impl Ship for ShipImpl {
             session.title.clone(),
             ship_types::ActivityKind::SessionArchived,
         );
+
+        // Spawn cleanup in the background so the UI sees the session disappear immediately
+        let this = self.clone();
+        tokio::task::spawn(async move {
+            if let Err(error) = this.cleanup_session_resources(&session, true).await {
+                Self::log_error("archive_session_cleanup", &error);
+            }
+        });
 
         ArchiveSessionResponse::Archived
     }
