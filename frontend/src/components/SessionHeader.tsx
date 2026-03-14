@@ -146,6 +146,8 @@ function HistoryItem({ task }: { task: TaskRecord }) {
   const [expanded, setExpanded] = useState(false);
   const headerId = useId();
   const bodyId = useId();
+  const fixedTitle = useMemo(() => fixMarkdownBackticks(task.title), [task.title]);
+  const fixedDescription = useMemo(() => fixMarkdownBackticks(task.description), [task.description]);
 
   return (
     <div className={sessionHeaderHistoryItem}>
@@ -165,7 +167,7 @@ function HistoryItem({ task }: { task: TaskRecord }) {
         <div className={sessionHeaderHistoryTitleRow}>
           <Text size="1" weight="medium" className={sessionHeaderHistoryTitle}>
             <ReactMarkdown remarkPlugins={[remarkGfm]} components={titleMdComponents}>
-              {fixMarkdownBackticks(task.title)}
+              {fixedTitle}
             </ReactMarkdown>
           </Text>
           <TaskStatusBadge status={task.status} />
@@ -180,7 +182,7 @@ function HistoryItem({ task }: { task: TaskRecord }) {
         >
           <div className={`${feedBubble} ${taskDescriptionRoot}`}>
             <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-              {fixMarkdownBackticks(task.description)}
+              {fixedDescription}
             </ReactMarkdown>
           </div>
         </div>
@@ -222,19 +224,27 @@ export function SessionHeader({
   onArchive,
   archiving,
 }: Props) {
-  const hasActivePlan = !!matePlan && matePlan.length > 0;
   const [expanded, setExpanded] = useState(false);
-  const activePlan = hasActivePlan ? matePlan! : planSteps;
-  const inProgressStep =
-    activePlan.find((s) => s.status.tag === "InProgress") ??
-    activePlan.find((s) => s.status.tag === "Pending") ??
-    null;
+  const activePlan = useMemo(
+    () => (matePlan && matePlan.length > 0 ? matePlan : planSteps),
+    [matePlan, planSteps],
+  );
+  const inProgressStep = useMemo(
+    () =>
+      activePlan.find((s) => s.status.tag === "InProgress") ??
+      activePlan.find((s) => s.status.tag === "Pending") ??
+      null,
+    [activePlan],
+  );
   const [newSessionOpen, setNewSessionOpen] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const contentId = useId();
-  useEffect(() => { setExpanded(false); }, [sessionId]);
+  useEffect(() => {
+    setExpanded(false);
+  }, [sessionId]);
   const navigate = useNavigate();
   const allSessions = useSessionList();
+  const sortedSessions = useMemo(() => sortSessions(allSessions), [allSessions]);
 
   const elapsedSource = inProgressStep?.started_at ?? liveTask?.assigned_at ?? null;
   const [elapsedLabel, setElapsedLabel] = useState<string | null>(
@@ -253,33 +263,74 @@ export function SessionHeader({
   const hasDisplayTitle = !!(liveTask?.title ?? title);
   const displayTitle = hasDisplayTitle ? (liveTask?.title ?? title!) : "Untitled";
   const history = useMemo(() => [...taskHistory].reverse(), [taskHistory]);
+  const fixedLiveTaskDescription = useMemo(
+    () => (liveTask ? fixMarkdownBackticks(liveTask.description) : null),
+    [liveTask],
+  );
+  const switcherSessions = useMemo(
+    () =>
+      sortedSessions.map((session) => {
+        const isActive = session.id === sessionId;
+        const isActiveTask = ["Working", "Assigned", "ReviewPending", "SteerPending"].includes(
+          session.task_status?.tag ?? "",
+        );
+        const hasRowTitle = isActiveTask ? !!session.current_task_title : !!session.title;
+        const rowTitle = hasRowTitle
+          ? isActiveTask && session.current_task_title
+            ? session.current_task_title
+            : session.title!
+          : "Untitled";
+        const mateState = session.mate.state;
+        const currentStep =
+          mateState.tag === "Working" && mateState.plan
+            ? (mateState.plan.find((s) => s.status.tag === "InProgress") ??
+              mateState.plan.find((s) => s.status.tag === "Pending") ??
+              null)
+            : null;
+        return {
+          session,
+          isActive,
+          hasRowTitle,
+          rowTitle,
+          stepLabel: currentStep?.title || currentStep?.description || null,
+        };
+      }),
+    [sessionId, sortedSessions],
+  );
 
-  const progressDots =
-    activePlan.length > 0 ? (
-      <div
-        className={sessionHeaderProgressFlex}
-        aria-label={`${activePlan.filter((s) => s.status.tag === "Completed").length} of ${activePlan.length} steps done`}
-      >
-        {activePlan.map((step, i) => (
-          <span
-            key={i}
-            className={sessionHeaderDot}
-            data-complete={step.status.tag === "Completed" ? "true" : "false"}
-          />
-        ))}
-      </div>
-    ) : null;
+  const progressDots = useMemo(
+    () =>
+      activePlan.length > 0 ? (
+        <div
+          className={sessionHeaderProgressFlex}
+          aria-label={`${activePlan.filter((s) => s.status.tag === "Completed").length} of ${activePlan.length} steps done`}
+        >
+          {activePlan.map((step, i) => (
+            <span
+              key={i}
+              className={sessionHeaderDot}
+              data-complete={step.status.tag === "Completed" ? "true" : "false"}
+            />
+          ))}
+        </div>
+      ) : null,
+    [activePlan],
+  );
 
-  const diffBadge = diffStats ? (
-    <div className={sessionHeaderDiffFlex}>
-      <Text size="1" className={sessionHeaderDiffAdd}>
-        +{String(diffStats.lines_added)}
-      </Text>
-      <Text size="1" className={sessionHeaderDiffRemove}>
-        -{String(diffStats.lines_removed)}
-      </Text>
-    </div>
-  ) : null;
+  const diffBadge = useMemo(
+    () =>
+      diffStats ? (
+        <div className={sessionHeaderDiffFlex}>
+          <Text size="1" className={sessionHeaderDiffAdd}>
+            +{String(diffStats.lines_added)}
+          </Text>
+          <Text size="1" className={sessionHeaderDiffRemove}>
+            -{String(diffStats.lines_removed)}
+          </Text>
+        </div>
+      ) : null,
+    [diffStats],
+  );
 
   return (
     <>
@@ -375,52 +426,41 @@ export function SessionHeader({
                 </Flex>
                 <div style={{ height: 1, background: "var(--gray-a4)", margin: "var(--space-1) 0" }} />
                 <div className={sessionSwitcherList}>
-                  {sortSessions(allSessions).map((session) => {
-                    const isActive = session.id === sessionId;
-                    const isActiveTask = ["Working", "Assigned", "ReviewPending", "SteerPending"].includes(
-                      session.task_status?.tag ?? "",
-                    );
-                    const hasRowTitle = isActiveTask ? !!session.current_task_title : !!session.title;
-                    const rowTitle = hasRowTitle
-                      ? (isActiveTask && session.current_task_title
-                        ? session.current_task_title
-                        : session.title!)
-                      : "Untitled";
-                    const mateState = session.mate.state;
-                    const currentStep =
-                      mateState.tag === "Working" && mateState.plan
-                        ? (mateState.plan.find((s) => s.status.tag === "InProgress") ??
-                          mateState.plan.find((s) => s.status.tag === "Pending") ??
-                          null)
-                        : null;
-                    const stepLabel = currentStep?.title || currentStep?.description || null;
-                    return (
+                  {switcherSessions.map(({ session, isActive, hasRowTitle, rowTitle, stepLabel }) => (
+                    <div
+                      key={session.id}
+                      className={sessionSwitcherRow}
+                      data-active={isActive ? "true" : "false"}
+                      onClick={() => {
+                        navigate(`/sessions/${session.slug}`);
+                        setSwitcherOpen(false);
+                      }}
+                    >
                       <div
-                        key={session.id}
-                        className={sessionSwitcherRow}
-                        data-active={isActive ? "true" : "false"}
-                        onClick={() => {
-                          navigate(`/sessions/${session.slug}`);
-                          setSwitcherOpen(false);
-                        }}
+                        className={sessionSwitcherRowTitle}
+                        style={hasRowTitle ? undefined : { color: "var(--gray-9)" }}
                       >
-                        <div className={sessionSwitcherRowTitle} style={hasRowTitle ? undefined : { color: "var(--gray-9)" }}>{rowTitle}</div>
-                        <div className={sessionSwitcherRowSub}>
-                          {session.project} · {statusLabel(session.task_status)}
-                          {stepLabel && <> · {stepLabel}</>}
-                          {session.diff_stats &&
-                            (session.diff_stats.lines_added > 0 || session.diff_stats.lines_removed > 0) && (
-                              <>
-                                {" · "}
-                                <span style={{ color: "var(--green-10)" }}>+{String(session.diff_stats.lines_added)}</span>
-                                {" "}
-                                <span style={{ color: "var(--red-10)" }}>-{String(session.diff_stats.lines_removed)}</span>
-                              </>
-                            )}
-                        </div>
+                        {rowTitle}
                       </div>
-                    );
-                  })}
+                      <div className={sessionSwitcherRowSub}>
+                        {session.project} · {statusLabel(session.task_status)}
+                        {stepLabel && <> · {stepLabel}</>}
+                        {session.diff_stats &&
+                          (session.diff_stats.lines_added > 0 || session.diff_stats.lines_removed > 0) && (
+                            <>
+                              {" · "}
+                              <span style={{ color: "var(--green-10)" }}>
+                                +{String(session.diff_stats.lines_added)}
+                              </span>
+                              {" "}
+                              <span style={{ color: "var(--red-10)" }}>
+                                -{String(session.diff_stats.lines_removed)}
+                              </span>
+                            </>
+                          )}
+                      </div>
+                    </div>
+                  ))}
                 </div>
                 <div style={{ height: 1, background: "var(--gray-a4)", margin: "var(--space-1) 0" }} />
                 <Flex
@@ -527,7 +567,7 @@ export function SessionHeader({
                 </Text>
                 <div className={`${feedBubble} ${taskDescriptionRoot}`}>
                   <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-                    {fixMarkdownBackticks(liveTask.description)}
+                    {fixedLiveTaskDescription}
                   </ReactMarkdown>
                 </div>
               </div>

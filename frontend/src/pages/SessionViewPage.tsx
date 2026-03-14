@@ -1,5 +1,5 @@
 import TurndownService from "turndown";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSwipeable } from "react-swipeable";
 import { useNavigate } from "react-router-dom";
 import { Box, Button, Callout, Flex, Spinner, Text } from "@radix-ui/themes";
@@ -55,15 +55,19 @@ export function SessionViewPage({
   const [duplicateOpen, setDuplicateOpen] = useState(false);
   const [slideDirection, setSlideDirection] = useState<"left" | "right" | null>(null);
 
-  const orderedSessions = sortSessions(allSessions);
-  const currentIndex = orderedSessions.findIndex((s) => s.slug === sessionId);
-  const hasSessionCycle = currentIndex >= 0 && orderedSessions.length > 0;
-  const prevSession = hasSessionCycle
-    ? orderedSessions[(currentIndex - 1 + orderedSessions.length) % orderedSessions.length]
-    : null;
-  const nextSession = hasSessionCycle
-    ? orderedSessions[(currentIndex + 1) % orderedSessions.length]
-    : null;
+  const orderedSessions = useMemo(() => sortSessions(allSessions), [allSessions]);
+  const { currentIndex, hasSessionCycle, prevSession, nextSession } = useMemo(() => {
+    const nextIndex = orderedSessions.findIndex((s) => s.slug === sessionId);
+    const canCycle = nextIndex >= 0 && orderedSessions.length > 0;
+    return {
+      currentIndex: nextIndex,
+      hasSessionCycle: canCycle,
+      prevSession: canCycle
+        ? orderedSessions[(nextIndex - 1 + orderedSessions.length) % orderedSessions.length]
+        : null,
+      nextSession: canCycle ? orderedSessions[(nextIndex + 1) % orderedSessions.length] : null,
+    };
+  }, [orderedSessions, sessionId]);
 
   const handleSwipe = useCallback(
     (direction: "left" | "right") => {
@@ -91,6 +95,15 @@ export function SessionViewPage({
 
   const diffStats = useWorktreeDiffStats(sessionId);
 
+  const handleFeedImageDrop = useCallback((files: File[]) => {
+    composerRef.current?.addImageFiles(files);
+    composerRef.current?.focusComposer();
+  }, []);
+
+  const handleFeedDragStateChange = useCallback((isDragOver: boolean) => {
+    composerRef.current?.setDragOver(isDragOver);
+  }, []);
+
   function isEditableTarget(target: EventTarget | null): boolean {
     return (
       target instanceof HTMLInputElement ||
@@ -111,13 +124,12 @@ export function SessionViewPage({
       }
       if (e.metaKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
         e.preventDefault();
-        if (orderedSessions.length === 0) return;
-        const idx = orderedSessions.findIndex((s) => s.slug === sessionId);
+        if (!hasSessionCycle) return;
         let next: number;
         if (e.key === "ArrowUp") {
-          next = idx <= 0 ? orderedSessions.length - 1 : idx - 1;
+          next = currentIndex <= 0 ? orderedSessions.length - 1 : currentIndex - 1;
         } else {
-          next = idx >= orderedSessions.length - 1 ? 0 : idx + 1;
+          next = currentIndex >= orderedSessions.length - 1 ? 0 : currentIndex + 1;
         }
         navigate(`/sessions/${orderedSessions[next].slug}`);
         return;
@@ -143,7 +155,7 @@ export function SessionViewPage({
     }
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [isActive, navigate, orderedSessions, sessionId]);
+  }, [currentIndex, hasSessionCycle, isActive, navigate, orderedSessions]);
 
   if (error) {
     return (
@@ -332,13 +344,8 @@ export function SessionViewPage({
               loading={isReplaying}
               loadingLabel={replayLabel}
               debugMode={debugMode}
-              onImageDrop={(files) => {
-                composerRef.current?.addImageFiles(files);
-                composerRef.current?.focusComposer();
-              }}
-              onImageDragStateChange={(isDragOver) => {
-                composerRef.current?.setDragOver(isDragOver);
-              }}
+              onImageDrop={handleFeedImageDrop}
+              onImageDragStateChange={handleFeedDragStateChange}
             />
             {debugMode && (
               <SessionDebugPanel

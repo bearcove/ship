@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Box, Flex, IconButton, Text, Tooltip } from "@radix-ui/themes";
 import {
@@ -132,7 +132,11 @@ export function SessionSidebar({
   const [newSessionOpen, setNewSessionOpen] = useState(false);
   const { soundEnabled, setSoundEnabled } = useSoundEnabled();
   const clientLogs = useClientLogs();
-  const currentSession = sessions.find((s) => s.slug === currentSessionId);
+  const sortedSessions = useMemo(() => sortSessions(sessions), [sessions]);
+  const currentSession = useMemo(
+    () => sessions.find((s) => s.slug === currentSessionId),
+    [currentSessionId, sessions],
+  );
 
   return (
     <>
@@ -173,7 +177,7 @@ export function SessionSidebar({
           {sessions.length === 0 ? (
             <div className={sessionRowEmpty}>No sessions</div>
           ) : (
-            sortSessions(sessions).map((session) => (
+            sortedSessions.map((session) => (
               <SessionRow
                 key={session.id}
                 session={session}

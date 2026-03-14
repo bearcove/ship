@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Routes, Route, useMatch } from "react-router-dom";
 import { Flex, Box, IconButton } from "@radix-ui/themes";
 import { List } from "@phosphor-icons/react";
@@ -43,6 +43,7 @@ export function App() {
   const currentSessionId = sessionMatch?.params.sessionId;
   const inSessionView = !!sessionMatch;
   const allSessions = useSessionList();
+  const orderedSessions = useMemo(() => sortSessions(allSessions), [allSessions]);
   const [debugMode, setDebugMode] = useState(readDebugPreference);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [connState, setConnState] = useState(() => getConnectionState());
@@ -62,7 +63,6 @@ export function App() {
     if (currentSessionId) {
       setVisitedSessions((prev) => {
         const toAdd: string[] = [currentSessionId];
-        const orderedSessions = sortSessions(allSessions);
         const currentIndex = orderedSessions.findIndex((s) => s.slug === currentSessionId);
         if (currentIndex >= 0 && orderedSessions.length > 1) {
           toAdd.push(
@@ -76,7 +76,9 @@ export function App() {
         return next;
       });
     }
-  }, [currentSessionId, allSessions]);
+  }, [currentSessionId, orderedSessions]);
+
+  const visitedSessionSlugs = useMemo(() => [...visitedSessions], [visitedSessions]);
 
   useGlobalKeyboard(allSessions, removeVisitedSession);
 
@@ -143,7 +145,7 @@ export function App() {
             <Route path="/" element={<SessionListPage />} />
             <Route path="/sessions/:sessionId" element={null} />
           </Routes>
-          {[...visitedSessions].map((slug) => (
+          {visitedSessionSlugs.map((slug) => (
             <div
               key={slug}
               style={{ display: slug === currentSessionId ? "contents" : "none" }}
