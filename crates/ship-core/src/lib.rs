@@ -269,8 +269,15 @@ pub trait WorktreeOps: Send + Sync {
         base_branch: &str,
     ) -> Result<(), WorktreeError>;
 
-    /// Fast-forward merge `branch` into the repo root's current branch.
-    async fn merge_ff_only(&self, repo_root: &Path, branch: &str) -> Result<(), WorktreeError>;
+    /// Fast-forward `into_branch` to match `branch` using `git fetch . <branch>:<into_branch>`.
+    /// This updates the ref directly without requiring `into_branch` to be checked out,
+    /// and enforces fast-forward semantics (non-fast-forward updates are rejected).
+    async fn merge_ff_only(
+        &self,
+        repo_root: &Path,
+        branch: &str,
+        into_branch: &str,
+    ) -> Result<(), WorktreeError>;
 
     // r[proto.archive-session.safety-check]
     /// Returns the list of commits on `branch_name` not yet in `base_branch`.
