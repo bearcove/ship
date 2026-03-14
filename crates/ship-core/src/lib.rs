@@ -140,7 +140,7 @@ pub struct AgentSpawnInfo {
 }
 
 // r[testability.agent-trait]
-#[allow(async_fn_in_trait)]
+#[async_trait::async_trait]
 pub trait AgentDriver: Send + Sync {
     async fn spawn(
         &self,
@@ -188,7 +188,7 @@ pub enum RebaseOutcome {
 }
 
 // r[testability.git-trait]
-#[allow(async_fn_in_trait)]
+#[async_trait::async_trait]
 pub trait WorktreeOps: Send + Sync {
     async fn create_worktree(
         &self,
@@ -285,7 +285,7 @@ pub trait WorktreeOps: Send + Sync {
 }
 
 // r[testability.persistence-trait]
-#[allow(async_fn_in_trait)]
+#[async_trait::async_trait]
 pub trait SessionStore: Send + Sync {
     async fn save_session(&self, session: &PersistedSession) -> Result<(), StoreError>;
 

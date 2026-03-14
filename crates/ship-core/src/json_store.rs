@@ -104,6 +104,7 @@ fn decode_persisted_session(
     })
 }
 
+#[async_trait::async_trait]
 impl SessionStore for JsonSessionStore {
     async fn save_session(&self, session: &PersistedSession) -> Result<(), StoreError> {
         fs::create_dir_all(&self.dir)

@@ -438,7 +438,7 @@ impl Client for ShipAcpClient {
         self.send_event(SessionEvent::AgentStateChanged {
             role: self.role,
             state: AgentState::AwaitingPermission {
-                request: PermissionRequest {
+                request: Box::new(PermissionRequest {
                     permission_id: permission_id.clone(),
                     tool_call_id: Some(tool_call_id),
                     tool_name,
@@ -448,7 +448,7 @@ impl Client for ShipAcpClient {
                     target,
                     raw_input,
                     options,
-                },
+                }),
             },
         });
 
@@ -649,7 +649,7 @@ fn map_tool_call_patch(block: &ShipContentBlock) -> BlockPatch {
         } => BlockPatch::ToolCallUpdate {
             tool_name: Some(tool_name.clone()),
             kind: *kind,
-            target: target.clone(),
+            target: Box::new(target.clone()),
             raw_input: raw_input.clone(),
             raw_output: raw_output.clone(),
             status: *status,
@@ -1192,7 +1192,7 @@ mod tests {
                 patch: BlockPatch::ToolCallUpdate {
                     tool_name: Some("Read File".to_owned()),
                     kind: Some(ShipToolCallKind::Other),
-                    target: None,
+                    target: Box::new(None),
                     raw_input: None,
                     raw_output: None,
                     status: ShipToolCallStatus::Success,

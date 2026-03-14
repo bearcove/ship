@@ -871,7 +871,10 @@ impl ShipImpl {
                 task_id = Self::event_task_id(&event.event),
                 "sending replay event to subscriber"
             );
-            if send(SubscribeMessage::Event(event)).await.is_err() {
+            if send(SubscribeMessage::Event(Box::new(event)))
+                .await
+                .is_err()
+            {
                 tracing::warn!(session_id = %session.0, "subscriber disconnected during replay");
                 return;
             }
@@ -898,7 +901,10 @@ impl ShipImpl {
                         task_id = Self::event_task_id(&event.event),
                         "sending live event to subscriber"
                     );
-                    if send(SubscribeMessage::Event(event)).await.is_err() {
+                    if send(SubscribeMessage::Event(Box::new(event)))
+                        .await
+                        .is_err()
+                    {
                         tracing::warn!(
                             session_id = %session.0,
                             "subscriber disconnected during live stream"
@@ -11787,7 +11793,7 @@ agent_presets {
             .expect("replay event should be present");
         assert_eq!(
             replayed,
-            SubscribeMessage::Event(SessionEventEnvelope {
+            SubscribeMessage::Event(Box::new(SessionEventEnvelope {
                 seq: 7,
                 timestamp: "2026-01-01T00:00:00Z".to_owned(),
                 event: SessionEvent::TaskStarted {
@@ -11796,7 +11802,7 @@ agent_presets {
                     description: "Replay task".to_owned(),
                     steps: Vec::new(),
                 },
-            })
+            }))
         );
 
         let replay_complete = timeout(Duration::from_secs(1), messages_rx.recv())
@@ -11824,7 +11830,7 @@ agent_presets {
             .expect("live event should be present");
         assert_eq!(
             live,
-            SubscribeMessage::Event(SessionEventEnvelope {
+            SubscribeMessage::Event(Box::new(SessionEventEnvelope {
                 seq: 8,
                 timestamp: "2026-01-01T00:00:00Z".to_owned(),
                 event: SessionEvent::TaskStarted {
@@ -11833,7 +11839,7 @@ agent_presets {
                     description: "Live task".to_owned(),
                     steps: Vec::new(),
                 },
-            })
+            }))
         );
     }
 

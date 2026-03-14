@@ -1326,7 +1326,9 @@ pub fn apply_event_to_materialized_state(session: &mut ActiveSession, event: &Se
                     },
                 );
 
-                let state = AgentState::AwaitingPermission { request };
+                let state = AgentState::AwaitingPermission {
+                    request: Box::new(request),
+                };
                 match role {
                     Role::Captain => session.captain.state = state,
                     Role::Mate => session.mate.state = state,
@@ -1525,7 +1527,7 @@ pub fn apply_block_patch(block: &mut ContentBlock, patch: &BlockPatch) {
                 if let Some(kind) = kind {
                     *existing_kind = Some(*kind);
                 }
-                if let Some(target) = target {
+                if let Some(target) = target.as_ref() {
                     *existing_target = Some(target.clone());
                 }
                 if let Some(raw_input) = raw_input {

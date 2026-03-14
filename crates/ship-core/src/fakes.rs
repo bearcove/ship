@@ -142,16 +142,13 @@ impl FakeAgentDriver {
         let mut inner = self.inner.lock().expect("fake agent driver mutex poisoned");
         inner.scripts.clear();
         inner.notifications.clear();
-        inner.spawns.clear();
         inner.prompts.clear();
         inner.cancelled.clear();
         inner.killed.clear();
-        inner.model_sets.clear();
-        inner.current_models.clear();
-        inner.set_model_errors.clear();
     }
 }
 
+#[async_trait::async_trait]
 impl AgentDriver for FakeAgentDriver {
     async fn spawn(
         &self,
@@ -487,6 +484,7 @@ impl FakeWorktreeOps {
     }
 }
 
+#[async_trait::async_trait]
 impl WorktreeOps for FakeWorktreeOps {
     // r[worktree.path]
     async fn create_worktree(
@@ -735,6 +733,7 @@ impl FakeSessionStore {
     }
 }
 
+#[async_trait::async_trait]
 impl SessionStore for FakeSessionStore {
     async fn save_session(&self, session: &PersistedSession) -> Result<(), StoreError> {
         self.sessions

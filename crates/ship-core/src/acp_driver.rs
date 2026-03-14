@@ -98,6 +98,7 @@ impl AcpAgentDriver {
     }
 }
 
+#[async_trait::async_trait]
 impl AgentDriver for AcpAgentDriver {
     // r[acp.binary.claude]
     // r[acp.binary.codex]

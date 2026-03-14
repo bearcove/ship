@@ -10,6 +10,7 @@ use crate::{RebaseOutcome, WorktreeError, WorktreeOps};
 pub struct GitWorktreeOps;
 
 // r[backend.git-shell]
+#[async_trait::async_trait]
 impl WorktreeOps for GitWorktreeOps {
     // r[worktree.path]
     async fn create_worktree(
