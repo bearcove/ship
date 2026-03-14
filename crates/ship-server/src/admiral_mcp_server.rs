@@ -388,19 +388,20 @@ async fn kagi_web_search(
         .get("data")
         .and_then(|d| d.get("references"))
         .and_then(Value::as_array)
-        && !refs.is_empty() {
-            text.push_str("\n\n## References\n");
-            for r in refs {
-                let title = r.get("title").and_then(Value::as_str).unwrap_or("Untitled");
-                let url = r.get("url").and_then(Value::as_str).unwrap_or("");
-                let snippet = r.get("snippet").and_then(Value::as_str).unwrap_or("");
-                if snippet.is_empty() {
-                    text.push_str(&format!("- [{title}]({url})\n"));
-                } else {
-                    text.push_str(&format!("- [{title}]({url}): {snippet}\n"));
-                }
+        && !refs.is_empty()
+    {
+        text.push_str("\n\n## References\n");
+        for r in refs {
+            let title = r.get("title").and_then(Value::as_str).unwrap_or("Untitled");
+            let url = r.get("url").and_then(Value::as_str).unwrap_or("");
+            let snippet = r.get("snippet").and_then(Value::as_str).unwrap_or("");
+            if snippet.is_empty() {
+                text.push_str(&format!("- [{title}]({url})\n"));
+            } else {
+                text.push_str(&format!("- [{title}]({url}): {snippet}\n"));
             }
         }
+    }
 
     tool_result(&text, false)
 }

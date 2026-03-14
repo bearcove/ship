@@ -1,3 +1,12 @@
+#![allow(dead_code)]
+#![allow(clippy::collapsible_if)]
+#![allow(clippy::await_holding_lock)]
+#![allow(clippy::type_complexity)]
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::manual_is_multiple_of)]
+#![allow(clippy::redundant_guards)]
+#![allow(clippy::question_mark)]
+
 use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -271,6 +280,7 @@ impl ActivityLog {
 const ADMIRAL_SESSION_ID: &str = "admiral";
 
 /// State for the singleton Admiral agent.
+#[allow(dead_code)]
 struct AdmiralSession {
     /// ACP agent handle for prompting the admiral.
     handle: ship_core::AgentHandle,
@@ -2086,78 +2096,78 @@ You are now active. Wait for messages from captains or the human.\n",
 
         // Run checks before fast-forwarding into the base branch.
         if let Ok(hooks) = load_project_hooks(&repo_root).await
-            && !hooks.checks.is_empty() {
-                let (worktree_path, events_tx) = {
-                    let sessions = self.sessions.lock().expect("sessions mutex poisoned");
-                    let s = sessions.get(session_id);
-                    (
-                        s.and_then(|s| s.worktree_path.clone()),
-                        s.map(|s| s.events_tx.clone()),
-                    )
-                };
-                if let Some(worktree_path) = worktree_path {
-                    let hook_names: Vec<String> =
-                        hooks.checks.iter().map(|h| h.name.clone()).collect();
-                    if let Some(ref tx) = events_tx {
-                        let _ = tx.send(SessionEventEnvelope {
-                            seq: 0,
-                            timestamp: chrono::Utc::now().to_rfc3339(),
-                            event: SessionEvent::ChecksStarted {
-                                context: "pre-merge".to_owned(),
-                                hooks: hook_names,
-                            },
-                        });
-                    }
-                    let (all_passed, results, check_error) =
-                        match run_hooks(&hooks.checks, &worktree_path).await {
-                            Ok(outcomes) => (
-                                true,
-                                outcomes
-                                    .iter()
-                                    .map(|o| o.to_check_result())
-                                    .collect::<Vec<_>>(),
-                                None,
-                            ),
-                            Err(error) => (
-                                false,
-                                error
-                                    .outcomes
-                                    .iter()
-                                    .map(|o| o.to_check_result())
-                                    .collect::<Vec<_>>(),
-                                Some(error.to_string()),
-                            ),
-                        };
-                    if let Some(ref tx) = events_tx {
-                        let _ = tx.send(SessionEventEnvelope {
-                            seq: 0,
-                            timestamp: chrono::Utc::now().to_rfc3339(),
-                            event: SessionEvent::ChecksFinished {
-                                context: "pre-merge".to_owned(),
-                                all_passed,
-                                results: results.clone(),
-                            },
-                        });
-                    }
-                    if !all_passed {
-                        let detail = check_error.unwrap_or_else(|| {
-                            results
+            && !hooks.checks.is_empty()
+        {
+            let (worktree_path, events_tx) = {
+                let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                let s = sessions.get(session_id);
+                (
+                    s.and_then(|s| s.worktree_path.clone()),
+                    s.map(|s| s.events_tx.clone()),
+                )
+            };
+            if let Some(worktree_path) = worktree_path {
+                let hook_names: Vec<String> = hooks.checks.iter().map(|h| h.name.clone()).collect();
+                if let Some(ref tx) = events_tx {
+                    let _ = tx.send(SessionEventEnvelope {
+                        seq: 0,
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                        event: SessionEvent::ChecksStarted {
+                            context: "pre-merge".to_owned(),
+                            hooks: hook_names,
+                        },
+                    });
+                }
+                let (all_passed, results, check_error) =
+                    match run_hooks(&hooks.checks, &worktree_path).await {
+                        Ok(outcomes) => (
+                            true,
+                            outcomes
                                 .iter()
-                                .filter(|r| !r.passed)
-                                .map(|r| {
-                                    if r.output.trim().is_empty() {
-                                        format!("hook: {}", r.name)
-                                    } else {
-                                        format!("hook: {}\n{}", r.name, r.output)
-                                    }
-                                })
-                                .collect::<Vec<_>>()
-                                .join("\n\n")
-                        });
-                        return Err(format!("checks failed:\n{detail}"));
-                    }
+                                .map(|o| o.to_check_result())
+                                .collect::<Vec<_>>(),
+                            None,
+                        ),
+                        Err(error) => (
+                            false,
+                            error
+                                .outcomes
+                                .iter()
+                                .map(|o| o.to_check_result())
+                                .collect::<Vec<_>>(),
+                            Some(error.to_string()),
+                        ),
+                    };
+                if let Some(ref tx) = events_tx {
+                    let _ = tx.send(SessionEventEnvelope {
+                        seq: 0,
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                        event: SessionEvent::ChecksFinished {
+                            context: "pre-merge".to_owned(),
+                            all_passed,
+                            results: results.clone(),
+                        },
+                    });
+                }
+                if !all_passed {
+                    let detail = check_error.unwrap_or_else(|| {
+                        results
+                            .iter()
+                            .filter(|r| !r.passed)
+                            .map(|r| {
+                                if r.output.trim().is_empty() {
+                                    format!("hook: {}", r.name)
+                                } else {
+                                    format!("hook: {}\n{}", r.name, r.output)
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n\n")
+                    });
+                    return Err(format!("checks failed:\n{detail}"));
                 }
             }
+        }
 
         self.worktree_ops
             .merge_ff_only(&repo_root, &branch_name)
@@ -2708,9 +2718,10 @@ Here is your task:
             {
                 let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
                 if let Some(session) = sessions.get_mut(session_id)
-                    && let Some(task) = session.current_task.as_mut() {
-                        task.record.steps = new_steps;
-                    }
+                    && let Some(task) = session.current_task.as_mut()
+                {
+                    task.record.steps = new_steps;
+                }
             }
             self.persist_session(session_id).await?;
             Some("Plan replaced by captain.".to_owned())
@@ -2719,9 +2730,10 @@ Here is your task:
             {
                 let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
                 if let Some(session) = sessions.get_mut(session_id)
-                    && let Some(task) = session.current_task.as_mut() {
-                        task.record.steps.extend(extra_steps);
-                    }
+                    && let Some(task) = session.current_task.as_mut()
+                {
+                    task.record.steps.extend(extra_steps);
+                }
             }
             self.persist_session(session_id).await?;
             Some("Steps appended to plan by captain.".to_owned())
@@ -2744,9 +2756,10 @@ Here is your task:
                 {
                     let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
                     if let Some(session) = sessions.get_mut(session_id)
-                        && let Some(task) = session.current_task.as_mut() {
-                            task.record.steps = old_plan;
-                        }
+                        && let Some(task) = session.current_task.as_mut()
+                    {
+                        task.record.steps = old_plan;
+                    }
                 }
                 self.persist_session(session_id).await?;
             }
@@ -2916,71 +2929,72 @@ Here is your task:
 
         // Run checks before fast-forwarding into the base branch.
         if let Ok(hooks) = load_project_hooks(&repo_root).await
-            && !hooks.checks.is_empty() {
-                let events_tx = {
-                    let sessions = self.sessions.lock().expect("sessions mutex poisoned");
-                    sessions.get(session_id).map(|s| s.events_tx.clone())
-                };
-                let hook_names: Vec<String> = hooks.checks.iter().map(|h| h.name.clone()).collect();
-                if let Some(ref tx) = events_tx {
-                    let _ = tx.send(SessionEventEnvelope {
-                        seq: 0,
-                        timestamp: chrono::Utc::now().to_rfc3339(),
-                        event: SessionEvent::ChecksStarted {
-                            context: "pre-merge".to_owned(),
-                            hooks: hook_names,
-                        },
-                    });
-                }
-                let (all_passed, results, check_error) =
-                    match run_hooks(&hooks.checks, &worktree_path).await {
-                        Ok(outcomes) => (
-                            true,
-                            outcomes
-                                .iter()
-                                .map(|o| o.to_check_result())
-                                .collect::<Vec<_>>(),
-                            None,
-                        ),
-                        Err(error) => (
-                            false,
-                            error
-                                .outcomes
-                                .iter()
-                                .map(|o| o.to_check_result())
-                                .collect::<Vec<_>>(),
-                            Some(error.to_string()),
-                        ),
-                    };
-                if let Some(ref tx) = events_tx {
-                    let _ = tx.send(SessionEventEnvelope {
-                        seq: 0,
-                        timestamp: chrono::Utc::now().to_rfc3339(),
-                        event: SessionEvent::ChecksFinished {
-                            context: "pre-merge".to_owned(),
-                            all_passed,
-                            results: results.clone(),
-                        },
-                    });
-                }
-                if !all_passed {
-                    let detail = check_error.unwrap_or_else(|| {
-                        results
-                            .iter()
-                            .filter(|r| !r.passed)
-                            .map(|r| {
-                                if r.output.trim().is_empty() {
-                                    format!("hook: {}", r.name)
-                                } else {
-                                    format!("hook: {}\n{}", r.name, r.output)
-                                }
-                            })
-                            .collect::<Vec<_>>()
-                            .join("\n\n")
-                    });
-                    return Err(format!("checks failed:\n{detail}"));
-                }
+            && !hooks.checks.is_empty()
+        {
+            let events_tx = {
+                let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                sessions.get(session_id).map(|s| s.events_tx.clone())
+            };
+            let hook_names: Vec<String> = hooks.checks.iter().map(|h| h.name.clone()).collect();
+            if let Some(ref tx) = events_tx {
+                let _ = tx.send(SessionEventEnvelope {
+                    seq: 0,
+                    timestamp: chrono::Utc::now().to_rfc3339(),
+                    event: SessionEvent::ChecksStarted {
+                        context: "pre-merge".to_owned(),
+                        hooks: hook_names,
+                    },
+                });
             }
+            let (all_passed, results, check_error) =
+                match run_hooks(&hooks.checks, &worktree_path).await {
+                    Ok(outcomes) => (
+                        true,
+                        outcomes
+                            .iter()
+                            .map(|o| o.to_check_result())
+                            .collect::<Vec<_>>(),
+                        None,
+                    ),
+                    Err(error) => (
+                        false,
+                        error
+                            .outcomes
+                            .iter()
+                            .map(|o| o.to_check_result())
+                            .collect::<Vec<_>>(),
+                        Some(error.to_string()),
+                    ),
+                };
+            if let Some(ref tx) = events_tx {
+                let _ = tx.send(SessionEventEnvelope {
+                    seq: 0,
+                    timestamp: chrono::Utc::now().to_rfc3339(),
+                    event: SessionEvent::ChecksFinished {
+                        context: "pre-merge".to_owned(),
+                        all_passed,
+                        results: results.clone(),
+                    },
+                });
+            }
+            if !all_passed {
+                let detail = check_error.unwrap_or_else(|| {
+                    results
+                        .iter()
+                        .filter(|r| !r.passed)
+                        .map(|r| {
+                            if r.output.trim().is_empty() {
+                                format!("hook: {}", r.name)
+                            } else {
+                                format!("hook: {}\n{}", r.name, r.output)
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n\n")
+                });
+                return Err(format!("checks failed:\n{detail}"));
+            }
+        }
 
         self.worktree_ops
             .merge_ff_only(&repo_root, &branch_name)
@@ -3015,21 +3029,22 @@ Here is your task:
         };
 
         if let Some(status) = task_status
-            && status != TaskStatus::RebaseConflict {
-                let git_status = self.collect_captain_git_status(session_id).await?;
-                if !git_status.rebase_in_progress {
-                    return Err(format!(
-                        "captain_continue_rebase is only valid in RebaseConflict status (current: {status:?})"
-                    ));
-                }
-                let conflicted_files = if git_status.unmerged_paths.is_empty() {
-                    git_status.conflict_marker_paths.clone()
-                } else {
-                    git_status.unmerged_paths.clone()
-                };
-                self.mark_rebase_conflict(session_id, &conflicted_files)
-                    .await?;
+            && status != TaskStatus::RebaseConflict
+        {
+            let git_status = self.collect_captain_git_status(session_id).await?;
+            if !git_status.rebase_in_progress {
+                return Err(format!(
+                    "captain_continue_rebase is only valid in RebaseConflict status (current: {status:?})"
+                ));
             }
+            let conflicted_files = if git_status.unmerged_paths.is_empty() {
+                git_status.conflict_marker_paths.clone()
+            } else {
+                git_status.unmerged_paths.clone()
+            };
+            self.mark_rebase_conflict(session_id, &conflicted_files)
+                .await?;
+        }
 
         let repo_root = Self::repo_root_for_worktree(&worktree_path)
             .map_err(|error| error.to_string())?
@@ -4016,10 +4031,10 @@ Here is your task:
                 expect_pattern = false;
                 if !fixed_strings
                     && let Some(replacement) = Self::normalized_rg_pattern_replacement(&token.text)
-                    {
-                        replacements.push((token.start, token.end, replacement));
-                        corrected_alternation = true;
-                    }
+                {
+                    replacements.push((token.start, token.end, replacement));
+                    corrected_alternation = true;
+                }
                 continue;
             }
 
@@ -4033,10 +4048,10 @@ Here is your task:
                     if !fixed_strings
                         && let Some(replacement) =
                             Self::normalized_rg_pattern_replacement(&token.text)
-                        {
-                            replacements.push((token.start, token.end, replacement));
-                            corrected_alternation = true;
-                        }
+                    {
+                        replacements.push((token.start, token.end, replacement));
+                        corrected_alternation = true;
+                    }
                     saw_positional_pattern = true;
                 }
                 continue;
@@ -4064,10 +4079,10 @@ Here is your task:
             if !saw_positional_pattern {
                 if !fixed_strings
                     && let Some(replacement) = Self::normalized_rg_pattern_replacement(&token.text)
-                    {
-                        replacements.push((token.start, token.end, replacement));
-                        corrected_alternation = true;
-                    }
+                {
+                    replacements.push((token.start, token.end, replacement));
+                    corrected_alternation = true;
+                }
                 saw_positional_pattern = true;
             }
         }
@@ -4720,9 +4735,10 @@ Here is your task:
                     Self::resolve_worktree_file_path(&canonical_worktree, &relative_path)?;
 
                 if let Ok(metadata) = fs::metadata(&target_path)
-                    && metadata.is_dir() {
-                        return Err("Path is a directory, not a file.".to_owned());
-                    }
+                    && metadata.is_dir()
+                {
+                    return Err("Path is a directory, not a file.".to_owned());
+                }
 
                 let old_text = fs::read_to_string(&target_path).ok();
 
@@ -5120,17 +5136,18 @@ Here is your task:
 
             Self::write_text_file(&canonical_file, &new_content, &pending_edit.path)?;
             if pending_edit.path.extension().and_then(|ext| ext.to_str()) == Some("rs")
-                && let Err(error) = Self::validate_rust_file(&canonical_file, &pending_edit.path) {
-                    let restore_error = Self::restore_file_from_content(
-                        &canonical_file,
-                        &pending_edit.path,
-                        &old_before_write,
-                    );
-                    return match restore_error {
-                        Ok(()) => Err(error),
-                        Err(restore_error) => Err(format!("{error}\n{restore_error}")),
-                    };
-                }
+                && let Err(error) = Self::validate_rust_file(&canonical_file, &pending_edit.path)
+            {
+                let restore_error = Self::restore_file_from_content(
+                    &canonical_file,
+                    &pending_edit.path,
+                    &old_before_write,
+                );
+                return match restore_error {
+                    Ok(()) => Err(error),
+                    Err(restore_error) => Err(format!("{error}\n{restore_error}")),
+                };
+            }
 
             Ok((old_before_write, new_content))
         })
@@ -5737,11 +5754,12 @@ Here is your task:
             .map_err(|e| e.to_string())?
             .to_path_buf();
         if let Ok(hooks) = load_project_hooks(&repo_root).await
-            && !hooks.pre_commit.is_empty() {
-                run_hooks(&hooks.pre_commit, &worktree_path)
-                    .await
-                    .map_err(|error| format!("pre-commit hooks failed:\n{error}"))?;
-            }
+            && !hooks.pre_commit.is_empty()
+        {
+            run_hooks(&hooks.pre_commit, &worktree_path)
+                .await
+                .map_err(|error| format!("pre-commit hooks failed:\n{error}"))?;
+        }
 
         let commit = Self::auto_commit_worktree(&worktree_path, message).await?;
 
@@ -5753,54 +5771,54 @@ Here is your task:
         // Emit lifecycle events via the session broadcast channel.
         if commit.is_some()
             && let Ok(hooks) = load_project_hooks(&repo_root).await
-                && !hooks.checks.is_empty() {
-                    let events_tx = {
-                        let sessions = self.sessions.lock().expect("sessions mutex poisoned");
-                        sessions.get(session_id).map(|s| s.events_tx.clone())
+            && !hooks.checks.is_empty()
+        {
+            let events_tx = {
+                let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                sessions.get(session_id).map(|s| s.events_tx.clone())
+            };
+            if let Some(events_tx) = events_tx {
+                let checks = hooks.checks;
+                let wt = worktree_path.clone();
+                let hook_names: Vec<String> = checks.iter().map(|h| h.name.clone()).collect();
+                tokio::spawn(async move {
+                    let _ = events_tx.send(SessionEventEnvelope {
+                        seq: 0,
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                        event: SessionEvent::ChecksStarted {
+                            context: "post-commit".to_owned(),
+                            hooks: hook_names,
+                        },
+                    });
+                    let (all_passed, results) = match run_hooks(&checks, &wt).await {
+                        Ok(outcomes) => (
+                            true,
+                            outcomes
+                                .iter()
+                                .map(|o| o.to_check_result())
+                                .collect::<Vec<_>>(),
+                        ),
+                        Err(error) => (
+                            false,
+                            error
+                                .outcomes
+                                .iter()
+                                .map(|o| o.to_check_result())
+                                .collect::<Vec<_>>(),
+                        ),
                     };
-                    if let Some(events_tx) = events_tx {
-                        let checks = hooks.checks;
-                        let wt = worktree_path.clone();
-                        let hook_names: Vec<String> =
-                            checks.iter().map(|h| h.name.clone()).collect();
-                        tokio::spawn(async move {
-                            let _ = events_tx.send(SessionEventEnvelope {
-                                seq: 0,
-                                timestamp: chrono::Utc::now().to_rfc3339(),
-                                event: SessionEvent::ChecksStarted {
-                                    context: "post-commit".to_owned(),
-                                    hooks: hook_names,
-                                },
-                            });
-                            let (all_passed, results) = match run_hooks(&checks, &wt).await {
-                                Ok(outcomes) => (
-                                    true,
-                                    outcomes
-                                        .iter()
-                                        .map(|o| o.to_check_result())
-                                        .collect::<Vec<_>>(),
-                                ),
-                                Err(error) => (
-                                    false,
-                                    error
-                                        .outcomes
-                                        .iter()
-                                        .map(|o| o.to_check_result())
-                                        .collect::<Vec<_>>(),
-                                ),
-                            };
-                            let _ = events_tx.send(SessionEventEnvelope {
-                                seq: 0,
-                                timestamp: chrono::Utc::now().to_rfc3339(),
-                                event: SessionEvent::ChecksFinished {
-                                    context: "post-commit".to_owned(),
-                                    all_passed,
-                                    results: results.clone(),
-                                },
-                            });
-                        });
-                    }
-                }
+                    let _ = events_tx.send(SessionEventEnvelope {
+                        seq: 0,
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                        event: SessionEvent::ChecksFinished {
+                            context: "post-commit".to_owned(),
+                            all_passed,
+                            results: results.clone(),
+                        },
+                    });
+                });
+            }
+        }
 
         let commit_summary = Self::commit_summary(commit.as_ref());
         if let Some(step_description) = step_description {
@@ -6097,15 +6115,16 @@ Here is your task:
         let step_started_at = Instant::now();
         if let Ok(hooks) = load_project_hooks(&repo_root).await
             && !hooks.worktree_setup.is_empty()
-                && let Err(error) = run_hooks(&hooks.worktree_setup, &worktree_path).await {
-                    self.fail_startup(
-                        &session_id,
-                        SessionStartupStage::CreatingWorktree,
-                        format!("worktree-setup hooks failed:\n{error}"),
-                    )
-                    .await;
-                    return;
-                }
+            && let Err(error) = run_hooks(&hooks.worktree_setup, &worktree_path).await
+        {
+            self.fail_startup(
+                &session_id,
+                SessionStartupStage::CreatingWorktree,
+                format!("worktree-setup hooks failed:\n{error}"),
+            )
+            .await;
+            return;
+        }
         self.log_startup_step_elapsed(&session_id, "worktree-setup-hooks", step_started_at);
 
         let step_started_at = Instant::now();
@@ -6654,9 +6673,10 @@ Here is your task:
                 ..
             } => {
                 if let Some(last) = session.mate_activity_buffer.last_mut()
-                    && last.starts_with("[speech]") {
-                        last.push_str(text);
-                    }
+                    && last.starts_with("[speech]")
+                {
+                    last.push_str(text);
+                }
             }
             _ => {}
         }
@@ -6775,12 +6795,13 @@ Here is your task:
         // Use Haiku if available for cost efficiency
         let haiku_model = "claude-haiku-4-5-20251001";
         if info.available_models.iter().any(|m| m == haiku_model)
-            && let Err(error) = self.agent_driver.set_model(&info.handle, haiku_model).await {
-                tracing::warn!(
-                    error = %error.message,
-                    "failed to set utility agent model to Haiku"
-                );
-            }
+            && let Err(error) = self.agent_driver.set_model(&info.handle, haiku_model).await
+        {
+            tracing::warn!(
+                error = %error.message,
+                "failed to set utility agent model to Haiku"
+            );
+        }
 
         // Send the initial persona prompt and discard the acknowledgement
         let init_prompt = "You are a mate activity summarizer. A coding agent (\"the mate\") works \
@@ -8225,11 +8246,11 @@ impl Ship for ShipImpl {
 
         let this = self.clone();
         tokio::spawn(async move {
-            if captain_needs_restart
-                && let Err(error) = this.restart_captain(&session, false).await {
-                    Self::log_error("prompt_captain restart_captain", &error);
-                    return;
-                }
+            if captain_needs_restart && let Err(error) = this.restart_captain(&session, false).await
+            {
+                Self::log_error("prompt_captain restart_captain", &error);
+                return;
+            }
             if let Err(error) = this.interrupt_captain_with_parts(&session, parts).await {
                 Self::log_error("prompt_captain", &error);
             }
