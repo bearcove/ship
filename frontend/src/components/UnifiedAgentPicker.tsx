@@ -10,6 +10,7 @@ import {
   agentHeaderPickerPrimary,
   agentHeaderPickerSecondary,
   agentHeaderPickerSummary,
+  agentHeaderPickerSummaryText,
   agentHeaderPickerText,
   agentHeaderPickerTextGrow,
   agentHeaderPickerTrigger,
@@ -77,14 +78,16 @@ function renderPickerSummary(
   return (
     <span className={agentHeaderPickerSummary}>
       {currentPreset && <PresetIcon preset={currentPreset} />}
-      <Text size="2" color="gray" className={primaryClassName}>
-        {label}
-      </Text>
-      {showModel && (
-        <Text size="1" color="gray" className={agentHeaderPickerSecondary}>
-          {modelId}
+      <span className={agentHeaderPickerSummaryText}>
+        <Text size="2" color="gray" className={primaryClassName}>
+          {label}
         </Text>
-      )}
+        {showModel && (
+          <Text size="1" color="gray" className={agentHeaderPickerSecondary}>
+            {modelId}
+          </Text>
+        )}
+      </span>
     </span>
   );
 }

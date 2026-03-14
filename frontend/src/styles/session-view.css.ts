@@ -1267,6 +1267,14 @@ export const agentHeaderPickerStatic = style({
 
 export const agentHeaderPickerSummary = style({
   display: "flex",
+  flexDirection: "row",
+  alignItems: "center",
+  gap: "6px",
+  minWidth: 0,
+});
+
+export const agentHeaderPickerSummaryText = style({
+  display: "flex",
   flexDirection: "column",
   minWidth: 0,
 });
