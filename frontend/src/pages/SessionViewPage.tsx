@@ -99,6 +99,12 @@ export function SessionViewPage({
 
   const diffStats = useWorktreeDiffStats(sessionId);
 
+  // r[proto.mark-session-read]
+  useEffect(() => {
+    if (!session) return;
+    getShipClient().then((client) => client.markSessionRead(sessionId));
+  }, [sessionId, !!session]);
+
   const handleFeedImageDrop = useCallback((files: File[]) => {
     composerRef.current?.addImageFiles(files);
     composerRef.current?.focusComposer();
