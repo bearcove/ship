@@ -1,6 +1,6 @@
 import { useAgentPresets } from "../hooks/useAgentPresets";
 import type { AgentKind, AgentPreset } from "../generated/ship";
-import { AgentPresetSelector } from "./AgentPresetSelector";
+import { UnifiedAgentPicker } from "./UnifiedAgentPicker";
 
 export function CreateSessionPresetPicker({
   selectedPresetId,
@@ -21,7 +21,7 @@ export function CreateSessionPresetPicker({
   const canSelect = !loading && error === null && presets.length > 0;
 
   return (
-    <AgentPresetSelector
+    <UnifiedAgentPicker
       presets={presets}
       selectedPresetId={selectedPresetId}
       inference={{ kind: selectedKind, provider: null, modelId: selectedModelId }}
