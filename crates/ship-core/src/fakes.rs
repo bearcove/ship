@@ -128,6 +128,18 @@ impl FakeAgentDriver {
             .current_models
             .insert(handle.clone(), model_id.into());
     }
+
+    pub fn reset(&self) {
+        let mut inner = self.inner.lock().expect("fake agent driver mutex poisoned");
+        inner.scripts.clear();
+        inner.notifications.clear();
+        inner.spawns.clear();
+        inner.prompts.clear();
+        inner.cancelled.clear();
+        inner.killed.clear();
+        inner.model_sets.clear();
+        inner.current_models.clear();
+    }
 }
 
 impl AgentDriver for FakeAgentDriver {

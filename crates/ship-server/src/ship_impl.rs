@@ -9821,13 +9821,13 @@ mod tests {
     fn lock_mate_tool_tests() -> MutexGuard<'static, ()> {
         MATE_TOOL_TEST_LOCK
             .lock()
-            .expect("mate tool test lock should not be poisoned")
+            .unwrap_or_else(|e| e.into_inner())
     }
 
     fn lock_fake_agent_driver_tests() -> MutexGuard<'static, ()> {
         FAKE_AGENT_DRIVER_TEST_LOCK
             .lock()
-            .expect("fake agent driver test lock should not be poisoned")
+            .unwrap_or_else(|e| e.into_inner())
     }
 
     fn sandbox_exec_denied(output: &str) -> bool {
@@ -9844,9 +9844,10 @@ mod tests {
 
     impl TestAgentDriverGuard {
         fn set(driver: FakeAgentDriver) -> Self {
+            driver.reset();
             *super::TEST_AGENT_DRIVER
                 .lock()
-                .expect("test agent driver mutex poisoned") = Some(driver);
+                .unwrap_or_else(|e| e.into_inner()) = Some(driver);
             Self
         }
     }
@@ -9855,7 +9856,7 @@ mod tests {
         fn drop(&mut self) {
             *super::TEST_AGENT_DRIVER
                 .lock()
-                .expect("test agent driver mutex poisoned") = None;
+                .unwrap_or_else(|e| e.into_inner()) = None;
         }
     }
 
