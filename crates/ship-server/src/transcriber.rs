@@ -26,7 +26,7 @@ pub enum SpeechEvent {
 /// Streaming speech transcriber: Silero VAD for speech boundaries,
 /// whisper-cpp for transcription of completed segments.
 pub struct SpeechTranscriber {
-    whisper_ctx: Arc<whisper_cpp_plus::WhisperContext>,
+    whisper_state: whisper_cpp_plus::WhisperState,
     vad_iter: VadIterator,
 
     // Buffering for 512-sample VAD chunks
@@ -56,9 +56,10 @@ impl SpeechTranscriber {
             speech_pad_ms: 30,
         };
         let vad_iter = VadIterator::new(silero_model, vad_params)?;
+        let whisper_state = whisper_ctx.create_state()?;
 
         Ok(Self {
-            whisper_ctx,
+            whisper_state,
             vad_iter,
             sample_buf: Vec::new(),
             speech_audio: Vec::new(),
