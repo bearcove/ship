@@ -2673,20 +2673,16 @@ Here is your task:
 
     // r[captain.tool.continue-rebase]
     async fn captain_tool_continue_rebase(&self, session_id: &SessionId) -> Result<String, String> {
-        let (worktree_path, base_branch, branch_name, has_active_task) = {
+        let (worktree_path, base_branch, branch_name, task_status) = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let active = sessions
                 .get(session_id)
                 .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-            let has_active_task = active.current_task.is_some();
-            if has_active_task {
-                let status = current_task_status(active).map_err(|error| error.to_string())?;
-                if status != TaskStatus::RebaseConflict {
-                    return Err(format!(
-                        "captain_continue_rebase is only valid in RebaseConflict status (current: {status:?})"
-                    ));
-                }
-            }
+            let task_status = if active.current_task.is_some() {
+                Some(current_task_status(active).map_err(|error| error.to_string())?)
+            } else {
+                None
+            };
             let worktree_path = active
                 .worktree_path
                 .clone()
@@ -2695,9 +2691,26 @@ Here is your task:
                 worktree_path,
                 active.config.base_branch.clone(),
                 active.config.branch_name.clone(),
-                has_active_task,
+                task_status,
             )
         };
+
+        if let Some(status) = task_status {
+            if status != TaskStatus::RebaseConflict {
+                let git_status = self.collect_captain_git_status(session_id).await?;
+                if !git_status.rebase_in_progress {
+                    return Err(format!(
+                        "captain_continue_rebase is only valid in RebaseConflict status (current: {status:?})"
+                    ));
+                }
+                let conflicted_files = if git_status.unmerged_paths.is_empty() {
+                    git_status.conflict_marker_paths.clone()
+                } else {
+                    git_status.unmerged_paths.clone()
+                };
+                self.mark_rebase_conflict(session_id, &conflicted_files).await?;
+            }
+        }
 
         let repo_root = Self::repo_root_for_worktree(&worktree_path)
             .map_err(|error| error.to_string())?
@@ -2717,7 +2730,7 @@ Here is your task:
             ));
         }
 
-        if has_active_task {
+        if task_status.is_some() {
             self.complete_after_rebase(session_id, repo_root, branch_name, base_branch, None)
                 .await?;
             Ok("Rebase completed; task accepted.".to_owned())
@@ -2850,7 +2863,9 @@ Here is your task:
         session_id: &SessionId,
     ) -> Result<CaptainRebaseStatus, String> {
         let status = self.collect_captain_git_status(session_id).await?;
-        let can_continue = status.rebase_in_progress && status.conflict_marker_paths.is_empty();
+        let can_continue = status.rebase_in_progress
+            && status.unmerged_paths.is_empty()
+            && status.conflict_marker_paths.is_empty();
         let can_abort = status.rebase_in_progress;
         Ok(CaptainRebaseStatus {
             status,
@@ -4450,14 +4465,26 @@ Here is your task:
     ) -> McpToolCallResponse {
         let result: Result<McpToolCallResponse, String> = async {
             let relative_path = Self::validate_worktree_path(&path)?.to_path_buf();
-            let worktree_path = {
+            let (worktree_path, has_plan_or_rebase_conflict_status) = {
                 let sessions = self.sessions.lock().expect("sessions mutex poisoned");
                 let session = sessions
                     .get(session_id)
                     .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-                Self::require_mate_plan(session)?;
-                Self::current_task_worktree_path(session)?.to_path_buf()
+                (
+                    Self::current_task_worktree_path(session)?.to_path_buf(),
+                    Self::require_mate_plan(session).is_ok(),
+                )
             };
+            if !has_plan_or_rebase_conflict_status {
+                let rebase_in_progress = self
+                    .worktree_ops
+                    .is_rebase_in_progress(&worktree_path)
+                    .await
+                    .unwrap_or(false);
+                if !rebase_in_progress {
+                    return Err(PLAN_REQUIRED_MESSAGE.to_owned());
+                }
+            }
 
             let prepared = tokio::task::spawn_blocking({
                 let relative_path = relative_path.clone();
@@ -4609,34 +4636,13 @@ Here is your task:
         session_id: &SessionId,
         edit_id: String,
     ) -> McpToolCallResponse {
-        let (worktree_path, pending_edit) = {
+        let (worktree_path, has_plan_or_rebase_conflict_status) = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let session = match sessions.get(session_id) {
                 Some(s) => s,
                 None => {
                     return McpToolCallResponse {
                         text: format!("session not found: {}", session_id.0),
-                        is_error: true,
-                        diffs: vec![],
-                    };
-                }
-            };
-            match Self::require_mate_plan(session) {
-                Ok(()) => {}
-                Err(e) => {
-                    return McpToolCallResponse {
-                        text: e,
-                        is_error: true,
-                        diffs: vec![],
-                    };
-                }
-            }
-            let pending_edit = match session.pending_edits.get(&edit_id).cloned() {
-                Some(e) => e,
-                None => {
-                    return McpToolCallResponse {
-                        text: "edit_id not found. It may have expired or been superseded."
-                            .to_owned(),
                         is_error: true,
                         diffs: vec![],
                     };
@@ -4652,7 +4658,45 @@ Here is your task:
                     };
                 }
             };
-            (worktree, pending_edit)
+            (worktree, Self::require_mate_plan(session).is_ok())
+        };
+        if !has_plan_or_rebase_conflict_status {
+            let rebase_in_progress = self
+                .worktree_ops
+                .is_rebase_in_progress(&worktree_path)
+                .await
+                .unwrap_or(false);
+            if !rebase_in_progress {
+                return McpToolCallResponse {
+                    text: PLAN_REQUIRED_MESSAGE.to_owned(),
+                    is_error: true,
+                    diffs: vec![],
+                };
+            }
+        }
+        let pending_edit = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = match sessions.get(session_id) {
+                Some(s) => s,
+                None => {
+                    return McpToolCallResponse {
+                        text: format!("session not found: {}", session_id.0),
+                        is_error: true,
+                        diffs: vec![],
+                    };
+                }
+            };
+            match session.pending_edits.get(&edit_id).cloned() {
+                Some(edit) => edit,
+                None => {
+                    return McpToolCallResponse {
+                        text: "edit_id not found. It may have expired or been superseded."
+                            .to_owned(),
+                        is_error: true,
+                        diffs: vec![],
+                    };
+                }
+            }
         };
 
         let confirmed_path = pending_edit.path.clone();
@@ -11276,6 +11320,53 @@ agent_presets {
         );
     }
 
+    #[tokio::test]
+    async fn mate_edit_tools_allow_rebase_conflict_resolution_without_plan() {
+        let _guard = lock_mate_tool_tests();
+        let (dir, ship, session_id, _project_root, worktree_path, _review_error) =
+            create_conflicted_rebase_session("mate-edit-tools-rebase-no-plan").await;
+
+        {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(&session_id).expect("session should exist");
+            let task = session.current_task.as_mut().expect("task should exist");
+            task.record.steps.clear();
+            super::transition_task(session, TaskStatus::ReviewPending)
+                .expect("task status should transition");
+        }
+
+        std::fs::write(worktree_path.join("tracked.txt"), "old value\n")
+            .expect("test file should be written");
+
+        let prepared = ship
+            .mate_tool_edit_prepare(
+                &session_id,
+                "tracked.txt".to_owned(),
+                "old value".to_owned(),
+                "new value".to_owned(),
+                None,
+            )
+            .await;
+        assert!(
+            !prepared.is_error,
+            "edit_prepare should succeed during rebase without plan: {}",
+            prepared.text
+        );
+        let edit_id = parse_edit_id(&prepared.text);
+
+        let confirmed = ship.mate_tool_edit_confirm(&session_id, edit_id).await;
+        assert!(
+            !confirmed.is_error,
+            "edit_confirm should succeed during rebase without plan: {}",
+            confirmed.text
+        );
+        let content = std::fs::read_to_string(worktree_path.join("tracked.txt"))
+            .expect("edited file should be readable");
+        assert_eq!(content, "new value\n");
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
     // r[verify mate.tool.plan-create]
     // r[verify mate.tool.plan-step-complete]
     #[tokio::test]
@@ -12208,6 +12299,44 @@ agent_presets {
         assert!(
             continue_error.contains("current: ReviewPending"),
             "unexpected continue error: {continue_error}"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn captain_continue_rebase_recovers_when_task_status_is_stale() {
+        let (dir, ship, session_id, _project_root, worktree_path, _review_error) =
+            create_conflicted_rebase_session("captain-continue-rebase-stale-status").await;
+
+        std::fs::write(worktree_path.join("tracked.txt"), "resolved content\n")
+            .expect("resolved file should be written");
+        git_succeeds(
+            &worktree_path,
+            &["add", "tracked.txt"],
+            "git add should mark the file resolved",
+        );
+
+        {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(&session_id).expect("session should exist");
+            super::transition_task(session, TaskStatus::ReviewPending)
+                .expect("status should be set to review pending");
+        }
+
+        let response = ship
+            .captain_tool_continue_rebase(&session_id)
+            .await
+            .expect("continue_rebase should recover stale task status");
+        assert_eq!(response, "Rebase completed; task accepted.");
+
+        let rebase_status = ship
+            .captain_tool_rebase_status(&session_id)
+            .await
+            .expect("rebase status should succeed");
+        assert!(
+            rebase_status.contains("Rebase in progress: no"),
+            "unexpected rebase status: {rebase_status}"
         );
 
         let _ = std::fs::remove_dir_all(dir);
