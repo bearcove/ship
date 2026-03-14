@@ -732,17 +732,29 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
             <X size={18} />
           </button>
         ) : text.trim().length > 0 ? (
-          <button
-            type="button"
-            className={composerInlineBtn}
-            data-pos="right"
-            data-variant="solid"
-            onClick={() => void handleSubmit()}
-            disabled={disableSubmit || loading}
-            title={submitLabel}
-          >
-            <ArrowUp size={20} weight="bold" />
-          </button>
+          <>
+            <button
+              type="button"
+              className={composerInlineBtn}
+              data-pos="right-2"
+              onClick={() => void transcription.startRecording()}
+              disabled={loading}
+              title="Voice input"
+            >
+              <Microphone size={20} />
+            </button>
+            <button
+              type="button"
+              className={composerInlineBtn}
+              data-pos="right"
+              data-variant="solid"
+              onClick={() => void handleSubmit()}
+              disabled={disableSubmit || loading}
+              title={submitLabel}
+            >
+              <ArrowUp size={20} weight="bold" />
+            </button>
+          </>
         ) : (
           <button
             type="button"
