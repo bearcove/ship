@@ -21,6 +21,7 @@ import type {
 import { planStepRow, planStepText, taskDescriptionRoot } from "../styles/session-view.css";
 import { monoFontStack } from "../styles/global.css";
 import { MarkdownCodeBlock } from "./blocks/TextBlock";
+import { fixMarkdownBackticks } from "../utils/fixMarkdownBackticks";
 
 function StepIcon({ status }: { status: PlanStepStatus }) {
   switch (status.tag) {
@@ -130,7 +131,7 @@ function TaskListItem({
               style={{ lineHeight: 1.35, flex: 1, minWidth: 0 }}
             >
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={titleMdComponents}>
-                {task.title}
+                {fixMarkdownBackticks(task.title)}
               </ReactMarkdown>
             </Text>
             <TaskStatusBadge status={task.status} />
@@ -158,7 +159,7 @@ function TaskListItem({
           >
             <div className={taskDescriptionRoot}>
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-                {task.description}
+                {fixMarkdownBackticks(task.description)}
               </ReactMarkdown>
             </div>
           </Box>
