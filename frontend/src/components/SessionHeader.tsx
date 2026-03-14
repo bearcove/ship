@@ -66,6 +66,7 @@ import {
   sessionSwitcherRowTitle,
   taskDescriptionRoot,
 } from "../styles/session-view.css";
+import type { ChecksState } from "../state/sessionReducer";
 import { NewSessionDialog } from "../pages/SessionListPage";
 import { useSessionList } from "../hooks/useSessionList";
 import { getShipClient } from "../api/client";
@@ -207,6 +208,7 @@ interface Props {
   diffStats: WorktreeDiffStats | null;
   onArchive: () => void;
   archiving: boolean;
+  checksState: ChecksState | null;
 }
 
 export function SessionHeader({
@@ -223,6 +225,7 @@ export function SessionHeader({
   diffStats,
   onArchive,
   archiving,
+  checksState,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
   const activePlan = useMemo(
@@ -359,6 +362,23 @@ export function SessionHeader({
                 </Text>
               </Flex>
               <Flex align="center" gap="2">
+                {checksState && (
+                  checksState.status === "running" ? (
+                    <Flex align="center" gap="1">
+                      <Spinner size="1" />
+                      <Text size="1" color="gray">Checks</Text>
+                    </Flex>
+                  ) : checksState.status === "passed" ? (
+                    <CheckCircle weight="fill" size={16} style={{ color: "var(--green-9)" }} />
+                  ) : (
+                    <Flex align="center" gap="1">
+                      <XCircle weight="fill" size={16} style={{ color: "var(--red-9)", flexShrink: 0 }} />
+                      <Text size="1" color="red" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {checksState.results.filter(r => !r.passed).map(r => r.name).join(", ")}
+                      </Text>
+                    </Flex>
+                  )
+                )}
                 {elapsedLabel && (
                   <Text size="1" color="gray" style={{ flexShrink: 0 }}>
                     {elapsedLabel}

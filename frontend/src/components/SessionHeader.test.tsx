@@ -19,7 +19,7 @@ const apiMocks = vi.hoisted(() => ({
   openInEditor: vi.fn(async () => undefined),
   openInTerminal: vi.fn(async () => undefined),
   navigate: vi.fn(),
-  onClientReady: vi.fn(() => () => {}),
+  onClientReady: vi.fn(() => () => { }),
 }));
 
 vi.mock("../api/client", () => ({
@@ -125,7 +125,8 @@ function renderHeader({
       planSteps={planSteps}
       matePlan={null}
       diffStats={null}
-      onArchive={() => {}}
+      checksState={null}
+      onArchive={() => { }}
       archiving={false}
     />,
   );
@@ -143,7 +144,7 @@ beforeEach(() => {
   apiMocks.openInTerminal.mockResolvedValue(undefined);
   apiMocks.navigate.mockReset();
   apiMocks.onClientReady.mockReset();
-  apiMocks.onClientReady.mockReturnValue(() => {});
+  apiMocks.onClientReady.mockReturnValue(() => { });
 });
 
 describe("SessionHeader", () => {
