@@ -5763,6 +5763,45 @@ Here is your task:
         }
     }
 
+    async fn apply_startup_target_models(
+        &self,
+        session_id: &SessionId,
+        captain_failure_stage: SessionStartupStage,
+        captain_handle: &ship_core::AgentHandle,
+        captain_spawn_model_id: Option<String>,
+        captain_target_model_id: Option<String>,
+        mate_handle: &ship_core::AgentHandle,
+        mate_spawn_model_id: Option<String>,
+        mate_target_model_id: Option<String>,
+    ) -> Result<(Option<String>, Option<String>), ()> {
+        if let Some(target_model_id) = captain_target_model_id.as_deref()
+            && captain_spawn_model_id.as_deref() != Some(target_model_id)
+            && let Err(error) = self.agent_set_model(captain_handle, target_model_id).await
+        {
+            let _ = self.agent_driver.kill(captain_handle).await;
+            let _ = self.agent_driver.kill(mate_handle).await;
+            self.fail_startup(session_id, captain_failure_stage, error.message)
+                .await;
+            return Err(());
+        }
+
+        if let Some(target_model_id) = mate_target_model_id.as_deref()
+            && mate_spawn_model_id.as_deref() != Some(target_model_id)
+            && let Err(error) = self.agent_set_model(mate_handle, target_model_id).await
+        {
+            let _ = self.agent_driver.kill(captain_handle).await;
+            let _ = self.agent_driver.kill(mate_handle).await;
+            self.fail_startup(session_id, SessionStartupStage::StartingMate, error.message)
+                .await;
+            return Err(());
+        }
+
+        Ok((
+            captain_target_model_id.or(captain_spawn_model_id),
+            mate_target_model_id.or(mate_spawn_model_id),
+        ))
+    }
+
     async fn start_session_runtime(&self, session_id: SessionId) {
         let stage = SessionStartupStage::ResolvingMcp;
         let _ = self.set_startup_stage(&session_id, stage).await;
@@ -5924,37 +5963,22 @@ Here is your task:
             }
         };
 
-        if let Some(target_model_id) = captain_target_model_id.as_deref()
-            && captain_spawn.model_id.as_deref() != Some(target_model_id)
-            && let Err(error) = self
-                .agent_set_model(&captain_spawn.handle, target_model_id)
-                .await
-        {
-            let _ = self.agent_driver.kill(&captain_spawn.handle).await;
-            let _ = self.agent_driver.kill(&mate_spawn.handle).await;
-            self.fail_startup(&session_id, stage, error.message).await;
-            return;
-        }
-
-        if let Some(target_model_id) = mate_target_model_id.as_deref()
-            && mate_spawn.model_id.as_deref() != Some(target_model_id)
-            && let Err(error) = self
-                .agent_set_model(&mate_spawn.handle, target_model_id)
-                .await
-        {
-            let _ = self.agent_driver.kill(&captain_spawn.handle).await;
-            let _ = self.agent_driver.kill(&mate_spawn.handle).await;
-            self.fail_startup(
+        let (captain_model_id, mate_model_id) = match self
+            .apply_startup_target_models(
                 &session_id,
-                SessionStartupStage::StartingMate,
-                error.message,
+                stage,
+                &captain_spawn.handle,
+                captain_spawn.model_id.clone(),
+                captain_target_model_id,
+                &mate_spawn.handle,
+                mate_spawn.model_id.clone(),
+                mate_target_model_id,
             )
-            .await;
-            return;
-        }
-
-        let captain_model_id = captain_target_model_id.or(captain_spawn.model_id.clone());
-        let mate_model_id = mate_target_model_id.or(mate_spawn.model_id.clone());
+            .await
+        {
+            Ok(model_ids) => model_ids,
+            Err(()) => return,
+        };
 
         let captain_acp_info = AgentAcpInfo {
             acp_session_id: captain_spawn.acp_session_id.clone(),
@@ -10394,6 +10418,380 @@ mod tests {
                 env: Vec::new(),
             })]
         );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn create_session_with_preset_ids_derives_kinds_and_metadata() {
+        let dir = make_temp_dir("create-session-with-preset-ids");
+        let config_dir = dir.join("config");
+        let project_root = dir.join("project");
+        std::fs::create_dir_all(project_root.join(".ship")).expect("project ship dir should exist");
+
+        let mut registry = ProjectRegistry::load_in(config_dir)
+            .await
+            .expect("project registry should load");
+        registry
+            .add(&project_root)
+            .await
+            .expect("project should be added");
+
+        write_agent_preset_config(
+            &dir,
+            r#"
+agent_presets {
+    presets (
+        {id captain::gpt-5, label "Captain GPT-5", kind @Codex, provider openai, model_id gpt-5}
+        {id mate::sonnet, label "Mate Sonnet", kind @Claude, provider anthropic, model_id claude-sonnet-4}
+    )
+}
+"#,
+        );
+
+        let ship = ShipImpl::new(
+            registry,
+            dir.join("sessions"),
+            AgentDiscovery {
+                claude: true,
+                codex: true,
+                opencode: false,
+            },
+        );
+
+        let response = Ship::create_session(
+            &ship,
+            CreateSessionRequest {
+                project: ProjectName("project".to_owned()),
+                captain_kind: AgentKind::Claude,
+                mate_kind: AgentKind::Codex,
+                captain_preset_id: Some(AgentPresetId("captain::gpt-5".to_owned())),
+                mate_preset_id: Some(AgentPresetId("mate::sonnet".to_owned())),
+                base_branch: "main".to_owned(),
+                mcp_servers: None,
+            },
+        )
+        .await;
+
+        let session_id = match response {
+            CreateSessionResponse::Created { session_id, .. } => session_id,
+            CreateSessionResponse::Failed { message } => {
+                panic!("create session should succeed: {message}")
+            }
+        };
+
+        let persisted = ship
+            .store
+            .load_session(&session_id)
+            .await
+            .expect("session store should load")
+            .expect("session should be persisted");
+
+        assert_eq!(persisted.config.captain_kind, AgentKind::Codex);
+        assert_eq!(persisted.config.mate_kind, AgentKind::Claude);
+        assert_eq!(
+            persisted.config.captain_preset_id,
+            Some(AgentPresetId("captain::gpt-5".to_owned()))
+        );
+        assert_eq!(
+            persisted.config.mate_preset_id,
+            Some(AgentPresetId("mate::sonnet".to_owned()))
+        );
+        assert_eq!(
+            persisted.config.captain_provider,
+            Some(ship_types::AgentProviderId("openai".to_owned()))
+        );
+        assert_eq!(
+            persisted.config.mate_provider,
+            Some(ship_types::AgentProviderId("anthropic".to_owned()))
+        );
+        assert_eq!(persisted.config.captain_model_id.as_deref(), Some("gpt-5"));
+        assert_eq!(
+            persisted.config.mate_model_id.as_deref(),
+            Some("claude-sonnet-4")
+        );
+        assert_eq!(persisted.captain.kind, AgentKind::Codex);
+        assert_eq!(persisted.mate.kind, AgentKind::Claude);
+        assert_eq!(
+            persisted.captain.preset_id,
+            Some(AgentPresetId("captain::gpt-5".to_owned()))
+        );
+        assert_eq!(
+            persisted.mate.preset_id,
+            Some(AgentPresetId("mate::sonnet".to_owned()))
+        );
+        assert_eq!(persisted.captain.model_id.as_deref(), Some("gpt-5"));
+        assert_eq!(persisted.mate.model_id.as_deref(), Some("claude-sonnet-4"));
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn create_session_with_unknown_preset_id_returns_failed() {
+        let dir = make_temp_dir("create-session-unknown-preset");
+        let config_dir = dir.join("config");
+        let project_root = dir.join("project");
+        std::fs::create_dir_all(project_root.join(".ship")).expect("project ship dir should exist");
+
+        let mut registry = ProjectRegistry::load_in(config_dir)
+            .await
+            .expect("project registry should load");
+        registry
+            .add(&project_root)
+            .await
+            .expect("project should be added");
+
+        write_agent_preset_config(
+            &dir,
+            r#"
+agent_presets {
+    presets (
+        {id known::preset, label "Known", kind @Claude, provider anthropic, model_id claude-sonnet-4}
+    )
+}
+"#,
+        );
+
+        let ship = ShipImpl::new(
+            registry,
+            dir.join("sessions"),
+            AgentDiscovery {
+                claude: true,
+                codex: true,
+                opencode: false,
+            },
+        );
+
+        let response = Ship::create_session(
+            &ship,
+            CreateSessionRequest {
+                project: ProjectName("project".to_owned()),
+                captain_kind: AgentKind::Claude,
+                mate_kind: AgentKind::Codex,
+                captain_preset_id: Some(AgentPresetId("missing::preset".to_owned())),
+                mate_preset_id: None,
+                base_branch: "main".to_owned(),
+                mcp_servers: None,
+            },
+        )
+        .await;
+
+        assert_eq!(
+            response,
+            CreateSessionResponse::Failed {
+                message: "captain preset not found: missing::preset".to_owned()
+            }
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn create_session_startup_applies_configured_preset_models() {
+        let _guard = lock_fake_agent_driver_tests();
+        let fake_driver = FakeAgentDriver::default();
+        let _driver_guard = TestAgentDriverGuard::set(fake_driver.clone());
+
+        let dir = make_temp_dir("create-session-startup-preset-models");
+        let config_dir = dir.join("config");
+        let project_root = dir.join("project");
+        std::fs::create_dir_all(project_root.join(".ship")).expect("project ship dir should exist");
+        init_git_repo(&project_root);
+        std::fs::write(project_root.join("README.md"), "base\n")
+            .expect("base file should be written");
+        git_succeeds(&project_root, &["add", "."], "git add should succeed");
+        git_succeeds(
+            &project_root,
+            &["commit", "-m", "initial"],
+            "git commit should succeed",
+        );
+
+        let mut registry = ProjectRegistry::load_in(config_dir)
+            .await
+            .expect("project registry should load");
+        registry
+            .add(&project_root)
+            .await
+            .expect("project should be added");
+
+        write_agent_preset_config(
+            &dir,
+            r#"
+agent_presets {
+    presets (
+        {id captain::gpt-5, label "Captain GPT-5", kind @Codex, provider openai, model_id gpt-5}
+        {id mate::sonnet, label "Mate Sonnet", kind @Claude, provider anthropic, model_id claude-sonnet-4}
+    )
+}
+"#,
+        );
+
+        let ship = ShipImpl::new(
+            registry,
+            dir.join("sessions"),
+            AgentDiscovery {
+                claude: true,
+                codex: true,
+                opencode: false,
+            },
+        );
+        ship.set_server_ws_url("ws://127.0.0.1:9140/ws");
+
+        let response = Ship::create_session(
+            &ship,
+            CreateSessionRequest {
+                project: ProjectName("project".to_owned()),
+                captain_kind: AgentKind::Claude,
+                mate_kind: AgentKind::Claude,
+                captain_preset_id: Some(AgentPresetId("captain::gpt-5".to_owned())),
+                mate_preset_id: Some(AgentPresetId("mate::sonnet".to_owned())),
+                base_branch: "main".to_owned(),
+                mcp_servers: None,
+            },
+        )
+        .await;
+
+        let session_id = match response {
+            CreateSessionResponse::Created { session_id, .. } => session_id,
+            CreateSessionResponse::Failed { message } => {
+                panic!("create session should succeed: {message}")
+            }
+        };
+
+        timeout(Duration::from_secs(1), async {
+            loop {
+                let ready = {
+                    let sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+                    let session = sessions.get(&session_id).expect("session should exist");
+                    session.startup_state == SessionStartupState::Ready
+                };
+                if ready && fake_driver.model_set_log().len() >= 2 {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("startup should complete");
+
+        let model_sets = fake_driver.model_set_log();
+        assert_eq!(model_sets.len(), 2);
+        assert_eq!(model_sets[0].1, "gpt-5".to_owned());
+        assert_eq!(model_sets[1].1, "claude-sonnet-4".to_owned());
+
+        let detail = Ship::get_session(&ship, session_id).await;
+        assert_eq!(detail.captain.model_id.as_deref(), Some("gpt-5"));
+        assert_eq!(detail.mate.model_id.as_deref(), Some("claude-sonnet-4"));
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn apply_startup_target_models_applies_targets_and_keeps_spawn_defaults() {
+        let _guard = lock_fake_agent_driver_tests();
+        let fake_driver = FakeAgentDriver::default();
+        let _driver_guard = TestAgentDriverGuard::set(fake_driver.clone());
+
+        let (dir, ship, session_id) = create_ready_session_for_assign_test(
+            "startup-target-model-helper-success",
+            "helper-success",
+        )
+        .await;
+
+        let captain_handle = attach_fake_agent_handle(
+            &ship,
+            &session_id,
+            Role::Captain,
+            AgentKind::Claude,
+            &fake_driver,
+        )
+        .await;
+        let mate_handle = attach_fake_agent_handle(
+            &ship,
+            &session_id,
+            Role::Mate,
+            AgentKind::Codex,
+            &fake_driver,
+        )
+        .await;
+
+        let result = ship
+            .apply_startup_target_models(
+                &session_id,
+                SessionStartupStage::StartingCaptain,
+                &captain_handle,
+                Some("captain-spawn".to_owned()),
+                Some("captain-target".to_owned()),
+                &mate_handle,
+                Some("mate-spawn".to_owned()),
+                None,
+            )
+            .await;
+
+        assert_eq!(
+            result,
+            Ok((
+                Some("captain-target".to_owned()),
+                Some("mate-spawn".to_owned())
+            ))
+        );
+        assert_eq!(
+            fake_driver.model_set_log(),
+            vec![(captain_handle, "captain-target".to_owned())]
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn apply_startup_target_models_failure_marks_startup_failed() {
+        let (dir, ship, session_id) = create_ready_session_for_assign_test(
+            "startup-target-model-helper-failure",
+            "helper-failure",
+        )
+        .await;
+
+        let fake_driver = FakeAgentDriver::default();
+        let captain_handle = attach_fake_agent_handle(
+            &ship,
+            &session_id,
+            Role::Captain,
+            AgentKind::Claude,
+            &fake_driver,
+        )
+        .await;
+        let mate_handle = attach_fake_agent_handle(
+            &ship,
+            &session_id,
+            Role::Mate,
+            AgentKind::Codex,
+            &fake_driver,
+        )
+        .await;
+
+        let result = ship
+            .apply_startup_target_models(
+                &session_id,
+                SessionStartupStage::StartingCaptain,
+                &captain_handle,
+                None,
+                Some("captain-target".to_owned()),
+                &mate_handle,
+                None,
+                Some("mate-target".to_owned()),
+            )
+            .await;
+
+        assert_eq!(result, Err(()));
+
+        let detail = Ship::get_session(&ship, session_id).await;
+        assert!(matches!(
+            detail.startup_state,
+            SessionStartupState::Failed {
+                stage: SessionStartupStage::StartingCaptain,
+                ..
+            }
+        ));
 
         let _ = std::fs::remove_dir_all(dir);
     }
