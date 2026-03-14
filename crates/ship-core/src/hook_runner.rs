@@ -113,6 +113,7 @@ pub async fn run_hooks(
     let mut join_set = JoinSet::new();
 
     for hook in hooks {
+        #[allow(clippy::collapsible_if)]
         if !hook.glob.is_empty() {
             if let Some(ref files) = changed_files {
                 if !any_file_matches(&hook.glob, files) {

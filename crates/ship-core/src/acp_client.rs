@@ -229,6 +229,7 @@ impl ShipAcpClient {
             map_tool_call_contents(&self.worktree_path, &self.terminals, &tool_call.content);
 
         // Extract diffs from raw_output (injected by mate MCP server via structured_content)
+        #[allow(clippy::collapsible_if)]
         if let Some(raw) = &tool_call.raw_output {
             if let Some(diffs) = raw.get("diffs").and_then(|v| v.as_array()) {
                 for diff in diffs {

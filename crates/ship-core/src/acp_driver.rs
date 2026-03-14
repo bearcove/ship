@@ -749,6 +749,7 @@ fn parse_effort_from_config_options(
         SessionConfigKind, SessionConfigOptionCategory, SessionConfigSelectOptions,
     };
     for option in config_options {
+        #[allow(clippy::collapsible_if)]
         if matches!(
             option.category,
             Some(SessionConfigOptionCategory::ThoughtLevel)

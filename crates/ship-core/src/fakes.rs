@@ -649,6 +649,7 @@ impl WorktreeOps for FakeWorktreeOps {
 
     async fn rebase_continue(&self, worktree_path: &Path) -> Result<RebaseOutcome, WorktreeError> {
         let mut inner = self.inner.lock().expect("fake worktree ops mutex poisoned");
+        #[allow(clippy::collapsible_if)]
         if let Some(files) = inner.unmerged_paths.get(worktree_path).cloned() {
             if !files.is_empty() {
                 return Ok(RebaseOutcome::Conflict { files });
