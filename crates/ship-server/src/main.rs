@@ -21,12 +21,12 @@ use axum::routing::any;
 use figue::{self as args, FigueBuiltins};
 use futures_util::{SinkExt, StreamExt};
 use roam::channel;
-use ship_core::ProjectRegistry;
+use ship_core::{AgentDriver, AgentSessionConfig, ProjectRegistry};
 use ship_impl::ShipImpl;
 use ship_service::{ShipClient, ShipDispatcher};
 use ship_types::{
-    AgentKind, CreateSessionRequest, CreateSessionResponse, PromptContentPart, SessionEvent,
-    SessionId, SessionStartupState, SubscribeMessage,
+    AgentDiscovery, AgentKind, CreateSessionRequest, CreateSessionResponse, PromptContentPart,
+    Role, SessionEvent, SessionId, SessionStartupState, SubscribeMessage,
 };
 use tokio::time::{sleep, timeout};
 use tower::ServiceExt;
@@ -80,6 +80,9 @@ enum Command {
 
     /// Synthesize speech and write raw 24kHz mono f32-LE PCM to stdout.
     Speak(SpeakArgs),
+
+    /// List available ACP model ids for installed agents.
+    Models(ListModelsArgs),
 }
 
 #[derive(Debug, facet::Facet)]
@@ -163,6 +166,17 @@ struct SpeakArgs {
 }
 
 #[derive(Debug, facet::Facet)]
+struct ListModelsArgs {
+    /// Agent kind to inspect. If omitted, probe all discovered installed kinds.
+    #[facet(args::named, default)]
+    kind: Option<AgentKind>,
+
+    /// Worktree path used when creating temporary ACP sessions.
+    #[facet(args::named, default)]
+    worktree: Option<String>,
+}
+
+#[derive(Debug, facet::Facet)]
 struct ProjectAddArgs {
     /// Path to repository.
     #[facet(args::positional)]
@@ -215,6 +229,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Command::Probe(args) => run_probe(args).await,
         Command::Listen(args) => run_listen(args).await,
         Command::Speak(args) => run_speak(args).await,
+        Command::Models(args) => run_list_models(args).await,
     }
 }
 
@@ -1283,6 +1298,65 @@ async fn shutdown_signal() {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ModelListing {
+    kind: AgentKind,
+    models: Vec<String>,
+}
+
+fn installed_agent_kinds(discovery: &AgentDiscovery) -> Vec<AgentKind> {
+    let mut kinds = Vec::new();
+    if discovery.claude {
+        kinds.push(AgentKind::Claude);
+    }
+    if discovery.codex {
+        kinds.push(AgentKind::Codex);
+    }
+    if discovery.opencode {
+        kinds.push(AgentKind::OpenCode);
+    }
+    kinds
+}
+
+fn resolve_list_models_kinds(
+    discovery: &AgentDiscovery,
+    requested_kind: Option<AgentKind>,
+) -> Result<Vec<AgentKind>, String> {
+    match requested_kind {
+        Some(kind) => {
+            if installed_agent_kinds(discovery).contains(&kind) {
+                Ok(vec![kind])
+            } else {
+                Err(format!(
+                    "{kind:?} is not installed or not discoverable on PATH"
+                ))
+            }
+        }
+        None => {
+            let kinds = installed_agent_kinds(discovery);
+            if kinds.is_empty() {
+                Err("no supported ACP agents were discovered on PATH".to_owned())
+            } else {
+                Ok(kinds)
+            }
+        }
+    }
+}
+
+async fn run_list_models(args: ListModelsArgs) -> Result<(), Box<dyn std::error::Error>> {
+    let discovery = discover_agents(&SystemBinaryPathProbe);
+    let worktree_path = match args.worktree {
+        Some(path) => PathBuf::from(path),
+        None => std::env::current_dir()?,
+    };
+    let kinds = resolve_list_models_kinds(&discovery, args.kind)?;
+
+    let _ = worktree_path;
+    let _ = kinds;
+
+    Err("models command not implemented yet".into())
+}
+
 async fn run_speak(args: SpeakArgs) -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env().add_directive(Level::INFO.into()))
@@ -1502,9 +1576,11 @@ mod tests {
 
     use axum::http::Method;
 
+    use ship_types::{AgentDiscovery, AgentKind};
+
     use super::{
-        FrontendMode, build_frontend_mode, ensure_ship_entry_for_project, resolve_listen_addrs,
-        should_spa_fallback,
+        FrontendMode, build_frontend_mode, ensure_ship_entry_for_project,
+        resolve_list_models_kinds, resolve_listen_addrs, should_spa_fallback,
     };
 
     static SHIP_LISTEN_ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
@@ -1629,6 +1705,36 @@ mod tests {
         assert!(should_spa_fallback(&Method::HEAD, "/"));
         assert!(!should_spa_fallback(&Method::GET, "/assets/app.js"));
         assert!(!should_spa_fallback(&Method::POST, "/sessions/abc"));
+    }
+
+    #[test]
+    fn resolve_list_models_kinds_prefers_requested_kind_when_installed() {
+        let kinds = resolve_list_models_kinds(
+            &AgentDiscovery {
+                claude: true,
+                codex: false,
+                opencode: true,
+            },
+            Some(AgentKind::OpenCode),
+        )
+        .expect("requested installed kind should resolve");
+
+        assert_eq!(kinds, vec![AgentKind::OpenCode]);
+    }
+
+    #[test]
+    fn resolve_list_models_kinds_returns_all_installed_kinds_by_default() {
+        let kinds = resolve_list_models_kinds(
+            &AgentDiscovery {
+                claude: true,
+                codex: true,
+                opencode: false,
+            },
+            None,
+        )
+        .expect("installed kinds should resolve");
+
+        assert_eq!(kinds, vec![AgentKind::Claude, AgentKind::Codex]);
     }
 
     // r[verify server.listen]
