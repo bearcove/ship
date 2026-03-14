@@ -709,6 +709,8 @@ impl ShipImpl {
             SessionEvent::HumanReviewCleared => "HumanReviewCleared",
             SessionEvent::SessionTitleChanged { .. } => "SessionTitleChanged",
             SessionEvent::AgentAcpInfoChanged { .. } => "AgentAcpInfoChanged",
+            SessionEvent::ChecksStarted { .. } => "ChecksStarted",
+            SessionEvent::ChecksFinished { .. } => "ChecksFinished",
         }
     }
 
@@ -728,7 +730,9 @@ impl ShipImpl {
             | SessionEvent::HumanReviewRequested { .. }
             | SessionEvent::HumanReviewCleared
             | SessionEvent::SessionTitleChanged { .. }
-            | SessionEvent::AgentAcpInfoChanged { .. } => None,
+            | SessionEvent::AgentAcpInfoChanged { .. }
+            | SessionEvent::ChecksStarted { .. }
+            | SessionEvent::ChecksFinished { .. } => None,
         }
     }
 
@@ -748,7 +752,9 @@ impl ShipImpl {
             | SessionEvent::HumanReviewRequested { .. }
             | SessionEvent::HumanReviewCleared
             | SessionEvent::SessionTitleChanged { .. }
-            | SessionEvent::AgentAcpInfoChanged { .. } => None,
+            | SessionEvent::AgentAcpInfoChanged { .. }
+            | SessionEvent::ChecksStarted { .. }
+            | SessionEvent::ChecksFinished { .. } => None,
         }
     }
 
@@ -768,7 +774,9 @@ impl ShipImpl {
             | SessionEvent::HumanReviewRequested { .. }
             | SessionEvent::HumanReviewCleared
             | SessionEvent::SessionTitleChanged { .. }
-            | SessionEvent::AgentAcpInfoChanged { .. } => None,
+            | SessionEvent::AgentAcpInfoChanged { .. }
+            | SessionEvent::ChecksStarted { .. }
+            | SessionEvent::ChecksFinished { .. } => None,
         }
     }
 
@@ -1917,16 +1925,51 @@ Continue where you left off — wait for the human to give you direction."
         // Run checks before fast-forwarding into the base branch.
         if let Ok(hooks) = load_project_hooks(&repo_root).await {
             if !hooks.checks.is_empty() {
-                let worktree_path = {
+                let (worktree_path, events_tx) = {
                     let sessions = self.sessions.lock().expect("sessions mutex poisoned");
-                    sessions
-                        .get(session_id)
-                        .and_then(|s| s.worktree_path.clone())
+                    let s = sessions.get(session_id);
+                    (
+                        s.and_then(|s| s.worktree_path.clone()),
+                        s.map(|s| s.events_tx.clone()),
+                    )
                 };
                 if let Some(worktree_path) = worktree_path {
-                    run_hooks(&hooks.checks, &worktree_path)
-                        .await
-                        .map_err(|error| format!("checks failed:\n{error}"))?;
+                    let hook_names: Vec<String> =
+                        hooks.checks.iter().map(|h| h.name.clone()).collect();
+                    if let Some(ref tx) = events_tx {
+                        let _ = tx.send(SessionEventEnvelope {
+                            seq: 0,
+                            timestamp: chrono::Utc::now().to_rfc3339(),
+                            event: SessionEvent::ChecksStarted {
+                                context: "pre-merge".to_owned(),
+                                hooks: hook_names,
+                            },
+                        });
+                    }
+                    let (all_passed, results) = match run_hooks(&hooks.checks, &worktree_path).await
+                    {
+                        Ok(outcomes) => {
+                            (true, outcomes.iter().map(|o| o.to_check_result()).collect())
+                        }
+                        Err(ref error) => (
+                            false,
+                            error.outcomes.iter().map(|o| o.to_check_result()).collect(),
+                        ),
+                    };
+                    if let Some(ref tx) = events_tx {
+                        let _ = tx.send(SessionEventEnvelope {
+                            seq: 0,
+                            timestamp: chrono::Utc::now().to_rfc3339(),
+                            event: SessionEvent::ChecksFinished {
+                                context: "pre-merge".to_owned(),
+                                all_passed,
+                                results,
+                            },
+                        });
+                    }
+                    if !all_passed {
+                        return Err("checks failed — see session feed for details".to_owned());
+                    }
                 }
             }
         }
@@ -2683,9 +2726,42 @@ Here is your task:
         // Run checks before fast-forwarding into the base branch.
         if let Ok(hooks) = load_project_hooks(&repo_root).await {
             if !hooks.checks.is_empty() {
-                run_hooks(&hooks.checks, &worktree_path)
-                    .await
-                    .map_err(|error| format!("checks failed:\n{error}"))?;
+                let events_tx = {
+                    let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                    sessions.get(session_id).map(|s| s.events_tx.clone())
+                };
+                let hook_names: Vec<String> = hooks.checks.iter().map(|h| h.name.clone()).collect();
+                if let Some(ref tx) = events_tx {
+                    let _ = tx.send(SessionEventEnvelope {
+                        seq: 0,
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                        event: SessionEvent::ChecksStarted {
+                            context: "pre-merge".to_owned(),
+                            hooks: hook_names,
+                        },
+                    });
+                }
+                let (all_passed, results) = match run_hooks(&hooks.checks, &worktree_path).await {
+                    Ok(outcomes) => (true, outcomes.iter().map(|o| o.to_check_result()).collect()),
+                    Err(ref error) => (
+                        false,
+                        error.outcomes.iter().map(|o| o.to_check_result()).collect(),
+                    ),
+                };
+                if let Some(ref tx) = events_tx {
+                    let _ = tx.send(SessionEventEnvelope {
+                        seq: 0,
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                        event: SessionEvent::ChecksFinished {
+                            context: "pre-merge".to_owned(),
+                            all_passed,
+                            results,
+                        },
+                    });
+                }
+                if !all_passed {
+                    return Err("checks failed — see session feed for details".to_owned());
+                }
             }
         }
 
@@ -5426,7 +5502,7 @@ Here is your task:
         Self::rebase_worktree_on_base(&worktree_path, &base_branch).await;
 
         // Spawn checks in the background after rebase — don't block the mate.
-        // If any fail, notify via the session broadcast channel.
+        // Emit lifecycle events via the session broadcast channel.
         if commit.is_some() {
             if let Ok(hooks) = load_project_hooks(&repo_root).await {
                 if !hooks.checks.is_empty() {
@@ -5437,20 +5513,35 @@ Here is your task:
                     if let Some(events_tx) = events_tx {
                         let checks = hooks.checks;
                         let wt = worktree_path.clone();
+                        let hook_names: Vec<String> =
+                            checks.iter().map(|h| h.name.clone()).collect();
                         tokio::spawn(async move {
-                            if let Err(error) = run_hooks(&checks, &wt).await {
-                                let _ = events_tx.send(SessionEventEnvelope {
-                                    seq: 0,
-                                    timestamp: chrono::Utc::now().to_rfc3339(),
-                                    event: SessionEvent::BlockAppend {
-                                        block_id: BlockId::new(),
-                                        role: Role::Mate,
-                                        block: ContentBlock::Error {
-                                            message: format!("post-commit checks failed:\n{error}"),
-                                        },
-                                    },
-                                });
-                            }
+                            let _ = events_tx.send(SessionEventEnvelope {
+                                seq: 0,
+                                timestamp: chrono::Utc::now().to_rfc3339(),
+                                event: SessionEvent::ChecksStarted {
+                                    context: "post-commit".to_owned(),
+                                    hooks: hook_names,
+                                },
+                            });
+                            let (all_passed, results) = match run_hooks(&checks, &wt).await {
+                                Ok(outcomes) => {
+                                    (true, outcomes.iter().map(|o| o.to_check_result()).collect())
+                                }
+                                Err(error) => (
+                                    false,
+                                    error.outcomes.iter().map(|o| o.to_check_result()).collect(),
+                                ),
+                            };
+                            let _ = events_tx.send(SessionEventEnvelope {
+                                seq: 0,
+                                timestamp: chrono::Utc::now().to_rfc3339(),
+                                event: SessionEvent::ChecksFinished {
+                                    context: "post-commit".to_owned(),
+                                    all_passed,
+                                    results,
+                                },
+                            });
                         });
                     }
                 }

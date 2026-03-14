@@ -1454,6 +1454,9 @@ pub fn apply_event_to_materialized_state(session: &mut ActiveSession, event: &Se
             Role::Captain => session.captain_acp_info = Some(info.clone()),
             Role::Mate => session.mate_acp_info = Some(info.clone()),
         },
+        // Checks lifecycle events carry no materialized state — subscribers
+        // observe them via the live broadcast channel only.
+        SessionEvent::ChecksStarted { .. } | SessionEvent::ChecksFinished { .. } => {}
     }
 }
 

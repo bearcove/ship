@@ -673,6 +673,28 @@ pub mod events {
             role: Role,
             info: AgentAcpInfo,
         },
+        /// Project checks have started running.
+        ChecksStarted {
+            /// e.g. "post-commit", "pre-merge", "worktree-setup"
+            context: String,
+            /// Names of the hooks being run.
+            hooks: Vec<String>,
+        },
+        /// Project checks have finished.
+        ChecksFinished {
+            context: String,
+            all_passed: bool,
+            results: Vec<HookCheckResult>,
+        },
+    }
+
+    /// Outcome of a single hook within a checks run.
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct HookCheckResult {
+        pub name: String,
+        pub passed: bool,
+        /// Combined stdout/stderr — populated on failure, empty on success.
+        pub output: String,
     }
 
     // r[event.envelope]
@@ -1200,8 +1222,9 @@ pub use agent::{
 };
 pub use events::{
     ActivityEntry, ActivityKind, BlockPatch, CommitSummary, ContentBlock, GlobalEvent,
-    PermissionResolution, SessionEvent, SessionEventEnvelope, SubscribeMessage, TaskRecapStats,
-    TextSource, ToolCallContent, ToolCallLocation, ToolCallStatus, WorkflowMilestoneKind,
+    HookCheckResult, PermissionResolution, SessionEvent, SessionEventEnvelope, SubscribeMessage,
+    TaskRecapStats, TextSource, ToolCallContent, ToolCallLocation, ToolCallStatus,
+    WorkflowMilestoneKind,
 };
 pub use hooks::{HookDef, HookEntryConfig, HooksConfig, ProjectConfig, ResolvedHooks};
 pub use ids::{BlockId, ProjectName, SessionId, TaskId};

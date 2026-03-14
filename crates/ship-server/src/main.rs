@@ -526,6 +526,16 @@ fn log_message(started_at: Instant, message: &SubscribeMessage) {
                 SessionEvent::AgentAcpInfoChanged { role, .. } => {
                     format!("agent acp info changed role={role:?}")
                 }
+                SessionEvent::ChecksStarted { context, hooks } => {
+                    format!("checks started context={context:?} hooks={hooks:?}")
+                }
+                SessionEvent::ChecksFinished {
+                    context,
+                    all_passed,
+                    ..
+                } => {
+                    format!("checks finished context={context:?} all_passed={all_passed}")
+                }
             };
             println!(
                 "[probe +{:>5}ms] seq={} {}",

@@ -2,6 +2,8 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use ship_types::HookCheckResult;
+
 use globset::{Glob, GlobSetBuilder};
 use ship_types::HookDef;
 use tokio::process::Command;
@@ -24,6 +26,26 @@ pub struct HookOutcome {
 impl HookOutcome {
     pub fn failed(&self) -> bool {
         !self.success
+    }
+
+    pub fn to_check_result(&self) -> HookCheckResult {
+        let output = if self.success {
+            String::new()
+        } else {
+            let mut parts = Vec::new();
+            if !self.stdout.trim().is_empty() {
+                parts.push(self.stdout.trim().to_owned());
+            }
+            if !self.stderr.trim().is_empty() {
+                parts.push(self.stderr.trim().to_owned());
+            }
+            parts.join("\n")
+        };
+        HookCheckResult {
+            name: self.name.clone(),
+            passed: self.success,
+            output,
+        }
     }
 }
 
