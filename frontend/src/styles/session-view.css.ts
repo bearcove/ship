@@ -394,6 +394,12 @@ export const liveBubble = style({
   background: "var(--gray-a2)",
 });
 
+export const liveBubbleSlot = style({
+  minHeight: 52,
+  flexShrink: 0,
+  transition: "opacity 0.15s ease",
+});
+
 export const thinkingBubble = style({
   display: "inline-flex",
   alignItems: "center",
