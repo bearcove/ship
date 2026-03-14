@@ -294,14 +294,19 @@ export function SessionHeader({
         {/* Collapsed header: rows + side buttons */}
         <div className={sessionHeaderCollapsedArea} onClick={() => setExpanded((v) => !v)}>
           <div className={sessionHeaderRows}>
-            {/* Row 1: title only */}
+            {/* Row 1: title + caret */}
             <div className={sessionHeaderRow1}>
               <Text size="3" weight="medium" className={sessionHeaderTitle}>
                 {displayTitle}
               </Text>
+              {expanded ? (
+                <CaretDown size={11} className={sessionHeaderCaret} />
+              ) : (
+                <CaretRight size={11} className={sessionHeaderCaret} />
+              )}
             </div>
 
-            {/* Row 2: in-progress step + progress + diff badge + chevron */}
+            {/* Row 2: in-progress step + progress + diff badge */}
             <div className={sessionHeaderRow2}>
               <Flex align="center" gap="1" className={sessionHeaderRow2Title} style={{ minWidth: 0 }}>
                 {inProgressStep?.status.tag === "InProgress" && <Spinner size="1" flexShrink="0" />}
@@ -317,11 +322,6 @@ export function SessionHeader({
                 )}
                 {progressDots}
                 {diffBadge}
-                {expanded ? (
-                  <CaretDown size={11} className={sessionHeaderCaret} />
-                ) : (
-                  <CaretRight size={11} className={sessionHeaderCaret} />
-                )}
               </Flex>
             </div>
           </div>{/* end sessionHeaderRows */}
