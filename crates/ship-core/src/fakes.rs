@@ -700,7 +700,12 @@ impl WorktreeOps for FakeWorktreeOps {
         Ok(())
     }
 
-    async fn merge_ff_only(&self, _repo_root: &Path, _branch: &str) -> Result<(), WorktreeError> {
+    async fn merge_ff_only(
+        &self,
+        _repo_root: &Path,
+        _branch: &str,
+        _into_branch: &str,
+    ) -> Result<(), WorktreeError> {
         Ok(())
     }
 
