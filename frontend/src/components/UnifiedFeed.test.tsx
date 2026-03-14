@@ -2,6 +2,7 @@ import { fireEvent, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { ContentBlock } from "../generated/ship";
 import type { BlockEntry } from "../state/blockStore";
+import { feedRowAnimate } from "../styles/session-view.css";
 import { renderWithTheme } from "../test/render";
 import { UnifiedFeed } from "./UnifiedFeed";
 
@@ -30,8 +31,25 @@ function makeTaskRecapBlock(): Extract<ContentBlock, { tag: "TaskRecap" }> {
   };
 }
 
-function renderFeed(blocks: BlockEntry[]) {
-  return renderWithTheme(
+function makeTextBlock(text: string): Extract<ContentBlock, { tag: "Text" }> {
+  return {
+    tag: "Text",
+    text,
+    source: { tag: "AgentMessage" },
+  };
+}
+
+function makeTextEntry(blockId: string, text: string): BlockEntry {
+  return {
+    blockId,
+    role: { tag: "Captain" },
+    block: makeTextBlock(text),
+    timestamp: "2026-03-13T10:00:00Z",
+  };
+}
+
+function feedUi(blocks: BlockEntry[], loading = false) {
+  return (
     <UnifiedFeed
       sessionId="session-1"
       captain={null}
@@ -39,8 +57,13 @@ function renderFeed(blocks: BlockEntry[]) {
       blocks={blocks}
       startupState={null}
       taskCompletedDuration={null}
-    />,
+      loading={loading}
+    />
   );
+}
+
+function renderFeed(blocks: BlockEntry[], { loading = false }: { loading?: boolean } = {}) {
+  return renderWithTheme(feedUi(blocks, loading));
 }
 
 beforeEach(() => {
@@ -51,7 +74,7 @@ beforeEach(() => {
 
 // r[verify frontend.test.vitest]
 // r[verify frontend.test.rtl]
-describe("UnifiedFeed task recap", () => {
+describe("UnifiedFeed", () => {
   // r[verify view.session]
   it("renders accepted work as a phase-break boundary band instead of a muted system note", () => {
     renderFeed([
@@ -93,5 +116,42 @@ describe("UnifiedFeed task recap", () => {
     expect(diff).toHaveTextContent("+++ b/src/feed.tsx");
     expect(diff).toHaveTextContent("+export function Boundary() {}");
     expect(diff).not.toHaveStyle({ maxHeight: "16rem" });
+  });
+
+  it("does not animate replayed historical blocks while the feed is still loading", () => {
+    const replayedBlocks = [
+      makeTextEntry("history-1", "Historical block one"),
+      makeTextEntry("history-2", "Historical block two"),
+    ];
+    const { container, rerender } = renderFeed([], { loading: true });
+
+    expect(container.querySelectorAll(`.${feedRowAnimate}`)).toHaveLength(0);
+
+    rerender(feedUi(replayedBlocks, true));
+
+    expect(screen.getByText("Historical block one")).toBeInTheDocument();
+    expect(screen.getByText("Historical block two")).toBeInTheDocument();
+    expect(container.querySelectorAll(`.${feedRowAnimate}`)).toHaveLength(0);
+
+    rerender(feedUi(replayedBlocks, false));
+
+    expect(container.querySelectorAll(`.${feedRowAnimate}`)).toHaveLength(0);
+  });
+
+  it("animates only blocks appended after the feed becomes live", () => {
+    const replayedBlocks = [makeTextEntry("history-1", "Historical block")];
+    const liveBlock = makeTextEntry("live-1", "Fresh live block");
+    const { container, rerender } = renderFeed([], { loading: true });
+
+    rerender(feedUi(replayedBlocks, true));
+    rerender(feedUi(replayedBlocks, false));
+
+    expect(container.querySelectorAll(`.${feedRowAnimate}`)).toHaveLength(0);
+
+    rerender(feedUi([...replayedBlocks, liveBlock], false));
+
+    const animatedWrappers = Array.from(container.querySelectorAll(`.${feedRowAnimate}`));
+    expect(animatedWrappers).toHaveLength(1);
+    expect(animatedWrappers[0]).toHaveTextContent("Fresh live block");
   });
 });

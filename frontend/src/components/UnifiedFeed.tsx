@@ -774,13 +774,11 @@ export function UnifiedFeed({
     initialBlockIds.current = new Set(blocks.map((b) => b.blockId));
     prevSessionId.current = sessionId;
   }
-
-  useEffect(() => {
-    if (!loading) return;
+  if (loading) {
     for (const block of blocks) {
       initialBlockIds.current.add(block.blockId);
     }
-  }, [blocks, loading]);
+  }
 
   const humanMsgCount = blocks.filter(
     (b) => b.block.tag === "Text" && b.block.source.tag === "Human",
@@ -930,7 +928,7 @@ export function UnifiedFeed({
                   : seg.entry.role.tag === "Captain"
                     ? captain
                     : mate;
-            const animate = !initialBlockIds.current.has(seg.entry.blockId);
+            const animate = !loading && !initialBlockIds.current.has(seg.entry.blockId);
             const isTaskRecap = seg.entry.block.tag === "TaskRecap";
 
             // Gap detection: check if >2 minutes between previous and current segment
