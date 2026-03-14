@@ -495,6 +495,12 @@ export const appColCenter = style({
   borderLeft: "1px solid var(--gray-a5)",
   borderRight: "1px solid var(--gray-a5)",
   // boxShadow: "0 0 40px rgba(0, 0, 0, 0.08)",
+  "@media": {
+    "(max-width: 700px)": {
+      borderLeft: "none",
+      borderRight: "none",
+    },
+  },
 });
 
 export const appColRight = style({
