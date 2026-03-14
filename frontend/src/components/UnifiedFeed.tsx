@@ -784,6 +784,9 @@ const SingleBlock = memo(function SingleBlock({
   const isCaptain = role.tag === "Captain";
 
   function handleBubbleClick(event: React.MouseEvent) {
+    if ((event.nativeEvent as PointerEvent).pointerType !== "mouse") return;
+    const sel = window.getSelection();
+    if (sel && !sel.isCollapsed) return;
     event.stopPropagation();
     onSelectBlock(isSelected ? null : blockId);
   }
