@@ -114,7 +114,7 @@ export function useGlobalKeyboard(
             if (result.tag === "Archived") {
               const sessionId = currentSessionIdRef.current;
               if (sessionId) onSessionArchived?.(sessionId);
-              navigate("/");
+              navigate("/sessions/admiral");
             }
           })();
         } else {

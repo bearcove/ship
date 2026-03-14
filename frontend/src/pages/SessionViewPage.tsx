@@ -205,7 +205,7 @@ export function SessionViewPage({
             size="2"
             color="blue"
             style={{ cursor: "pointer", textDecoration: "underline" }}
-            onClick={() => navigate("/")}
+            onClick={() => navigate("/sessions/admiral")}
           >
             Back to sessions
           </Text>
@@ -306,7 +306,7 @@ export function SessionViewPage({
         setArchiveConfirm(null);
         onArchived?.();
         await refreshSessionList();
-        navigate("/");
+        navigate("/sessions/admiral");
       } else if (result.tag === "RequiresConfirmation") {
         setArchiveConfirm(result.unmerged_commits);
       }
