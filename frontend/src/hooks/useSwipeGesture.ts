@@ -1,13 +1,12 @@
-import { useEffect, type RefObject } from "react";
+import { useEffect } from "react";
 
 type SwipeDirection = "left" | "right";
 
 export function useSwipeGesture(
-  ref: RefObject<HTMLElement | null>,
+  el: HTMLElement | null,
   onSwipe: (direction: SwipeDirection) => void,
 ): void {
   useEffect(() => {
-    const el = ref.current;
     if (!el) return;
 
     let startX = 0;
@@ -52,5 +51,5 @@ export function useSwipeGesture(
       el.removeEventListener("touchmove", onTouchMove);
       el.removeEventListener("touchend", onTouchEnd);
     };
-  }, [ref, onSwipe]);
+  }, [el, onSwipe]);
 }
