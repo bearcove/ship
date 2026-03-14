@@ -670,13 +670,18 @@ impl ShipImpl {
                 .current_task
                 .as_ref()
                 .map(|task| task.record.description.clone()),
-            task_status: session.current_task.as_ref().map(|task| task.record.status),
+            task_status: if session.pending_human_review.is_some() {
+                Some(TaskStatus::WaitingForHuman)
+            } else {
+                session.current_task.as_ref().map(|task| task.record.status)
+            },
             diff_stats: session.diff_stats.clone(),
             tasks_done,
             tasks_total,
             autonomy_mode: session.config.autonomy_mode,
             created_at: session.created_at.clone(),
             is_admiral: false,
+            is_read: session.is_read,
         }
     }
 
