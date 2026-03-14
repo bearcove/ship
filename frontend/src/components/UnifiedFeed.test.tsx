@@ -54,6 +54,8 @@ function makeWorkflowMilestoneBlock(
       items: isRebaseConflict
         ? ["Resolve conflicts in frontend/src/components/UnifiedFeed.tsx"]
         : ["Commit: abc1234", "Diff: 1 file changed, 1 insertion(+)"],
+      commits: [],
+      stats: null,
     };
   }
 
@@ -63,6 +65,8 @@ function makeWorkflowMilestoneBlock(
     title: "Checkpoint committed",
     summary: "Completed step 1: Set up types",
     items: ["Commit: abc1234", "Diff: 1 file changed, 1 insertion(+)"],
+    commits: [],
+    stats: null,
     ...input,
   };
 }
