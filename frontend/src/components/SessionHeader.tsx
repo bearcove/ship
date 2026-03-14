@@ -357,12 +357,16 @@ export function SessionHeader({
               <Terminal size={sideButtonSize} />
             </Button>
             <Popover.Root open={switcherOpen} onOpenChange={setSwitcherOpen}>
-              <Popover.Trigger
-                className={sessionHeaderSideButton}
-                aria-label="Switch session"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <ChatsCircle size={sideButtonSize} />
+              <Popover.Trigger asChild>
+                <Button
+                  variant="ghost"
+                  color="gray"
+                  className={sessionHeaderSideButton}
+                  aria-label="Switch session"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <ChatsCircle size={sideButtonSize} />
+                </Button>
               </Popover.Trigger>
               <Popover.Content align="end" size="1" style={{ padding: "var(--space-1)" }}>
                 <Flex
