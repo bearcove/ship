@@ -539,6 +539,13 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
   const isRecording = isTargetSession && transcription.state.tag === "recording";
   const isProcessing = isTargetSession && transcription.state.tag === "processing";
   const isTranscriptionError = isTargetSession && transcription.state.tag === "error";
+
+  // Auto-dismiss transcription errors after 5 seconds
+  useEffect(() => {
+    if (!isTranscriptionError) return;
+    const timer = setTimeout(() => transcription.dismissError(), 5000);
+    return () => clearTimeout(timer);
+  }, [isTranscriptionError, transcription.dismissError]);
   const isWorking = captainStateTag === "Working" || mateStateTag === "Working";
   const hasAgentStateChips = [captain, mate].some((agent) => {
     if (!agent) return false;
