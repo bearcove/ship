@@ -15,7 +15,7 @@ use agent_discovery::{SystemBinaryPathProbe, discover_agents};
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::extract::{Request, State};
-use axum::http::{HeaderName, HeaderValue, StatusCode, header};
+use axum::http::{HeaderName, HeaderValue, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::any;
 use figue::{self as args, FigueBuiltins};
@@ -29,6 +29,8 @@ use ship_types::{
     SessionId, SessionStartupState, SubscribeMessage,
 };
 use tokio::time::{sleep, timeout};
+use tower::ServiceExt;
+use tower_http::services::{ServeDir, ServeFile};
 use tracing::Level;
 use tracing_subscriber::EnvFilter;
 
@@ -54,7 +56,7 @@ struct Args {
 #[derive(Debug, facet::Facet)]
 #[repr(u8)]
 enum Command {
-    /// Start the Ship server.
+    /// Start the Ship server. By default it serves built frontend assets; pass --dev for Vite.
     Serve(ServeArgs),
 
     /// Run the captain MCP stdio server.
@@ -116,6 +118,10 @@ struct ServeArgs {
     /// HTTP listen address (for example: `[::1]:9140`).
     #[facet(args::named, default)]
     listen: Option<String>,
+
+    /// Use the Vite dev server proxy instead of serving built frontend assets.
+    #[facet(args::named, default)]
+    dev: bool,
 }
 
 #[derive(Debug, facet::Facet)]
@@ -170,11 +176,17 @@ struct ProjectRemoveArgs {
     name: String,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 enum FrontendMode {
+    // vite_addr: loopback socket used to reach the Vite dev server
     // vite_origin: loopback URL used by Axum to proxy HTTP requests to Vite
-    // vite_port: Vite's port, used for WebSocket proxy (HMR)
-    DevProxy { vite_origin: String, vite_port: u16 },
+    DevProxy {
+        vite_addr: SocketAddr,
+        vite_origin: String,
+    },
+    Static {
+        dist_dir: PathBuf,
+    },
 }
 
 #[tokio::main]
@@ -521,12 +533,16 @@ async fn run_serve(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let listen_addrs = resolve_listen_addrs(args.listen)?;
-    let vite_addr = resolve_vite_addr()?;
-    // r[dev-proxy.vite-lifecycle]
-    let _vite_process = spawn_vite_dev_server(vite_addr).await?;
-    wait_for_tcp_readiness(vite_addr, Duration::from_secs(10)).await?;
-
-    let frontend_mode = load_frontend_mode(vite_addr);
+    let frontend_mode = resolve_frontend_mode(args.dev)?;
+    let _vite_process = match &frontend_mode {
+        // r[dev-proxy.vite-lifecycle]
+        FrontendMode::DevProxy { vite_addr, .. } => {
+            let vite_process = spawn_vite_dev_server(*vite_addr).await?;
+            wait_for_tcp_readiness(*vite_addr, Duration::from_secs(10)).await?;
+            Some(vite_process)
+        }
+        FrontendMode::Static { .. } => None,
+    };
     let agent_discovery = discover_agents(&SystemBinaryPathProbe);
     // r[server.config-dir]
     let mut project_registry = ProjectRegistry::load_default().await?;
@@ -560,7 +576,7 @@ async fn run_serve(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
     let app = Router::new()
         // r[backend.rpc]
         .route("/ws", any(ws_handler))
-        .fallback(proxy_vite_handler)
+        .fallback(frontend_handler)
         .with_state(state);
 
     // Bind a listener on every resolved address.
@@ -709,19 +725,49 @@ fn resolve_vite_addr() -> Result<SocketAddr, Box<dyn std::error::Error>> {
     Ok(vite_addr.parse::<SocketAddr>()?)
 }
 
-// r[server.mode]
-fn load_frontend_mode(vite_addr: SocketAddr) -> FrontendMode {
-    let vite_origin = format!("http://{vite_addr}");
-    FrontendMode::DevProxy {
-        vite_origin,
-        vite_port: vite_addr.port(),
+fn frontend_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../frontend")
+}
+
+fn frontend_dist_dir() -> PathBuf {
+    frontend_dir().join("dist")
+}
+
+fn build_frontend_mode(
+    dev: bool,
+    vite_addr: SocketAddr,
+    dist_dir: PathBuf,
+) -> Result<FrontendMode, String> {
+    if dev {
+        let vite_origin = format!("http://{vite_addr}");
+        return Ok(FrontendMode::DevProxy {
+            vite_addr,
+            vite_origin,
+        });
     }
+
+    let index_path = dist_dir.join("index.html");
+    if !dist_dir.is_dir() || !index_path.is_file() {
+        return Err(format!(
+            "frontend build artifacts not found at {}; build the frontend first with `cd frontend && pnpm build`",
+            dist_dir.display()
+        ));
+    }
+
+    Ok(FrontendMode::Static { dist_dir })
+}
+
+// r[server.mode]
+fn resolve_frontend_mode(dev: bool) -> Result<FrontendMode, Box<dyn std::error::Error>> {
+    let vite_addr = resolve_vite_addr()?;
+    build_frontend_mode(dev, vite_addr, frontend_dist_dir())
+        .map_err(|message| -> Box<dyn std::error::Error> { message.into() })
 }
 
 async fn spawn_vite_dev_server(
     vite_addr: SocketAddr,
 ) -> Result<tokio::process::Child, Box<dyn std::error::Error>> {
-    let frontend_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../frontend");
+    let frontend_dir = frontend_dir();
     let mut child = tokio::process::Command::new("pnpm");
     child
         .arg("exec")
@@ -852,14 +898,71 @@ fn is_websocket_upgrade(req: &Request) -> bool {
         .is_some_and(|v| v.eq_ignore_ascii_case("websocket"))
 }
 
+fn path_looks_like_asset(path: &str) -> bool {
+    path.rsplit('/')
+        .next()
+        .is_some_and(|segment| segment.contains('.'))
+}
+
+fn should_spa_fallback(method: &Method, path: &str) -> bool {
+    matches!(method, &Method::GET | &Method::HEAD) && !path_looks_like_asset(path)
+}
+
+async fn serve_static_frontend(request: Request, dist_dir: PathBuf) -> Response {
+    let method = request.method().clone();
+    let path = request.uri().path().to_owned();
+    let headers = request.headers().clone();
+    let should_fallback = !is_websocket_upgrade(&request) && should_spa_fallback(&method, &path);
+
+    match ServeDir::new(&dist_dir).oneshot(request).await {
+        Ok(response) if response.status() != StatusCode::NOT_FOUND || !should_fallback => {
+            response.map(Body::new).into_response()
+        }
+        Ok(_) => {
+            let mut index_request = Request::builder()
+                .method(method)
+                .uri("/index.html")
+                .body(Body::empty())
+                .expect("index request should build");
+            *index_request.headers_mut() = headers;
+            match ServeFile::new(dist_dir.join("index.html"))
+                .oneshot(index_request)
+                .await
+            {
+                Ok(response) => response.map(Body::new).into_response(),
+                Err(error) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("failed to serve frontend index: {error}"),
+                )
+                    .into_response(),
+            }
+        }
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("failed to serve frontend assets: {error}"),
+        )
+            .into_response(),
+    }
+}
+
+async fn frontend_handler(State(state): State<AppState>, request: Request) -> Response {
+    match state.frontend_mode.clone() {
+        FrontendMode::DevProxy { .. } => proxy_vite_handler(State(state), request).await,
+        FrontendMode::Static { dist_dir } => serve_static_frontend(request, dist_dir).await,
+    }
+}
+
 async fn proxy_vite_handler(
     State(state): State<AppState>,
     request: Request,
 ) -> axum::response::Response {
     let FrontendMode::DevProxy {
+        vite_addr,
         vite_origin,
-        vite_port,
-    } = &state.frontend_mode;
+    } = &state.frontend_mode
+    else {
+        unreachable!("proxy_vite_handler only runs in dev mode");
+    };
 
     let path = request.uri().path().to_string();
     let query = request
@@ -871,7 +974,7 @@ async fn proxy_vite_handler(
     // WebSocket upgrade (Vite HMR) — proxy as WebSocket
     if is_websocket_upgrade(&request) {
         tracing::debug!(path = %path, "detected websocket upgrade for vite HMR");
-        return handle_vite_ws_upgrade(request, *vite_port, path, query).await;
+        return handle_vite_ws_upgrade(request, vite_addr.port(), path, query).await;
     }
 
     // Regular HTTP proxy
@@ -934,23 +1037,6 @@ async fn proxy_vite_handler(
             )
                 .into_response();
         }
-    };
-
-    // Inject __SHIP_SERVED__ flag into HTML responses so the frontend knows it's
-    // being served through Ship (not accessed directly via Vite). The WS URL is
-    // derived at runtime from window.location so it works with HTTP and HTTPS.
-    let is_html = response_headers
-        .get(header::CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .is_some_and(|ct| ct.contains("text/html"));
-
-    let response_body = if is_html {
-        let script = r#"<script>window.__SHIP_SERVED__=true;</script>"#;
-        let body_str = String::from_utf8_lossy(&response_body);
-        let injected = body_str.replacen("</head>", &format!("{script}</head>"), 1);
-        axum::body::Bytes::from(injected.into_bytes())
-    } else {
-        response_body
     };
 
     let mut response = Response::new(Body::from(response_body));
@@ -1414,7 +1500,12 @@ mod tests {
     use std::sync::{LazyLock, Mutex, MutexGuard};
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use super::{ensure_ship_entry_for_project, resolve_listen_addrs};
+    use axum::http::Method;
+
+    use super::{
+        FrontendMode, build_frontend_mode, ensure_ship_entry_for_project, resolve_listen_addrs,
+        should_spa_fallback,
+    };
 
     static SHIP_LISTEN_ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
@@ -1482,6 +1573,62 @@ mod tests {
         let _env_guard = ShipListenEnvGuard::set(None);
         let addrs = resolve_listen_addrs(None).expect("default listen addresses should parse");
         assert_eq!(addrs, vec!["127.0.0.1:9140".parse::<SocketAddr>().unwrap()]);
+    }
+
+    #[test]
+    fn build_frontend_mode_uses_vite_proxy_when_dev_enabled() {
+        let dist_dir = PathBuf::from("/tmp/ship-unused-dist");
+        let vite_addr = "127.0.0.1:5173".parse::<SocketAddr>().unwrap();
+
+        let mode = build_frontend_mode(true, vite_addr, dist_dir).expect("dev mode should resolve");
+
+        assert_eq!(
+            mode,
+            FrontendMode::DevProxy {
+                vite_addr,
+                vite_origin: "http://127.0.0.1:5173".to_owned(),
+            }
+        );
+    }
+
+    #[test]
+    fn build_frontend_mode_uses_static_dist_when_available() {
+        let dist_dir = make_temp_dir("frontend-dist");
+        let vite_addr = "127.0.0.1:5173".parse::<SocketAddr>().unwrap();
+        std::fs::write(dist_dir.join("index.html"), "<!doctype html>")
+            .expect("index.html should be created");
+
+        let mode = build_frontend_mode(false, vite_addr, dist_dir.clone())
+            .expect("static mode should resolve when dist exists");
+
+        assert_eq!(
+            mode,
+            FrontendMode::Static {
+                dist_dir: dist_dir.clone()
+            }
+        );
+        let _ = std::fs::remove_dir_all(dist_dir);
+    }
+
+    #[test]
+    fn build_frontend_mode_requires_static_dist() {
+        let root_dir = make_temp_dir("frontend-dist-missing");
+        let dist_dir = root_dir.join("dist");
+        let vite_addr = "127.0.0.1:5173".parse::<SocketAddr>().unwrap();
+
+        let error = build_frontend_mode(false, vite_addr, dist_dir)
+            .expect_err("static mode should fail when dist is missing");
+
+        assert!(error.contains("build the frontend first"));
+        let _ = std::fs::remove_dir_all(root_dir);
+    }
+
+    #[test]
+    fn spa_fallback_only_applies_to_route_like_paths() {
+        assert!(should_spa_fallback(&Method::GET, "/sessions/abc"));
+        assert!(should_spa_fallback(&Method::HEAD, "/"));
+        assert!(!should_spa_fallback(&Method::GET, "/assets/app.js"));
+        assert!(!should_spa_fallback(&Method::POST, "/sessions/abc"));
     }
 
     // r[verify server.listen]

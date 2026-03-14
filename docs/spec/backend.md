@@ -337,32 +337,37 @@ the materialized state by folding the event log, and resumes. Agent processes
 are NOT restored (they are re-spawned via `resilience.agent-crash-recovery`
 if a task was in progress).
 
-### Dev Proxy
+### Frontend Serving
 
-In development, the Rust backend serves everything on one port. HTTP requests
-that don't match API or WebSocket routes are proxied to the Vite dev server.
+By default, the Rust backend serves everything on one port from the built
+frontend output in `frontend/dist`. Development mode is opt-in via
+`ship serve --dev`, which preserves the Vite proxy workflow.
 
 r[dev-proxy.vite-fallback]
-In dev mode, the backend MUST proxy unmatched HTTP requests to the Vite dev
-server.
+In dev mode (`ship serve --dev`), the backend MUST proxy unmatched HTTP
+requests to the Vite dev server.
 
 r[dev-proxy.websocket-direct]
 The roam WebSocket endpoint MUST be handled directly by the backend, not
 proxied through Vite.
 
 r[dev-proxy.vite-lifecycle]
-The backend MUST manage the Vite dev server process lifecycle: start it on
-launch, wait for TCP readiness, and kill it on shutdown.
+In dev mode, the backend MUST manage the Vite dev server process lifecycle:
+start it on launch, wait for TCP readiness, and kill it on shutdown.
 
 r[dev-proxy.vite-port]
 The Vite dev server port MUST be configurable via an environment variable
-(e.g., `SHIP_VITE_ADDR`, defaulting to `[::]:9141`). The backend passes this
-to Vite via `--host` and `--port` flags and uses it as the proxy target.
+(e.g., `SHIP_VITE_ADDR`, defaulting to `127.0.0.1:5173`). The backend passes
+this to Vite via `--host` and `--port` flags and uses it as the proxy target.
 
 r[dev-proxy.prod-static]
-Production static file serving (built frontend from disk, SPA fallback, cache
-headers) is deferred to post-v1. For v1, Ship always runs in dev mode with
-the Vite proxy.
+By default, `ship serve` MUST serve the built frontend from `frontend/dist`.
+Route-like requests that do not map to a file MUST fall back to `index.html`;
+missing asset paths MUST remain 404s.
+
+r[frontend.static-missing-build]
+If `frontend/dist` or its `index.html` entrypoint is missing, `ship serve`
+MUST fail at startup with a clear error telling the user to build the frontend.
 
 ## Worktrees
 
@@ -413,8 +418,10 @@ The Ship binary MUST be named `ship`. It is the single entry point for all
 operations.
 
 r[cli.serve]
-`ship serve` MUST start the HTTP server. It does not require being run from
-inside a git repository — Ship is not tied to a single repo.
+`ship serve` MUST start the HTTP server and serve the built frontend by
+default. Passing `--dev` MUST switch it to the Vite proxy workflow. It does
+not require being run from inside a git repository — Ship is not tied to a
+single repo.
 
 r[cli.open-browser]
 On startup, `ship serve` MUST print the URL to stdout. It MUST NOT
@@ -445,8 +452,8 @@ A single Ship server instance manages sessions across all registered
 projects. There is no need to run multiple Ship instances.
 
 r[server.mode]
-For v1, the server always runs in dev mode (Vite proxy enabled, hot reload).
-Production mode is deferred to post-v1 (see `dev-proxy.prod-static`).
+The server MUST default to static frontend serving from `frontend/dist`.
+Passing `ship serve --dev` MUST opt into the Vite proxy + HMR workflow.
 
 r[server.config-dir]
 Ship's global configuration MUST be stored in `~/.config/ship/`. This

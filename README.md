@@ -92,18 +92,20 @@ assign → Working → [mate produces updates] → steer
 
 ## Developing
 
-Backend (with debug logging):
+Default server mode serves the built frontend from `frontend/dist`:
 
 ```sh
+cd frontend
+pnpm build
+cd ..
 just run
 # or: cargo run --bin ship -- serve
 ```
 
-Frontend (in a separate terminal):
+Dev mode starts Vite behind the backend and preserves the proxy + HMR workflow:
 
 ```sh
-cd frontend
-pnpm dev
+cargo run --bin ship -- serve --dev
 ```
 
 Typecheck:

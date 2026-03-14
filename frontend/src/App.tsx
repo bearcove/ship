@@ -7,7 +7,6 @@ import { SessionViewPage } from "./pages/SessionViewPage";
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { ConnectingSplash } from "./components/ConnectingSplash";
 import { ReconnectingIndicator } from "./components/ReconnectingIndicator";
-import { WrongPortMessage } from "./components/WrongPortMessage";
 import { NotificationPrompt } from "./components/NotificationPrompt";
 import { SessionSidebar } from "./components/SessionSidebar";
 import { useSessionList } from "./hooks/useSessionList";
@@ -95,10 +94,6 @@ export function App() {
   }, []);
 
   const toggleDebug = useCallback(() => setDebugMode((v) => !v), []);
-
-  if (connState === "wrong-port") {
-    return <WrongPortMessage />;
-  }
 
   if (connState === "initial-connecting" && !hasEverConnected.current) {
     return <ConnectingSplash />;
