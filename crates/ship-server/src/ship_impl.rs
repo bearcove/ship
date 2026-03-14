@@ -1753,7 +1753,11 @@ Work ONE step at a time: complete the step fully, then immediately call \
 `commit` before starting the next step. Never work ahead. \
 Ship uses `commit` to create the step checkpoint commit, so do not \
 run manual git commit/rebase/merge commands. Steps with no file changes \
-(research, investigation) are marked complete without a checkpoint."
+(research, investigation) are marked complete without a checkpoint.
+
+Tests do not need to pass after every commit. Commit after completing each \
+step regardless of test status — intermediate commits are checkpoints, not \
+release candidates. Make sure tests pass before calling mate_submit."
             )
         } else {
             "Here's how you work:
@@ -1766,7 +1770,11 @@ run manual git commit/rebase/merge commands. Steps with no file changes \
    `commit` before starting the next step. Never work ahead. \
    Ship uses `commit` to create the step checkpoint commit, so do \
    not run manual git commit/rebase/merge commands. Steps with no file changes \
-   (research, investigation) are marked complete without a checkpoint."
+   (research, investigation) are marked complete without a checkpoint.
+
+Tests do not need to pass after every commit. Commit after completing each \
+step regardless of test status — intermediate commits are checkpoints, not \
+release candidates. Make sure tests pass before calling mate_submit."
                 .to_owned()
         };
 
