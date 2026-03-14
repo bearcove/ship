@@ -10,6 +10,8 @@ function activityLabel(entry: ActivityEntry): string {
   switch (entry.kind.tag) {
     case "CaptainMessage":
       return entry.kind.message;
+    case "AdmiralMessage":
+      return entry.kind.message;
     case "SessionCreated":
       return "Session created";
     case "SessionArchived":

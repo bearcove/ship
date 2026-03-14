@@ -730,6 +730,7 @@ pub mod events {
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub enum ActivityKind {
         CaptainMessage { message: String },
+        AdmiralMessage { message: String },
         SessionCreated,
         SessionArchived,
     }
