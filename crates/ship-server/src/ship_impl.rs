@@ -2831,6 +2831,22 @@ Here is your task:
             .await
             .map_err(|e| format!("persist failed: {e}"))?;
 
+        // Emit activity log entry for the captain's notification
+        {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            if let Some(session) = sessions.get(session_id) {
+                let slug = SessionGitNames::from_session_id(session_id).slug;
+                self.emit_activity(
+                    session_id,
+                    &slug,
+                    session.title.clone(),
+                    ship_types::ActivityKind::CaptainMessage {
+                        message: message.clone(),
+                    },
+                );
+            }
+        }
+
         let reply = match rx.await {
             Ok(reply) => reply,
             Err(_) => return Err("human reply channel closed".to_owned()),
@@ -6729,6 +6745,29 @@ use captain_steer. Otherwise continue your current work."
             .send(GlobalEvent::ProjectListChanged { projects });
     }
 
+    fn emit_activity(
+        &self,
+        session_id: &SessionId,
+        session_slug: &str,
+        session_title: Option<String>,
+        kind: ship_types::ActivityKind,
+    ) {
+        let entry = ship_types::ActivityEntry {
+            id: 0, // assigned by ActivityLog::append
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            session_id: session_id.clone(),
+            session_slug: session_slug.to_owned(),
+            session_title,
+            kind,
+        };
+        let entry = self
+            .activity_log
+            .lock()
+            .expect("activity_log mutex poisoned")
+            .append(entry);
+        let _ = self.global_events_tx.send(GlobalEvent::Activity { entry });
+    }
+
     async fn session_discard_blockers(
         &self,
         session: &ActiveSession,
@@ -7030,6 +7069,14 @@ impl Ship for ShipImpl {
         }
         self.notify_session_list_changed().await;
 
+        let slug = SessionGitNames::from_session_id(&session_id).slug;
+        self.emit_activity(
+            &session_id,
+            &slug,
+            None,
+            ship_types::ActivityKind::SessionCreated,
+        );
+
         self.startup_started_at
             .lock()
             .expect("startup timer mutex poisoned")
@@ -7041,10 +7088,7 @@ impl Ship for ShipImpl {
             this.start_session_runtime(startup_session_id).await;
         });
 
-        CreateSessionResponse::Created {
-            slug: SessionGitNames::from_session_id(&session_id).slug,
-            session_id,
-        }
+        CreateSessionResponse::Created { slug, session_id }
     }
 
     async fn steer(&self, session: SessionId, parts: Vec<PromptContentPart>) {
@@ -7605,6 +7649,14 @@ impl Ship for ShipImpl {
             .expect("sessions mutex poisoned")
             .remove(&req.id);
         self.notify_session_list_changed().await;
+
+        let slug = SessionGitNames::from_session_id(&req.id).slug;
+        self.emit_activity(
+            &req.id,
+            &slug,
+            session.title.clone(),
+            ship_types::ActivityKind::SessionArchived,
+        );
 
         ArchiveSessionResponse::Archived
     }
