@@ -2467,7 +2467,7 @@ You are now active. Wait for messages from captains or the human.\n",
         self.persist_session(session_id).await
     }
 
-    async fn restart_mate(&self, session_id: &SessionId) -> Result<(), String> {
+    async fn restart_mate(&self, session_id: &SessionId, resume: bool) -> Result<(), String> {
         let (old_handle, mate_kind, mate_acp_id) = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let session = sessions
@@ -2484,8 +2484,10 @@ You are now active. Wait for messages from captains or the human.\n",
             let _ = self.agent_kill(&handle).await;
         }
 
+        let resume_session_id = if resume { mate_acp_id } else { None };
+
         let spawned = self
-            .spawn_session_role(session_id, Role::Mate, mate_kind, mate_acp_id)
+            .spawn_session_role(session_id, Role::Mate, mate_kind, resume_session_id)
             .await?;
         let was_resumed = spawned.spawn.was_resumed;
 
@@ -2692,7 +2694,7 @@ Here is your task:
         tokio::spawn(async move {
             let result: Result<(), String> = async {
                 if !keep {
-                    this.restart_mate(&session_id_bg).await?;
+                    this.restart_mate(&session_id_bg, false).await?;
                 }
 
                 // Pre-populate the plan if the captain supplied one.
@@ -7857,7 +7859,7 @@ use captain_steer. Otherwise continue your current work."
                     .map(|session| session.mate_handle.is_none())
                     .unwrap_or(false)
             };
-            if mate_needs_restart && let Err(error) = self.restart_mate(&session_id).await {
+            if mate_needs_restart && let Err(error) = self.restart_mate(&session_id, true).await {
                 Self::log_error("prompt_mate_steer restart_mate", &error);
                 return;
             }
@@ -8716,7 +8718,7 @@ impl Ship for ShipImpl {
         match role {
             Role::Mate => {
                 // Restart the mate process and re-dispatch to the active task if one exists.
-                if let Err(error) = self.restart_mate(&session).await {
+                if let Err(error) = self.restart_mate(&session, true).await {
                     Self::log_error("retry_agent restart_mate", &error);
                     return;
                 }
