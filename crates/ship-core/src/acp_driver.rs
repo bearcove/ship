@@ -793,18 +793,24 @@ fn build_initialize_request(role: Role) -> InitializeRequest {
 }
 
 fn captain_client_capabilities() -> ClientCapabilities {
+    // terminal: false — captain uses its own built-in terminal
+    // read_text_file: false — captain uses its own built-in reader
+    // write_text_file: true — ship intercepts writes to track edits
     ClientCapabilities::new()
-        .terminal(true)
+        .terminal(false)
         .fs(FileSystemCapability::new()
-            .read_text_file(true)
+            .read_text_file(false)
             .write_text_file(true))
 }
 
 fn mate_client_capabilities() -> ClientCapabilities {
+    // terminal: false — mate uses its own built-in terminal
+    // read_text_file: false — mate uses its own built-in reader
+    // write_text_file: true — ship intercepts writes to track edits
     ClientCapabilities::new()
-        .terminal(true)
+        .terminal(false)
         .fs(FileSystemCapability::new()
-            .read_text_file(true)
+            .read_text_file(false)
             .write_text_file(true))
 }
 

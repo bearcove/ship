@@ -85,6 +85,7 @@ fn plan_step(title: &str, description: &str, status: PlanStepStatus) -> PlanStep
         title: title.to_owned(),
         description: description.to_owned(),
         status,
+        started_at: None,
     }
 }
 
@@ -701,6 +702,7 @@ async fn replay_is_sent_only_to_the_new_subscriber() {
                 task_id: task_id.clone(),
                 title: "Replay isolation".to_owned(),
                 description: "Replay isolation".to_owned(),
+                steps: vec![],
             })
         {
             break;

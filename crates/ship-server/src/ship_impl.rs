@@ -21,15 +21,15 @@ use ship_core::{
 use ship_service::{CaptainMcp, CaptainMcpDispatcher, MateMcp, MateMcpDispatcher, Ship};
 use ship_types::{
     AgentAcpInfo, AgentDiscovery, AgentKind, AgentSnapshot, AgentState, ArchiveSessionRequest,
-    ArchiveSessionResponse, AutonomyMode, BlockId, CaptainAssignExtras, CloseSessionRequest,
-    CloseSessionResponse, CommitSummary, ContentBlock, CreateSessionRequest, CreateSessionResponse,
-    CurrentTask, DirtySessionStrategy, GlobalEvent, HumanReviewRequest, McpDiffContent,
-    McpServerConfig, McpStdioServerConfig, McpToolCallResponse, PersistedSession, PlanStep,
-    PlanStepInput, PlanStepStatus, ProjectInfo, ProjectName, PromptContentPart, Role, ServerInfo,
-    SessionConfig, SessionDetail, SessionEvent, SessionEventEnvelope, SessionId,
+    ArchiveSessionResponse, AutonomyMode, BlockId, BlockPatch, CaptainAssignExtras,
+    CloseSessionRequest, CloseSessionResponse, CommitSummary, ContentBlock, CreateSessionRequest,
+    CreateSessionResponse, CurrentTask, DirtySessionStrategy, GlobalEvent, HumanReviewRequest,
+    McpDiffContent, McpServerConfig, McpStdioServerConfig, McpToolCallResponse, PersistedSession,
+    PlanStep, PlanStepInput, PlanStepStatus, ProjectInfo, ProjectName, PromptContentPart, Role,
+    ServerInfo, SessionConfig, SessionDetail, SessionEvent, SessionEventEnvelope, SessionId,
     SessionStartupStage, SessionStartupState, SessionSummary, SetAgentEffortResponse,
     SetAgentModelResponse, SubscribeMessage, TaskId, TaskRecapStats, TaskRecord, TaskStatus,
-    ToolCallKind, ToolTarget, TranscribeSegment, WorktreeDiffStats,
+    TextSource, ToolCallKind, ToolTarget, TranscribeSegment, WorktreeDiffStats,
 };
 use similar::TextDiff;
 use tokio::process::Command as TokioCommand;
@@ -199,6 +199,29 @@ pub struct ShipImpl {
 
 /// Default whisper model filename to look for.
 const WHISPER_MODEL_FILENAME: &str = "ggml-base.en.bin";
+
+struct MateActivityFlushData {
+    buffer: String,
+    task_id: Option<TaskId>,
+    /// Task context to include in prompt when the task changed since last flush.
+    task_context: Option<String>,
+}
+
+/// Returns whether `/usr/bin/sandbox-exec` is functional on this system.
+/// Probes once and caches the result. On macOS 26+, sandbox-exec may be
+/// restricted and fail with "Operation not permitted" even for simple profiles.
+#[cfg(target_os = "macos")]
+fn is_sandbox_exec_available() -> bool {
+    static AVAILABLE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *AVAILABLE.get_or_init(|| {
+        let result = std::process::Command::new("/usr/bin/sandbox-exec")
+            .arg("-p")
+            .arg("(version 1)(allow default)")
+            .arg("/bin/true")
+            .output();
+        matches!(result, Ok(output) if output.status.success())
+    })
+}
 
 impl ShipImpl {
     pub fn new(
@@ -2795,6 +2818,22 @@ Here is your task:
         shell_command: &str,
     ) -> Result<tokio::process::Child, String> {
         #[cfg(target_os = "macos")]
+        if !is_sandbox_exec_available() {
+            tracing::warn!(
+                "sandbox-exec not available on this system, running command unsandboxed"
+            );
+            let mut cmd = TokioCommand::new("/bin/sh");
+            cmd.arg("-c")
+                .arg(shell_command)
+                .current_dir(cwd)
+                .kill_on_drop(true)
+                .stdout(std::process::Stdio::piped());
+            return cmd
+                .spawn()
+                .map_err(|error| format!("Failed to start command: {error}"));
+        }
+
+        #[cfg(target_os = "macos")]
         {
             let system_tmpdir = std::env::var("TMPDIR").unwrap_or_else(|_| "/tmp".to_owned());
             let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/nobody".to_owned());
@@ -4803,6 +4842,11 @@ Here is your task:
         {
             Self::log_error("close_session_kill_mate", &error.message);
         }
+        if let Some(handle) = &session.utility_handle
+            && let Err(error) = self.agent_driver.kill(handle).await
+        {
+            Self::log_error("close_session_kill_utility", &error.message);
+        }
 
         let Some(worktree_path) = session.worktree_path.as_ref() else {
             return Ok(());
@@ -4974,6 +5018,292 @@ Here is your task:
         ))
     }
 
+    fn brief_tool_description(tool_name: &str, target: Option<&ToolTarget>) -> String {
+        match target {
+            Some(ToolTarget::File { path, .. }) => format!("{tool_name}: {path}"),
+            Some(ToolTarget::Move {
+                source_path,
+                destination_path,
+                ..
+            }) => format!("{tool_name}: {source_path} -> {destination_path}"),
+            Some(ToolTarget::Search { query, path, .. }) => {
+                let q = query.as_deref().unwrap_or("(no query)");
+                match path.as_deref() {
+                    Some(p) if !p.is_empty() => format!("{tool_name}: {q} in {p}"),
+                    _ => format!("{tool_name}: {q}"),
+                }
+            }
+            Some(ToolTarget::Command { command, .. }) => {
+                let brief = if command.len() > 60 {
+                    &command[..60]
+                } else {
+                    command
+                };
+                format!("{tool_name}: {brief}")
+            }
+            _ => tool_name.to_owned(),
+        }
+    }
+
+    fn buffer_mate_event(session: &mut ActiveSession, event: &SessionEvent) {
+        match event {
+            SessionEvent::BlockAppend {
+                role: Role::Mate,
+                block:
+                    ContentBlock::Text {
+                        text,
+                        source: TextSource::AgentMessage,
+                    },
+                ..
+            } => {
+                if session.mate_activity_first_at.is_none() {
+                    session.mate_activity_first_at = Some(std::time::Instant::now());
+                }
+                session
+                    .mate_activity_buffer
+                    .push(format!("[speech] {text}"));
+            }
+            SessionEvent::BlockAppend {
+                role: Role::Mate,
+                block:
+                    ContentBlock::Text {
+                        text,
+                        source: TextSource::AgentThought,
+                    },
+                ..
+            } => {
+                if session.mate_activity_first_at.is_none() {
+                    session.mate_activity_first_at = Some(std::time::Instant::now());
+                }
+                let truncated = if text.len() > 200 {
+                    format!("{}...", &text[..200])
+                } else {
+                    text.clone()
+                };
+                session
+                    .mate_activity_buffer
+                    .push(format!("[thought] {truncated}"));
+            }
+            SessionEvent::BlockAppend {
+                role: Role::Mate,
+                block:
+                    ContentBlock::ToolCall {
+                        tool_name, target, ..
+                    },
+                ..
+            } => {
+                if session.mate_activity_first_at.is_none() {
+                    session.mate_activity_first_at = Some(std::time::Instant::now());
+                }
+                let brief = Self::brief_tool_description(tool_name, target.as_ref());
+                session.mate_activity_buffer.push(format!("[tool] {brief}"));
+            }
+            SessionEvent::BlockPatch {
+                role: Role::Mate,
+                patch: BlockPatch::TextAppend { text },
+                ..
+            } => {
+                if let Some(last) = session.mate_activity_buffer.last_mut() {
+                    if last.starts_with("[speech]") {
+                        last.push_str(text);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn maybe_take_flush_data(session: &mut ActiveSession) -> Option<MateActivityFlushData> {
+        let buffer_size: usize = session.mate_activity_buffer.iter().map(|s| s.len()).sum();
+        if buffer_size == 0 {
+            return None;
+        }
+        let age = session
+            .mate_activity_first_at
+            .map(|t| t.elapsed())
+            .unwrap_or(Duration::ZERO);
+        if buffer_size <= 4000 && age <= Duration::from_secs(2) {
+            return None;
+        }
+
+        let buffer = session.mate_activity_buffer.join("\n");
+        session.mate_activity_buffer.clear();
+        session.mate_activity_first_at = None;
+
+        let task_id = session.current_task.as_ref().map(|t| t.record.id.clone());
+        let needs_task_context = task_id.as_ref() != session.utility_last_task_id.as_ref();
+        let task_context = if needs_task_context {
+            session.current_task.as_ref().map(|task| {
+                let steps = task
+                    .record
+                    .steps
+                    .iter()
+                    .map(|s| {
+                        let status = match s.status {
+                            PlanStepStatus::Pending => "[ ]",
+                            PlanStepStatus::InProgress => "[~]",
+                            PlanStepStatus::Completed => "[x]",
+                            PlanStepStatus::Failed => "[!]",
+                        };
+                        format!("{status} {}: {}", s.title, s.description)
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                format!(
+                    "New task assigned to the mate:\n\n<task>{}</task>\n\n<plan>{}</plan>",
+                    task.record.description, steps
+                )
+            })
+        } else {
+            None
+        };
+
+        Some(MateActivityFlushData {
+            buffer,
+            task_id,
+            task_context,
+        })
+    }
+
+    async fn ensure_utility_agent(&self, session_id: &SessionId) -> Option<ship_core::AgentHandle> {
+        let existing = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            sessions
+                .get(session_id)
+                .and_then(|s| s.utility_handle.clone())
+        };
+        if let Some(handle) = existing {
+            return Some(handle);
+        }
+
+        let (worktree_path, captain_kind) = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get(session_id)?;
+            let worktree_path = session.worktree_path.clone()?;
+            (worktree_path, session.config.captain_kind)
+        };
+
+        let config = AgentSessionConfig {
+            worktree_path,
+            mcp_servers: vec![],
+            resume_session_id: None,
+        };
+        let spawn_result = self
+            .agent_driver
+            .spawn(captain_kind, Role::Captain, &config)
+            .await;
+        let info = match spawn_result {
+            Ok(info) => info,
+            Err(error) => {
+                Self::log_error("ensure_utility_agent_spawn", &error.message);
+                return None;
+            }
+        };
+
+        // Use Haiku if available for cost efficiency
+        let haiku_model = "claude-haiku-4-5-20251001";
+        if info.available_models.iter().any(|m| m == haiku_model) {
+            if let Err(error) = self.agent_driver.set_model(&info.handle, haiku_model).await {
+                tracing::warn!(
+                    error = %error.message,
+                    "failed to set utility agent model to Haiku"
+                );
+            }
+        }
+
+        // Send the initial persona prompt and discard the acknowledgement
+        let init_prompt = "You are a mate activity summarizer. A coding agent (\"the mate\") works \
+on tasks assigned by its supervisor (\"the captain\"). The captain cannot watch the mate's \
+every action, so your job is to produce concise summaries that help the captain ensure the \
+mate stays on track.\n\n\
+Focus on:\n\
+- Progress: what did the mate accomplish relative to the plan?\n\
+- Decisions: did the mate make any choices the captain should know about?\n\
+- Concerns: is the mate stuck, going off-plan, or doing something unexpected?\n\n\
+Be factual and concise (2-4 sentences). Flag anything that might need the captain's \
+attention. If everything looks on track, say so briefly.\n\n\
+Reply with \"Ready.\" to confirm.";
+
+        // Store the handle before the init prompt so we don't spawn duplicates
+        let handle = info.handle.clone();
+        {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            if let Some(session) = sessions.get_mut(session_id) {
+                session.utility_handle = Some(info.handle);
+            }
+        }
+
+        let _ = self
+            .agent_driver
+            .prompt(
+                &handle,
+                &[PromptContentPart::Text {
+                    text: init_prompt.to_owned(),
+                }],
+            )
+            .await;
+        // Drain the acknowledgement response
+        let _ = self
+            .agent_driver
+            .notifications(&handle)
+            .collect::<Vec<_>>()
+            .await;
+
+        Some(handle)
+    }
+
+    async fn flush_mate_activity(&self, session_id: SessionId, data: MateActivityFlushData) {
+        let Some(utility_handle) = self.ensure_utility_agent(&session_id).await else {
+            return;
+        };
+
+        // Drain any stale notifications from the utility agent
+        let _ = self
+            .agent_driver
+            .notifications(&utility_handle)
+            .collect::<Vec<_>>()
+            .await;
+
+        // Build the summarization prompt
+        let activity_section = format!("<mate-activity>\n{}\n</mate-activity>", data.buffer);
+        let prompt = match data.task_context {
+            Some(ctx) => format!("{ctx}\n\n{activity_section}\n\nSummarize."),
+            None => format!("{activity_section}\n\nSummarize."),
+        };
+
+        let _ = self
+            .agent_driver
+            .prompt(&utility_handle, &[PromptContentPart::Text { text: prompt }])
+            .await;
+
+        let events: Vec<SessionEvent> = self
+            .agent_driver
+            .notifications(&utility_handle)
+            .collect()
+            .await;
+        let summary = extract_agent_text(events);
+        if summary.is_empty() {
+            return;
+        }
+
+        // Update utility_last_task_id
+        {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            if let Some(session) = sessions.get_mut(&session_id) {
+                session.utility_last_task_id = data.task_id;
+            }
+        }
+
+        let message = format!(
+            "<mate-activity-summary>\n{summary}\n</mate-activity-summary>\n\n\
+The mate's recent activity is summarized above. If something needs correction, \
+use captain_steer. Otherwise continue your current work."
+        );
+        if let Err(error) = self.notify_captain_progress(&session_id, message).await {
+            Self::log_error("flush_mate_activity_notify_captain", &error);
+        }
+    }
+
     async fn discard_queued_notifications(&self, session_id: &SessionId, role: Role) {
         let handle = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
@@ -5053,7 +5383,18 @@ Here is your task:
                 continue;
             }
 
-            let captain_notification = {
+            // Determine before consuming the event whether it's a mate TextAppend
+            // (continuation of existing speech) — these don't trigger flush checks.
+            let is_mate_text_append = matches!(
+                &event,
+                SessionEvent::BlockPatch {
+                    role: Role::Mate,
+                    patch: BlockPatch::TextAppend { .. },
+                    ..
+                }
+            );
+
+            let (captain_notification, flush_data) = {
                 let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
                 let Some(session) = sessions.get_mut(session_id) else {
                     break;
@@ -5063,12 +5404,28 @@ Here is your task:
                 } else {
                     None
                 };
+                if role == Role::Mate {
+                    Self::buffer_mate_event(session, &event);
+                }
                 apply_event(session, event);
-                captain_notification
+                // At block boundaries, check if we should flush the activity buffer
+                let flush_data = if role == Role::Mate && !is_mate_text_append {
+                    Self::maybe_take_flush_data(session)
+                } else {
+                    None
+                };
+                (captain_notification, flush_data)
             };
 
             if let Some(message) = captain_notification {
                 self.notify_captain_progress(session_id, message).await?;
+            }
+            if let Some(data) = flush_data {
+                let this = self.clone();
+                let session_id = session_id.clone();
+                tokio::spawn(async move {
+                    this.flush_mate_activity(session_id, data).await;
+                });
             }
         }
         drop(stream);
@@ -7344,6 +7701,7 @@ mod tests {
             AgentDiscovery {
                 claude: true,
                 codex: true,
+                opencode: false,
             },
         );
 
@@ -7380,6 +7738,7 @@ mod tests {
                         title: "Test step".to_owned(),
                         description: "Test step".to_owned(),
                         status: PlanStepStatus::Pending,
+                        started_at: None,
                     }],
                     assigned_at: Some(chrono::Utc::now().to_rfc3339()),
                     completed_at: None,
@@ -7416,6 +7775,7 @@ mod tests {
             AgentDiscovery {
                 claude: true,
                 codex: true,
+                opencode: false,
             },
         );
 
@@ -8021,6 +8381,7 @@ mod tests {
         let expected = AgentDiscovery {
             claude: true,
             codex: false,
+            opencode: false,
         };
         let ship = ShipImpl::new(registry, dir.join("sessions"), expected.clone());
 
@@ -8063,6 +8424,7 @@ mod tests {
             AgentDiscovery {
                 claude: true,
                 codex: true,
+                opencode: false,
             },
         );
 
@@ -8109,6 +8471,7 @@ mod tests {
             AgentDiscovery {
                 claude: true,
                 codex: true,
+                opencode: false,
             },
         );
 
@@ -8164,6 +8527,7 @@ mod tests {
             AgentDiscovery {
                 claude: true,
                 codex: true,
+                opencode: false,
             },
         );
 
@@ -8303,7 +8667,12 @@ mod tests {
             create_session_for_workflow_test("captain-tool-steer-direct").await;
 
         let result = ship
-            .captain_tool_steer(&session_id, "Ask the mate to add coverage".to_owned())
+            .captain_tool_steer(
+                &session_id,
+                "Ask the mate to add coverage".to_owned(),
+                None,
+                None,
+            )
             .await
             .expect("captain tool should succeed");
 
@@ -8362,7 +8731,12 @@ mod tests {
         }
 
         let result = ship
-            .captain_tool_steer(&session_id, "Ask the mate to add coverage".to_owned())
+            .captain_tool_steer(
+                &session_id,
+                "Ask the mate to add coverage".to_owned(),
+                None,
+                None,
+            )
             .await
             .expect("captain tool should succeed");
         assert_eq!(result, "Steer sent to the mate.");
@@ -8856,6 +9230,7 @@ mod tests {
                 title: "step".to_owned(),
                 description: "Implement the thing".to_owned(),
                 status: PlanStepStatus::Pending,
+                started_at: None,
             }]),
         );
         assert!(
