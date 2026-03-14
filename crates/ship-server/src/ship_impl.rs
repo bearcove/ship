@@ -8948,6 +8948,24 @@ impl Ship for ShipImpl {
     // r[event.subscribe.replay]
     async fn subscribe_events(&self, session: SessionId, output: Tx<SubscribeMessage>) {
         tracing::info!(session_id = %session.0, "subscriber connected");
+
+        if session.0 == ADMIRAL_SESSION_ID {
+            let session_data = {
+                let admiral = self.admiral_session.lock().expect("admiral mutex poisoned");
+                admiral
+                    .as_ref()
+                    .map(|a| (a.events_tx.subscribe(), a.session_event_log.clone()))
+            };
+            let Some((receiver, replay)) = session_data else {
+                tracing::warn!("admiral subscribe requested but admiral session not started");
+                let _ = output.close(Default::default()).await;
+                return;
+            };
+            let coalesced = coalesce_replay_events(&replay);
+            Self::spawn_event_subscription(session, receiver, coalesced, output);
+            return;
+        }
+
         let session_data = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             Self::resolve_session(&sessions, &session).map(|active| {
