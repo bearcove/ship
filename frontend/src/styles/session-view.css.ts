@@ -767,22 +767,11 @@ export const sessionHeaderSideButtons = style({
 });
 
 export const sessionHeaderSideButton = style({
-  // display: "flex",
-  // alignItems: "center",
-  // justifyContent: "center",
-  // width: "24px",
-  // height: "100%",
-  // padding: "0 var(--space-3)",
-  // border: "none",
-  // background: "transparent",
-  // color: "var(--gray-11)",
-  // cursor: "pointer",
-  // selectors: {
-  //   "&:hover": {
-  //     color: "var(--gray-12)",
-  //     background: "var(--gray-a3)",
-  //   },
-  // },
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "0 var(--space-3)",
+  borderRadius: 0,
 });
 
 export const sessionHeaderSideButtonDesktopOnly = style({
