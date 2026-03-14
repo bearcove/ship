@@ -88,6 +88,16 @@ export function SessionViewPage({
 
   const diffStats = useWorktreeDiffStats(sessionId);
 
+  // Auto-focus composer when this session becomes active
+  const wasActive = useRef(isActive);
+  useEffect(() => {
+    const becameActive = isActive && !wasActive.current;
+    wasActive.current = isActive;
+    if (becameActive) {
+      composerRef.current?.focusComposer();
+    }
+  }, [isActive]);
+
   function isEditableTarget(target: EventTarget | null): boolean {
     return (
       target instanceof HTMLInputElement ||

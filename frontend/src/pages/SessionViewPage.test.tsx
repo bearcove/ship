@@ -1,5 +1,5 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, beforeEach, vi } from "vitest";
 import type { SessionDetail } from "../generated/ship";
 import { SoundProvider } from "../context/SoundContext";
@@ -60,11 +60,6 @@ vi.mock("../components/ConnectionBanner", () => ({
   ConnectionBanner: () => null,
 }));
 
-function LocationEcho() {
-  const location = useLocation();
-  return <div>{`${location.pathname}${location.search}`}</div>;
-}
-
 function makeSession(): SessionDetail {
   return {
     id: "session-1",
@@ -115,19 +110,15 @@ function makeSession(): SessionDetail {
   };
 }
 
-function renderPage(
-  initialEntries: Array<string | { pathname: string; state?: unknown }> = ["/sessions/session-1"],
-) {
+function renderPage(initialEntries: string[] = ["/sessions/session-1"]) {
   return renderWithTheme(
     <MemoryRouter initialEntries={initialEntries}>
       <SoundProvider>
         <Routes>
-          <Route path="/" element={<LocationEcho />} />
-          <Route
-            path="/sessions/:sessionId"
-            element={<SessionViewPage debugMode={false} onOpenSidebar={() => {}} />}
-          />
+          <Route path="/" element={<div>home</div>} />
+          <Route path="/sessions/:sessionId" element={null} />
         </Routes>
+        <SessionViewPage sessionId="session-1" isActive={true} debugMode={false} />
       </SoundProvider>
     </MemoryRouter>,
   );
@@ -195,8 +186,30 @@ describe("SessionViewPage UX slice", () => {
     expect(screen.queryByTestId("composer-drop-indicator")).not.toBeInTheDocument();
   });
 
-  it("autofocuses the composer after navigating from new-session creation", () => {
-    renderPage([{ pathname: "/sessions/session-1", state: { autofocusComposer: true } }]);
+  it("autofocuses the composer when isActive transitions from false to true", () => {
+    const { rerender } = renderWithTheme(
+      <MemoryRouter initialEntries={["/sessions/session-1"]}>
+        <SoundProvider>
+          <Routes>
+            <Route path="/sessions/:sessionId" element={null} />
+          </Routes>
+          <SessionViewPage sessionId="session-1" isActive={false} debugMode={false} />
+        </SoundProvider>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByLabelText("Steer input")).not.toHaveFocus();
+
+    rerender(
+      <MemoryRouter initialEntries={["/sessions/session-1"]}>
+        <SoundProvider>
+          <Routes>
+            <Route path="/sessions/:sessionId" element={null} />
+          </Routes>
+          <SessionViewPage sessionId="session-1" isActive={true} debugMode={false} />
+        </SoundProvider>
+      </MemoryRouter>,
+    );
 
     expect(screen.getByLabelText("Steer input")).toHaveFocus();
   });
