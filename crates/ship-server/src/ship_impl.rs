@@ -431,6 +431,10 @@ impl ShipImpl {
                 next_event_seq,
                 captain_prompt_gen: 0,
                 mate_prompt_gen: 0,
+                utility_handle: None,
+                utility_last_task_id: None,
+                mate_activity_buffer: Vec::new(),
+                mate_activity_first_at: None,
             };
 
             tracing::info!(session_id = %session_id.0, needs_respawn, "loaded persisted session");
@@ -6045,6 +6049,10 @@ impl Ship for ShipImpl {
             next_event_seq: 0,
             captain_prompt_gen: 0,
             mate_prompt_gen: 0,
+            utility_handle: None,
+            utility_last_task_id: None,
+            mate_activity_buffer: Vec::new(),
+            mate_activity_first_at: None,
         };
 
         {
@@ -7465,6 +7473,10 @@ mod tests {
             captain_prompt_gen: 0,
             mate_prompt_gen: 0,
             diff_stats: None,
+            utility_handle: None,
+            utility_last_task_id: None,
+            mate_activity_buffer: Vec::new(),
+            mate_activity_first_at: None,
         };
         ship.sessions
             .lock()

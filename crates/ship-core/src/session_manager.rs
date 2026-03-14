@@ -106,6 +106,11 @@ pub struct ActiveSession {
     pub next_event_seq: u64,
     pub captain_prompt_gen: u64,
     pub mate_prompt_gen: u64,
+    // Runtime-only fields (not persisted)
+    pub utility_handle: Option<crate::AgentHandle>,
+    pub utility_last_task_id: Option<TaskId>,
+    pub mate_activity_buffer: Vec<String>,
+    pub mate_activity_first_at: Option<std::time::Instant>,
 }
 
 #[derive(Debug, Clone)]
@@ -207,6 +212,10 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             next_event_seq: 0,
             captain_prompt_gen: 0,
             mate_prompt_gen: 0,
+            utility_handle: None,
+            utility_last_task_id: None,
+            mate_activity_buffer: Vec::new(),
+            mate_activity_first_at: None,
         };
 
         self.sessions.insert(session_id.clone(), session);
