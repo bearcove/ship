@@ -68,6 +68,7 @@ function makeSession(): SessionSummary {
     tasks_total: 0,
     autonomy_mode: { tag: "HumanInTheLoop" },
     created_at: "2026-01-01T00:00:00Z",
+    is_admiral: false,
   };
 }
 

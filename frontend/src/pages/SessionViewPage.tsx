@@ -263,6 +263,7 @@ export function SessionViewPage({
     diff_stats: diffStats,
     tasks_done: tasksDone,
     tasks_total: tasksTotal,
+    is_admiral: false,
   };
 
   async function handleArchive(force: boolean) {
