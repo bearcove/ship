@@ -4,7 +4,7 @@ import type { ContentBlock } from "../generated/ship";
 import type { BlockEntry } from "../state/blockStore";
 import { feedRowAnimate } from "../styles/session-view.css";
 import { renderWithTheme } from "../test/render";
-import { UnifiedFeed, resetUnifiedFeedAnimationStateForTests } from "./UnifiedFeed";
+import { UnifiedFeed, resetUnifiedFeedAnimationBaselinesForTest } from "./UnifiedFeed";
 
 function makeTaskRecapBlock(): Extract<ContentBlock, { tag: "TaskRecap" }> {
   return {
@@ -73,7 +73,7 @@ function renderFeed(
 }
 
 beforeEach(() => {
-  resetUnifiedFeedAnimationStateForTests();
+  resetUnifiedFeedAnimationBaselinesForTest();
   if (!HTMLElement.prototype.scrollTo) {
     HTMLElement.prototype.scrollTo = () => {};
   }
@@ -145,16 +145,18 @@ describe("UnifiedFeed", () => {
     expect(container.querySelectorAll(`.${feedRowAnimate}`)).toHaveLength(0);
   });
 
-  it("does not animate the initial population of a freshly mounted session feed", () => {
+  it("keeps existing history quiet after remounting the same session feed", () => {
     const sessionId = "session-remount";
     const historicalBlocks = [
       makeTextEntry("history-1", "Historical block one"),
       makeTextEntry("history-2", "Historical block two"),
     ];
-    const firstMount = renderFeed([], { sessionId });
+    const liveBlock = makeTextEntry("live-1", "Fresh live block");
+    const firstMount = renderFeed([], { loading: true, sessionId });
 
     expect(firstMount.container.querySelectorAll(`.${feedRowAnimate}`)).toHaveLength(0);
 
+    firstMount.rerender(feedUi(historicalBlocks, { loading: true, sessionId }));
     firstMount.rerender(feedUi(historicalBlocks, { sessionId }));
 
     expect(screen.getByText("Historical block one")).toBeInTheDocument();
@@ -166,6 +168,12 @@ describe("UnifiedFeed", () => {
     const secondMount = renderWithTheme(feedUi(historicalBlocks, { sessionId }));
 
     expect(secondMount.container.querySelectorAll(`.${feedRowAnimate}`)).toHaveLength(0);
+
+    secondMount.rerender(feedUi([...historicalBlocks, liveBlock], { sessionId }));
+
+    const animatedWrappers = Array.from(secondMount.container.querySelectorAll(`.${feedRowAnimate}`));
+    expect(animatedWrappers).toHaveLength(1);
+    expect(animatedWrappers[0]).toHaveTextContent("Fresh live block");
   });
 
   it("animates only blocks appended after the feed becomes live", () => {
