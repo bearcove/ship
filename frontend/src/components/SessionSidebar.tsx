@@ -6,15 +6,11 @@ import {
   BugIcon,
   FolderSimplePlusIcon,
   NotePencilIcon,
-  SpeakerHighIcon,
-  SpeakerSlashIcon,
 } from "@phosphor-icons/react";
 import type { SessionSummary, TaskStatus } from "../generated/ship";
-import { useSoundEnabled } from "../context/SoundContext";
 import { AddProjectDialog, NewSessionDialog } from "../pages/SessionListPage";
 import { sortSessions } from "../pages/session-list-utils";
 import { useClientLogs } from "../api/client";
-import { QrCodeButton } from "./QrCodeButton";
 import { SessionRecordingBadge } from "./SessionRecordingBadge";
 import {
   sessionRow,
@@ -132,7 +128,6 @@ export function SessionSidebar({
 }: Props) {
   const [addProjectOpen, setAddProjectOpen] = useState(false);
   const [newSessionOpen, setNewSessionOpen] = useState(false);
-  const { soundEnabled, setSoundEnabled } = useSoundEnabled();
   const clientLogs = useClientLogs();
   const sortedSessions = useMemo(() => sortSessions(sessions), [sessions]);
   const currentSession = useMemo(
@@ -223,37 +218,27 @@ export function SessionSidebar({
           </Box>
         )}
 
-        <Flex align="center" gap="3" pt="3" pb="4" px="3" style={{ flexShrink: 0 }}>
+        <Flex justify="end" pt="3" pb="4" px="3" style={{ flexShrink: 0 }}>
           <Tooltip content="Add project">
             <IconButton
               variant="ghost"
-              size="2"
+              size="3"
               color="gray"
               aria-label="Add project"
               onClick={() => setAddProjectOpen(true)}
             >
-              <FolderSimplePlusIcon size={16} />
+              <FolderSimplePlusIcon size={20} />
             </IconButton>
           </Tooltip>
           <IconButton
             variant="ghost"
-            size="2"
+            size="3"
             color={debugMode ? "amber" : "gray"}
             onClick={onToggleDebug}
             aria-label={debugMode ? "Disable debug mode" : "Enable debug mode"}
           >
-            <BugIcon size={16} />
+            <BugIcon size={20} />
           </IconButton>
-          <IconButton
-            variant="ghost"
-            size="2"
-            color="gray"
-            onClick={() => setSoundEnabled(!soundEnabled)}
-            aria-label={soundEnabled ? "Mute sounds" : "Unmute sounds"}
-          >
-            {soundEnabled ? <SpeakerHighIcon size={16} /> : <SpeakerSlashIcon size={16} />}
-          </IconButton>
-          <QrCodeButton />
         </Flex>
 
         <AddProjectDialog open={addProjectOpen} onOpenChange={setAddProjectOpen} />
