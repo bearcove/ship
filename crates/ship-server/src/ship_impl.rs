@@ -1884,15 +1884,7 @@ Continue where you left off — wait for the human to give you direction."
         if let RebaseOutcome::Conflict { files } = rebase_outcome {
             // Transition to RebaseConflict so the captain can fix the conflicts
             // and call captain_continue_rebase.
-            {
-                let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
-                let active = sessions
-                    .get_mut(session_id)
-                    .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-                transition_task(active, TaskStatus::RebaseConflict)
-                    .map_err(|error| error.to_string())?;
-            }
-            self.persist_session(session_id).await?;
+            self.mark_rebase_conflict(session_id, &files).await?;
             return Err(format!(
                 "Rebase hit conflicts in the following files:\n{}\n\
                 Fix the conflict markers, then call `captain_continue_rebase`.",
@@ -2943,7 +2935,11 @@ Here is your task:
         Ok("Rebase aborted.".to_owned())
     }
 
-    async fn mark_rebase_conflict(&self, session_id: &SessionId) -> Result<(), String> {
+    async fn mark_rebase_conflict(
+        &self,
+        session_id: &SessionId,
+        conflicted_files: &[String],
+    ) -> Result<(), String> {
         let changed = {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let session = sessions
@@ -2958,6 +2954,13 @@ Here is your task:
                 } else {
                     transition_task(session, TaskStatus::RebaseConflict)
                         .map_err(|error| error.to_string())?;
+                    Self::append_workflow_milestone(
+                        session,
+                        WorkflowMilestoneKind::RebaseConflict,
+                        "Rebase conflict",
+                        "Review hit conflicts while rebasing onto the base branch.",
+                        conflicted_files.to_vec(),
+                    );
                     true
                 }
             }
@@ -3009,7 +3012,8 @@ Here is your task:
             } else {
                 status.unmerged_paths.clone()
             };
-            self.mark_rebase_conflict(session_id).await?;
+            self.mark_rebase_conflict(session_id, &conflicted_files)
+                .await?;
             return Ok(CaptainReviewDiff {
                 state: CaptainReviewDiffState::RebaseConflict,
                 status,
@@ -3079,7 +3083,7 @@ Here is your task:
                 })
             }
             RebaseOutcome::Conflict { files } => {
-                self.mark_rebase_conflict(session_id).await?;
+                self.mark_rebase_conflict(session_id, &files).await?;
                 let status = self.collect_captain_git_status(session_id).await?;
                 Ok(CaptainReviewDiff {
                     state: CaptainReviewDiffState::RebaseConflict,
@@ -5456,6 +5460,13 @@ Here is your task:
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             if let Some(active) = sessions.get_mut(session_id) {
                 let _ = transition_task(active, TaskStatus::ReviewPending);
+                Self::append_workflow_milestone(
+                    active,
+                    WorkflowMilestoneKind::ReviewSubmitted,
+                    "Work submitted for review",
+                    summary.clone(),
+                    Vec::new(),
+                );
                 Self::invalidate_mate_activity_summary_state(active);
             }
         }
@@ -11356,6 +11367,110 @@ agent_presets {
         let _ = std::fs::remove_dir_all(dir);
     }
 
+    #[tokio::test]
+    async fn mate_submit_emits_review_submitted_milestone_into_event_log() {
+        let (dir, ship, session_id) =
+            create_session_for_workflow_test("mate-submit-milestone").await;
+        let project_root = dir.join("project");
+        init_git_repo(&project_root);
+
+        {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(&session_id).expect("session should exist");
+            session.worktree_path = Some(project_root.clone());
+        }
+
+        std::fs::write(project_root.join("review.txt"), "ready for review\n")
+            .expect("test file should be written");
+        ship.mate_tool_commit(&session_id, Some(0), "prepare review artifact".to_owned())
+            .await
+            .expect("commit should succeed");
+
+        let ship_for_submit = ship.clone();
+        let session_id_for_submit = session_id.clone();
+        let submit_task = tokio::spawn(async move {
+            ship_for_submit
+                .mate_tool_submit(
+                    &session_id_for_submit,
+                    "Ready for captain review".to_owned(),
+                )
+                .await
+        });
+
+        timeout(std::time::Duration::from_secs(1), async {
+            loop {
+                let ready = {
+                    let sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+                    let session = sessions.get(&session_id).expect("session should exist");
+                    let task = session.current_task.as_ref().expect("task should exist");
+                    task.record.status == TaskStatus::ReviewPending
+                        && task.content_history.iter().any(|entry| {
+                            matches!(
+                                &entry.block,
+                                ContentBlock::WorkflowMilestone {
+                                    kind: WorkflowMilestoneKind::ReviewSubmitted,
+                                    title,
+                                    summary,
+                                    ..
+                                } if title == "Work submitted for review"
+                                    && summary == "Ready for captain review"
+                            )
+                        })
+                        && task.event_log.iter().any(|envelope| {
+                            matches!(
+                                &envelope.event,
+                                SessionEvent::BlockAppend {
+                                    block: ContentBlock::WorkflowMilestone {
+                                        kind: WorkflowMilestoneKind::ReviewSubmitted,
+                                        title,
+                                        summary,
+                                        ..
+                                    },
+                                    ..
+                                } if title == "Work submitted for review"
+                                    && summary == "Ready for captain review"
+                            )
+                        })
+                };
+                if ready {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("review-submitted milestone should be persisted promptly");
+
+        {
+            let mut ops = ship
+                .pending_mcp_ops
+                .lock()
+                .expect("pending_mcp_ops mutex poisoned");
+            let tx = ops
+                .get_mut(&session_id)
+                .and_then(|pending| pending.mate_review.take())
+                .expect("mate review sender should exist");
+            assert!(
+                tx.send(super::MateReviewOutcome::Feedback {
+                    message: "please add one more note".to_owned(),
+                })
+                .is_ok(),
+                "mate submit waiter should still be listening"
+            );
+        }
+
+        let submit_result = submit_task
+            .await
+            .expect("submit task should join")
+            .expect("submit should resolve with captain feedback");
+        assert_eq!(
+            submit_result,
+            "Captain feedback (please revise): please add one more note"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
     // r[verify mate.tool.read-file]
     #[tokio::test]
     async fn mate_read_file_formats_numbered_slices_and_errors() {
@@ -11747,6 +11862,48 @@ agent_presets {
                 .status,
             TaskStatus::RebaseConflict
         );
+        {
+            let sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let active = sessions.get(&session_id).expect("session should exist");
+            let task = active.current_task.as_ref().expect("task should exist");
+            assert!(
+                task.content_history.iter().any(|entry| {
+                    matches!(
+                        &entry.block,
+                        ContentBlock::WorkflowMilestone {
+                            kind: WorkflowMilestoneKind::RebaseConflict,
+                            title,
+                            summary,
+                            items,
+                        } if title == "Rebase conflict"
+                            && summary
+                                == "Review hit conflicts while rebasing onto the base branch."
+                            && items.iter().any(|item| item == "tracked.txt")
+                    )
+                }),
+                "expected rebase-conflict milestone in content history"
+            );
+            assert!(
+                task.event_log.iter().any(|envelope| {
+                    matches!(
+                        &envelope.event,
+                        SessionEvent::BlockAppend {
+                            block: ContentBlock::WorkflowMilestone {
+                                kind: WorkflowMilestoneKind::RebaseConflict,
+                                title,
+                                summary,
+                                items,
+                            },
+                            ..
+                        } if title == "Rebase conflict"
+                            && summary
+                                == "Review hit conflicts while rebasing onto the base branch."
+                            && items.iter().any(|item| item == "tracked.txt")
+                    )
+                }),
+                "expected rebase-conflict milestone in event log"
+            );
+        }
 
         let repeated_review_error = ship
             .captain_tool_review_diff(&session_id)
