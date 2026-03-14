@@ -7752,6 +7752,7 @@ impl Ship for ShipImpl {
     async fn subscribe_global_events(&self, output: Tx<GlobalEvent>) {
         let sessions = Arc::clone(&self.sessions);
         let registry = Arc::clone(&self.registry);
+        let activity_log = Arc::clone(&self.activity_log);
         let global_events_tx = self.global_events_tx.clone();
 
         tokio::spawn(async move {
@@ -7778,6 +7779,19 @@ impl Ship for ShipImpl {
                     .is_err()
                 {
                     return;
+                }
+            }
+
+            // Replay stored activity entries
+            {
+                let entries: Vec<ship_types::ActivityEntry> = {
+                    let log = activity_log.lock().expect("activity_log mutex poisoned");
+                    log.entries().to_vec()
+                };
+                for entry in entries {
+                    if output.send(GlobalEvent::Activity { entry }).await.is_err() {
+                        return;
+                    }
                 }
             }
 
