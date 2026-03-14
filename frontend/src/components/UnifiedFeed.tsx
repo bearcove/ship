@@ -238,10 +238,11 @@ function buildSegments(blocks: BlockEntry[], debugMode: boolean): FeedSegment[] 
     (b) =>
       b.block.tag !== "PlanUpdate" &&
       (debugMode || b.block.tag !== "ToolCall") &&
-      !(b.block.tag === "Text" && b.block.source.tag === "AgentThought") &&
+      !(b.block.tag === "Text" && b.block.source.tag === "AgentThought" && !debugMode) &&
       !(b.block.tag === "Text" && b.block.text.trim() === "") &&
       !(b.block.tag === "Permission" && b.block.resolution?.tag === "Approved") &&
       (b.role.tag !== "Mate" ||
+        debugMode ||
         (b.block.tag === "Text" && (b.block.source.tag === "Human" || b.block.source.tag === "Steer"))),
   );
   return visible.map((entry) => ({ kind: "single", entry }));
@@ -975,7 +976,7 @@ const SingleBlock = memo(function SingleBlock({
         );
       }
 
-      if (isThought) {
+      if (isThought && !debugMode) {
         return null;
       }
 
@@ -983,7 +984,12 @@ const SingleBlock = memo(function SingleBlock({
       return (
         <Box className={feedRowAgent}>
           <Box className={feedBubbleCol}>
-            <Box className={className} onClick={handleBubbleClick}>
+            {debugMode && (
+              <Text size="1" color="gray" style={{ opacity: 0.6, marginBottom: 2 }}>
+                {isCaptain ? "Captain" : "Mate"}{isThought ? " (thought)" : ""}
+              </Text>
+            )}
+            <Box className={className} onClick={handleBubbleClick} style={isThought ? { opacity: 0.6, fontStyle: "italic" } : undefined}>
               <TextBlock block={block as TextBlockType} />
             </Box>
             {isSelected && <BubbleActionBar text={block.text} speakable={isAgent} onReply={onReplyRequest} />}

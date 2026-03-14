@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, beforeEach, vi } from "vitest";
@@ -8,7 +9,7 @@ import type {
   SessionSummary,
 } from "../generated/ship";
 import { renderWithTheme } from "../test/render";
-import { SessionListPage } from "./SessionListPage";
+import { SessionListPage, NewSessionDialog } from "./SessionListPage";
 
 const mocks = vi.hoisted(() => ({
   createSession: vi.fn<() => Promise<CreateSessionResponse>>(),
@@ -33,6 +34,7 @@ vi.mock("../api/client", () => ({
     createSession: mocks.createSession,
     addProject: mocks.addProject,
     listAgentPresets: mocks.listAgentPresets,
+    getNewSessionDefaults: async () => null,
   }),
   onClientReady: () => () => {},
 }));
@@ -93,15 +95,21 @@ function makeSession(overrides: Partial<SessionSummary> = {}): SessionSummary {
   };
 }
 
-function renderPage(entry = "/") {
-  return renderWithTheme(
+function SessionListWithDialog({ entry }: { entry: string }) {
+  const [open, setOpen] = useState(false);
+  return (
     <MemoryRouter initialEntries={[entry]}>
       <Routes>
-        <Route path="/" element={<SessionListPage />} />
+        <Route path="/" element={<SessionListPage onNewSession={() => setOpen(true)} />} />
         <Route path="/sessions/:sessionId" element={<div>Session view</div>} />
       </Routes>
-    </MemoryRouter>,
+      <NewSessionDialog open={open} onOpenChange={setOpen} />
+    </MemoryRouter>
   );
+}
+
+function renderPage(entry = "/") {
+  return renderWithTheme(<SessionListWithDialog entry={entry} />);
 }
 
 beforeEach(() => {

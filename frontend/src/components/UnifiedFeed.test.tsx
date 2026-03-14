@@ -244,7 +244,7 @@ describe("UnifiedFeed", () => {
     expect(boundary).toHaveAttribute("data-phase-break-tone", "accepted");
     expect(boundary).toHaveClass(taskRecapBoundaryAccepted);
     expect(boundary).toHaveTextContent("Phase break");
-    expect(boundary).toHaveTextContent("Previous task accepted");
+    expect(boundary).toHaveTextContent("Task complete");
     expect(boundary).toHaveTextContent("+12");
     expect(boundary).toHaveTextContent("−3");
     expect(boundary).toHaveTextContent("2 files");
@@ -290,6 +290,10 @@ describe("UnifiedFeed", () => {
     expect(boundary).toHaveClass(taskRecapBoundaryNeutral);
     expect(boundary).toHaveTextContent("Phase break");
     expect(boundary).toHaveTextContent("Checkpoint committed");
+
+    // StepCommitted starts collapsed — expand it to see summary and items
+    fireEvent.click(boundary);
+
     expect(boundary).toHaveTextContent("Completed step 1: Set up types");
     expect(boundary).toHaveTextContent("Commit: abc1234");
     expect(boundary).toHaveTextContent("Diff: 1 file changed, 1 insertion(+)");
@@ -311,6 +315,10 @@ describe("UnifiedFeed", () => {
     expect(boundary).toHaveAttribute("data-phase-break-tone", "error");
     expect(boundary).toHaveClass(taskRecapBoundaryError);
     expect(boundary).toHaveTextContent("Rebase conflict");
+
+    // RebaseConflict starts collapsed — expand it to see the summary
+    fireEvent.click(boundary);
+
     expect(boundary).toHaveTextContent("The branch could not be rebased automatically.");
   });
 
@@ -323,6 +331,9 @@ describe("UnifiedFeed", () => {
         timestamp: "2026-03-13T10:00:00Z",
       },
     ]);
+
+    // StepCommitted starts collapsed — expand it to see items
+    fireEvent.click(screen.getByTestId("workflow-milestone-boundary"));
 
     const commitItem = screen.getByText("Commit: abc1234").closest('[data-testid="workflow-milestone-item"]');
     const diffItem = screen
@@ -350,6 +361,9 @@ describe("UnifiedFeed", () => {
         timestamp: "2026-03-13T10:00:00Z",
       },
     ]);
+
+    // StepCommitted starts collapsed — expand it to see items
+    fireEvent.click(screen.getByTestId("workflow-milestone-boundary"));
 
     const milestoneItems = screen.getAllByTestId("workflow-milestone-item");
 
