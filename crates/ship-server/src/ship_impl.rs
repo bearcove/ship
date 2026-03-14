@@ -7473,13 +7473,15 @@ impl Ship for ShipImpl {
             return;
         };
 
-        let mut transcriber = match crate::transcriber::SpeechTranscriber::new(&model_path) {
+        let mut transcriber = match crate::transcriber::SpeechTranscriber::new(&model_path)
+            .map_err(|e| e.to_string())
+        {
             Ok(t) => t,
-            Err(e) => {
-                tracing::error!("failed to create speech transcriber: {e}");
+            Err(message) => {
+                tracing::error!("Failed to create transcriber: {message}");
                 let _ = segments_out
                     .send(TranscribeMessage::Error {
-                        message: format!("Failed to create transcriber: {e}"),
+                        message: format!("Failed to create transcriber: {message}"),
                     })
                     .await;
                 return;
