@@ -142,6 +142,15 @@ pub trait CaptainMcp {
     // r[captain.tool.cancel]
     async fn captain_cancel(&self, reason: Option<String>) -> McpToolCallResponse;
 
+    // r[captain.tool.git-status]
+    async fn captain_git_status(&self) -> McpToolCallResponse;
+
+    // r[captain.tool.review-diff]
+    async fn captain_review_diff(&self) -> McpToolCallResponse;
+
+    // r[captain.tool.rebase-status]
+    async fn captain_rebase_status(&self) -> McpToolCallResponse;
+
     // r[captain.tool.notify-human]
     async fn captain_notify_human(&self, message: String) -> McpToolCallResponse;
 
@@ -178,8 +187,11 @@ pub trait CaptainMcp {
     async fn captain_commit(&self, step_index: Option<u64>, message: String)
     -> McpToolCallResponse;
 
-    // r[captain.tool.continue-rebase]
+    // r[captain.tool.rebase-continue]
     async fn captain_continue_rebase(&self) -> McpToolCallResponse;
+
+    // r[captain.tool.rebase-abort]
+    async fn captain_abort_rebase(&self) -> McpToolCallResponse;
 }
 
 // r[mate.tool.implementation]

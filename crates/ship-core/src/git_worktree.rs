@@ -96,6 +96,62 @@ impl WorktreeOps for GitWorktreeOps {
         ensure_success_stdout(output).map(|stdout| !stdout.trim().is_empty())
     }
 
+    async fn current_branch(&self, worktree_path: &Path) -> Result<String, WorktreeError> {
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(worktree_path)
+            .args(["rev-parse", "--abbrev-ref", "HEAD"])
+            .output()
+            .await
+            .map_err(|error| WorktreeError {
+                message: error.to_string(),
+            })?;
+
+        Ok(ensure_success_stdout(output)?.trim().to_owned())
+    }
+
+    async fn is_rebase_in_progress(&self, worktree_path: &Path) -> Result<bool, WorktreeError> {
+        Ok(git_path_exists(worktree_path, "rebase-merge").await?
+            || git_path_exists(worktree_path, "rebase-apply").await?)
+    }
+
+    async fn unmerged_paths(&self, worktree_path: &Path) -> Result<Vec<String>, WorktreeError> {
+        git_diff_filter_paths(worktree_path, "U").await
+    }
+
+    async fn tracked_conflict_marker_paths(
+        &self,
+        worktree_path: &Path,
+    ) -> Result<Vec<String>, WorktreeError> {
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(worktree_path)
+            .args(["ls-files", "-z"])
+            .output()
+            .await
+            .map_err(|error| WorktreeError {
+                message: error.to_string(),
+            })?;
+
+        let stdout = ensure_success_stdout(output)?;
+        let mut paths = Vec::new();
+        for relative in stdout.split('\0').filter(|path| !path.is_empty()) {
+            let file_path = worktree_path.join(relative);
+            let bytes = fs_err::tokio::read(&file_path)
+                .await
+                .map_err(|error| WorktreeError {
+                    message: format!("failed to read {}: {error}", file_path.display()),
+                })?;
+            if contains_conflict_marker(&bytes, b"<<<<<<<")
+                || contains_conflict_marker(&bytes, b"=======")
+                || contains_conflict_marker(&bytes, b">>>>>>>")
+            {
+                paths.push(relative.to_owned());
+            }
+        }
+        Ok(paths)
+    }
+
     async fn commit_all(&self, worktree_path: &Path, message: &str) -> Result<(), WorktreeError> {
         let add_output = Command::new("git")
             .arg("-C")
@@ -257,7 +313,26 @@ impl WorktreeOps for GitWorktreeOps {
     }
 
     async fn rebase_continue(&self, worktree_path: &Path) -> Result<RebaseOutcome, WorktreeError> {
-        // Stage all changes so resolved conflict markers are included.
+        let unmerged_paths = self.unmerged_paths(worktree_path).await?;
+        if !unmerged_paths.is_empty() {
+            return Err(WorktreeError {
+                message: format!(
+                    "cannot continue rebase with unresolved paths:\n{}",
+                    unmerged_paths.join("\n")
+                ),
+            });
+        }
+
+        let marker_paths = self.tracked_conflict_marker_paths(worktree_path).await?;
+        if !marker_paths.is_empty() {
+            return Err(WorktreeError {
+                message: format!(
+                    "cannot continue rebase while conflict markers remain in tracked files:\n{}",
+                    marker_paths.join("\n")
+                ),
+            });
+        }
+
         let add_output = Command::new("git")
             .arg("-C")
             .arg(worktree_path)
@@ -292,25 +367,7 @@ impl WorktreeOps for GitWorktreeOps {
             return Ok(RebaseOutcome::Clean);
         }
 
-        // Check if more conflicts remain.
-        let conflict_output = Command::new("git")
-            .arg("-C")
-            .arg(worktree_path)
-            .arg("diff")
-            .arg("--name-only")
-            .arg("--diff-filter=U")
-            .output()
-            .await
-            .map_err(|error| WorktreeError {
-                message: error.to_string(),
-            })?;
-
-        let conflict_files: Vec<String> = String::from_utf8_lossy(&conflict_output.stdout)
-            .lines()
-            .filter(|l| !l.is_empty())
-            .map(|l| l.to_owned())
-            .collect();
-
+        let conflict_files = self.unmerged_paths(worktree_path).await?;
         if !conflict_files.is_empty() {
             return Ok(RebaseOutcome::Conflict {
                 files: conflict_files,
@@ -321,6 +378,21 @@ impl WorktreeOps for GitWorktreeOps {
         Err(WorktreeError {
             message: format!("rebase --continue failed: {}", stderr.trim()),
         })
+    }
+
+    async fn rebase_abort(&self, worktree_path: &Path) -> Result<(), WorktreeError> {
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(worktree_path)
+            .arg("rebase")
+            .arg("--abort")
+            .output()
+            .await
+            .map_err(|error| WorktreeError {
+                message: error.to_string(),
+            })?;
+
+        ensure_success(output)
     }
 
     async fn reset_to_base(
@@ -395,6 +467,48 @@ impl WorktreeOps for GitWorktreeOps {
             .collect();
         Ok(commits)
     }
+}
+
+async fn git_diff_filter_paths(
+    worktree_path: &Path,
+    diff_filter: &str,
+) -> Result<Vec<String>, WorktreeError> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(worktree_path)
+        .arg("diff")
+        .arg("--name-only")
+        .arg(format!("--diff-filter={diff_filter}"))
+        .output()
+        .await
+        .map_err(|error| WorktreeError {
+            message: error.to_string(),
+        })?;
+
+    Ok(ensure_success_stdout(output)?
+        .lines()
+        .filter(|line| !line.is_empty())
+        .map(str::to_owned)
+        .collect())
+}
+
+async fn git_path_exists(worktree_path: &Path, suffix: &str) -> Result<bool, WorktreeError> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(worktree_path)
+        .args(["rev-parse", "--git-path", suffix])
+        .output()
+        .await
+        .map_err(|error| WorktreeError {
+            message: error.to_string(),
+        })?;
+
+    let git_path = ensure_success_stdout(output)?;
+    Ok(fs_err::tokio::metadata(git_path.trim()).await.is_ok())
+}
+
+fn contains_conflict_marker(bytes: &[u8], marker: &[u8]) -> bool {
+    bytes.windows(marker.len()).any(|window| window == marker)
 }
 
 fn repo_root_for_worktree(path: &Path) -> Result<&Path, WorktreeError> {

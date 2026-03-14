@@ -196,6 +196,17 @@ pub trait WorktreeOps: Send + Sync {
 
     async fn has_uncommitted_changes(&self, path: &Path) -> Result<bool, WorktreeError>;
 
+    async fn current_branch(&self, worktree_path: &Path) -> Result<String, WorktreeError>;
+
+    async fn is_rebase_in_progress(&self, worktree_path: &Path) -> Result<bool, WorktreeError>;
+
+    async fn unmerged_paths(&self, worktree_path: &Path) -> Result<Vec<String>, WorktreeError>;
+
+    async fn tracked_conflict_marker_paths(
+        &self,
+        worktree_path: &Path,
+    ) -> Result<Vec<String>, WorktreeError>;
+
     /// Stage all changes and create a commit with the given message.
     async fn commit_all(&self, worktree_path: &Path, message: &str) -> Result<(), WorktreeError>;
 
@@ -230,6 +241,8 @@ pub trait WorktreeOps: Send + Sync {
     /// Returns `RebaseOutcome::Conflict` if more conflicts remain after the
     /// continue step, or `RebaseOutcome::Clean` when the rebase finishes.
     async fn rebase_continue(&self, worktree_path: &Path) -> Result<RebaseOutcome, WorktreeError>;
+
+    async fn rebase_abort(&self, worktree_path: &Path) -> Result<(), WorktreeError>;
 
     /// Reset the already-checked-out worktree branch in place so it matches
     /// `base_branch`. This is server-owned state management for starting fresh

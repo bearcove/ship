@@ -247,6 +247,11 @@ struct FakeWorktreeInner {
     created: HashMap<PathBuf, (String, String, String, PathBuf)>,
     removed: Vec<(PathBuf, bool)>,
     dirty_flags: HashMap<PathBuf, bool>,
+    current_branches: HashMap<PathBuf, String>,
+    rebase_in_progress: HashMap<PathBuf, bool>,
+    unmerged_paths: HashMap<PathBuf, Vec<String>>,
+    conflict_marker_paths: HashMap<PathBuf, Vec<String>>,
+    rebase_abort_requests: Vec<PathBuf>,
     branches: Vec<String>,
     deleted_branches: Vec<(String, bool, PathBuf)>,
     reset_requests: Vec<(PathBuf, String)>,
@@ -277,6 +282,38 @@ impl FakeWorktreeOps {
             .expect("fake worktree ops mutex poisoned")
             .dirty_flags
             .insert(path, has_changes);
+    }
+
+    pub fn set_current_branch(&self, path: PathBuf, branch: impl Into<String>) {
+        self.inner
+            .lock()
+            .expect("fake worktree ops mutex poisoned")
+            .current_branches
+            .insert(path, branch.into());
+    }
+
+    pub fn set_rebase_in_progress(&self, path: PathBuf, in_progress: bool) {
+        self.inner
+            .lock()
+            .expect("fake worktree ops mutex poisoned")
+            .rebase_in_progress
+            .insert(path, in_progress);
+    }
+
+    pub fn set_unmerged_paths(&self, path: PathBuf, files: Vec<String>) {
+        self.inner
+            .lock()
+            .expect("fake worktree ops mutex poisoned")
+            .unmerged_paths
+            .insert(path, files);
+    }
+
+    pub fn set_conflict_marker_paths(&self, path: PathBuf, files: Vec<String>) {
+        self.inner
+            .lock()
+            .expect("fake worktree ops mutex poisoned")
+            .conflict_marker_paths
+            .insert(path, files);
     }
 
     pub fn set_remove_error(&self, path: PathBuf, message: impl Into<String>) {
@@ -424,6 +461,44 @@ impl WorktreeOps for FakeWorktreeOps {
         Ok(*inner.dirty_flags.get(path).unwrap_or(&false))
     }
 
+    async fn current_branch(&self, worktree_path: &Path) -> Result<String, WorktreeError> {
+        let inner = self.inner.lock().expect("fake worktree ops mutex poisoned");
+        Ok(inner
+            .current_branches
+            .get(worktree_path)
+            .cloned()
+            .unwrap_or_else(|| "HEAD".to_owned()))
+    }
+
+    async fn is_rebase_in_progress(&self, worktree_path: &Path) -> Result<bool, WorktreeError> {
+        let inner = self.inner.lock().expect("fake worktree ops mutex poisoned");
+        Ok(*inner
+            .rebase_in_progress
+            .get(worktree_path)
+            .unwrap_or(&false))
+    }
+
+    async fn unmerged_paths(&self, worktree_path: &Path) -> Result<Vec<String>, WorktreeError> {
+        let inner = self.inner.lock().expect("fake worktree ops mutex poisoned");
+        Ok(inner
+            .unmerged_paths
+            .get(worktree_path)
+            .cloned()
+            .unwrap_or_default())
+    }
+
+    async fn tracked_conflict_marker_paths(
+        &self,
+        worktree_path: &Path,
+    ) -> Result<Vec<String>, WorktreeError> {
+        let inner = self.inner.lock().expect("fake worktree ops mutex poisoned");
+        Ok(inner
+            .conflict_marker_paths
+            .get(worktree_path)
+            .cloned()
+            .unwrap_or_default())
+    }
+
     async fn commit_all(&self, worktree_path: &Path, message: &str) -> Result<(), WorktreeError> {
         let mut inner = self.inner.lock().expect("fake worktree ops mutex poisoned");
         inner
@@ -478,8 +553,28 @@ impl WorktreeOps for FakeWorktreeOps {
         Ok(RebaseOutcome::Clean)
     }
 
-    async fn rebase_continue(&self, _worktree_path: &Path) -> Result<RebaseOutcome, WorktreeError> {
+    async fn rebase_continue(&self, worktree_path: &Path) -> Result<RebaseOutcome, WorktreeError> {
+        let mut inner = self.inner.lock().expect("fake worktree ops mutex poisoned");
+        if let Some(files) = inner.unmerged_paths.get(worktree_path).cloned() {
+            if !files.is_empty() {
+                return Ok(RebaseOutcome::Conflict { files });
+            }
+        }
+        inner
+            .rebase_in_progress
+            .insert(worktree_path.to_path_buf(), false);
         Ok(RebaseOutcome::Clean)
+    }
+
+    async fn rebase_abort(&self, worktree_path: &Path) -> Result<(), WorktreeError> {
+        let mut inner = self.inner.lock().expect("fake worktree ops mutex poisoned");
+        inner
+            .rebase_abort_requests
+            .push(worktree_path.to_path_buf());
+        inner
+            .rebase_in_progress
+            .insert(worktree_path.to_path_buf(), false);
+        Ok(())
     }
 
     async fn reset_to_base(

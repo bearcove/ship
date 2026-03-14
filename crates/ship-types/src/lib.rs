@@ -836,6 +836,64 @@ pub mod protocol {
         pub worktree_path: String,
     }
 
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct CaptainGitStatus {
+        pub branch_name: String,
+        pub base_branch: String,
+        pub is_dirty: bool,
+        pub rebase_in_progress: bool,
+        pub unmerged_paths: Vec<String>,
+        pub conflict_marker_paths: Vec<String>,
+        pub review_safe: bool,
+        pub accept_safe: bool,
+    }
+
+    #[repr(u8)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, facet::Facet)]
+    pub enum CaptainReviewDiffState {
+        Ready,
+        RebaseConflict,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct CaptainReviewDiff {
+        pub state: CaptainReviewDiffState,
+        pub status: CaptainGitStatus,
+        pub diff: String,
+        pub conflicted_files: Vec<String>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct CaptainRebaseStatus {
+        pub status: CaptainGitStatus,
+        pub can_continue: bool,
+        pub can_abort: bool,
+    }
+
+    #[repr(u8)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, facet::Facet)]
+    pub enum CaptainRebaseAction {
+        Continue,
+        Abort,
+    }
+
+    #[repr(u8)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, facet::Facet)]
+    pub enum CaptainRebaseActionOutcome {
+        Blocked,
+        Conflict,
+        Completed,
+        Aborted,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct CaptainRebaseActionResult {
+        pub action: CaptainRebaseAction,
+        pub outcome: CaptainRebaseActionOutcome,
+        pub status: CaptainRebaseStatus,
+        pub conflicted_files: Vec<String>,
+    }
+
     // r[proto.get-session]
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub struct SessionDetail {
@@ -971,12 +1029,13 @@ pub use ids::{BlockId, ProjectName, SessionId, TaskId};
 pub use persistence::{CurrentTask, PersistedSession, SessionConfig, TaskContentRecord};
 pub use prompt::PromptContentPart;
 pub use protocol::{
-    AgentDiscovery, ArchiveSessionRequest, ArchiveSessionResponse, AutonomyMode,
-    CloseSessionRequest, CloseSessionResponse, CreateSessionRequest, CreateSessionResponse,
-    HumanReviewRequest, McpDiffContent, McpEnvVar, McpHeader, McpHttpServerConfig, McpServerConfig,
-    McpSseServerConfig, McpStdioServerConfig, McpToolCallResponse, ProjectInfo, ServerInfo,
-    SessionDetail, SessionSummary, SetAgentEffortResponse, SetAgentModelResponse,
-    WorktreeDiffStats,
+    AgentDiscovery, ArchiveSessionRequest, ArchiveSessionResponse, AutonomyMode, CaptainGitStatus,
+    CaptainRebaseAction, CaptainRebaseActionOutcome, CaptainRebaseActionResult,
+    CaptainRebaseStatus, CaptainReviewDiff, CaptainReviewDiffState, CloseSessionRequest,
+    CloseSessionResponse, CreateSessionRequest, CreateSessionResponse, HumanReviewRequest,
+    McpDiffContent, McpEnvVar, McpHeader, McpHttpServerConfig, McpServerConfig, McpSseServerConfig,
+    McpStdioServerConfig, McpToolCallResponse, ProjectInfo, ServerInfo, SessionDetail,
+    SessionSummary, SetAgentEffortResponse, SetAgentModelResponse, WorktreeDiffStats,
 };
 pub use session::{SessionStartupStage, SessionStartupState};
 pub use structured::{

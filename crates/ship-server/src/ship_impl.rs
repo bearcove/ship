@@ -22,14 +22,15 @@ use ship_service::{CaptainMcp, CaptainMcpDispatcher, MateMcp, MateMcpDispatcher,
 use ship_types::{
     AgentAcpInfo, AgentDiscovery, AgentKind, AgentSnapshot, AgentState, ArchiveSessionRequest,
     ArchiveSessionResponse, AutonomyMode, BlockId, BlockPatch, CaptainAssignExtras,
-    CloseSessionRequest, CloseSessionResponse, CommitSummary, ContentBlock, CreateSessionRequest,
-    CreateSessionResponse, CurrentTask, DirtySessionStrategy, GlobalEvent, HumanReviewRequest,
-    McpDiffContent, McpServerConfig, McpStdioServerConfig, McpToolCallResponse, PersistedSession,
-    PlanStep, PlanStepInput, PlanStepStatus, ProjectInfo, ProjectName, PromptContentPart, Role,
-    ServerInfo, SessionConfig, SessionDetail, SessionEvent, SessionEventEnvelope, SessionId,
-    SessionStartupStage, SessionStartupState, SessionSummary, SetAgentEffortResponse,
-    SetAgentModelResponse, SubscribeMessage, TaskId, TaskRecapStats, TaskRecord, TaskStatus,
-    TextSource, ToolCallKind, ToolTarget, TranscribeSegment, WorktreeDiffStats,
+    CaptainGitStatus, CaptainRebaseStatus, CloseSessionRequest, CloseSessionResponse,
+    CommitSummary, ContentBlock, CreateSessionRequest, CreateSessionResponse, CurrentTask,
+    DirtySessionStrategy, GlobalEvent, HumanReviewRequest, McpDiffContent, McpServerConfig,
+    McpStdioServerConfig, McpToolCallResponse, PersistedSession, PlanStep, PlanStepInput,
+    PlanStepStatus, ProjectInfo, ProjectName, PromptContentPart, Role, ServerInfo, SessionConfig,
+    SessionDetail, SessionEvent, SessionEventEnvelope, SessionId, SessionStartupStage,
+    SessionStartupState, SessionSummary, SetAgentEffortResponse, SetAgentModelResponse,
+    SubscribeMessage, TaskId, TaskRecapStats, TaskRecord, TaskStatus, TextSource, ToolCallKind,
+    ToolTarget, TranscribeSegment, WorktreeDiffStats,
 };
 use similar::TextDiff;
 use tokio::process::Command as TokioCommand;
@@ -2194,6 +2195,161 @@ Here is your task:
             }
         };
         Ok(format!("Task cancelled.{}", duration_suffix))
+    }
+
+    async fn collect_captain_git_status(
+        &self,
+        session_id: &SessionId,
+    ) -> Result<CaptainGitStatus, String> {
+        let (worktree_path, base_branch) = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions
+                .get(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            let worktree_path = session
+                .worktree_path
+                .clone()
+                .ok_or_else(|| "session worktree not ready".to_owned())?;
+            (worktree_path, session.config.base_branch.clone())
+        };
+
+        let branch_name = self
+            .worktree_ops
+            .current_branch(&worktree_path)
+            .await
+            .map_err(|error| format!("failed to read current branch: {}", error.message))?;
+        let is_dirty = self
+            .worktree_ops
+            .has_uncommitted_changes(&worktree_path)
+            .await
+            .map_err(|error| format!("failed to read worktree dirtiness: {}", error.message))?;
+        let rebase_in_progress = self
+            .worktree_ops
+            .is_rebase_in_progress(&worktree_path)
+            .await
+            .map_err(|error| format!("failed to read rebase status: {}", error.message))?;
+        let unmerged_paths = self
+            .worktree_ops
+            .unmerged_paths(&worktree_path)
+            .await
+            .map_err(|error| format!("failed to read unmerged paths: {}", error.message))?;
+        let conflict_marker_paths = self
+            .worktree_ops
+            .tracked_conflict_marker_paths(&worktree_path)
+            .await
+            .map_err(|error| {
+                format!(
+                    "failed to scan tracked files for conflict markers: {}",
+                    error.message
+                )
+            })?;
+
+        let safe = !is_dirty
+            && !rebase_in_progress
+            && unmerged_paths.is_empty()
+            && conflict_marker_paths.is_empty();
+
+        Ok(CaptainGitStatus {
+            branch_name,
+            base_branch,
+            is_dirty,
+            rebase_in_progress,
+            unmerged_paths,
+            conflict_marker_paths,
+            review_safe: safe,
+            accept_safe: safe,
+        })
+    }
+
+    fn format_captain_git_status(status: &CaptainGitStatus) -> String {
+        format!(
+            "Branch: {}\nBase branch: {}\nDirty: {}\nRebase in progress: {}\nUnmerged paths: {}\nTracked files with conflict markers: {}\nSafe for review: {}\nSafe for accept: {}",
+            status.branch_name,
+            status.base_branch,
+            if status.is_dirty { "yes" } else { "no" },
+            if status.rebase_in_progress {
+                "yes"
+            } else {
+                "no"
+            },
+            Self::format_string_list(&status.unmerged_paths),
+            Self::format_string_list(&status.conflict_marker_paths),
+            if status.review_safe { "yes" } else { "no" },
+            if status.accept_safe { "yes" } else { "no" },
+        )
+    }
+
+    async fn collect_captain_rebase_status(
+        &self,
+        session_id: &SessionId,
+    ) -> Result<CaptainRebaseStatus, String> {
+        let status = self.collect_captain_git_status(session_id).await?;
+        let can_continue = status.rebase_in_progress
+            && status.unmerged_paths.is_empty()
+            && status.conflict_marker_paths.is_empty();
+        let can_abort = status.rebase_in_progress;
+        Ok(CaptainRebaseStatus {
+            status,
+            can_continue,
+            can_abort,
+        })
+    }
+
+    fn format_captain_rebase_status(status: &CaptainRebaseStatus) -> String {
+        format!(
+            "{}\nCan continue: {}\nCan abort: {}",
+            Self::format_captain_git_status(&status.status),
+            if status.can_continue { "yes" } else { "no" },
+            if status.can_abort { "yes" } else { "no" },
+        )
+    }
+
+    fn format_string_list(values: &[String]) -> String {
+        if values.is_empty() {
+            "none".to_owned()
+        } else {
+            values.join(", ")
+        }
+    }
+
+    // r[captain.tool.git-status]
+    async fn captain_tool_git_status(&self, session_id: &SessionId) -> Result<String, String> {
+        let status = self.collect_captain_git_status(session_id).await?;
+        Ok(Self::format_captain_git_status(&status))
+    }
+
+    // r[captain.tool.rebase-status]
+    async fn captain_tool_rebase_status(&self, session_id: &SessionId) -> Result<String, String> {
+        let status = self.collect_captain_rebase_status(session_id).await?;
+        Ok(Self::format_captain_rebase_status(&status))
+    }
+
+    // r[captain.tool.rebase-abort]
+    async fn captain_tool_abort_rebase(&self, session_id: &SessionId) -> Result<String, String> {
+        let worktree_path = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions
+                .get(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            session
+                .worktree_path
+                .clone()
+                .ok_or_else(|| "session worktree not ready".to_owned())?
+        };
+        let status = self.collect_captain_rebase_status(session_id).await?;
+        if !status.can_abort {
+            return Err("No rebase is currently in progress.".to_owned());
+        }
+        self.worktree_ops
+            .rebase_abort(&worktree_path)
+            .await
+            .map_err(|error| format!("rebase abort failed: {}", error.message))?;
+        Ok("Rebase aborted.".to_owned())
+    }
+
+    // r[captain.tool.review-diff]
+    async fn captain_tool_review_diff(&self, _session_id: &SessionId) -> Result<String, String> {
+        Err("captain_review_diff is not implemented yet".to_owned())
     }
 
     // r[captain.tool.notify-human]
@@ -7312,6 +7468,21 @@ impl CaptainMcp for CaptainMcpSessionService {
         )
     }
 
+    // r[captain.tool.git-status]
+    async fn captain_git_status(&self) -> McpToolCallResponse {
+        Self::response(self.ship.captain_tool_git_status(&self.session_id).await)
+    }
+
+    // r[captain.tool.review-diff]
+    async fn captain_review_diff(&self) -> McpToolCallResponse {
+        Self::response(self.ship.captain_tool_review_diff(&self.session_id).await)
+    }
+
+    // r[captain.tool.rebase-status]
+    async fn captain_rebase_status(&self) -> McpToolCallResponse {
+        Self::response(self.ship.captain_tool_rebase_status(&self.session_id).await)
+    }
+
     // r[captain.tool.notify-human]
     async fn captain_notify_human(&self, message: String) -> McpToolCallResponse {
         Self::response(
@@ -7400,13 +7571,18 @@ impl CaptainMcp for CaptainMcpSessionService {
         )
     }
 
-    // r[captain.tool.continue-rebase]
+    // r[captain.tool.rebase-continue]
     async fn captain_continue_rebase(&self) -> McpToolCallResponse {
         Self::response(
             self.ship
                 .captain_tool_continue_rebase(&self.session_id)
                 .await,
         )
+    }
+
+    // r[captain.tool.rebase-abort]
+    async fn captain_abort_rebase(&self) -> McpToolCallResponse {
+        Self::response(self.ship.captain_tool_abort_rebase(&self.session_id).await)
     }
 }
 
