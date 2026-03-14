@@ -30,7 +30,7 @@ use ship_types::{
     ServerInfo, SessionConfig, SessionDetail, SessionEvent, SessionEventEnvelope, SessionId,
     SessionStartupStage, SessionStartupState, SessionSummary, SetAgentEffortResponse,
     SetAgentModelResponse, SubscribeMessage, TaskId, TaskRecapStats, TaskRecord, TaskStatus,
-    TextSource, ToolCallKind, ToolTarget, TranscribeSegment, WorktreeDiffStats,
+    TextSource, ToolCallKind, ToolTarget, TranscribeMessage, TranscribeSegment, WorktreeDiffStats,
 };
 use similar::TextDiff;
 use tokio::process::Command as TokioCommand;
@@ -7450,7 +7450,7 @@ impl Ship for ShipImpl {
     async fn transcribe_audio(
         &self,
         mut audio_in: Rx<Vec<u8>>,
-        segments_out: Tx<TranscribeSegment>,
+        segments_out: Tx<TranscribeMessage>,
     ) {
         tracing::info!("transcribe_audio: stream started");
 
@@ -7464,6 +7464,11 @@ impl Ship for ShipImpl {
         };
         let Some(model_path) = model_path else {
             tracing::warn!("transcribe_audio: no whisper model configured");
+            let _ = segments_out
+                .send(TranscribeMessage::Error {
+                    message: "No whisper model configured".into(),
+                })
+                .await;
             let _ = segments_out.close(Default::default()).await;
             return;
         };
@@ -7472,7 +7477,11 @@ impl Ship for ShipImpl {
             Ok(t) => t,
             Err(e) => {
                 tracing::error!("failed to create speech transcriber: {e}");
-                // segments_out dropped here, closing the channel
+                let _ = segments_out
+                    .send(TranscribeMessage::Error {
+                        message: format!("Failed to create transcriber: {e}"),
+                    })
+                    .await;
                 return;
             }
         };
@@ -7522,10 +7531,13 @@ impl Ship for ShipImpl {
                                         end_ms: (segment.end_sample as f64 / 16.0) as u64,
                                         text: segment.text,
                                     };
-                                    let _ = segments_out.send(ts).await;
+                                    let _ = segments_out.send(TranscribeMessage::Segment(ts)).await;
                                 }
                                 crate::transcriber::SpeechEvent::Error(e) => {
                                     tracing::warn!("transcribe_audio: {e}");
+                                    let _ = segments_out
+                                        .send(TranscribeMessage::Error { message: e })
+                                        .await;
                                 }
                                 crate::transcriber::SpeechEvent::None => {}
                             }
@@ -7550,7 +7562,7 @@ impl Ship for ShipImpl {
                     end_ms: (segment.end_sample as f64 / 16.0) as u64,
                     text: segment.text,
                 };
-                let _ = segments_out.send(ts).await;
+                let _ = segments_out.send(TranscribeMessage::Segment(ts)).await;
             }
 
             let _ = segments_out.close(Default::default()).await;
