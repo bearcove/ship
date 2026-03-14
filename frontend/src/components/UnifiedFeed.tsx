@@ -43,7 +43,9 @@ import {
   liveBubblesRow,
   thinkingBubble,
   shimmerText,
-  thinkingStopBtn,
+  thinkingAvatarBtn,
+  thinkingAvatarImg,
+  thinkingAvatarStop,
   startupFeedBody,
   startupFeedItem,
   feedMessageMeta,
@@ -708,7 +710,7 @@ function ThinkingBubble({
       <div className={thinkingBubble}>
         <button
           type="button"
-          className={thinkingStopBtn}
+          className={thinkingAvatarBtn}
           onClick={() => {
             void (async () => {
               const client = await getShipClient();
@@ -717,13 +719,9 @@ function ThinkingBubble({
           }}
           title="Stop agent"
         >
-          <Stop size={14} weight="fill" />
+          <img src={avatarSrc} alt={agentName} className={thinkingAvatarImg} />
+          <span className={thinkingAvatarStop}><Stop size={14} weight="fill" /></span>
         </button>
-        <img
-          src={avatarSrc}
-          alt={agentName}
-          style={{ width: 36, height: 36, borderRadius: "50%", flexShrink: 0 }}
-        />
         {toolsOk > 0 && (
           <Text size="2" style={{ color: "var(--green-11)" }}>
             {toolsOk}✓
