@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use super::worktree_tools::{
-    ToolDefinition, read_file_tool, run_command_tool, to_sdk_tool, web_search_tool,
+    ToolDefinition, commit_tool, edit_confirm_tool, edit_prepare_tool, read_file_tool,
+    run_command_tool, to_sdk_tool, web_search_tool, write_file_tool,
 };
 use async_trait::async_trait;
 use roam::{ConnectionSettings, MetadataEntry, MetadataFlags, MetadataValue, NoopCaller, Parity};
@@ -315,46 +316,9 @@ fn tool_definitions() -> Vec<ToolDefinition> {
     vec![
         run_command_tool(),
         read_file_tool(),
-        ToolDefinition {
-            name: "write_file",
-            description: "Write a file in the current task worktree. Rust files are syntax-checked with rustfmt and auto-formatted before the write is committed.",
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "path": { "type": "string" },
-                    "content": { "type": "string" }
-                },
-                "required": ["path", "content"],
-                "additionalProperties": false,
-            }),
-        },
-        ToolDefinition {
-            name: "edit_prepare",
-            description: "Prepare a search-and-replace edit. Returns a diff preview without modifying the file. The response includes an edit_id in the structured content (diff.edit_id) and in the text. You MUST call edit_confirm with that edit_id to apply the edit.",
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "path": { "type": "string" },
-                    "old_string": { "type": "string" },
-                    "new_string": { "type": "string" },
-                    "replace_all": { "type": "boolean" }
-                },
-                "required": ["path", "old_string", "new_string"],
-                "additionalProperties": false,
-            }),
-        },
-        ToolDefinition {
-            name: "edit_confirm",
-            description: "Apply a previously prepared edit. Pass the edit_id exactly as returned by edit_prepare (from the structured content diff.edit_id field, or from the text response). Runs syntax validation for Rust files. If validation fails, the file is not modified and the error is returned.",
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "edit_id": { "type": "string" }
-                },
-                "required": ["edit_id"],
-                "additionalProperties": false,
-            }),
-        },
+        write_file_tool(),
+        edit_prepare_tool(),
+        edit_confirm_tool(),
         ToolDefinition {
             name: "mate_send_update",
             description: "Send a progress update to the captain. Returns immediately without waiting for a response.",
@@ -391,19 +355,7 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                 "additionalProperties": false,
             }),
         },
-        ToolDefinition {
-            name: "commit",
-            description: "Commit staged changes with the given message. The message is used verbatim. Optionally marks a plan step complete if step_index is provided. Call this IMMEDIATELY after finishing each step — before starting the next one. All file changes for this step must already be written. Do not run manual git commit/rebase/merge commands.",
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "message": { "type": "string", "description": "Commit message, used verbatim." },
-                    "step_index": { "type": "integer", "minimum": 0, "description": "If provided, marks this plan step as complete." }
-                },
-                "required": ["message"],
-                "additionalProperties": false,
-            }),
-        },
+        commit_tool(),
         ToolDefinition {
             name: "mate_ask_captain",
             description: "Ask the captain a question and wait for their response. Blocks until the captain replies via captain_steer.",
