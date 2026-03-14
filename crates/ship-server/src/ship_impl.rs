@@ -6076,7 +6076,7 @@ Here is your task:
         session_id: &SessionId,
         summary: String,
     ) -> Result<String, String> {
-        let worktree_path = {
+        let (worktree_path, base_branch) = {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let session = sessions
                 .get_mut(session_id)
@@ -6097,7 +6097,11 @@ Here is your task:
                 task.pending_mate_guidance = Some(PLAN_REQUIRED_MESSAGE.to_owned());
                 return Err(PLAN_REQUIRED_MESSAGE.to_owned());
             }
-            Self::current_task_worktree_path(session)?.to_path_buf()
+            let base_branch = session.config.base_branch.clone();
+            (
+                Self::current_task_worktree_path(session)?.to_path_buf(),
+                base_branch,
+            )
         };
 
         let has_changes = self
@@ -6111,6 +6115,85 @@ Here is your task:
                     .to_owned(),
             );
         }
+
+        let (review_commits, review_stats) = {
+            let log_output = TokioCommand::new("git")
+                .args(["log", &format!("{}..HEAD", base_branch), "--format=%h %s"])
+                .current_dir(&worktree_path)
+                .output()
+                .await
+                .ok()
+                .filter(|o| o.status.success());
+
+            let mut commits: Vec<CommitSummary> = log_output
+                .map(|o| {
+                    String::from_utf8_lossy(&o.stdout)
+                        .lines()
+                        .filter(|l| !l.is_empty())
+                        .map(|line| {
+                            let (hash, subject) = line.split_once(' ').unwrap_or((line, ""));
+                            CommitSummary {
+                                hash: hash.to_owned(),
+                                subject: subject.to_owned(),
+                                diff: None,
+                            }
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            for commit in &mut commits {
+                commit.diff = TokioCommand::new("git")
+                    .args(["show", "--format=", &commit.hash])
+                    .current_dir(&worktree_path)
+                    .output()
+                    .await
+                    .ok()
+                    .filter(|o| o.status.success())
+                    .map(|o| {
+                        let raw = String::from_utf8_lossy(&o.stdout);
+                        let t = raw.trim_start_matches('\n').to_owned();
+                        if t.is_empty() { None } else { Some(t) }
+                    })
+                    .unwrap_or(None);
+            }
+
+            let stats = if !commits.is_empty() {
+                TokioCommand::new("git")
+                    .args(["diff", "--numstat", &base_branch, "HEAD"])
+                    .current_dir(&worktree_path)
+                    .output()
+                    .await
+                    .ok()
+                    .filter(|o| o.status.success())
+                    .map(|o| {
+                        let (fc, ins, del) = String::from_utf8_lossy(&o.stdout)
+                            .lines()
+                            .filter(|l| !l.is_empty())
+                            .fold((0u32, 0u32, 0u32), |(fc, ins, del), line| {
+                                let mut parts = line.split('\t');
+                                let i = parts
+                                    .next()
+                                    .and_then(|s| s.parse::<u32>().ok())
+                                    .unwrap_or(0);
+                                let d = parts
+                                    .next()
+                                    .and_then(|s| s.parse::<u32>().ok())
+                                    .unwrap_or(0);
+                                (fc + 1, ins + i, del + d)
+                            });
+                        TaskRecapStats {
+                            files_changed: fc,
+                            insertions: ins,
+                            deletions: del,
+                        }
+                    })
+            } else {
+                None
+            };
+
+            (commits, stats)
+        };
 
         let (tx, rx) = tokio::sync::oneshot::channel::<MateReviewOutcome>();
         {
@@ -6138,8 +6221,8 @@ Here is your task:
                     "Work submitted for review",
                     summary.clone(),
                     Vec::new(),
-                    Vec::new(),
-                    None,
+                    review_commits.clone(),
+                    review_stats.clone(),
                 );
                 Self::invalidate_mate_activity_summary_state(active);
             }
