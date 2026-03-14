@@ -48,6 +48,7 @@ export const sidebarHomeLink = style({
     "(min-width: 701px)": {
       display: "flex",
       alignItems: "center",
+      justifyContent: "center",
       padding: "var(--space-3) var(--space-3) var(--space-1)",
       flexShrink: 0,
     },

@@ -140,29 +140,39 @@ export function SessionSidebar({
       {isOpen && <div className={sidebarBackdrop} onClick={onClose} />}
       <Box className={sidebarRoot} data-open={isOpen ? "true" : undefined}>
         <div className={sidebarHomeLink}>
-          <Flex direction="column" gap="2">
-            <Link to="/" style={{ textDecoration: "none", color: "inherit" }}>
-              <Text size="3" weight="bold">
-                Ship
-              </Text>
-            </Link>
-            <Link
-              to="#"
-              style={{ textDecoration: "none", color: "inherit" }}
-              onClick={(e) => {
-                e.preventDefault();
-                setNewSessionOpen(true);
-              }}
-            >
-              <Flex align="center" gap="1" pt="2">
-                <PlusIcon size={14} />
-                <Text size="2">New session</Text>
-              </Flex>
-            </Link>
-          </Flex>
+          <Link to="/" style={{ textDecoration: "none", color: "inherit", display: "flex", justifyContent: "center" }}>
+            <img
+              src="/ship-logo-w256.png"
+              alt="Ship"
+              style={{ width: 120, height: 120, objectFit: "contain", padding: 20 }}
+            />
+          </Link>
         </div>
 
         <Box className={sidebarScrollArea}>
+          <Box px="3" pb="2">
+            <button
+              type="button"
+              onClick={() => setNewSessionOpen(true)}
+              style={{
+                width: "100%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "var(--space-1)",
+                padding: "var(--space-2) var(--space-3)",
+                border: "1px solid var(--gray-a6)",
+                borderRadius: "var(--radius-2)",
+                background: "var(--color-surface)",
+                color: "inherit",
+                cursor: "pointer",
+                fontSize: "var(--font-size-2)",
+              }}
+            >
+              <PlusIcon size={14} />
+              New session
+            </button>
+          </Box>
           {sessions.length === 0 ? (
             <div className={sessionRowEmpty}>No sessions</div>
           ) : (
