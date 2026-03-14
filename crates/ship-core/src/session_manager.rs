@@ -512,6 +512,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                     autonomy_mode: session.config.autonomy_mode,
                     created_at: session.created_at.clone(),
                     is_admiral: false,
+                    is_read: session.is_read,
                 }
             })
             .collect()

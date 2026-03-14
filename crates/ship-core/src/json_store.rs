@@ -79,6 +79,7 @@ impl From<LegacyPersistedSession> for PersistedSession {
             archived_at: None,
             captain_acp_session_id: None,
             mate_acp_session_id: None,
+            is_read: true,
         }
     }
 }

@@ -8020,6 +8020,7 @@ use captain_steer. Otherwise continue your current work."
             autonomy_mode: AutonomyMode::Autonomous,
             created_at: String::new(),
             is_admiral: true,
+            is_read: true,
         })
     }
 
