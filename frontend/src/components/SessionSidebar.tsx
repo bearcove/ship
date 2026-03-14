@@ -153,19 +153,6 @@ export function SessionSidebar({
           </Link>
         </div>
 
-        <Box px="3" pb="1">
-          <Link
-            to="/admiral"
-            className={sessionRow}
-            style={{ textDecoration: "none", color: "inherit" }}
-          >
-            <Anchor size={16} weight="bold" />
-            <Text size="2" weight="medium" style={{ flex: 1 }}>
-              Admiral
-            </Text>
-          </Link>
-        </Box>
-
         <Box className={sidebarScrollArea}>
           <Box px="3" pb="2">
             <button
