@@ -743,7 +743,7 @@ export const sessionHeaderRows = style({
 
 export const sessionHeaderSideButtons = style({
   display: "grid",
-  gridTemplateColumns: "1fr 1fr",
+  gridTemplateColumns: "52px 52px",
   alignSelf: "stretch",
   borderLeft: "1px solid var(--gray-a4)",
 });
