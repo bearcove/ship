@@ -197,10 +197,13 @@ const actionBarEntrance = keyframes({
 });
 
 export const feedBubbleActionBar = style({
+  position: "absolute",
+  top: "calc(100% + 4px)",
+  left: 0,
+  zIndex: 10,
   display: "flex",
   flexDirection: "row",
   gap: "var(--space-1)",
-  paddingTop: "var(--space-2)",
   animation: `${actionBarEntrance} 0.15s ease-out both`,
 });
 
