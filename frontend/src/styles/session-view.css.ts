@@ -194,13 +194,20 @@ export const taskRecapBoundary = style({
   display: "flex",
   flexDirection: "column",
   gap: "var(--space-2)",
-  width: "auto",
-  marginLeft: "calc(var(--space-3) * -1)",
-  marginRight: "calc(var(--space-3) * -1)",
-  padding: "var(--space-2) var(--space-3) var(--space-3)",
+  width: "100%",
   borderTop: "2px solid var(--green-8)",
   borderBottom: "1px solid var(--gray-a4)",
   background: "linear-gradient(180deg, var(--green-a3) 0%, var(--gray-a2) 100%)",
+});
+
+export const taskRecapContent = style({
+  maxWidth: "640px",
+  width: "100%",
+  marginLeft: "auto",
+  marginRight: "auto",
+  paddingLeft: "var(--space-3)",
+  paddingRight: "var(--space-3)",
+  padding: "var(--space-2) var(--space-3) var(--space-3)",
 });
 
 export const taskRecapHeader = style({

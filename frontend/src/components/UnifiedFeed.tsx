@@ -71,6 +71,7 @@ import {
   taskRecapCommitHash,
   taskRecapCommitSubject,
   taskRecapCaret,
+  taskRecapContent,
   taskRecapDiff,
   taskRecapDiffInner,
 } from "../styles/session-view.css";
@@ -214,6 +215,7 @@ function TaskRecapBlock({
       data-testid="task-recap-boundary"
       data-feed-boundary="phase-break"
     >
+      <Box className={taskRecapContent}>
       <Flex className={taskRecapHeader} align="start" justify="between" gap="3">
         <Box style={{ minWidth: 0 }}>
           <Text className={taskRecapEyebrow}>Phase break</Text>
@@ -271,6 +273,7 @@ function TaskRecapBlock({
           })}
         </Box>
       )}
+      </Box>
     </Box>
   );
 }
@@ -889,62 +892,74 @@ export function UnifiedFeed({
             <ArrowDown size={16} />
           </button>
         )}
+        <Box className={unifiedFeedStream}>
+          {showStartupFeed && startupState && (
+            <Box className={feedContentColumn}>
+              <StartupFeedState startupState={startupState} />
+            </Box>
+          )}
+
+          {truncated && (
+            <Flex align="center" justify="center" py="2">
+              <Text size="1" color="gray">
+                Showing last {MAX_RENDERED_BLOCKS} of {blocks.length} blocks
+              </Text>
+            </Flex>
+          )}
+
+          {segments.map((seg, idx) => {
+            const agentRole = segmentAgentRole(seg);
+            const agentForBlock =
+              agentRole?.tag === "Captain"
+                ? captain
+                : agentRole?.tag === "Mate"
+                  ? mate
+                  : seg.entry.role.tag === "Captain"
+                    ? captain
+                    : mate;
+            const animate = !initialBlockIds.current.has(seg.entry.blockId);
+            const isTaskRecap = seg.entry.block.tag === "TaskRecap";
+            const blockContent = animate ? (
+              <div className={feedRowAnimate}>
+                <SingleBlock
+                  entry={seg.entry}
+                  sessionId={sessionId}
+                  lastUnresolvedPermBlockId={lastUnresolvedPermBlockId}
+                  agentForBlock={agentForBlock}
+                  isLast={idx === segments.length - 1}
+                  userAvatarUrl={userAvatarUrl}
+                  taskCompletedDuration={taskCompletedDuration}
+                  debugMode={debugMode}
+                />
+              </div>
+            ) : (
+              <SingleBlock
+                entry={seg.entry}
+                sessionId={sessionId}
+                lastUnresolvedPermBlockId={lastUnresolvedPermBlockId}
+                agentForBlock={agentForBlock}
+                isLast={idx === segments.length - 1}
+                userAvatarUrl={userAvatarUrl}
+                taskCompletedDuration={taskCompletedDuration}
+                debugMode={debugMode}
+              />
+            );
+            return (
+              <Fragment key={seg.entry.blockId}>
+                {isTaskRecap ? blockContent : (
+                  <Box className={feedContentColumn}>{blockContent}</Box>
+                )}
+                {debugMode && (
+                  <Box className={feedContentColumn}>
+                    <RawBlockDebug entry={seg.entry} />
+                  </Box>
+                )}
+              </Fragment>
+            );
+          })}
+        </Box>
+
         <Box className={feedContentColumn}>
-          <Box className={unifiedFeedStream}>
-            {showStartupFeed && startupState && <StartupFeedState startupState={startupState} />}
-
-            {truncated && (
-              <Flex align="center" justify="center" py="2">
-                <Text size="1" color="gray">
-                  Showing last {MAX_RENDERED_BLOCKS} of {blocks.length} blocks
-                </Text>
-              </Flex>
-            )}
-
-            {segments.map((seg, idx) => {
-              const agentRole = segmentAgentRole(seg);
-              const agentForBlock =
-                agentRole?.tag === "Captain"
-                  ? captain
-                  : agentRole?.tag === "Mate"
-                    ? mate
-                    : seg.entry.role.tag === "Captain"
-                      ? captain
-                      : mate;
-              const animate = !initialBlockIds.current.has(seg.entry.blockId);
-              return (
-                <Fragment key={seg.entry.blockId}>
-                  {animate ? (
-                    <div className={feedRowAnimate}>
-                      <SingleBlock
-                        entry={seg.entry}
-                        sessionId={sessionId}
-                        lastUnresolvedPermBlockId={lastUnresolvedPermBlockId}
-                        agentForBlock={agentForBlock}
-                        isLast={idx === segments.length - 1}
-                        userAvatarUrl={userAvatarUrl}
-                        taskCompletedDuration={taskCompletedDuration}
-                        debugMode={debugMode}
-                      />
-                    </div>
-                  ) : (
-                    <SingleBlock
-                      entry={seg.entry}
-                      sessionId={sessionId}
-                      lastUnresolvedPermBlockId={lastUnresolvedPermBlockId}
-                      agentForBlock={agentForBlock}
-                      isLast={idx === segments.length - 1}
-                      userAvatarUrl={userAvatarUrl}
-                      taskCompletedDuration={taskCompletedDuration}
-                      debugMode={debugMode}
-                    />
-                  )}
-                  {debugMode && <RawBlockDebug entry={seg.entry} />}
-                </Fragment>
-              );
-            })}
-          </Box>
-
           <Box className={liveBubblesRow}>
             {captainTurn && captain && (
               <ThinkingBubble
