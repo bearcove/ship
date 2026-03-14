@@ -742,6 +742,7 @@ export const sessionHeaderRoot = style({
   boxShadow: "0 0 20px var(--gray-a4)",
   display: "flex",
   flexDirection: "column",
+  background: "var(--color-background)",
 });
 
 export const sessionHeaderCollapsedArea = style({
