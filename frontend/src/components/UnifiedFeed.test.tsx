@@ -32,13 +32,21 @@ function makeTaskRecapBlock(): Extract<ContentBlock, { tag: "TaskRecap" }> {
   };
 }
 
-function makeWorkflowMilestoneBlock(): Extract<ContentBlock, { tag: "WorkflowMilestone" }> {
+function makeWorkflowMilestoneBlock(
+  kind: Extract<ContentBlock, { tag: "WorkflowMilestone" }>["kind"]["tag"] = "StepCommitted",
+): Extract<ContentBlock, { tag: "WorkflowMilestone" }> {
+  const isRebaseConflict = kind === "RebaseConflict";
+
   return {
     tag: "WorkflowMilestone",
-    kind: { tag: "StepCommitted" },
-    title: "Checkpoint committed",
-    summary: "Completed step 1: Set up types",
-    items: ["Commit: abc1234", "Diff: 1 file changed, 1 insertion(+)"],
+    kind: { tag: kind },
+    title: isRebaseConflict ? "Rebase conflict" : "Checkpoint committed",
+    summary: isRebaseConflict
+      ? "The branch could not be rebased automatically."
+      : "Completed step 1: Set up types",
+    items: isRebaseConflict
+      ? ["Resolve conflicts in frontend/src/components/UnifiedFeed.tsx"]
+      : ["Commit: abc1234", "Diff: 1 file changed, 1 insertion(+)"],
   };
 }
 
@@ -212,6 +220,7 @@ describe("UnifiedFeed", () => {
     const boundary = screen.getByTestId("task-recap-boundary");
 
     expect(boundary).toHaveAttribute("data-feed-boundary", "phase-break");
+    expect(boundary).toHaveAttribute("data-phase-break-tone", "accepted");
     expect(boundary).toHaveTextContent("Phase break");
     expect(boundary).toHaveTextContent("Previous task accepted");
     expect(boundary).toHaveTextContent("+12");
@@ -255,11 +264,30 @@ describe("UnifiedFeed", () => {
 
     expect(boundary).toHaveAttribute("data-feed-boundary", "phase-break");
     expect(boundary).toHaveAttribute("data-phase-break-kind", "StepCommitted");
+    expect(boundary).toHaveAttribute("data-phase-break-tone", "neutral");
     expect(boundary).toHaveTextContent("Phase break");
     expect(boundary).toHaveTextContent("Checkpoint committed");
     expect(boundary).toHaveTextContent("Completed step 1: Set up types");
     expect(boundary).toHaveTextContent("Commit: abc1234");
     expect(boundary).toHaveTextContent("Diff: 1 file changed, 1 insertion(+)");
+  });
+
+  it("renders rebase-conflict workflow milestones with an error phase-break tone", () => {
+    renderFeed([
+      {
+        blockId: "milestone-rebase-conflict",
+        role: { tag: "Captain" },
+        block: makeWorkflowMilestoneBlock("RebaseConflict"),
+        timestamp: "2026-03-13T10:00:00Z",
+      },
+    ]);
+
+    const boundary = screen.getByTestId("workflow-milestone-boundary");
+
+    expect(boundary).toHaveAttribute("data-phase-break-kind", "RebaseConflict");
+    expect(boundary).toHaveAttribute("data-phase-break-tone", "error");
+    expect(boundary).toHaveTextContent("Rebase conflict");
+    expect(boundary).toHaveTextContent("The branch could not be rebased automatically.");
   });
 
   it("renders mate updates as centered synthetic entries without raw XML", () => {

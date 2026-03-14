@@ -318,7 +318,8 @@ function computeTurnStats(
     }
   }
 
-  for (const blockEntry of blocks.slice(lastMsgIdx + 1)) {
+  const turnStartIndex = lastMsgIdx >= 0 ? lastMsgIdx : 0;
+  for (const blockEntry of blocks.slice(turnStartIndex)) {
     if (!turnStarted) {
       const blockMs = parseTimestampMs(blockEntry.timestamp);
       if (blockMs != null && blockMs >= turnStartMs) {
@@ -329,9 +330,13 @@ function computeTurnStats(
     }
 
     if (blockEntry.role.tag !== roleTag) continue;
-    if (blockEntry.block.tag === "Text" && blockEntry.block.source.tag === "AgentThought") {
-      tokens += countTokens(blockEntry.block.text);
-      lastUtterance = blockEntry.block.text;
+    if (blockEntry.block.tag === "Text") {
+      if (blockEntry.block.source.tag === "AgentThought") {
+        tokens += countTokens(blockEntry.block.text);
+        lastUtterance = blockEntry.block.text;
+      } else if (blockEntry.block.source.tag === "AgentMessage") {
+        tokens += countTokens(blockEntry.block.text);
+      }
     } else if (blockEntry.block.tag === "ToolCall") {
       if (blockEntry.block.status.tag === "Success") ok++;
       else if (blockEntry.block.status.tag === "Failure") failed++;
@@ -1159,13 +1164,12 @@ export function UnifiedFeed({
     return blockId;
   }, [visibleBlocks]);
   const captainTurn = useMemo(
-    () =>
-      captainWorking ? computeTurnStats(visibleBlocks, "Captain", captainTurnStartedAt) : null,
-    [captainWorking, visibleBlocks, captainTurnStartedAt],
+    () => (captainWorking ? computeTurnStats(blocks, "Captain", captainTurnStartedAt) : null),
+    [captainWorking, blocks, captainTurnStartedAt],
   );
   const mateTurn = useMemo(
-    () => (mateWorking ? computeTurnStats(visibleBlocks, "Mate", mateTurnStartedAt) : null),
-    [mateWorking, visibleBlocks, mateTurnStartedAt],
+    () => (mateWorking ? computeTurnStats(blocks, "Mate", mateTurnStartedAt) : null),
+    [mateWorking, blocks, mateTurnStartedAt],
   );
   const renderedSegments = useMemo<RenderedSegment[]>(() => {
     let previousTimestampMs: number | null = null;
