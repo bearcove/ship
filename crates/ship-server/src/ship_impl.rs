@@ -1946,16 +1946,26 @@ Continue where you left off — wait for the human to give you direction."
                             },
                         });
                     }
-                    let (all_passed, results) = match run_hooks(&hooks.checks, &worktree_path).await
-                    {
-                        Ok(outcomes) => {
-                            (true, outcomes.iter().map(|o| o.to_check_result()).collect())
-                        }
-                        Err(ref error) => (
-                            false,
-                            error.outcomes.iter().map(|o| o.to_check_result()).collect(),
-                        ),
-                    };
+                    let (all_passed, results, check_error) =
+                        match run_hooks(&hooks.checks, &worktree_path).await {
+                            Ok(outcomes) => (
+                                true,
+                                outcomes
+                                    .iter()
+                                    .map(|o| o.to_check_result())
+                                    .collect::<Vec<_>>(),
+                                None,
+                            ),
+                            Err(error) => (
+                                false,
+                                error
+                                    .outcomes
+                                    .iter()
+                                    .map(|o| o.to_check_result())
+                                    .collect::<Vec<_>>(),
+                                Some(error.to_string()),
+                            ),
+                        };
                     if let Some(ref tx) = events_tx {
                         let _ = tx.send(SessionEventEnvelope {
                             seq: 0,
@@ -1963,12 +1973,26 @@ Continue where you left off — wait for the human to give you direction."
                             event: SessionEvent::ChecksFinished {
                                 context: "pre-merge".to_owned(),
                                 all_passed,
-                                results,
+                                results: results.clone(),
                             },
                         });
                     }
                     if !all_passed {
-                        return Err("checks failed — see session feed for details".to_owned());
+                        let detail = check_error.unwrap_or_else(|| {
+                            results
+                                .iter()
+                                .filter(|r| !r.passed)
+                                .map(|r| {
+                                    if r.output.trim().is_empty() {
+                                        format!("hook: {}", r.name)
+                                    } else {
+                                        format!("hook: {}\n{}", r.name, r.output)
+                                    }
+                                })
+                                .collect::<Vec<_>>()
+                                .join("\n\n")
+                        });
+                        return Err(format!("checks failed:\n{detail}"));
                     }
                 }
             }
@@ -2741,13 +2765,26 @@ Here is your task:
                         },
                     });
                 }
-                let (all_passed, results) = match run_hooks(&hooks.checks, &worktree_path).await {
-                    Ok(outcomes) => (true, outcomes.iter().map(|o| o.to_check_result()).collect()),
-                    Err(ref error) => (
-                        false,
-                        error.outcomes.iter().map(|o| o.to_check_result()).collect(),
-                    ),
-                };
+                let (all_passed, results, check_error) =
+                    match run_hooks(&hooks.checks, &worktree_path).await {
+                        Ok(outcomes) => (
+                            true,
+                            outcomes
+                                .iter()
+                                .map(|o| o.to_check_result())
+                                .collect::<Vec<_>>(),
+                            None,
+                        ),
+                        Err(error) => (
+                            false,
+                            error
+                                .outcomes
+                                .iter()
+                                .map(|o| o.to_check_result())
+                                .collect::<Vec<_>>(),
+                            Some(error.to_string()),
+                        ),
+                    };
                 if let Some(ref tx) = events_tx {
                     let _ = tx.send(SessionEventEnvelope {
                         seq: 0,
@@ -2755,12 +2792,26 @@ Here is your task:
                         event: SessionEvent::ChecksFinished {
                             context: "pre-merge".to_owned(),
                             all_passed,
-                            results,
+                            results: results.clone(),
                         },
                     });
                 }
                 if !all_passed {
-                    return Err("checks failed — see session feed for details".to_owned());
+                    let detail = check_error.unwrap_or_else(|| {
+                        results
+                            .iter()
+                            .filter(|r| !r.passed)
+                            .map(|r| {
+                                if r.output.trim().is_empty() {
+                                    format!("hook: {}", r.name)
+                                } else {
+                                    format!("hook: {}\n{}", r.name, r.output)
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n\n")
+                    });
+                    return Err(format!("checks failed:\n{detail}"));
                 }
             }
         }
@@ -5544,12 +5595,20 @@ Here is your task:
                                 },
                             });
                             let (all_passed, results) = match run_hooks(&checks, &wt).await {
-                                Ok(outcomes) => {
-                                    (true, outcomes.iter().map(|o| o.to_check_result()).collect())
-                                }
+                                Ok(outcomes) => (
+                                    true,
+                                    outcomes
+                                        .iter()
+                                        .map(|o| o.to_check_result())
+                                        .collect::<Vec<_>>(),
+                                ),
                                 Err(error) => (
                                     false,
-                                    error.outcomes.iter().map(|o| o.to_check_result()).collect(),
+                                    error
+                                        .outcomes
+                                        .iter()
+                                        .map(|o| o.to_check_result())
+                                        .collect::<Vec<_>>(),
                                 ),
                             };
                             let _ = events_tx.send(SessionEventEnvelope {
@@ -5558,7 +5617,7 @@ Here is your task:
                                 event: SessionEvent::ChecksFinished {
                                     context: "post-commit".to_owned(),
                                     all_passed,
-                                    results,
+                                    results: results.clone(),
                                 },
                             });
                         });
@@ -13116,6 +13175,50 @@ agent_presets {
         assert!(
             status.contains("Safe for merge: no"),
             "unexpected status: {status}"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn captain_merge_returns_check_command_and_output_on_failure() {
+        let (dir, ship, session_id, project_root, _worktree_path) =
+            create_clean_review_session("captain-merge-check-details").await;
+
+        let config_dir = project_root.join(".config/ship");
+        std::fs::create_dir_all(&config_dir).expect("config dir should exist");
+        std::fs::write(
+            config_dir.join("project.styx"),
+            r#"
+hooks {
+    checks {
+        explode {
+            command "printf 'boom output\n'; exit 7"
+        }
+    }
+}
+"#,
+        )
+        .expect("project config should be written");
+
+        let error = ship
+            .captain_tool_merge(&session_id, None)
+            .await
+            .expect_err("captain merge should fail when checks fail");
+
+        assert!(
+            error.contains("checks failed:"),
+            "unexpected merge error: {error}"
+        );
+        assert!(error.contains("hook: explode"), "unexpected merge error: {error}");
+        assert!(
+            error.contains("command: printf 'boom output"),
+            "unexpected merge error: {error}"
+        );
+        assert!(error.contains("exit code: 7"), "unexpected merge error: {error}");
+        assert!(
+            error.contains("stdout:\n  boom output"),
+            "unexpected merge error: {error}"
         );
 
         let _ = std::fs::remove_dir_all(dir);
