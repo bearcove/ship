@@ -4,6 +4,7 @@ import { Flex, Box, IconButton } from "@radix-ui/themes";
 import { List } from "@phosphor-icons/react";
 import { SessionListPage } from "./pages/SessionListPage";
 import { SessionViewPage } from "./pages/SessionViewPage";
+import { AdmiralPage } from "./pages/AdmiralPage";
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { ConnectingSplash } from "./components/ConnectingSplash";
 import { ReconnectingIndicator } from "./components/ReconnectingIndicator";
@@ -143,6 +144,7 @@ export function App() {
         <Box className={appColCenter} style={{ overflow: inSessionView ? "hidden" : "auto" }}>
           <Routes>
             <Route path="/" element={<SessionListPage />} />
+            <Route path="/admiral" element={<AdmiralPage />} />
             <Route path="/sessions/:sessionId" element={null} />
           </Routes>
           {visitedSessionSlugs.map((slug) => (
