@@ -1530,7 +1530,11 @@ async fn run_listen(args: ListenArgs) -> Result<(), Box<dyn std::error::Error>> 
 
     tracing::info!(whisper = %whisper_model, "loading models");
 
-    let mut transcriber = transcriber::SpeechTranscriber::new(Path::new(&whisper_model))?;
+    let whisper_ctx = std::sync::Arc::new(
+        whisper_cpp_plus::WhisperContext::new(&whisper_model)
+            .map_err(|e| format!("failed to load whisper model: {e}"))?,
+    );
+    let mut transcriber = transcriber::SpeechTranscriber::new(whisper_ctx)?;
 
     // Set up mic capture via cpal
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
