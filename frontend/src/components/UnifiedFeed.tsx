@@ -464,16 +464,9 @@ function SingleBlock({
 
   switch (block.tag) {
     case "Text": {
-      if (block.text.trim() === "") return null;
-
       const isHuman = block.source.tag === "Human";
       const isThought = block.source.tag === "AgentThought";
       const isAgent = block.source.tag === "AgentMessage";
-
-      // Server-injected system message — hide
-      if (isHuman && isSystemInjection(block)) {
-        return null;
-      }
 
       // Mate activity summary injected by Haiku — yellow bubble
       if (isHuman && isMateActivitySummary(block)) {
@@ -566,7 +559,6 @@ function SingleBlock({
       return <ErrorBlock block={block} agentState={agentForBlock?.state ?? { tag: "Idle" }} />;
 
     case "Permission": {
-      if (block.resolution?.tag === "Approved") return null;
       const isActive = blockId === lastUnresolvedPermBlockId;
       const permissionId = isActive ? (block.permission_id ?? null) : null;
 
