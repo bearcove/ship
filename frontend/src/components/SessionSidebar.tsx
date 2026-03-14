@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Box, Flex, IconButton, Text, Tooltip } from "@radix-ui/themes";
 import {
+  Anchor,
   BugIcon,
   FolderSimplePlusIcon,
   NotePencilIcon,
@@ -151,6 +152,19 @@ export function SessionSidebar({
             />
           </Link>
         </div>
+
+        <Box px="3" pb="1">
+          <Link
+            to="/admiral"
+            className={sessionRow}
+            style={{ textDecoration: "none", color: "inherit" }}
+          >
+            <Anchor size={16} weight="bold" />
+            <Text size="2" weight="medium" style={{ flex: 1 }}>
+              Admiral
+            </Text>
+          </Link>
+        </Box>
 
         <Box className={sidebarScrollArea}>
           <Box px="3" pb="2">
