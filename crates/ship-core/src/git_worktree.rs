@@ -128,7 +128,6 @@ impl WorktreeOps for GitWorktreeOps {
             .arg("-C")
             .arg(repo_root)
             .arg("branch")
-            .arg("-a")
             .output()
             .await
             .map_err(|error| WorktreeError {

@@ -4,7 +4,7 @@ import { Box, Flex, IconButton, Text, Tooltip } from "@radix-ui/themes";
 import {
   BugIcon,
   FolderSimplePlusIcon,
-  PlusIcon,
+  NotePencilIcon,
   SpeakerHighIcon,
   SpeakerSlashIcon,
 } from "@phosphor-icons/react";
@@ -155,21 +155,19 @@ export function SessionSidebar({
               type="button"
               onClick={() => setNewSessionOpen(true)}
               style={{
-                width: "100%",
                 display: "flex",
                 alignItems: "center",
-                justifyContent: "center",
-                gap: "var(--space-1)",
-                padding: "var(--space-2) var(--space-3)",
-                border: "1px solid var(--gray-a6)",
+                gap: "var(--space-2)",
+                padding: "var(--space-1) var(--space-1)",
+                border: "none",
                 borderRadius: "var(--radius-2)",
-                background: "var(--color-surface)",
-                color: "inherit",
+                background: "transparent",
+                color: "var(--gray-11)",
                 cursor: "pointer",
                 fontSize: "var(--font-size-2)",
               }}
             >
-              <PlusIcon size={14} />
+              <NotePencilIcon size={16} />
               New session
             </button>
           </Box>

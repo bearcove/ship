@@ -447,7 +447,7 @@ export function NewSessionDialog({
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Content key={String(open)} maxWidth="480px">
+      <Dialog.Content key={String(open)} maxWidth="480px" style={{ overflow: "visible" }}>
         <Dialog.Title>New Session</Dialog.Title>
         <Dialog.Description size="2" color="gray">
           Configure a new agent session with a project, agents, and branch.
