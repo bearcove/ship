@@ -443,15 +443,8 @@ export function NewSessionDialog({
 
           <UnifiedAgentPicker
             label="Captain"
-            selectedKind={captainKind}
             selectedPresetId={captainPresetId}
-            selectedModelId={selectedCaptainPreset?.model_id ?? null}
             presets={presets}
-            availability={discovery}
-            onSelectKind={(kind) => {
-              setCaptainPresetId(null);
-              setCaptainKind(kind);
-            }}
             onSelectPreset={(preset) => {
               setCaptainPresetId(preset.id);
               setCaptainKind(preset.kind);
@@ -460,15 +453,8 @@ export function NewSessionDialog({
 
           <UnifiedAgentPicker
             label="Mate"
-            selectedKind={mateKind}
             selectedPresetId={matePresetId}
-            selectedModelId={selectedMatePreset?.model_id ?? null}
             presets={presets}
-            availability={discovery}
-            onSelectKind={(kind) => {
-              setMatePresetId(null);
-              setMateKind(kind);
-            }}
             onSelectPreset={(preset) => {
               setMatePresetId(preset.id);
               setMateKind(preset.kind);
