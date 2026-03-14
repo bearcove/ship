@@ -1288,6 +1288,7 @@ export const feedMessageCardUser = style({
 });
 
 export const feedTimeGap = style({
+  display: "block",
   textAlign: "center",
   fontSize: "var(--font-size-1)",
   color: "var(--gray-9)",
