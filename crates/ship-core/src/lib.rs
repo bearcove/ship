@@ -4,6 +4,7 @@ mod acp_launcher;
 mod agent_presets;
 mod fakes;
 mod git_worktree;
+mod hook_runner;
 mod json_store;
 mod mcp;
 mod project_config;
@@ -30,6 +31,7 @@ pub use fakes::{
     FakeAgentDriver, FakePromptScript, FakeSessionStore, FakeWorktreeOps, SpawnRecord,
 };
 pub use git_worktree::GitWorktreeOps;
+pub use hook_runner::{HookOutcome, HooksRunError, run_hooks};
 pub use json_store::JsonSessionStore;
 pub use mcp::{McpConfigError, resolve_mcp_servers};
 pub use project_config::{ProjectConfigError, load_project_hooks};

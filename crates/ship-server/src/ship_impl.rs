@@ -13,11 +13,11 @@ use roam::{
 };
 use roam::{Rx, Tx};
 use ship_core::{
-    AcpAgentDriver, ActiveSession, AgentDriver, AgentSessionConfig, GitWorktreeOps,
+    AcpAgentDriver, ActiveSession, AgentDriver, AgentSessionConfig, GitWorktreeOps, HooksRunError,
     JsonSessionStore, PendingEdit, ProjectRegistry, RebaseOutcome, SessionGitNames, SessionStore,
     WorktreeOps, apply_event, archive_terminal_task, coalesce_replay_events, current_task_status,
-    load_agent_presets, rebuild_materialized_from_event_log, resolve_mcp_servers, set_agent_state,
-    transition_task,
+    load_agent_presets, load_project_hooks, rebuild_materialized_from_event_log,
+    resolve_mcp_servers, run_hooks, set_agent_state, transition_task,
 };
 use ship_service::{CaptainMcp, CaptainMcpDispatcher, MateMcp, MateMcpDispatcher, Ship};
 use ship_types::{
@@ -1914,6 +1914,23 @@ Continue where you left off — wait for the human to give you direction."
             .filter(|o| o.status.success())
             .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned());
 
+        // Run pre-merge hooks before fast-forwarding into the base branch.
+        if let Ok(hooks) = load_project_hooks(&repo_root).await {
+            if !hooks.pre_merge.is_empty() {
+                let worktree_path = {
+                    let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                    sessions
+                        .get(session_id)
+                        .and_then(|s| s.worktree_path.clone())
+                };
+                if let Some(worktree_path) = worktree_path {
+                    run_hooks(&hooks.pre_merge, &worktree_path)
+                        .await
+                        .map_err(|error| format!("pre-merge hooks failed:\n{error}"))?;
+                }
+            }
+        }
+
         self.worktree_ops
             .merge_ff_only(&repo_root, &branch_name)
             .await
@@ -2661,6 +2678,15 @@ Here is your task:
                 Fix the conflict markers, then call `captain_continue_rebase`.",
                 files.join("\n")
             ));
+        }
+
+        // Run pre-merge hooks before fast-forwarding into the base branch.
+        if let Ok(hooks) = load_project_hooks(&repo_root).await {
+            if !hooks.pre_merge.is_empty() {
+                run_hooks(&hooks.pre_merge, &worktree_path)
+                    .await
+                    .map_err(|error| format!("pre-merge hooks failed:\n{error}"))?;
+            }
         }
 
         self.worktree_ops
@@ -5381,6 +5407,18 @@ Here is your task:
 
         self.persist_session(session_id).await?;
 
+        // Run pre-commit hooks before staging and committing.
+        let repo_root = Self::repo_root_for_worktree(&worktree_path)
+            .map_err(|e| e.to_string())?
+            .to_path_buf();
+        if let Ok(hooks) = load_project_hooks(&repo_root).await {
+            if !hooks.pre_commit.is_empty() {
+                run_hooks(&hooks.pre_commit, &worktree_path)
+                    .await
+                    .map_err(|error| format!("pre-commit hooks failed:\n{error}"))?;
+            }
+        }
+
         let commit = Self::auto_commit_worktree(&worktree_path, message).await?;
 
         // Keep the branch up to date with the base branch to avoid
@@ -5626,6 +5664,23 @@ Here is your task:
             }
         }
         let _ = self.persist_session(&session_id).await;
+
+        // Run worktree-setup hooks (e.g. pnpm install) before starting agents.
+        let step_started_at = Instant::now();
+        if let Ok(hooks) = load_project_hooks(&repo_root).await {
+            if !hooks.worktree_setup.is_empty() {
+                if let Err(error) = run_hooks(&hooks.worktree_setup, &worktree_path).await {
+                    self.fail_startup(
+                        &session_id,
+                        SessionStartupStage::CreatingWorktree,
+                        format!("worktree-setup hooks failed:\n{error}"),
+                    )
+                    .await;
+                    return;
+                }
+            }
+        }
+        self.log_startup_step_elapsed(&session_id, "worktree-setup-hooks", step_started_at);
 
         let step_started_at = Instant::now();
         let (captain_ship_mcp, mate_ship_mcp) = match tokio::join!(

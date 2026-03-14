@@ -1075,7 +1075,7 @@ pub mod hooks {
         #[facet(default)]
         pub pre_commit: HashMap<String, HookEntryConfig>,
         #[facet(default)]
-        pub post_commit: HashMap<String, HookEntryConfig>,
+        pub pre_merge: HashMap<String, HookEntryConfig>,
     }
 
     /// A resolved hook definition with its name (from the map key).
@@ -1091,7 +1091,7 @@ pub mod hooks {
     pub struct ResolvedHooks {
         pub worktree_setup: Vec<HookDef>,
         pub pre_commit: Vec<HookDef>,
-        pub post_commit: Vec<HookDef>,
+        pub pre_merge: Vec<HookDef>,
     }
 
     fn resolve_map(map: HashMap<String, HookEntryConfig>) -> Vec<HookDef> {
@@ -1113,7 +1113,7 @@ pub mod hooks {
             ResolvedHooks {
                 worktree_setup: resolve_map(self.worktree_setup),
                 pre_commit: resolve_map(self.pre_commit),
-                post_commit: resolve_map(self.post_commit),
+                pre_merge: resolve_map(self.pre_merge),
             }
         }
     }
