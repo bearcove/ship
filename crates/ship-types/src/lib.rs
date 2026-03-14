@@ -677,12 +677,33 @@ pub mod events {
         ReplayComplete,
     }
 
+    // r[proto.activity-entry]
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct ActivityEntry {
+        pub id: u64,
+        pub timestamp: String,
+        pub session_id: crate::ids::SessionId,
+        pub session_slug: String,
+        pub session_title: Option<String>,
+        pub kind: ActivityKind,
+    }
+
+    // r[proto.activity-kind]
+    #[repr(u8)]
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub enum ActivityKind {
+        CaptainMessage { message: String },
+        SessionCreated,
+        SessionArchived,
+    }
+
     // r[proto.subscribe-global-events]
     #[repr(u8)]
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub enum GlobalEvent {
         SessionListChanged { sessions: Vec<SessionSummary> },
         ProjectListChanged { projects: Vec<ProjectInfo> },
+        Activity { entry: ActivityEntry },
     }
 }
 
@@ -1087,9 +1108,9 @@ pub use agent::{
     EffortValue, PermissionRequest, PlanStep, PlanStepInput, PlanStepStatus, Role,
 };
 pub use events::{
-    BlockPatch, CommitSummary, ContentBlock, GlobalEvent, PermissionResolution, SessionEvent,
-    SessionEventEnvelope, SubscribeMessage, TaskRecapStats, TextSource, ToolCallContent,
-    ToolCallLocation, ToolCallStatus,
+    ActivityEntry, ActivityKind, BlockPatch, CommitSummary, ContentBlock, GlobalEvent,
+    PermissionResolution, SessionEvent, SessionEventEnvelope, SubscribeMessage, TaskRecapStats,
+    TextSource, ToolCallContent, ToolCallLocation, ToolCallStatus,
 };
 pub use ids::{BlockId, ProjectName, SessionId, TaskId};
 pub use persistence::{CurrentTask, PersistedSession, SessionConfig, TaskContentRecord};
