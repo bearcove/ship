@@ -505,6 +505,10 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
       }
       return;
     }
+    if (e.key === "Escape") {
+      textareaRef.current?.blur();
+      return;
+    }
   }
 
   const hasContent = text.trim().length > 0 || attachedImages.length > 0;
