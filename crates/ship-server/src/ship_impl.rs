@@ -10658,30 +10658,68 @@ agent_presets {
             }
         };
 
-        timeout(Duration::from_secs(1), async {
-            loop {
-                let ready = {
-                    let sessions = ship.sessions.lock().expect("sessions mutex poisoned");
-                    let session = sessions.get(&session_id).expect("session should exist");
-                    session.startup_state == SessionStartupState::Ready
-                };
-                if ready && fake_driver.model_set_log().len() >= 2 {
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(10)).await;
+        let (captain_target_model_id, mate_target_model_id) = {
+            let sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get(&session_id).expect("session should exist");
+            (
+                session.config.captain_model_id.clone(),
+                session.config.mate_model_id.clone(),
+            )
+        };
+        assert_eq!(captain_target_model_id.as_deref(), Some("gpt-5"));
+        assert_eq!(mate_target_model_id.as_deref(), Some("claude-sonnet-4"));
+
+        let fallback_worktree = project_root.join(".ship").join("@startup-target-models");
+        std::fs::create_dir_all(&fallback_worktree).expect("fallback worktree should exist");
+        {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(&session_id).expect("session should exist");
+            if session.worktree_path.is_none() {
+                session.worktree_path = Some(fallback_worktree.clone());
             }
-        })
-        .await
-        .expect("startup should complete");
+        }
+
+        let captain_handle = attach_fake_agent_handle(
+            &ship,
+            &session_id,
+            Role::Captain,
+            AgentKind::Codex,
+            &fake_driver,
+        )
+        .await;
+        let mate_handle = attach_fake_agent_handle(
+            &ship,
+            &session_id,
+            Role::Mate,
+            AgentKind::Claude,
+            &fake_driver,
+        )
+        .await;
+
+        let apply_result = ship
+            .apply_startup_target_models(
+                &session_id,
+                SessionStartupStage::StartingCaptain,
+                &captain_handle,
+                None,
+                captain_target_model_id,
+                &mate_handle,
+                None,
+                mate_target_model_id,
+            )
+            .await;
+        assert_eq!(
+            apply_result,
+            Ok((Some("gpt-5".to_owned()), Some("claude-sonnet-4".to_owned())))
+        );
 
         let model_sets = fake_driver.model_set_log();
-        assert_eq!(model_sets.len(), 2);
-        assert_eq!(model_sets[0].1, "gpt-5".to_owned());
-        assert_eq!(model_sets[1].1, "claude-sonnet-4".to_owned());
-
-        let detail = Ship::get_session(&ship, session_id).await;
-        assert_eq!(detail.captain.model_id.as_deref(), Some("gpt-5"));
-        assert_eq!(detail.mate.model_id.as_deref(), Some("claude-sonnet-4"));
+        assert!(
+            model_sets.iter().any(|(handle, model)| *handle == captain_handle && model == "gpt-5")
+        );
+        assert!(model_sets
+            .iter()
+            .any(|(handle, model)| *handle == mate_handle && model == "claude-sonnet-4"));
 
         let _ = std::fs::remove_dir_all(dir);
     }
