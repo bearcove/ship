@@ -434,24 +434,55 @@ impl WorktreeOps for GitWorktreeOps {
         branch: &str,
         into_branch: &str,
     ) -> Result<(), WorktreeError> {
-        // `git fetch . <branch>:<into_branch>` updates the into_branch ref to
-        // point at branch, enforcing fast-forward (rejects non-FF updates).
-        // Unlike `git merge --ff-only`, this works even when into_branch is not
-        // the currently checked-out branch.
-        let refspec = format!("{branch}:{into_branch}");
-        let output = Command::new("git")
+        // Check whether into_branch is currently checked out in the repo root.
+        // `git fetch .` refuses to update a checked-out branch, so we fall back
+        // to `git merge --ff-only` in that case (which works because the branch
+        // IS checked out).
+        let head_output = Command::new("git")
             .arg("-C")
             .arg(repo_root)
-            .arg("fetch")
-            .arg(".")
-            .arg(&refspec)
+            .args(["symbolic-ref", "--short", "HEAD"])
             .output()
             .await
             .map_err(|error| WorktreeError {
                 message: error.to_string(),
             })?;
 
-        ensure_success(output)
+        let current_branch = String::from_utf8_lossy(&head_output.stdout)
+            .trim()
+            .to_owned();
+
+        if current_branch == into_branch {
+            // into_branch is checked out — use merge --ff-only directly.
+            let output = Command::new("git")
+                .arg("-C")
+                .arg(repo_root)
+                .arg("merge")
+                .arg("--ff-only")
+                .arg(branch)
+                .output()
+                .await
+                .map_err(|error| WorktreeError {
+                    message: error.to_string(),
+                })?;
+            ensure_success(output)
+        } else {
+            // into_branch is NOT checked out — use `git fetch .` to update the
+            // ref directly without needing a checkout.
+            let refspec = format!("{branch}:{into_branch}");
+            let output = Command::new("git")
+                .arg("-C")
+                .arg(repo_root)
+                .arg("fetch")
+                .arg(".")
+                .arg(&refspec)
+                .output()
+                .await
+                .map_err(|error| WorktreeError {
+                    message: error.to_string(),
+                })?;
+            ensure_success(output)
+        }
     }
 
     // r[proto.archive-session.safety-check]
