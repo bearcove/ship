@@ -248,3 +248,45 @@ pub trait MateMcp {
     // r[mate.tool.submit]
     async fn mate_submit(&self, summary: String) -> McpToolCallResponse;
 }
+
+// r[admiral.tool.implementation]
+#[roam::service]
+pub trait AdmiralMcp {
+    // r[admiral.tool.list-lanes]
+    async fn admiral_list_lanes(&self) -> McpToolCallResponse;
+
+    // r[admiral.tool.create-lane]
+    async fn admiral_create_lane(
+        &self,
+        project: String,
+        description: String,
+    ) -> McpToolCallResponse;
+
+    // r[admiral.tool.steer-captain]
+    async fn admiral_steer_captain(
+        &self,
+        session_id: SessionId,
+        message: String,
+    ) -> McpToolCallResponse;
+
+    // r[admiral.tool.post-to-human]
+    async fn admiral_post_to_human(&self, message: String) -> McpToolCallResponse;
+
+    // r[admiral.tool.list-projects]
+    async fn admiral_list_projects(&self) -> McpToolCallResponse;
+
+    // r[admiral.tool.read-file]
+    async fn admiral_read_file(
+        &self,
+        path: String,
+        offset: Option<u64>,
+        limit: Option<u64>,
+    ) -> McpToolCallResponse;
+
+    // r[admiral.tool.run-command]
+    async fn admiral_run_command(
+        &self,
+        command: String,
+        cwd: Option<String>,
+    ) -> McpToolCallResponse;
+}
