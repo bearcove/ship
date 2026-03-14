@@ -494,13 +494,7 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
       }
       return;
     }
-    if (e.key === "Escape" && (captainStateTag === "Working" || mateStateTag === "Working")) {
-      e.preventDefault();
-      void (async () => {
-        const client = await getShipClient();
-        await client.stopAgents(sessionId);
-      })();
-    }
+
   }
 
   const hasContent = text.trim().length > 0 || attachedImages.length > 0;
