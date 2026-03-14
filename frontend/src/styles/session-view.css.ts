@@ -703,10 +703,52 @@ export const sessionHeaderRoot = style({
   flexShrink: 0,
   borderBottom: "1px solid var(--gray-a4)",
   position: "relative",
+});
+
+export const sessionHeaderCollapsedArea = style({
+  display: "flex",
+  alignItems: "stretch",
   cursor: "pointer",
   selectors: {
     "&:hover": {
       background: "var(--gray-a2)",
+    },
+  },
+});
+
+export const sessionHeaderRows = style({
+  flex: 1,
+  minWidth: 0,
+  display: "flex",
+  flexDirection: "column",
+});
+
+export const sessionHeaderSideButtons = style({
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "stretch",
+  borderLeft: "1px solid var(--gray-a4)",
+  "@media": {
+    "(max-width: 480px)": {
+      display: "none",
+    },
+  },
+});
+
+export const sessionHeaderSideButton = style({
+  flex: 1,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "0 var(--space-3)",
+  border: "none",
+  background: "transparent",
+  color: "var(--gray-11)",
+  cursor: "pointer",
+  selectors: {
+    "&:hover": {
+      color: "var(--gray-12)",
+      background: "var(--gray-a3)",
     },
   },
 });
