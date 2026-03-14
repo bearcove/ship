@@ -8021,6 +8021,47 @@ impl Ship for ShipImpl {
             .lock()
             .expect("user_avatar_url mutex poisoned")
             .clone();
+
+        // The admiral session lives in self.admiral_session, not in self.sessions.
+        if id.0 == ADMIRAL_SESSION_ID {
+            let admiral = self.admiral_session.lock().expect("admiral mutex poisoned");
+            if admiral.is_some() {
+                let empty_snapshot = AgentSnapshot {
+                    role: Role::Captain,
+                    kind: AgentKind::Claude,
+                    state: AgentState::Idle,
+                    context_remaining_percent: None,
+                    preset_id: None,
+                    provider: None,
+                    model_id: None,
+                    available_models: vec![],
+                    effort_config_id: None,
+                    effort_value_id: None,
+                    available_effort_values: vec![],
+                };
+                return SessionDetail {
+                    slug: ADMIRAL_SESSION_ID.to_owned(),
+                    id,
+                    project: ProjectName("ship".to_owned()),
+                    branch_name: String::new(),
+                    title: Some("Admiral".to_owned()),
+                    captain: empty_snapshot.clone(),
+                    mate: empty_snapshot,
+                    startup_state: SessionStartupState::Ready,
+                    current_task: None,
+                    task_history: Vec::new(),
+                    autonomy_mode: AutonomyMode::Autonomous,
+                    pending_steer: None,
+                    pending_human_review: None,
+                    created_at: String::new(),
+                    user_avatar_url,
+                    captain_acp_info: None,
+                    mate_acp_info: None,
+                };
+            }
+            return Self::fallback_session_detail(id, user_avatar_url);
+        }
+
         let sessions = self.sessions.lock().expect("sessions mutex poisoned");
         Self::resolve_session(&sessions, &id)
             .map(|s| Self::to_session_detail(s, user_avatar_url.clone()))
