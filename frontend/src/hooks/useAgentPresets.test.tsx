@@ -40,6 +40,7 @@ const configuredPresets: AgentPreset[] = [
     kind: { tag: "Claude" },
     provider: "anthropic",
     model_id: "opencode/anthropic/claude-sonnet-4",
+    logo: null,
   },
 ];
 

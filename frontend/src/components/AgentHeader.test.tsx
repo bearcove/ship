@@ -43,6 +43,7 @@ const configuredPresets: AgentPreset[] = [
     kind: { tag: "Claude" },
     provider: "anthropic",
     model_id: "opencode/anthropic/claude-sonnet-4",
+    logo: null,
   },
   {
     id: "preset-gpt-5",
@@ -50,6 +51,7 @@ const configuredPresets: AgentPreset[] = [
     kind: { tag: "Codex" },
     provider: "openai",
     model_id: "opencode/openai/gpt-5",
+    logo: null,
   },
   {
     id: "preset-haiku",
@@ -57,6 +59,7 @@ const configuredPresets: AgentPreset[] = [
     kind: { tag: "Claude" },
     provider: "anthropic",
     model_id: "opencode/anthropic/claude-haiku-4.5",
+    logo: null,
   },
 ];
 
