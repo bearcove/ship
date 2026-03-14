@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Box, Button, Callout, Flex, Spinner, Text } from "@radix-ui/themes";
 import { Warning } from "@phosphor-icons/react";
 import { useSession } from "../hooks/useSession";
 import { useSessionState } from "../hooks/useSessionState";
-import { refreshSessionList } from "../hooks/useSessionList";
+import { refreshSessionList, useSessionList } from "../hooks/useSessionList";
 import { UnifiedFeed } from "../components/UnifiedFeed";
 import { UnifiedComposer } from "../components/UnifiedComposer";
 import { SessionHeader } from "../components/SessionHeader";
@@ -16,6 +16,8 @@ import {
   feedContentColumn,
   sessionFeedColumn,
   sessionViewRoot,
+  slideInFromLeft,
+  slideInFromRight,
 } from "../styles/session-view.css";
 import { AgentHeader } from "../components/AgentHeader";
 import captainAvatar from "../assets/avatars/captain.png";
@@ -24,6 +26,7 @@ import { getShipClient } from "../api/client";
 import { ArchiveSessionDialog, NewSessionDialog } from "./SessionListPage";
 import type { SessionSummary } from "../generated/ship";
 import { useWorktreeDiffStats } from "../hooks/useWorktreeDiffStats";
+import { useSwipeGesture } from "../hooks/useSwipeGesture";
 
 // r[view.session]
 // r[ui.layout.session-view]
@@ -34,6 +37,24 @@ export function SessionViewPage({ debugMode }: { debugMode: boolean; onOpenSideb
   const [archiving, setArchiving] = useState(false);
   const [archiveConfirm, setArchiveConfirm] = useState<string[] | null>(null);
   const [duplicateOpen, setDuplicateOpen] = useState(false);
+  const [slideDirection, setSlideDirection] = useState<"left" | "right" | null>(null);
+  const rootRef = useRef<HTMLElement | null>(null);
+
+  const allSessions = useSessionList();
+  const currentIndex = allSessions.findIndex((s) => s.id === sessionId);
+  const prevSession = currentIndex > 0 ? allSessions[currentIndex - 1] : null;
+  const nextSession = currentIndex >= 0 && currentIndex < allSessions.length - 1 ? allSessions[currentIndex + 1] : null;
+
+  const handleSwipe = useCallback(
+    (direction: "left" | "right") => {
+      const target = direction === "left" ? nextSession : prevSession;
+      if (!target) return;
+      setSlideDirection(direction);
+    },
+    [nextSession, prevSession],
+  );
+
+  useSwipeGesture(rootRef, handleSwipe);
   // r[event.client.hydration-sequence]: Step 1 — structural state
   const { session, error } = useSession(sessionId ?? "");
   // r[event.client.hydration-sequence]: Step 2/3 — event subscription + replay
@@ -194,7 +215,21 @@ export function SessionViewPage({ debugMode }: { debugMode: boolean; onOpenSideb
         preselectedCaptainKind={session.captain.kind}
         preselectedMateKind={session.mate.kind}
       />
-      <Flex className={sessionViewRoot}>
+      <Flex
+        ref={rootRef}
+        className={[
+          sessionViewRoot,
+          slideDirection === "left" ? slideInFromRight : "",
+          slideDirection === "right" ? slideInFromLeft : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        onAnimationEnd={() => {
+          const target = slideDirection === "left" ? nextSession : prevSession;
+          setSlideDirection(null);
+          if (target) navigate(`/sessions/${target.id}`);
+        }}
+      >
         <Flex style={{ flex: 1, overflow: "hidden", minHeight: 0 }}>
           <Box className={sessionFeedColumn}>
             <SessionHeader
