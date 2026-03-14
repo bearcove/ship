@@ -27,11 +27,19 @@ import { getShipClient } from "../api/client";
 import { ArchiveSessionDialog, NewSessionDialog } from "./SessionListPage";
 import type { SessionSummary } from "../generated/ship";
 import { useWorktreeDiffStats } from "../hooks/useWorktreeDiffStats";
+import { sortSessions } from "./session-list-utils";
 
 // r[view.session]
 // r[ui.layout.session-view]
 // r[proto.hydration-flow]
-export function SessionViewPage({ debugMode, allSessions }: { debugMode: boolean; allSessions: SessionSummary[]; onOpenSidebar?: () => void }) {
+export function SessionViewPage({
+  debugMode,
+  allSessions = [],
+}: {
+  debugMode: boolean;
+  allSessions?: SessionSummary[];
+  onOpenSidebar?: () => void;
+}) {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
   const [archiving, setArchiving] = useState(false);
@@ -39,13 +47,14 @@ export function SessionViewPage({ debugMode, allSessions }: { debugMode: boolean
   const [duplicateOpen, setDuplicateOpen] = useState(false);
   const [slideDirection, setSlideDirection] = useState<"left" | "right" | null>(null);
 
-  const currentIndex = allSessions.findIndex((s) => s.slug === sessionId);
-  const hasSessionCycle = currentIndex >= 0 && allSessions.length > 0;
+  const orderedSessions = sortSessions(allSessions);
+  const currentIndex = orderedSessions.findIndex((s) => s.slug === sessionId);
+  const hasSessionCycle = currentIndex >= 0 && orderedSessions.length > 0;
   const prevSession = hasSessionCycle
-    ? allSessions[(currentIndex - 1 + allSessions.length) % allSessions.length]
+    ? orderedSessions[(currentIndex - 1 + orderedSessions.length) % orderedSessions.length]
     : null;
   const nextSession = hasSessionCycle
-    ? allSessions[(currentIndex + 1) % allSessions.length]
+    ? orderedSessions[(currentIndex + 1) % orderedSessions.length]
     : null;
 
   const handleSwipe = useCallback(
@@ -83,20 +92,20 @@ export function SessionViewPage({ debugMode, allSessions }: { debugMode: boolean
       }
       if (e.metaKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
         e.preventDefault();
-        if (allSessions.length === 0) return;
-        const idx = allSessions.findIndex((s) => s.slug === sessionId);
+        if (orderedSessions.length === 0) return;
+        const idx = orderedSessions.findIndex((s) => s.slug === sessionId);
         let next: number;
         if (e.key === "ArrowUp") {
-          next = idx <= 0 ? allSessions.length - 1 : idx - 1;
+          next = idx <= 0 ? orderedSessions.length - 1 : idx - 1;
         } else {
-          next = idx >= allSessions.length - 1 ? 0 : idx + 1;
+          next = idx >= orderedSessions.length - 1 ? 0 : idx + 1;
         }
-        navigate(`/sessions/${allSessions[next].slug}`);
+        navigate(`/sessions/${orderedSessions[next].slug}`);
       }
     }
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [navigate, allSessions, sessionId]);
+  }, [navigate, orderedSessions, sessionId]);
 
   if (error) {
     return (

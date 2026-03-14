@@ -298,7 +298,7 @@ export function SessionHeader({
             {/* Row 2: in-progress step + progress + diff badge */}
             <div className={sessionHeaderRow2}>
               <Flex align="center" gap="1" className={sessionHeaderRow2Title} style={{ minWidth: 0 }}>
-                {inProgressStep?.status.tag === "InProgress" && <Spinner size="1" flexShrink="0" />}
+                {inProgressStep?.status.tag === "InProgress" && <Spinner size="1" style={{ flexShrink: 0 }} />}
                 <Text size="1" color="gray" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {inProgressStep?.title || inProgressStep?.description || "No plan yet"}
                 </Text>

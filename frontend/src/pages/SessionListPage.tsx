@@ -849,7 +849,7 @@ export function SessionListPage() {
           )}
 
           <Flex direction="column" gap="3">
-            {sessions.map((session) => (
+            {sortedSessions.map((session) => (
               <Link
                 key={session.id}
                 to={`/sessions/${session.slug}`}
