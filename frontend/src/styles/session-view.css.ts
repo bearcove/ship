@@ -240,6 +240,7 @@ export const taskRecapBoundary = style({
   borderTop: "2px solid var(--gray-a6)",
   borderBottom: "1px solid var(--gray-a4)",
   paddingTop: "var(--space-3)",
+  paddingBottom: "var(--space-3)",
   background: "linear-gradient(180deg, var(--gray-a3) 0%, var(--gray-a2) 100%)",
 });
 
