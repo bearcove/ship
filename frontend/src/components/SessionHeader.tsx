@@ -27,6 +27,7 @@ import { AgentModelPicker } from "./AgentModelPicker";
 import { AgentEffortPicker } from "./AgentEffortPicker";
 import { AgentKindIcon } from "./AgentKindIcon";
 import { MarkdownCodeBlock } from "./blocks/TextBlock";
+import { fixMarkdownBackticks } from "../utils/fixMarkdownBackticks";
 import {
   feedBubble,
   planStepRow,
@@ -163,7 +164,7 @@ function HistoryItem({ task }: { task: TaskRecord }) {
         <div className={sessionHeaderHistoryTitleRow}>
           <Text size="1" weight="medium" className={sessionHeaderHistoryTitle}>
             <ReactMarkdown remarkPlugins={[remarkGfm]} components={titleMdComponents}>
-              {task.title}
+              {fixMarkdownBackticks(task.title)}
             </ReactMarkdown>
           </Text>
           <TaskStatusBadge status={task.status} />
@@ -178,7 +179,7 @@ function HistoryItem({ task }: { task: TaskRecord }) {
         >
           <div className={`${feedBubble} ${taskDescriptionRoot}`}>
             <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-              {task.description}
+              {fixMarkdownBackticks(task.description)}
             </ReactMarkdown>
           </div>
         </div>
@@ -524,7 +525,7 @@ export function SessionHeader({
                 </Text>
                 <div className={`${feedBubble} ${taskDescriptionRoot}`}>
                   <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-                    {liveTask.description}
+                    {fixMarkdownBackticks(liveTask.description)}
                   </ReactMarkdown>
                 </div>
               </div>
