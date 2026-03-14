@@ -80,6 +80,7 @@ function SessionRow({
     >
       <Flex direction="column" gap="1" style={{ minWidth: 0, flex: 1 }}>
         <Flex align="center" gap="2" style={{ minWidth: 0 }}>
+          {session.is_admiral && <Anchor size={16} weight="bold" style={{ flexShrink: 0 }} />}
           <Text size="2" className={sessionRowTitle} color={hasTitle ? undefined : "gray"}>
             {title}
           </Text>
