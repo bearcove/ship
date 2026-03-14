@@ -1,5 +1,5 @@
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
-import { Box, Flex, Spinner, Text } from "@radix-ui/themes";
+import { Box, Button, Flex, Spinner, Text } from "@radix-ui/themes";
 import { ArrowDown, CaretRight, Stop } from "@phosphor-icons/react";
 import { encode } from "gpt-tokenizer";
 import captainAvatar from "../assets/avatars/captain.png";
@@ -398,9 +398,11 @@ function CommitDiffView({ diff }: { diff: string }) {
 function TaskRecapBlock({
   block,
   duration,
+  onArchive,
 }: {
   block: TaskRecapBlockType;
   duration: number | null;
+  onArchive?: () => void;
 }) {
   const [expandedHashes, setExpandedHashes] = useState<Set<string>>(() => new Set());
   const { commits, stats } = block;
@@ -425,7 +427,7 @@ function TaskRecapBlock({
         <Flex className={taskRecapHeader} align="start" justify="between" gap="3">
           <Box style={{ minWidth: 0 }}>
             <Text className={taskRecapEyebrow}>Phase break</Text>
-            <Text className={taskRecapTitle}>Previous task accepted</Text>
+            <Text className={taskRecapTitle}>Task complete</Text>
             {duration != null && (
               <Text style={{ fontSize: "var(--font-size-1)", color: "var(--gray-9)" }}>
                 Completed in {formatDuration(duration)}
@@ -478,6 +480,13 @@ function TaskRecapBlock({
               );
             })}
           </Box>
+        )}
+        {onArchive && (
+          <Flex justify="center" mt="3">
+            <Button size="2" variant="outline" onClick={onArchive}>
+              Archive session
+            </Button>
+          </Flex>
         )}
       </Box>
     </Box>
