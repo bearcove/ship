@@ -210,7 +210,6 @@ interface Props {
   planSteps: PlanStep[];
   matePlan: PlanStep[] | null;
   diffStats: WorktreeDiffStats | null;
-  shouldRecommendArchiveSession: boolean;
   onArchive: () => void;
   archiving: boolean;
 }
@@ -227,7 +226,6 @@ export function SessionHeader({
   planSteps,
   matePlan,
   diffStats,
-  shouldRecommendArchiveSession,
   onArchive,
   archiving,
 }: Props) {
