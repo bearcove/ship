@@ -2,7 +2,7 @@ import TurndownService from "turndown";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSwipeable } from "react-swipeable";
 import { useNavigate } from "react-router-dom";
-import { Box, Button, Callout, Flex, Spinner, Text } from "@radix-ui/themes";
+import { Box, Callout, Flex, Spinner, Text } from "@radix-ui/themes";
 import { Warning } from "@phosphor-icons/react";
 import { useSession } from "../hooks/useSession";
 import { useSessionState } from "../hooks/useSessionState";
@@ -372,6 +372,11 @@ export function SessionViewPage({
               loading={isReplaying}
               loadingLabel={replayLabel}
               debugMode={debugMode}
+              onArchive={
+                hasAcceptedSessionWork && (liveTask === null || liveTask.status.tag === "Accepted")
+                  ? () => void handleArchive(false)
+                  : undefined
+              }
             />
             {debugMode && (
               <SessionDebugPanel
@@ -379,14 +384,6 @@ export function SessionViewPage({
                 mateAcpInfo={eventState.mateAcpInfo}
               />
             )}
-            {hasAcceptedSessionWork &&
-              (liveTask === null || liveTask.status.tag === "Accepted") && (
-                <Flex justify="center" px="4" pb="2">
-                  <Button size="3" variant="outline" onClick={() => void handleArchive(false)}>
-                    Archive session
-                  </Button>
-                </Flex>
-              )}
             <Box className={feedContentColumn}>
               <UnifiedComposer
                 ref={composerRef}
