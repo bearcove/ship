@@ -35,6 +35,7 @@ import {
   planStepText,
   sessionHeaderAgentsRow,
   sessionHeaderCaret,
+  sessionHeaderCollapsedArea,
   sessionHeaderHistoryCaret,
   sessionHeaderDiffAdd,
   sessionHeaderDiffFlex,
@@ -53,7 +54,10 @@ import {
   sessionHeaderRow1,
   sessionHeaderRow2,
   sessionHeaderRow2Title,
+  sessionHeaderRows,
   sessionHeaderSectionLabel,
+  sessionHeaderSideButton,
+  sessionHeaderSideButtons,
   sessionHeaderStepIconWrap,
   sessionHeaderStepText,
   sessionHeaderTitle,
@@ -286,39 +290,14 @@ export function SessionHeader({
   return (
     <>
       <div className={sessionHeaderRoot}>
+        {/* Collapsed header: rows + side buttons */}
+        <div className={sessionHeaderCollapsedArea} onClick={() => setExpanded((v) => !v)}>
+          <div className={sessionHeaderRows}>
         {/* Row 1: title + menu */}
-        <div className={sessionHeaderRow1} onClick={() => setExpanded((v) => !v)}>
+        <div className={sessionHeaderRow1}>
           <Text size="3" weight="medium" className={sessionHeaderTitle}>
             {displayTitle}
           </Text>
-          <Tooltip content="Open in Zed">
-            <IconButton
-              variant="ghost"
-              color="gray"
-              size="2"
-              aria-label="Open in Zed"
-              onClick={(e) => {
-                e.stopPropagation();
-                void getShipClient().then(c => c.openInEditor(sessionId));
-              }}
-            >
-              <CodeSimple size={18} />
-            </IconButton>
-          </Tooltip>
-          <Tooltip content="Open in iTerm">
-            <IconButton
-              variant="ghost"
-              color="gray"
-              size="2"
-              aria-label="Open in iTerm"
-              onClick={(e) => {
-                e.stopPropagation();
-                void getShipClient().then(c => c.openInTerminal(sessionId));
-              }}
-            >
-              <TerminalWindow size={18} />
-            </IconButton>
-          </Tooltip>
           <Popover.Root open={switcherOpen} onOpenChange={setSwitcherOpen}>
             <Popover.Trigger asChild>
               <IconButton
@@ -411,7 +390,7 @@ export function SessionHeader({
         </div>
 
         {/* Row 2: in-progress step + progress + diff badge + chevron */}
-        <div className={sessionHeaderRow2} onClick={() => setExpanded((v) => !v)}>
+        <div className={sessionHeaderRow2}>
           <Flex align="center" gap="1" className={sessionHeaderRow2Title} style={{ minWidth: 0 }}>
             {inProgressStep?.status.tag === "InProgress" && <Spinner size="1" flexShrink="0" />}
             <Text size="1" color="gray" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -433,6 +412,38 @@ export function SessionHeader({
             )}
           </Flex>
         </div>
+          </div>{/* end sessionHeaderRows */}
+
+          {/* Side buttons — hidden on mobile */}
+          <div className={sessionHeaderSideButtons}>
+            <Tooltip content="Open in Zed">
+              <button
+                type="button"
+                className={sessionHeaderSideButton}
+                aria-label="Open in Zed"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void getShipClient().then((c) => c.openInEditor(sessionId));
+                }}
+              >
+                <CodeSimple size={20} />
+              </button>
+            </Tooltip>
+            <Tooltip content="Open in iTerm">
+              <button
+                type="button"
+                className={sessionHeaderSideButton}
+                aria-label="Open in iTerm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void getShipClient().then((c) => c.openInTerminal(sessionId));
+                }}
+              >
+                <TerminalWindow size={20} />
+              </button>
+            </Tooltip>
+          </div>
+        </div>{/* end sessionHeaderCollapsedArea */}
 
         {/* Expanded panel */}
         <div id={contentId} className={sessionHeaderExpanded} data-open={expanded}>
