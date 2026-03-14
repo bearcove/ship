@@ -55,7 +55,6 @@ function findCurrentPreset(
 }
 
 const LOGO_ASSETS: Record<string, string> = {
-  anthropic: "/logos/anthropic.svg",
   google: "/logos/google.svg",
   minimax: "/logos/minimax.png",
   moonshot: "/logos/moonshot.svg",
