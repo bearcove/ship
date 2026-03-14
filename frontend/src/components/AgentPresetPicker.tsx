@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { AgentPreset, AgentSnapshot } from "../generated/ship";
 import { getShipClient } from "../api/client";
 import { useAgentPresets } from "../hooks/useAgentPresets";
-import { AgentPresetSelector } from "./AgentPresetSelector";
+import { UnifiedAgentPicker } from "./UnifiedAgentPicker";
 
 function sameAgentKind(left: AgentSnapshot["kind"], right: AgentPreset["kind"]) {
   return left.tag === right.tag;
@@ -110,7 +110,7 @@ export function AgentPresetPicker({
   }
 
   return (
-    <AgentPresetSelector
+    <UnifiedAgentPicker
       presets={presets}
       selectedPresetId={currentPresetId ?? null}
       inference={{
@@ -125,6 +125,7 @@ export function AgentPresetPicker({
       onSelectPreset={(preset) => {
         void handleSelectPreset(preset);
       }}
+      label=""
     />
   );
 }
