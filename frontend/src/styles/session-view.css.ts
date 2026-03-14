@@ -441,6 +441,24 @@ export const agentStateChip = style({
   },
 });
 
+const slideInFromRightKf = keyframes({
+  from: { transform: "translateX(100%)" },
+  to: { transform: "translateX(0)" },
+});
+
+const slideInFromLeftKf = keyframes({
+  from: { transform: "translateX(-100%)" },
+  to: { transform: "translateX(0)" },
+});
+
+export const slideInFromRight = style({
+  animation: `${slideInFromRightKf} 220ms ease-out`,
+});
+
+export const slideInFromLeft = style({
+  animation: `${slideInFromLeftKf} 220ms ease-out`,
+});
+
 export const sessionViewRoot = style({
   display: "flex",
   flexDirection: "column",
