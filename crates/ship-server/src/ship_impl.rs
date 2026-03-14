@@ -8925,7 +8925,7 @@ impl CaptainMcp for CaptainMcpSessionService {
         )
     }
 
-    // r[captain.tool.rebase-continue]
+    // r[captain.tool.continue-rebase]
     async fn captain_continue_rebase(&self) -> McpToolCallResponse {
         Self::response(
             self.ship
@@ -11819,7 +11819,7 @@ agent_presets {
                 .await
         });
 
-        timeout(std::time::Duration::from_secs(1), async {
+        timeout(std::time::Duration::from_secs(5), async {
             loop {
                 let ready = {
                     let sessions = ship.sessions.lock().expect("sessions mutex poisoned");

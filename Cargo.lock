@@ -3210,7 +3210,6 @@ dependencies = [
  "figue",
  "futures-util",
  "hyper-tungstenite",
- "ort",
  "reqwest",
  "roam",
  "roam-websocket",

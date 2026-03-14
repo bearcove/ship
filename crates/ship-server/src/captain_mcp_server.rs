@@ -337,7 +337,7 @@ impl ServerHandler for CaptainMcpHandler {
                 };
                 return Ok(kagi_web_search(&self.http_client, api_key, query).await);
             }
-            // r[captain.tool.rebase-continue]
+            // r[captain.tool.continue-rebase]
             "captain_continue_rebase" => self
                 .client
                 .captain_continue_rebase()

@@ -7,8 +7,8 @@ import { UnifiedComposer, type UnifiedComposerHandle } from "./UnifiedComposer";
 
 const mocks = vi.hoisted(() => ({
   transcription: {
-    state: { tag: "idle" as const },
-    result: null,
+    state: { tag: "idle" } as { tag: "idle" } | { tag: "recording"; elapsed: number },
+    result: null as { text: string; segments: unknown[] } | null,
     analyser: null,
     targetSessionId: null as string | null,
     sendAfterTranscription: false,

@@ -325,7 +325,7 @@ function computeTurnStats(
   for (const blockEntry of blocks.slice(turnStartIndex)) {
     if (!turnStarted) {
       const blockMs = parseTimestampMs(blockEntry.timestamp);
-      if (blockMs != null && blockMs >= turnStartMs) {
+      if (blockMs != null && turnStartMs != null && blockMs >= turnStartMs) {
         turnStarted = true;
       } else {
         continue;

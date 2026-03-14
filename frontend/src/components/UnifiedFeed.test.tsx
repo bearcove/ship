@@ -191,8 +191,8 @@ function makeToolCallEntry(
       arguments: "{\"cmd\":\"echo hi\"}",
       kind: null,
       target: null,
-      raw_input: { cmd: "echo hi" },
-      raw_output: { stdout: "done" },
+      raw_input: { cmd: "echo hi" } as any,
+      raw_output: { stdout: "done" } as any,
       locations: [],
       status: { tag: "Success" },
       content: [

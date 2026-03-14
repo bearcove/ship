@@ -419,3 +419,8 @@ behavior, listed here for completeness).
 r[ui.keys.nav]
 `1` and `2` MUST switch focus between the captain and mate panels when no
 text input is focused.
+
+r[ui.keys.global]
+When the session view is active and no editable field is focused, global
+single-key shortcuts MUST be supported for workflow navigation actions (for
+example, focusing the composer and quoting current text selection).

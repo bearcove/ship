@@ -324,6 +324,16 @@ it MUST push updates whenever the session list or project list changes.
 - `SessionListChanged { sessions: Vec<SessionSummary> }` — full session list
 - `ProjectListChanged { projects: Vec<ProjectInfo> }` — full project list
 
+r[proto.activity-entry]
+Global activity events MUST include an `ActivityEntry` payload with a stable
+monotonic `id`, timestamp, session identifiers (`session_id`, `session_slug`),
+optional `session_title`, and an `ActivityKind` discriminator.
+
+r[proto.activity-kind]
+`ActivityKind` MUST support at least captain-message activity plus structural
+session lifecycle activity (`SessionCreated`, `SessionArchived`) so activity
+feeds can render both conversational and lifecycle items.
+
 r[proto.steer]
 The protocol MUST support a `steer` operation where the human explicitly sends
 or approves new direction for the mate. This is the backend entrypoint that
@@ -1181,6 +1191,32 @@ the session worktree. If further conflicts are encountered, the tool returns an
 error listing the conflicting files and the task remains in `RebaseConflict`.
 When the rebase completes cleanly, the backend performs the fast-forward merge
 and transitions the task to `Accepted`.
+
+r[captain.tool.merge]
+The captain MUST have access to a `captain_merge` tool that performs the final
+accept/merge action. With an active task, it follows accept semantics. Without
+an active task, it merges committed session-branch work into base when the
+branch is mergeable.
+
+r[captain.tool.git-status]
+The captain MUST have access to a `captain_git_status` tool that reports branch
+name, base branch, dirtiness, rebase/conflict state, and whether review/merge
+actions are currently safe.
+
+r[captain.tool.review-diff]
+The captain MUST have access to a `captain_review_diff` tool that rebases the
+session branch onto base in managed mode and returns the post-rebase diff that
+would merge now, or a conflict report if rebase conflicts occur.
+
+r[captain.tool.rebase-status]
+The captain MUST have access to a `captain_rebase_status` tool that reports
+whether a managed rebase is in progress and whether continue/abort operations
+are currently allowed.
+
+r[captain.tool.rebase-abort]
+The captain MUST have access to a `captain_abort_rebase` tool that aborts an
+in-progress managed rebase and returns the session worktree to pre-rebase
+state.
 
 ### Mate Tools
 
