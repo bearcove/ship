@@ -1,4 +1,4 @@
-import { style } from "@vanilla-extract/css";
+import { keyframes, style } from "@vanilla-extract/css";
 
 export const sidebarRoot = style({
   width: "100%",
@@ -158,4 +158,20 @@ export const sessionGroupLabel = style({
   paddingLeft: "var(--space-3)",
   paddingRight: "var(--space-3)",
   paddingBottom: "var(--space-1)",
+});
+
+const sidebarSpin = keyframes({
+  "0%": { transform: "rotate(0deg)" },
+  "100%": { transform: "rotate(360deg)" },
+});
+
+export const sidebarSpinner = style({
+  display: "inline-block",
+  width: 10,
+  height: 10,
+  border: "1.5px solid var(--gray-a5)",
+  borderTopColor: "var(--gray-9)",
+  borderRadius: "50%",
+  animation: `${sidebarSpin} 3s linear infinite`,
+  flexShrink: 0,
 });

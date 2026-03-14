@@ -10,6 +10,7 @@ import {
 import type { SessionSummary, TaskStatus } from "../generated/ship";
 import { AddProjectDialog } from "../pages/SessionListPage";
 import { sortSessions } from "../pages/session-list-utils";
+import { relativeTime } from "../utils/time";
 import { useClientLogs } from "../api/client";
 import { SessionRecordingBadge } from "./SessionRecordingBadge";
 import {
@@ -20,6 +21,8 @@ import {
   sidebarHomeLink,
   sidebarRoot,
   sidebarScrollArea,
+  sidebarSpinner,
+  sidebarStatusDot,
 } from "../styles/session-sidebar.css";
 
 function statusLabel(status: TaskStatus | null): string {
@@ -67,6 +70,9 @@ function SessionRow({
   const showTaskCounts = session.tasks_total > 0;
   const showDiffStats =
     diffStats != null && (diffStats.lines_added > 0 || diffStats.lines_removed > 0);
+  const isWorking = session.task_status?.tag === "Working" || session.task_status?.tag === "Assigned";
+  const showAttentionDot =
+    session.task_status?.tag === "WaitingForHuman" && !session.is_read;
 
   return (
     <Link
@@ -78,10 +84,17 @@ function SessionRow({
     >
       <Flex direction="column" gap="1" style={{ minWidth: 0, flex: 1 }}>
         <Flex align="center" gap="2" style={{ minWidth: 0 }}>
+          {showAttentionDot && (
+            <span
+              className={sidebarStatusDot}
+              style={{ background: "var(--amber-9)" }}
+            />
+          )}
           {session.is_admiral && <Anchor size={16} weight="bold" style={{ flexShrink: 0 }} />}
           <Text size="2" className={sessionRowTitle} color={hasTitle ? undefined : "gray"}>
             {title}
           </Text>
+          {isWorking && <span className={sidebarSpinner} />}
         </Flex>
         <Text
           size="1"
@@ -103,6 +116,7 @@ function SessionRow({
               <span style={{ color: "var(--red-10)" }}>-{diffStats.lines_removed}</span>
             </>
           )}
+          <span> · {relativeTime(session.created_at)}</span>
         </Text>
       </Flex>
       <SessionRecordingBadge sessionId={session.id} compact />
