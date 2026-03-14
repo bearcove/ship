@@ -2123,10 +2123,7 @@ Here is your task:
         }
     }
 
-    async fn merge_branch_without_task(
-        &self,
-        session_id: &SessionId,
-    ) -> Result<(), String> {
+    async fn merge_branch_without_task(&self, session_id: &SessionId) -> Result<(), String> {
         let (worktree_path, base_branch, branch_name) = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let session = sessions
@@ -5468,6 +5465,27 @@ Here is your task:
             SessionEvent::BlockAppend {
                 role: Role::Mate,
                 block:
+                    ContentBlock::Text {
+                        text,
+                        source: TextSource::Steer,
+                    },
+                ..
+            } => {
+                if session.mate_activity_first_at.is_none() {
+                    session.mate_activity_first_at = Some(std::time::Instant::now());
+                }
+                let truncated = if text.len() > 200 {
+                    format!("{}...", &text[..200])
+                } else {
+                    text.clone()
+                };
+                session
+                    .mate_activity_buffer
+                    .push(format!("[steer] {truncated}"));
+            }
+            SessionEvent::BlockAppend {
+                role: Role::Mate,
+                block:
                     ContentBlock::ToolCall {
                         tool_name, target, ..
                     },
@@ -8009,10 +8027,10 @@ mod tests {
     use ship_types::{
         AgentDiscovery, AgentKind, AgentSnapshot, AgentState, AutonomyMode, CaptainAssignExtras,
         ContentBlock, CreateSessionRequest, CreateSessionResponse, CurrentTask,
-        DirtySessionStrategy, HumanReviewRequest, McpServerConfig, McpStdioServerConfig, PlanStep, PlanStepInput,
-        PlanStepStatus, ProjectName, PromptContentPart, Role, SessionConfig, SessionEvent,
-        SessionEventEnvelope, SessionId, SessionStartupState, SubscribeMessage, TaskId, TaskRecord,
-        TaskStatus,
+        DirtySessionStrategy, HumanReviewRequest, McpServerConfig, McpStdioServerConfig, PlanStep,
+        PlanStepInput, PlanStepStatus, ProjectName, PromptContentPart, Role, SessionConfig,
+        SessionEvent, SessionEventEnvelope, SessionId, SessionStartupState, SubscribeMessage,
+        TaskId, TaskRecord, TaskStatus,
     };
     use tokio::sync::{broadcast, mpsc};
     use tokio::time::timeout;
@@ -9944,9 +9962,21 @@ mod tests {
 
         // Wait for the HumanReviewRequested event — no polling.
         let review = loop {
-            let envelope = events_rx.recv().await.expect("event channel should not close");
-            if let SessionEvent::HumanReviewRequested { message, diff, worktree_path: _ } = envelope.event {
-                break HumanReviewRequest { message, diff, worktree_path: worktree_path.display().to_string() };
+            let envelope = events_rx
+                .recv()
+                .await
+                .expect("event channel should not close");
+            if let SessionEvent::HumanReviewRequested {
+                message,
+                diff,
+                worktree_path: _,
+            } = envelope.event
+            {
+                break HumanReviewRequest {
+                    message,
+                    diff,
+                    worktree_path: worktree_path.display().to_string(),
+                };
             }
         };
 
