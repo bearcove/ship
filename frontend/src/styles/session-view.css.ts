@@ -1326,6 +1326,7 @@ export const feedTimeGap = style({
 });
 
 export const feedBubbleCol = style({
+  position: "relative",
   display: "flex",
   flexDirection: "column",
   width: "100%",
