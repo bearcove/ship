@@ -507,6 +507,8 @@ A task's status MUST be one of the following values:
 - `ReviewPending` — the mate has finished and the captain is reviewing
 - `SteerPending` — the captain has produced a steer awaiting human approval
   (human-in-the-loop mode only)
+- `RebaseConflict` — `captain_accept` triggered a rebase that hit conflicts;
+  the captain must resolve conflict markers and call `captain_continue_rebase`
 - `Accepted` — the task is complete, work is done
 - `Cancelled` — the task was cancelled by the human or captain
 
@@ -1170,6 +1172,15 @@ The captain MUST have access to a `commit` tool with the same semantics as the
 mate's `commit` tool: takes a required `message` (string, used verbatim) and
 an optional `step_index` (integer). The captain writes to the same worktree as
 the mate; commits from either agent are interleaved on the same branch.
+
+r[captain.tool.continue-rebase]
+The captain MUST have access to a `captain_continue_rebase` tool (no
+arguments). It is only valid when the task is in `RebaseConflict` status. When
+called, the backend runs `git add -A` followed by `git rebase --continue` in
+the session worktree. If further conflicts are encountered, the tool returns an
+error listing the conflicting files and the task remains in `RebaseConflict`.
+When the rebase completes cleanly, the backend performs the fast-forward merge
+and transitions the task to `Accepted`.
 
 ### Mate Tools
 

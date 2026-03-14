@@ -319,6 +319,12 @@ impl ServerHandler for CaptainMcpHandler {
                 };
                 return Ok(kagi_web_search(&self.http_client, api_key, query).await);
             }
+            // r[captain.tool.continue-rebase]
+            "captain_continue_rebase" => self
+                .client
+                .captain_continue_rebase()
+                .await
+                .map_err(call_tool_rpc_error)?,
             other => return Err(CallToolError::unknown_tool(other.to_owned())),
         };
 
@@ -550,6 +556,19 @@ skips research and goes straight to execution. Omitting files or plan wastes the
         edit_confirm_tool(),
         commit_tool(),
         web_search_tool(),
+        ToolDefinition {
+            name: "captain_continue_rebase",
+            description: "Continue a paused rebase after resolving conflict markers. \
+Only valid when the task is in RebaseConflict status. \
+Fix all conflict markers in the listed files first, then call this tool. \
+If more conflicts remain, the tool returns an error listing them. \
+When all conflicts are resolved, the rebase completes and the task is accepted.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false,
+            }),
+        },
     ]
 }
 

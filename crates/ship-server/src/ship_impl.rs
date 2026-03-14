@@ -14,8 +14,8 @@ use roam::{
 use roam::{Rx, Tx};
 use ship_core::{
     AcpAgentDriver, ActiveSession, AgentDriver, AgentSessionConfig, GitWorktreeOps,
-    JsonSessionStore, PendingEdit, ProjectRegistry, SessionGitNames, SessionStore, WorktreeOps,
-    apply_event, archive_terminal_task, coalesce_replay_events, current_task_status,
+    JsonSessionStore, PendingEdit, ProjectRegistry, RebaseOutcome, SessionGitNames, SessionStore,
+    WorktreeOps, apply_event, archive_terminal_task, coalesce_replay_events, current_task_status,
     rebuild_materialized_from_event_log, resolve_mcp_servers, set_agent_state, transition_task,
 };
 use ship_service::{CaptainMcp, CaptainMcpDispatcher, MateMcp, MateMcpDispatcher, Ship};
@@ -921,9 +921,15 @@ You can also write files, apply edits, and commit directly using write_file, \
 edit_prepare/edit_confirm, and commit — useful for small fixups or for \
 preparing context the mate will need.
 
+If `captain_accept` hits a rebase conflict, the task enters `RebaseConflict` \
+status and the tool returns an error listing the conflicting files. Read each \
+file, resolve the conflict markers (`<<<<<<<` / `=======` / `>>>>>>>`), then \
+call `captain_continue_rebase`. Repeat until the rebase is clean and the task \
+is accepted.
+
 Your available tools are your Ship MCP tools: captain_assign, captain_steer, \
-captain_accept, captain_cancel, captain_notify_human, read_file, run_command, \
-write_file, edit_prepare, edit_confirm, commit, and web_search. \
+captain_accept, captain_cancel, captain_continue_rebase, captain_notify_human, \
+read_file, run_command, write_file, edit_prepare, edit_confirm, commit, and web_search. \
 Use run_command for codebase exploration and read-only inspection (rg to search, fd to list files, \
 and read-only git commands such as `git status`, `git log`, `git diff`, and `git show`). \
 Git is not your workflow control surface: do NOT use it to commit, rebase, merge, or advance review state. \
@@ -1312,6 +1318,7 @@ Continue where you left off — wait for the human to give you direction."
             if status != TaskStatus::Assigned
                 && status != TaskStatus::ReviewPending
                 && status != TaskStatus::SteerPending
+                && status != TaskStatus::RebaseConflict
             {
                 return Err("invalid task transition".to_owned());
             }
@@ -1346,11 +1353,44 @@ Continue where you left off — wait for the human to give you direction."
                 .map_err(|e| format!("failed to commit uncommitted changes: {}", e.message))?;
         }
 
-        self.worktree_ops
-            .rebase_onto(&worktree_path, &base_branch)
+        let rebase_outcome = self
+            .worktree_ops
+            .rebase_onto_conflict_ok(&worktree_path, &base_branch)
             .await
             .map_err(|error| format!("rebase failed: {}", error.message))?;
 
+        if let RebaseOutcome::Conflict { files } = rebase_outcome {
+            // Transition to RebaseConflict so the captain can fix the conflicts
+            // and call captain_continue_rebase.
+            {
+                let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                let active = sessions
+                    .get_mut(session_id)
+                    .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+                transition_task(active, TaskStatus::RebaseConflict)
+                    .map_err(|error| error.to_string())?;
+            }
+            self.persist_session(session_id).await?;
+            return Err(format!(
+                "Rebase hit conflicts in the following files:\n{}\n\
+                Fix the conflict markers, then call `captain_continue_rebase`.",
+                files.join("\n")
+            ));
+        }
+
+        self.complete_after_rebase(session_id, repo_root, branch_name, base_branch, summary)
+            .await
+    }
+
+    /// After a clean rebase, fast-forward merge to main, collect recap, transition to Accepted.
+    async fn complete_after_rebase(
+        &self,
+        session_id: &SessionId,
+        repo_root: PathBuf,
+        branch_name: String,
+        base_branch: String,
+        summary: Option<String>,
+    ) -> Result<(), String> {
         let old_base_head = TokioCommand::new("git")
             .args(["rev-parse", &base_branch])
             .current_dir(&repo_root)
@@ -1446,7 +1486,7 @@ Continue where you left off — wait for the human to give you direction."
             (Vec::new(), None)
         };
 
-        // Second lock: merge succeeded, now transition and archive the task.
+        // Final lock: merge succeeded, now transition and archive the task.
         {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let active = sessions
@@ -2058,6 +2098,54 @@ Here is your task:
             }
         };
         Ok(format!("Accepted the active task.{}", duration_suffix))
+    }
+
+    // r[captain.tool.continue-rebase]
+    async fn captain_tool_continue_rebase(&self, session_id: &SessionId) -> Result<String, String> {
+        let (worktree_path, base_branch, branch_name) = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let active = sessions
+                .get(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            let status = current_task_status(active).map_err(|error| error.to_string())?;
+            if status != TaskStatus::RebaseConflict {
+                return Err(format!(
+                    "captain_continue_rebase is only valid in RebaseConflict status (current: {status:?})"
+                ));
+            }
+            let worktree_path = active
+                .worktree_path
+                .clone()
+                .ok_or_else(|| "session worktree not ready".to_owned())?;
+            (
+                worktree_path,
+                active.config.base_branch.clone(),
+                active.config.branch_name.clone(),
+            )
+        };
+
+        let repo_root = Self::repo_root_for_worktree(&worktree_path)
+            .map_err(|error| error.to_string())?
+            .to_path_buf();
+
+        let outcome = self
+            .worktree_ops
+            .rebase_continue(&worktree_path)
+            .await
+            .map_err(|error| format!("rebase continue failed: {}", error.message))?;
+
+        if let RebaseOutcome::Conflict { files } = outcome {
+            return Err(format!(
+                "Conflicts remain in the following files:\n{}\n\
+                Fix the conflict markers and call `captain_continue_rebase` again.",
+                files.join("\n")
+            ));
+        }
+
+        self.complete_after_rebase(session_id, repo_root, branch_name, base_branch, None)
+            .await?;
+
+        Ok("Rebase completed; task accepted.".to_owned())
     }
 
     async fn captain_tool_cancel(
@@ -6975,6 +7063,15 @@ impl CaptainMcp for CaptainMcpSessionService {
         Self::response(
             self.ship
                 .mate_tool_commit(&self.session_id, step_index, message)
+                .await,
+        )
+    }
+
+    // r[captain.tool.continue-rebase]
+    async fn captain_continue_rebase(&self) -> McpToolCallResponse {
+        Self::response(
+            self.ship
+                .captain_tool_continue_rebase(&self.session_id)
                 .await,
         )
     }

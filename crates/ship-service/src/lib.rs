@@ -177,6 +177,9 @@ pub trait CaptainMcp {
     // r[captain.tool.commit]
     async fn captain_commit(&self, step_index: Option<u64>, message: String)
     -> McpToolCallResponse;
+
+    // r[captain.tool.continue-rebase]
+    async fn captain_continue_rebase(&self) -> McpToolCallResponse;
 }
 
 // r[mate.tool.implementation]
