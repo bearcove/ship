@@ -56,10 +56,29 @@ function makeTextBlock(
 function makeTextEntry(
   blockId: string,
   text: string,
-  role: BlockEntry['role'] = { tag: "Captain" },
-  source: Extract<ContentBlock, { tag: "Text" }>['source'] = { tag: "AgentMessage" },
-  timestamp = "2026-03-13T10:00:00Z",
+  roleOrOptions:
+    | BlockEntry["role"]
+    | {
+      role?: BlockEntry["role"];
+      source?: Extract<ContentBlock, { tag: "Text" }>["source"];
+      timestamp?: string;
+    } = {},
+  sourceArg: Extract<ContentBlock, { tag: "Text" }>["source"] = { tag: "AgentMessage" },
+  timestampArg = "2026-03-13T10:00:00Z",
 ): BlockEntry {
+  let role: BlockEntry["role"] = { tag: "Captain" };
+  let source: Extract<ContentBlock, { tag: "Text" }>["source"] = { tag: "AgentMessage" };
+  let timestamp = timestampArg;
+
+  if ("tag" in roleOrOptions) {
+    role = roleOrOptions;
+    source = sourceArg;
+  } else {
+    role = roleOrOptions.role ?? role;
+    source = roleOrOptions.source ?? source;
+    timestamp = roleOrOptions.timestamp ?? timestamp;
+  }
+
   return {
     blockId,
     role,
@@ -241,6 +260,67 @@ describe("UnifiedFeed", () => {
     expect(boundary).toHaveTextContent("Completed step 1: Set up types");
     expect(boundary).toHaveTextContent("Commit: abc1234");
     expect(boundary).toHaveTextContent("Diff: 1 file changed, 1 insertion(+)");
+  });
+
+  it("renders mate updates as centered synthetic entries without raw XML", () => {
+    renderFeed([
+      makeTextEntry(
+        "mate-update-1",
+        "<mate-update>\nNeed a decision on the parser fallback.\n</mate-update>",
+        { source: { tag: "Human" } },
+      ),
+    ]);
+
+    const synthetic = screen.getByTestId("synthetic-human-text");
+
+    expect(synthetic).toHaveAttribute("data-synthetic-kind", "mate-update");
+    expect(screen.getByText("Mate update")).toBeInTheDocument();
+    expect(screen.getByText("Need a decision on the parser fallback.")).toBeInTheDocument();
+    expect(screen.queryByText(/<mate-update>/)).not.toBeInTheDocument();
+  });
+
+  it("collapses generic system notifications to a concise synthetic label", () => {
+    renderFeed([
+      makeTextEntry(
+        "system-notification-1",
+        [
+          "<system-notification>",
+          "You are the mate — an implementation-focused engineer.",
+          "Write commit messages that describe what changed and why.",
+          "</system-notification>",
+        ].join("\n"),
+        { source: { tag: "Human" } },
+      ),
+    ]);
+
+    const synthetic = screen.getByTestId("synthetic-human-text");
+
+    expect(synthetic).toHaveAttribute("data-synthetic-kind", "system-notification");
+    expect(screen.getByText("System notification")).toBeInTheDocument();
+    expect(screen.queryByText(/implementation-focused engineer/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Write commit messages that describe what changed and why/i)).not.toBeInTheDocument();
+  });
+
+  it("preserves mate activity summaries even when wrapped in a system notification", () => {
+    renderFeed([
+      makeTextEntry(
+        "mate-summary-1",
+        [
+          "<system-notification>",
+          "<mate-activity-summary>",
+          "Refactored the parser and added focused feed tests.",
+          "</mate-activity-summary>",
+          "",
+          "The mate's recent activity is summarized above. If something needs correction, use captain_steer.",
+          "</system-notification>",
+        ].join("\n"),
+        { source: { tag: "Human" } },
+      ),
+    ]);
+
+    expect(screen.getByText("Refactored the parser and added focused feed tests.")).toBeInTheDocument();
+    expect(screen.queryByText("System notification")).not.toBeInTheDocument();
+    expect(screen.queryByText(/The mate's recent activity is summarized above/i)).not.toBeInTheDocument();
   });
 
   it("does not animate replayed historical blocks while the feed is still loading", () => {

@@ -29,6 +29,9 @@ import {
   feedRowAnimate,
   feedRowUser,
   feedTimeGap,
+  feedSystemMessage,
+  feedSystemMessageText,
+  liveBubbleDot,
   liveBubbleSlot,
   liveBubblesRow,
   scrollToBottomBtn,
@@ -150,25 +153,44 @@ function formatRelativeTime(timestampMs: number, now: number): string {
   return `${days} days ago`;
 }
 
-// ─── System message detection ─────────────────────────────────────────────────
-// Human blocks injected by the server (task assignments, system prompts) are
-// very long and contain instructions. We collapse them to a short label.
+// ─── Synthetic human-text detection ───────────────────────────────────────────
+// Human blocks injected by the server keep the text wire format, but some are
+// tagged synthetic entries that should render differently from real user text.
 
-function isMateActivitySummary(block: Extract<ContentBlock, { tag: "Text" }>): boolean {
-  if (block.source.tag !== "Human") return false;
-  return block.text.includes("<mate-activity-summary>");
+type SyntheticHumanText =
+  | { kind: "mateActivitySummary"; body: string }
+  | { kind: "mateUpdate"; body: string }
+  | { kind: "systemNotification"; body: string };
+
+const syntheticHumanPatterns: Array<{
+  kind: SyntheticHumanText["kind"];
+  regex: RegExp;
+}> = [
+  {
+    kind: "mateActivitySummary",
+    regex: /<mate-activity-summary>\n?([\s\S]*?)\n?<\/mate-activity-summary>/,
+  },
+  {
+    kind: "mateUpdate",
+    regex: /<mate-update>\n?([\s\S]*?)\n?<\/mate-update>/,
+  },
+  {
+    kind: "systemNotification",
+    regex: /<system-notification>\n?([\s\S]*?)\n?<\/system-notification>/,
+  },
+];
+
+function parseSyntheticHumanText(block: TextBlockType): SyntheticHumanText | null {
+  if (block.source.tag !== "Human") return null;
+  for (const pattern of syntheticHumanPatterns) {
+    const match = block.text.match(pattern.regex);
+    if (match) {
+      return { kind: pattern.kind, body: match[1].trim() };
+    }
+  }
+  return null;
 }
 
-function extractMateActivitySummary(text: string): string {
-  const match = text.match(/<mate-activity-summary>\n?([\s\S]*?)\n?<\/mate-activity-summary>/);
-  return match ? match[1].trim() : text;
-}
-
-function isSystemInjection(block: Extract<ContentBlock, { tag: "Text" }>): boolean {
-  if (block.source.tag !== "Human") return false;
-  if (isMateActivitySummary(block)) return false;
-  return block.text.includes("<system-notification>");
-}
 
 function formatDuration(totalSeconds: number): string {
   if (totalSeconds < 60) return `${totalSeconds}s`;
@@ -187,7 +209,6 @@ function buildSegments(blocks: BlockEntry[], debugMode: boolean): FeedSegment[] 
       (debugMode || b.block.tag !== "ToolCall") &&
       !(b.block.tag === "Text" && b.block.source.tag === "AgentThought") &&
       !(b.block.tag === "Text" && b.block.text.trim() === "") &&
-      !(b.block.tag === "Text" && isSystemInjection(b.block as Extract<ContentBlock, { tag: "Text" }>)) &&
       !(b.block.tag === "Permission" && b.block.resolution?.tag === "Approved") &&
       (b.role.tag !== "Mate" ||
         (b.block.tag === "Text" && (b.block.source.tag === "Human" || b.block.source.tag === "Steer"))),
@@ -200,9 +221,13 @@ function segmentAgentRole(seg: FeedSegment): Role | null {
   if (block.tag === "Text" && block.source.tag === "Steer") {
     return { tag: "Captain" };
   }
-  if (block.tag === "Text" && block.source.tag === "Human" && !isSystemInjection(block)) {
-    if (role.tag === "Captain") return null;
-    return { tag: "Captain" };
+  if (block.tag === "Text") {
+    const syntheticHuman = parseSyntheticHumanText(block);
+    if (syntheticHuman) return null;
+    if (block.source.tag === "Human") {
+      if (role.tag === "Captain") return null;
+      return { tag: "Captain" };
+    }
   }
   if (block.tag === "Image" && role.tag === "Captain") {
     return null;
@@ -561,6 +586,65 @@ const ToolCallDebugBlock = memo(function ToolCallDebugBlock({
   );
 });
 
+function SyntheticHumanMessage({
+  block,
+  synthetic,
+  isSelected,
+  onBubbleClick,
+  onReplyRequest,
+}: {
+  block: TextBlockType;
+  synthetic: SyntheticHumanText;
+  isSelected: boolean;
+  onBubbleClick: (e: React.MouseEvent) => void;
+  onReplyRequest?: () => void;
+}) {
+  if (synthetic.kind === "mateActivitySummary") {
+    const summaryBlock = { ...block, text: synthetic.body };
+    const cls = `${feedBubble} ${feedBubbleActivitySummary}${isSelected ? ` ${feedBubbleSelected}` : ""}`;
+    return (
+      <Box className={feedRowAgent}>
+        <Box className={feedBubbleCol}>
+          <Box className={cls} onClick={onBubbleClick}>
+            <TextBlock block={summaryBlock as TextBlockType} />
+          </Box>
+          {isSelected && <BubbleActionBar text={synthetic.body} onReply={onReplyRequest} />}
+        </Box>
+      </Box>
+    );
+  }
+
+  if (synthetic.kind === "systemNotification") {
+    return (
+      <Box
+        className={feedSystemMessage}
+        data-testid="synthetic-human-text"
+        data-synthetic-kind="system-notification"
+      >
+        <Text className={feedSystemMessageText}>System notification</Text>
+      </Box>
+    );
+  }
+
+  const bodyBlock = { ...block, text: synthetic.body };
+  const cls = `${feedBubble}${isSelected ? ` ${feedBubbleSelected}` : ""}`;
+  return (
+    <Box
+      className={feedSystemMessage}
+      data-testid="synthetic-human-text"
+      data-synthetic-kind="mate-update"
+    >
+      <Box className={feedBubbleCol} style={{ width: "min(100%, 32rem)" }}>
+        <Text className={feedSystemMessageText}>Mate update</Text>
+        <Box className={cls} onClick={onBubbleClick}>
+          <TextBlock block={bodyBlock as TextBlockType} />
+        </Box>
+        {isSelected && <BubbleActionBar text={synthetic.body} onReply={onReplyRequest} />}
+      </Box>
+    </Box>
+  );
+}
+
 const SingleBlock = memo(function SingleBlock({
   entry,
   sessionId,
@@ -595,20 +679,17 @@ const SingleBlock = memo(function SingleBlock({
       const isHuman = block.source.tag === "Human";
       const isThought = block.source.tag === "AgentThought";
       const isAgent = block.source.tag === "AgentMessage";
+      const syntheticHuman = isHuman ? parseSyntheticHumanText(block) : null;
 
-      if (isHuman && isMateActivitySummary(block)) {
-        const summary = extractMateActivitySummary(block.text);
-        const summaryBlock = { ...block, text: summary };
-        const className = `${feedBubble} ${feedBubbleActivitySummary}${isSelected ? ` ${feedBubbleSelected}` : ""}`;
+      if (syntheticHuman) {
         return (
-          <Box className={feedRowAgent}>
-            <Box className={feedBubbleCol}>
-              <Box className={className} onClick={handleBubbleClick}>
-                <TextBlock block={summaryBlock as TextBlockType} />
-              </Box>
-              {isSelected && <BubbleActionBar text={summary} onReply={onReplyRequest} />}
-            </Box>
-          </Box>
+          <SyntheticHumanMessage
+            block={block as TextBlockType}
+            synthetic={syntheticHuman}
+            isSelected={isSelected}
+            onBubbleClick={handleBubbleClick}
+            onReplyRequest={onReplyRequest}
+          />
         );
       }
 
