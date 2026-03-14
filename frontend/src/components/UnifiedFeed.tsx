@@ -223,6 +223,8 @@ function workflowMilestoneTone(kind: WorkflowMilestoneBlockType["kind"]): PhaseB
   switch (kind.tag) {
     case "RebaseConflict":
       return "error";
+    case "TaskAccepted":
+      return "accepted";
     case "PlanSet":
     case "StepCommitted":
     case "ReviewSubmitted":
