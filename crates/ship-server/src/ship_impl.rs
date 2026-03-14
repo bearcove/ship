@@ -2282,6 +2282,15 @@ You are now active. Wait for messages from captains or the human.\n",
                 );
             }
 
+            // r[task.accepted]
+            Self::append_workflow_milestone(
+                active,
+                WorkflowMilestoneKind::TaskAccepted,
+                "Task accepted",
+                "Work merged to base branch",
+                Vec::new(),
+            );
+
             transition_task(active, TaskStatus::Accepted).map_err(|error| error.to_string())?;
             Self::invalidate_mate_activity_summary_state(active);
             archive_terminal_task(active);

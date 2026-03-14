@@ -496,6 +496,7 @@ pub mod events {
         StepCommitted,
         ReviewSubmitted,
         RebaseConflict,
+        TaskAccepted,
     }
 
     // r[event.content-block.types]
