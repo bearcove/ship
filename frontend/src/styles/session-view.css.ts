@@ -1304,6 +1304,7 @@ export const agentHeaderModelPickerList = style({
 export const agentHeaderModelPickerOption = style({
   padding: "var(--space-2) var(--space-3)",
   cursor: "pointer",
+  color: "var(--gray-12)",
   selectors: {
     '&[data-selected="true"]': {
       background: "var(--accent-a3)",
