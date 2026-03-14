@@ -1154,6 +1154,7 @@ interface Props {
   loadingLabel?: string;
   debugMode?: boolean;
   onReplyRequest?: () => void;
+  onArchive?: () => void;
 }
 
 type SessionFeedAnimationBaseline = {
@@ -1191,6 +1192,7 @@ export function UnifiedFeed({
   loadingLabel,
   debugMode = false,
   onReplyRequest,
+  onArchive,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickyScroll = useRef(true);
@@ -1366,12 +1368,16 @@ export function UnifiedFeed({
             </Flex>
           )}
 
-          {renderedSegments.map(({ seg, agentForBlock, gapLabel, isPhaseBreak }) => {
+          {(() => {
+            const lastRecapBlockId = [...renderedSegments].reverse().find(r => r.seg.entry.block.tag === "TaskRecap")?.seg.entry.blockId ?? null;
+            return renderedSegments.map(({ seg, agentForBlock, gapLabel, isPhaseBreak }) => {
             const alreadyKnown = sessionAnimationBaseline.blockIds.has(seg.entry.blockId);
             const animate = !loading && sessionAnimationBaseline.established && !alreadyKnown;
             if (!alreadyKnown) {
               sessionAnimationBaseline.blockIds.add(seg.entry.blockId);
             }
+
+            const archiveForBlock = seg.entry.blockId === lastRecapBlockId ? onArchive : undefined;
 
             const blockContent = animate ? (
               <div className={feedRowAnimate}>
@@ -1385,6 +1391,7 @@ export function UnifiedFeed({
                   isSelected={selectedBlockId === seg.entry.blockId}
                   onSelectBlock={setSelectedBlockId}
                   onReplyRequest={onReplyRequest}
+                  onArchive={archiveForBlock}
                 />
               </div>
             ) : (
@@ -1398,6 +1405,7 @@ export function UnifiedFeed({
                 isSelected={selectedBlockId === seg.entry.blockId}
                 onSelectBlock={setSelectedBlockId}
                 onReplyRequest={onReplyRequest}
+                onArchive={archiveForBlock}
               />
             );
 
@@ -1416,7 +1424,8 @@ export function UnifiedFeed({
                 )}
               </Fragment>
             );
-          })}
+          });
+          })()}
           {trailingGapLabel && (
             <Box className={feedContentColumn}>
               <Text className={feedTimeGap}>{trailingGapLabel}</Text>
