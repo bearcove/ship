@@ -2708,7 +2708,8 @@ Here is your task:
                 } else {
                     git_status.unmerged_paths.clone()
                 };
-                self.mark_rebase_conflict(session_id, &conflicted_files).await?;
+                self.mark_rebase_conflict(session_id, &conflicted_files)
+                    .await?;
             }
         }
 
@@ -5150,6 +5151,10 @@ Here is your task:
             .and_then(|task| task.pending_mate_guidance.take())
     }
 
+    fn mate_update_interrupt_prompt(injected: &str) -> String {
+        format!("YOUR MATE HAS AN UPDATE:\n\n{injected}")
+    }
+
     async fn mate_tool_send_update(
         &self,
         session_id: &SessionId,
@@ -5166,10 +5171,11 @@ Here is your task:
         )
         .await?;
 
+        let captain_prompt = Self::mate_update_interrupt_prompt(&injected);
         let this = self.clone();
         let session_id = session_id.clone();
         tokio::spawn(async move {
-            if let Err(error) = this.interrupt_captain(&session_id, injected).await {
+            if let Err(error) = this.interrupt_captain(&session_id, captain_prompt).await {
                 Self::log_error("mate_send_update prompt_captain", &error);
             }
         });
@@ -11560,6 +11566,38 @@ agent_presets {
         );
 
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    async fn mate_send_update_keeps_tagged_feed_text_in_task_history() {
+        let (dir, ship, session_id) = create_session_for_workflow_test("mate-send-update").await;
+        let message = "Parser fallback needs review".to_owned();
+
+        let response = ship
+            .mate_tool_send_update(&session_id, message.clone())
+            .await
+            .expect("mate_send_update should succeed");
+        assert_eq!(response, "Update sent to the captain.");
+
+        {
+            let sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get(&session_id).expect("session should exist");
+            let task = session.current_task.as_ref().expect("task should exist");
+            let injected = format!("<mate-update>\n{message}\n</mate-update>");
+            assert!(task.content_history.iter().any(|entry| matches!(
+                &entry.block,
+                ContentBlock::Text { text, .. } if text == &injected
+            )));
+        }
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn mate_update_interrupt_prompt_adds_explicit_prefix_before_tagged_payload() {
+        let injected = "<mate-update>\nParser fallback needs review\n</mate-update>";
+        let prompt = ShipImpl::mate_update_interrupt_prompt(injected);
+        assert!(prompt.starts_with("YOUR MATE HAS AN UPDATE:"));
+        assert!(prompt.contains(injected));
     }
 
     // r[verify mate.tool.read-file]
