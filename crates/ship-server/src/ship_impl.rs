@@ -2073,7 +2073,7 @@ You are now active. Wait for messages from captains or the human.\n",
                 // We must set this BEFORE cancelling the in-flight prompt so
                 // the loop always sees the guidance on the Cancelled stop reason
                 // and continues rather than archiving the task.
-                let guidance = format!("Captain steer:\n{log_text}");
+                let guidance = Self::mate_steer_message(&log_text);
                 if let Some(task) = active.current_task.as_mut() {
                     task.pending_mate_guidance = Some(guidance);
                 }
