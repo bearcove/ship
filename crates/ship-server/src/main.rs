@@ -1653,8 +1653,9 @@ mod tests {
     use ship_types::{AgentDiscovery, AgentKind};
 
     use super::{
-        FrontendMode, build_frontend_mode, collect_model_listing, ensure_ship_entry_for_project,
-        resolve_list_models_kinds, resolve_listen_addrs, should_spa_fallback,
+        FrontendMode, ModelListing, build_frontend_mode, collect_model_listing,
+        ensure_ship_entry_for_project, format_model_listings, resolve_list_models_kinds,
+        resolve_listen_addrs, should_spa_fallback,
     };
 
     static SHIP_LISTEN_ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
@@ -1811,6 +1812,22 @@ mod tests {
         assert_eq!(kinds, vec![AgentKind::Claude, AgentKind::Codex]);
     }
 
+    #[test]
+    fn resolve_list_models_kinds_errors_when_requested_kind_is_missing() {
+        let error = resolve_list_models_kinds(
+            &AgentDiscovery {
+                claude: true,
+                codex: false,
+                opencode: false,
+            },
+            Some(AgentKind::Codex),
+        )
+        .expect_err("missing requested kind should error");
+
+        assert!(error.contains("Codex"));
+        assert!(error.contains("not installed"));
+    }
+
     #[tokio::test]
     async fn collect_model_listing_uses_fresh_session_config_and_kills_handle() {
         let fake_driver = FakeAgentDriver::default();
@@ -1834,6 +1851,25 @@ mod tests {
         assert_eq!(killed, vec![spawns[0].handle.clone()]);
 
         let _ = std::fs::remove_dir_all(&worktree_path);
+    }
+
+    #[test]
+    fn format_model_listings_renders_sections_and_empty_state() {
+        let rendered = format_model_listings(&[
+            ModelListing {
+                kind: AgentKind::Claude,
+                models: vec!["claude-sonnet-4".to_owned(), "claude-haiku-4.5".to_owned()],
+            },
+            ModelListing {
+                kind: AgentKind::OpenCode,
+                models: Vec::new(),
+            },
+        ]);
+
+        assert_eq!(
+            rendered,
+            "claude:\n  claude-sonnet-4\n  claude-haiku-4.5\n\nopencode:\n  (no models reported)"
+        );
     }
 
     // r[verify server.listen]
