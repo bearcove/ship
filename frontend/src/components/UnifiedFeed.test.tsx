@@ -3,7 +3,12 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { encode } from "gpt-tokenizer";
 import type { AgentSnapshot, ContentBlock } from "../generated/ship";
 import type { BlockEntry } from "../state/blockStore";
-import { feedRowAnimate } from "../styles/session-view.css";
+import {
+  feedRowAnimate,
+  taskRecapBoundaryAccepted,
+  taskRecapBoundaryError,
+  taskRecapBoundaryNeutral,
+} from "../styles/session-view.css";
 import { renderWithTheme } from "../test/render";
 import { UnifiedFeed, resetUnifiedFeedAnimationBaselinesForTest } from "./UnifiedFeed";
 
@@ -221,6 +226,7 @@ describe("UnifiedFeed", () => {
 
     expect(boundary).toHaveAttribute("data-feed-boundary", "phase-break");
     expect(boundary).toHaveAttribute("data-phase-break-tone", "accepted");
+    expect(boundary).toHaveClass(taskRecapBoundaryAccepted);
     expect(boundary).toHaveTextContent("Phase break");
     expect(boundary).toHaveTextContent("Previous task accepted");
     expect(boundary).toHaveTextContent("+12");
@@ -265,6 +271,7 @@ describe("UnifiedFeed", () => {
     expect(boundary).toHaveAttribute("data-feed-boundary", "phase-break");
     expect(boundary).toHaveAttribute("data-phase-break-kind", "StepCommitted");
     expect(boundary).toHaveAttribute("data-phase-break-tone", "neutral");
+    expect(boundary).toHaveClass(taskRecapBoundaryNeutral);
     expect(boundary).toHaveTextContent("Phase break");
     expect(boundary).toHaveTextContent("Checkpoint committed");
     expect(boundary).toHaveTextContent("Completed step 1: Set up types");
@@ -286,6 +293,7 @@ describe("UnifiedFeed", () => {
 
     expect(boundary).toHaveAttribute("data-phase-break-kind", "RebaseConflict");
     expect(boundary).toHaveAttribute("data-phase-break-tone", "error");
+    expect(boundary).toHaveClass(taskRecapBoundaryError);
     expect(boundary).toHaveTextContent("Rebase conflict");
     expect(boundary).toHaveTextContent("The branch could not be rebased automatically.");
   });

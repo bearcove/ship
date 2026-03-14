@@ -243,9 +243,20 @@ export const taskRecapBoundary = style({
   background: "linear-gradient(180deg, var(--gray-a3) 0%, var(--gray-a2) 100%)",
 });
 
-export const taskRecapBoundaryAccepted = style({});
-export const taskRecapBoundaryError = style({});
-export const taskRecapBoundaryNeutral = style({});
+export const taskRecapBoundaryAccepted = style({
+  borderTop: "2px solid var(--green-8)",
+  background: "linear-gradient(180deg, var(--green-a3) 0%, var(--gray-a2) 100%)",
+});
+
+export const taskRecapBoundaryError = style({
+  borderTop: "2px solid var(--red-8)",
+  background: "linear-gradient(180deg, var(--red-a3) 0%, var(--gray-a2) 100%)",
+});
+
+export const taskRecapBoundaryNeutral = style({
+  borderTop: "2px solid var(--gray-a6)",
+  background: "linear-gradient(180deg, var(--gray-a3) 0%, var(--gray-a2) 100%)",
+});
 
 export const taskRecapContent = style({
   maxWidth: "640px",
@@ -353,8 +364,32 @@ export const taskRecapCommitSubject = style({
 
 export const taskRecapCaret = style({
   flexShrink: 0,
-  color: "var(--green-11)",
+  color: "var(--gray-11)",
   transition: "transform 0.15s ease",
+});
+
+globalStyle(`${taskRecapBoundary}.${taskRecapBoundaryAccepted} ${taskRecapEyebrow}`, {
+  color: "var(--green-11)",
+});
+
+globalStyle(`${taskRecapBoundary}.${taskRecapBoundaryAccepted} ${taskRecapCommitHash}`, {
+  color: "var(--green-11)",
+});
+
+globalStyle(`${taskRecapBoundary}.${taskRecapBoundaryAccepted} ${taskRecapCaret}`, {
+  color: "var(--green-11)",
+});
+
+globalStyle(`${taskRecapBoundary}.${taskRecapBoundaryError} ${taskRecapEyebrow}`, {
+  color: "var(--red-11)",
+});
+
+globalStyle(`${taskRecapBoundary}.${taskRecapBoundaryError} ${taskRecapCommitHash}`, {
+  color: "var(--red-11)",
+});
+
+globalStyle(`${taskRecapBoundary}.${taskRecapBoundaryError} ${taskRecapCaret}`, {
+  color: "var(--red-11)",
 });
 
 export const taskRecapDiff = style({
