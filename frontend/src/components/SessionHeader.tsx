@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useState } from "react";
-import { Badge, Box, Code, DropdownMenu, Flex, IconButton, Popover, Spinner, Text } from "@radix-ui/themes";
+import { Badge, Box, Code, DropdownMenu, Flex, Popover, Spinner, Text } from "@radix-ui/themes";
 import {
   Archive,
   CaretDown,
@@ -57,6 +57,7 @@ import {
   sessionHeaderRows,
   sessionHeaderSectionLabel,
   sessionHeaderSideButton,
+  sessionHeaderSideButtonDesktopOnly,
   sessionHeaderSideButtons,
   sessionHeaderStepIconWrap,
   sessionHeaderStepText,
@@ -293,100 +294,11 @@ export function SessionHeader({
         {/* Collapsed header: rows + side buttons */}
         <div className={sessionHeaderCollapsedArea} onClick={() => setExpanded((v) => !v)}>
           <div className={sessionHeaderRows}>
-            {/* Row 1: title + menu */}
+            {/* Row 1: title only */}
             <div className={sessionHeaderRow1}>
               <Text size="3" weight="medium" className={sessionHeaderTitle}>
                 {displayTitle}
               </Text>
-              <Popover.Root open={switcherOpen} onOpenChange={setSwitcherOpen}>
-                <Popover.Trigger asChild>
-                  <IconButton
-                    variant="ghost"
-                    color="gray"
-                    size="2"
-                    aria-label="Switch session"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <ChatsCircle size={18} />
-                  </IconButton>
-                </Popover.Trigger>
-                <Popover.Content align="end" size="1" style={{ padding: "var(--space-1)" }}>
-                  <div className={sessionSwitcherList}>
-                    {sortSessions(allSessions).map((session) => {
-                      const isActive = session.id === sessionId;
-                      const isActiveTask = ["Working", "Assigned", "ReviewPending", "SteerPending"].includes(
-                        session.task_status?.tag ?? "",
-                      );
-                      const rowTitle =
-                        isActiveTask && session.current_task_title
-                          ? session.current_task_title
-                          : (session.title ?? session.branch_name);
-                      const mateState = session.mate.state;
-                      const currentStep =
-                        mateState.tag === "Working" && mateState.plan
-                          ? (mateState.plan.find((s) => s.status.tag === "InProgress") ??
-                              mateState.plan.find((s) => s.status.tag === "Pending") ??
-                              null)
-                          : null;
-                      const stepLabel = currentStep?.title || currentStep?.description || null;
-                      return (
-                        <div
-                          key={session.id}
-                          className={sessionSwitcherRow}
-                          data-active={isActive ? "true" : "false"}
-                          onClick={() => {
-                            navigate(`/sessions/${session.slug}`);
-                            setSwitcherOpen(false);
-                          }}
-                        >
-                          <div className={sessionSwitcherRowTitle}>{rowTitle}</div>
-                          <div className={sessionSwitcherRowSub}>
-                            {session.project} · {statusLabel(session.task_status)}
-                            {stepLabel && <> · {stepLabel}</>}
-                            {session.diff_stats &&
-                              (session.diff_stats.lines_added > 0 || session.diff_stats.lines_removed > 0) && (
-                                <>
-                                  {" · "}
-                                  <span style={{ color: "var(--green-10)" }}>+{String(session.diff_stats.lines_added)}</span>
-                                  {" "}
-                                  <span style={{ color: "var(--red-10)" }}>-{String(session.diff_stats.lines_removed)}</span>
-                                </>
-                              )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </Popover.Content>
-              </Popover.Root>
-              <DropdownMenu.Root>
-                <DropdownMenu.Trigger asChild>
-                  <IconButton
-                    variant="ghost"
-                    color="gray"
-                    size="2"
-                    aria-label="Session menu"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <DotsThree size={18} weight="bold" />
-                  </IconButton>
-                </DropdownMenu.Trigger>
-                <DropdownMenu.Content size="2" align="end">
-                  <DropdownMenu.Item onClick={() => setNewSessionOpen(true)}>
-                    <Plus size={13} />
-                    New session
-                  </DropdownMenu.Item>
-                  {canArchiveSession && (
-                    <>
-                      <DropdownMenu.Separator />
-                      <DropdownMenu.Item color="red" onClick={onArchive} disabled={archiving}>
-                        <Archive size={13} />
-                        {archiving ? "Archiving…" : "Archive session"}
-                      </DropdownMenu.Item>
-                    </>
-                  )}
-                </DropdownMenu.Content>
-              </DropdownMenu.Root>
             </div>
 
             {/* Row 2: in-progress step + progress + diff badge + chevron */}
@@ -414,11 +326,98 @@ export function SessionHeader({
             </div>
           </div>{/* end sessionHeaderRows */}
 
-          {/* Side buttons — hidden on mobile */}
+          {/* Side buttons: switcher + menu (always) + Zed/iTerm (desktop only) */}
           <div className={sessionHeaderSideButtons}>
+            <Popover.Root open={switcherOpen} onOpenChange={setSwitcherOpen}>
+              <Popover.Trigger asChild>
+                <button
+                  type="button"
+                  className={sessionHeaderSideButton}
+                  aria-label="Switch session"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <ChatsCircle size={20} />
+                </button>
+              </Popover.Trigger>
+              <Popover.Content align="end" size="1" style={{ padding: "var(--space-1)" }}>
+                <div className={sessionSwitcherList}>
+                  {sortSessions(allSessions).map((session) => {
+                    const isActive = session.id === sessionId;
+                    const isActiveTask = ["Working", "Assigned", "ReviewPending", "SteerPending"].includes(
+                      session.task_status?.tag ?? "",
+                    );
+                    const rowTitle =
+                      isActiveTask && session.current_task_title
+                        ? session.current_task_title
+                        : (session.title ?? session.branch_name);
+                    const mateState = session.mate.state;
+                    const currentStep =
+                      mateState.tag === "Working" && mateState.plan
+                        ? (mateState.plan.find((s) => s.status.tag === "InProgress") ??
+                            mateState.plan.find((s) => s.status.tag === "Pending") ??
+                            null)
+                        : null;
+                    const stepLabel = currentStep?.title || currentStep?.description || null;
+                    return (
+                      <div
+                        key={session.id}
+                        className={sessionSwitcherRow}
+                        data-active={isActive ? "true" : "false"}
+                        onClick={() => {
+                          navigate(`/sessions/${session.slug}`);
+                          setSwitcherOpen(false);
+                        }}
+                      >
+                        <div className={sessionSwitcherRowTitle}>{rowTitle}</div>
+                        <div className={sessionSwitcherRowSub}>
+                          {session.project} · {statusLabel(session.task_status)}
+                          {stepLabel && <> · {stepLabel}</>}
+                          {session.diff_stats &&
+                            (session.diff_stats.lines_added > 0 || session.diff_stats.lines_removed > 0) && (
+                              <>
+                                {" · "}
+                                <span style={{ color: "var(--green-10)" }}>+{String(session.diff_stats.lines_added)}</span>
+                                {" "}
+                                <span style={{ color: "var(--red-10)" }}>-{String(session.diff_stats.lines_removed)}</span>
+                              </>
+                            )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </Popover.Content>
+            </Popover.Root>
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger asChild>
+                <button
+                  type="button"
+                  className={sessionHeaderSideButton}
+                  aria-label="Session menu"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <DotsThree size={20} weight="bold" />
+                </button>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Content size="2" align="end">
+                <DropdownMenu.Item onClick={() => setNewSessionOpen(true)}>
+                  <Plus size={13} />
+                  New session
+                </DropdownMenu.Item>
+                {canArchiveSession && (
+                  <>
+                    <DropdownMenu.Separator />
+                    <DropdownMenu.Item color="red" onClick={onArchive} disabled={archiving}>
+                      <Archive size={13} />
+                      {archiving ? "Archiving…" : "Archive session"}
+                    </DropdownMenu.Item>
+                  </>
+                )}
+              </DropdownMenu.Content>
+            </DropdownMenu.Root>
             <button
               type="button"
-              className={sessionHeaderSideButton}
+              className={`${sessionHeaderSideButton} ${sessionHeaderSideButtonDesktopOnly}`}
               title="Open in Zed"
               aria-label="Open in Zed"
               onClick={(e) => {
@@ -430,7 +429,7 @@ export function SessionHeader({
             </button>
             <button
               type="button"
-              className={sessionHeaderSideButton}
+              className={`${sessionHeaderSideButton} ${sessionHeaderSideButtonDesktopOnly}`}
               title="Open in iTerm"
               aria-label="Open in iTerm"
               onClick={(e) => {
