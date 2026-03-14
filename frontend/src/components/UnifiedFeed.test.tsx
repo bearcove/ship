@@ -38,20 +38,32 @@ function makeTaskRecapBlock(): Extract<ContentBlock, { tag: "TaskRecap" }> {
 }
 
 function makeWorkflowMilestoneBlock(
-  kind: Extract<ContentBlock, { tag: "WorkflowMilestone" }>["kind"]["tag"] = "StepCommitted",
+  input:
+    | Extract<ContentBlock, { tag: "WorkflowMilestone" }>["kind"]["tag"]
+    | Partial<Extract<ContentBlock, { tag: "WorkflowMilestone" }>> = "StepCommitted",
 ): Extract<ContentBlock, { tag: "WorkflowMilestone" }> {
-  const isRebaseConflict = kind === "RebaseConflict";
+  if (typeof input === "string") {
+    const isRebaseConflict = input === "RebaseConflict";
+    return {
+      tag: "WorkflowMilestone",
+      kind: { tag: input },
+      title: isRebaseConflict ? "Rebase conflict" : "Checkpoint committed",
+      summary: isRebaseConflict
+        ? "The branch could not be rebased automatically."
+        : "Completed step 1: Set up types",
+      items: isRebaseConflict
+        ? ["Resolve conflicts in frontend/src/components/UnifiedFeed.tsx"]
+        : ["Commit: abc1234", "Diff: 1 file changed, 1 insertion(+)"],
+    };
+  }
 
   return {
     tag: "WorkflowMilestone",
-    kind: { tag: kind },
-    title: isRebaseConflict ? "Rebase conflict" : "Checkpoint committed",
-    summary: isRebaseConflict
-      ? "The branch could not be rebased automatically."
-      : "Completed step 1: Set up types",
-    items: isRebaseConflict
-      ? ["Resolve conflicts in frontend/src/components/UnifiedFeed.tsx"]
-      : ["Commit: abc1234", "Diff: 1 file changed, 1 insertion(+)"],
+    kind: { tag: "StepCommitted" },
+    title: "Checkpoint committed",
+    summary: "Completed step 1: Set up types",
+    items: ["Commit: abc1234", "Diff: 1 file changed, 1 insertion(+)"],
+    ...input,
   };
 }
 
@@ -296,6 +308,47 @@ describe("UnifiedFeed", () => {
     expect(boundary).toHaveClass(taskRecapBoundaryError);
     expect(boundary).toHaveTextContent("Rebase conflict");
     expect(boundary).toHaveTextContent("The branch could not be rebased automatically.");
+  });
+
+  it("marks diff-like workflow milestone lines with the diff style hook", () => {
+    renderFeed([
+      {
+        blockId: "milestone-1",
+        role: { tag: "Captain" },
+        block: makeWorkflowMilestoneBlock(),
+        timestamp: "2026-03-13T10:00:00Z",
+      },
+    ]);
+
+    expect(screen.getByText("Commit: abc1234")).toHaveAttribute("data-item-style", "text");
+    expect(screen.getByText("Diff: 1 file changed, 1 insertion(+)")).toHaveAttribute("data-item-style", "diff");
+  });
+
+  it("deduplicates repeated workflow milestone items while preserving order", () => {
+    renderFeed([
+      {
+        blockId: "milestone-1",
+        role: { tag: "Captain" },
+        block: makeWorkflowMilestoneBlock({
+          items: [
+            "Commit: abc1234",
+            "Diff: 1 file changed, 1 insertion(+)",
+            "Diff: 1 file changed, 1 insertion(+)",
+            "Commit: abc1234",
+            "Follow-up note",
+          ],
+        }),
+        timestamp: "2026-03-13T10:00:00Z",
+      },
+    ]);
+
+    const milestoneItems = screen.getAllByTestId("workflow-milestone-item");
+
+    expect(milestoneItems).toHaveLength(3);
+    expect(milestoneItems[0]).toHaveTextContent("Commit: abc1234");
+    expect(milestoneItems[1]).toHaveTextContent("Diff: 1 file changed, 1 insertion(+)");
+    expect(milestoneItems[2]).toHaveTextContent("Follow-up note");
+    expect(screen.getAllByText("Diff: 1 file changed, 1 insertion(+)")).toHaveLength(1);
   });
 
   it("renders mate updates as centered synthetic entries without raw XML", () => {
