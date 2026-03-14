@@ -11,7 +11,6 @@ import {
   Flex,
   IconButton,
   Select,
-  SegmentedControl,
   Text,
   TextField,
   Tooltip,
@@ -36,7 +35,7 @@ import { relativeTime } from "../utils/time";
 import { useActivityEntries } from "../hooks/useActivityEntries";
 import { Anchor } from "@phosphor-icons/react";
 import { useAgentPresets } from "../hooks/useAgentPresets";
-import { CreateSessionPresetPicker } from "../components/CreateSessionPresetPicker";
+import { UnifiedAgentPicker } from "../components/UnifiedAgentPicker";
 
 // r[ui.session-list.status-colors]
 const STATUS_COLOR: Record<
@@ -76,61 +75,6 @@ function DisabledTooltip({
 }
 
 // r[session.agent.kind]
-function AgentKindControl({
-  label,
-  value,
-  onChange,
-  claudeAvailable,
-  codexAvailable,
-  opencodeAvailable,
-}: {
-  label: string;
-  value: AgentKind;
-  onChange: (v: AgentKind) => void;
-  claudeAvailable: boolean;
-  codexAvailable: boolean;
-  opencodeAvailable: boolean;
-}) {
-  const discovery = { claude: claudeAvailable, codex: codexAvailable, opencode: opencodeAvailable };
-  return (
-    <Flex direction="column" gap="1">
-      <Text size="2" weight="medium">
-        {label}
-      </Text>
-      <SegmentedControl.Root
-        value={value.tag}
-        onValueChange={(v) => onChange({ tag: v as "Claude" | "Codex" | "OpenCode" })}
-        size="2"
-      >
-        <DisabledTooltip content={agentKindTooltip("claude", discovery)}>
-          <SegmentedControl.Item
-            value="Claude"
-            style={claudeAvailable ? undefined : { opacity: 0.4, pointerEvents: "none" }}
-          >
-            Claude
-          </SegmentedControl.Item>
-        </DisabledTooltip>
-        <DisabledTooltip content={agentKindTooltip("codex", discovery)}>
-          <SegmentedControl.Item
-            value="Codex"
-            style={codexAvailable ? undefined : { opacity: 0.4, pointerEvents: "none" }}
-          >
-            Codex
-          </SegmentedControl.Item>
-        </DisabledTooltip>
-        <DisabledTooltip content={agentKindTooltip("opencode", discovery)}>
-          <SegmentedControl.Item
-            value="OpenCode"
-            style={opencodeAvailable ? undefined : { opacity: 0.4, pointerEvents: "none" }}
-          >
-            OpenCode
-          </SegmentedControl.Item>
-        </DisabledTooltip>
-      </SegmentedControl.Root>
-    </Flex>
-  );
-}
-
 function isAgentKindAvailable(
   kind: AgentKind,
   discovery: { claude: boolean; codex: boolean; opencode: boolean },
@@ -425,7 +369,6 @@ export function NewSessionDialog({
     }
   }, [captainKind, mateKind, discovery]);
 
-  const hasConfiguredPresets = presets.length > 0;
   const selectedCaptainPreset = captainPresetId
     ? presets.find((preset) => preset.id === captainPresetId) ?? null
     : null;
@@ -498,65 +441,39 @@ export function NewSessionDialog({
             </Select.Root>
           </Flex>
 
-          {hasConfiguredPresets && !presetsLoading ? (
-            <>
-              <Flex direction="column" gap="1">
-                <Text size="2" weight="medium">
-                  Captain
-                </Text>
-                <CreateSessionPresetPicker
-                  selectedPresetId={captainPresetId}
-                  selectedKind={captainKind}
-                  selectedModelId={selectedCaptainPreset?.model_id ?? null}
-                  onSelectPreset={(preset) => {
-                    setCaptainPresetId(preset.id);
-                    setCaptainKind(preset.kind);
-                  }}
-                />
-              </Flex>
+          <UnifiedAgentPicker
+            label="Captain"
+            selectedKind={captainKind}
+            selectedPresetId={captainPresetId}
+            selectedModelId={selectedCaptainPreset?.model_id ?? null}
+            presets={presets}
+            availability={discovery}
+            onSelectKind={(kind) => {
+              setCaptainPresetId(null);
+              setCaptainKind(kind);
+            }}
+            onSelectPreset={(preset) => {
+              setCaptainPresetId(preset.id);
+              setCaptainKind(preset.kind);
+            }}
+          />
 
-              <Flex direction="column" gap="1">
-                <Text size="2" weight="medium">
-                  Mate
-                </Text>
-                <CreateSessionPresetPicker
-                  selectedPresetId={matePresetId}
-                  selectedKind={mateKind}
-                  selectedModelId={selectedMatePreset?.model_id ?? null}
-                  onSelectPreset={(preset) => {
-                    setMatePresetId(preset.id);
-                    setMateKind(preset.kind);
-                  }}
-                />
-              </Flex>
-            </>
-          ) : (
-            <>
-              <AgentKindControl
-                label="Captain"
-                value={captainKind}
-                onChange={(kind) => {
-                  setCaptainPresetId(null);
-                  setCaptainKind(kind);
-                }}
-                claudeAvailable={discovery.claude}
-                codexAvailable={discovery.codex}
-                opencodeAvailable={discovery.opencode}
-              />
-
-              <AgentKindControl
-                label="Mate"
-                value={mateKind}
-                onChange={(kind) => {
-                  setMatePresetId(null);
-                  setMateKind(kind);
-                }}
-                claudeAvailable={discovery.claude}
-                codexAvailable={discovery.codex}
-                opencodeAvailable={discovery.opencode}
-              />
-            </>
-          )}
+          <UnifiedAgentPicker
+            label="Mate"
+            selectedKind={mateKind}
+            selectedPresetId={matePresetId}
+            selectedModelId={selectedMatePreset?.model_id ?? null}
+            presets={presets}
+            availability={discovery}
+            onSelectKind={(kind) => {
+              setMatePresetId(null);
+              setMateKind(kind);
+            }}
+            onSelectPreset={(preset) => {
+              setMatePresetId(preset.id);
+              setMateKind(preset.kind);
+            }}
+          />
 
           <BranchCombobox projectName={projectName} value={branch} onChange={setBranch} />
 
