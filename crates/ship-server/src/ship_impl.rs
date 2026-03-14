@@ -2364,8 +2364,7 @@ Here is your task:
         session_id: &SessionId,
     ) -> Result<CaptainRebaseStatus, String> {
         let status = self.collect_captain_git_status(session_id).await?;
-        let can_continue = status.rebase_in_progress
-            && status.conflict_marker_paths.is_empty();
+        let can_continue = status.rebase_in_progress && status.conflict_marker_paths.is_empty();
         let can_abort = status.rebase_in_progress;
         Ok(CaptainRebaseStatus {
             status,
@@ -8025,17 +8024,18 @@ mod tests {
 
     use crate::captain_mcp::worktree_tools::{read_file_tool, run_command_tool};
     use ship_core::{
-        AgentError, FakeAgentDriver, FakePromptScript, ProjectRegistry, PromptResponse,
-        SessionGitNames, SessionStore, StopReason,
+        AgentError, FakeAgentDriver, FakePromptScript, JsonSessionStore, ProjectRegistry,
+        PromptResponse, SessionGitNames, SessionStore, StopReason,
     };
     use ship_service::Ship;
     use ship_types::{
         AgentDiscovery, AgentKind, AgentSnapshot, AgentState, AutonomyMode, CaptainAssignExtras,
         ContentBlock, CreateSessionRequest, CreateSessionResponse, CurrentTask,
-        DirtySessionStrategy, HumanReviewRequest, McpServerConfig, McpStdioServerConfig, PlanStep,
-        PlanStepInput, PlanStepStatus, ProjectName, PromptContentPart, Role, SessionConfig,
-        SessionEvent, SessionEventEnvelope, SessionId, SessionStartupState, SubscribeMessage,
-        TaskId, TaskRecord, TaskStatus,
+        DirtySessionStrategy, EffortValue, HumanReviewRequest, McpServerConfig,
+        McpStdioServerConfig, PersistedSession, PlanStep, PlanStepInput, PlanStepStatus,
+        ProjectName, PromptContentPart, Role, SessionConfig, SessionEvent, SessionEventEnvelope,
+        SessionId, SessionStartupStage, SessionStartupState, SubscribeMessage, TaskId, TaskRecord,
+        TaskStatus,
     };
     use tokio::sync::{broadcast, mpsc};
     use tokio::time::timeout;
@@ -8111,6 +8111,28 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("ship-impl-{test_name}-{nanos}"));
         std::fs::create_dir_all(&dir).expect("temp dir should be created");
         dir
+    }
+
+    fn snapshot(role: Role, kind: AgentKind, state: AgentState) -> AgentSnapshot {
+        AgentSnapshot {
+            role,
+            kind,
+            state,
+            context_remaining_percent: None,
+            model_id: None,
+            available_models: Vec::new(),
+            effort_config_id: None,
+            effort_value_id: None,
+            available_effort_values: Vec::new(),
+        }
+    }
+
+    fn event(seq: u64, event: SessionEvent) -> SessionEventEnvelope {
+        SessionEventEnvelope {
+            seq,
+            timestamp: format!("2026-01-01T00:00:{seq:02}Z"),
+            event,
+        }
     }
 
     async fn create_session_for_workflow_test(test_name: &str) -> (PathBuf, ShipImpl, SessionId) {
@@ -9119,6 +9141,327 @@ mod tests {
                 args: Vec::new(),
                 env: Vec::new(),
             })]
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn load_persisted_sessions_rebuilds_snapshots_before_restart_override() {
+        let dir = make_temp_dir("load-persisted-sessions-rebuilds-snapshots");
+        let config_dir = dir.join("config");
+        let project_root = dir.join("project");
+        let sessions_dir = dir.join("sessions");
+        std::fs::create_dir_all(project_root.join(".ship")).expect("project ship dir should exist");
+
+        let store = JsonSessionStore::new(sessions_dir.clone());
+        let completed_id = SessionId::new();
+        let active_id = SessionId::new();
+        let active_task_id = TaskId::new();
+        let active_effort = EffortValue {
+            id: "medium".to_owned(),
+            name: "Medium".to_owned(),
+        };
+
+        let completed = PersistedSession {
+            id: completed_id.clone(),
+            created_at: "2026-01-01T00:00:00Z".to_owned(),
+            config: SessionConfig {
+                project: ProjectName("project".to_owned()),
+                base_branch: "main".to_owned(),
+                branch_name: "ship/completed".to_owned(),
+                captain_kind: AgentKind::Claude,
+                mate_kind: AgentKind::Codex,
+                autonomy_mode: AutonomyMode::HumanInTheLoop,
+                mcp_servers: Vec::new(),
+            },
+            captain: AgentSnapshot {
+                model_id: Some("stale-captain".to_owned()),
+                context_remaining_percent: Some(3),
+                ..snapshot(Role::Captain, AgentKind::Claude, AgentState::Idle)
+            },
+            mate: AgentSnapshot {
+                context_remaining_percent: Some(91),
+                ..snapshot(
+                    Role::Mate,
+                    AgentKind::Codex,
+                    AgentState::Error {
+                        message: "stale mate".to_owned(),
+                    },
+                )
+            },
+            startup_state: SessionStartupState::Ready,
+            session_event_log: vec![
+                event(
+                    1,
+                    SessionEvent::AgentModelChanged {
+                        role: Role::Captain,
+                        model_id: Some("claude-restored".to_owned()),
+                        available_models: vec![
+                            "claude-restored".to_owned(),
+                            "claude-fallback".to_owned(),
+                        ],
+                    },
+                ),
+                event(
+                    2,
+                    SessionEvent::AgentStateChanged {
+                        role: Role::Captain,
+                        state: AgentState::ContextExhausted,
+                    },
+                ),
+                event(
+                    3,
+                    SessionEvent::ContextUpdated {
+                        role: Role::Mate,
+                        remaining_percent: 17,
+                    },
+                ),
+                event(
+                    4,
+                    SessionEvent::AgentStateChanged {
+                        role: Role::Mate,
+                        state: AgentState::Error {
+                            message: "mate crashed".to_owned(),
+                        },
+                    },
+                ),
+            ],
+            current_task: None,
+            task_history: Vec::new(),
+            title: Some("Completed session".to_owned()),
+            archived_at: None,
+            captain_acp_session_id: None,
+            mate_acp_session_id: None,
+        };
+        store
+            .save_session(&completed)
+            .await
+            .expect("completed session should persist");
+
+        let active = PersistedSession {
+            id: active_id.clone(),
+            created_at: "2026-01-01T00:01:00Z".to_owned(),
+            config: SessionConfig {
+                project: ProjectName("project".to_owned()),
+                base_branch: "main".to_owned(),
+                branch_name: "ship/active".to_owned(),
+                captain_kind: AgentKind::Claude,
+                mate_kind: AgentKind::Codex,
+                autonomy_mode: AutonomyMode::HumanInTheLoop,
+                mcp_servers: Vec::new(),
+            },
+            captain: AgentSnapshot {
+                model_id: Some("stale-active-captain".to_owned()),
+                context_remaining_percent: Some(5),
+                ..snapshot(Role::Captain, AgentKind::Claude, AgentState::Idle)
+            },
+            mate: AgentSnapshot {
+                context_remaining_percent: Some(7),
+                effort_config_id: Some("stale-config".to_owned()),
+                effort_value_id: Some("slow".to_owned()),
+                available_effort_values: vec![EffortValue {
+                    id: "slow".to_owned(),
+                    name: "Slow".to_owned(),
+                }],
+                ..snapshot(Role::Mate, AgentKind::Codex, AgentState::ContextExhausted)
+            },
+            startup_state: SessionStartupState::Ready,
+            session_event_log: Vec::new(),
+            current_task: Some(CurrentTask {
+                record: TaskRecord {
+                    id: active_task_id.clone(),
+                    title: "Investigate active restore".to_owned(),
+                    description: "Investigate active restore".to_owned(),
+                    status: TaskStatus::Working,
+                    steps: Vec::new(),
+                    assigned_at: Some("2026-01-01T00:01:00Z".to_owned()),
+                    completed_at: None,
+                },
+                pending_mate_guidance: None,
+                content_history: Vec::new(),
+                event_log: vec![
+                    event(
+                        5,
+                        SessionEvent::TaskStarted {
+                            task_id: active_task_id.clone(),
+                            title: "Investigate active restore".to_owned(),
+                            description: "Investigate active restore".to_owned(),
+                            steps: Vec::new(),
+                        },
+                    ),
+                    event(
+                        6,
+                        SessionEvent::TaskStatusChanged {
+                            task_id: active_task_id,
+                            status: TaskStatus::Working,
+                        },
+                    ),
+                    event(
+                        7,
+                        SessionEvent::AgentModelChanged {
+                            role: Role::Captain,
+                            model_id: Some("claude-active".to_owned()),
+                            available_models: vec!["claude-active".to_owned()],
+                        },
+                    ),
+                    event(
+                        8,
+                        SessionEvent::ContextUpdated {
+                            role: Role::Captain,
+                            remaining_percent: 88,
+                        },
+                    ),
+                    event(
+                        9,
+                        SessionEvent::AgentEffortChanged {
+                            role: Role::Mate,
+                            effort_config_id: Some("mate-effort".to_owned()),
+                            effort_value_id: Some(active_effort.id.clone()),
+                            available_effort_values: vec![active_effort.clone()],
+                        },
+                    ),
+                    event(
+                        10,
+                        SessionEvent::ContextUpdated {
+                            role: Role::Mate,
+                            remaining_percent: 41,
+                        },
+                    ),
+                ],
+            }),
+            task_history: Vec::new(),
+            title: Some("Active session".to_owned()),
+            archived_at: None,
+            captain_acp_session_id: None,
+            mate_acp_session_id: None,
+        };
+        store
+            .save_session(&active)
+            .await
+            .expect("active session should persist");
+
+        let mut registry = ProjectRegistry::load_in(config_dir)
+            .await
+            .expect("project registry should load");
+        registry
+            .add(&project_root)
+            .await
+            .expect("project should be added");
+
+        let ship = ShipImpl::new(
+            registry,
+            sessions_dir,
+            AgentDiscovery {
+                claude: true,
+                codex: true,
+                opencode: false,
+            },
+        );
+        ship.load_persisted_sessions().await;
+
+        let summaries: HashMap<_, _> = Ship::list_sessions(&ship)
+            .await
+            .into_iter()
+            .map(|summary| (summary.id.clone(), summary))
+            .collect();
+        assert_eq!(summaries.len(), 2);
+
+        let completed_summary = summaries
+            .get(&completed_id)
+            .expect("completed session should be listed");
+        assert_eq!(
+            completed_summary.captain.state,
+            AgentState::ContextExhausted
+        );
+        assert_eq!(
+            completed_summary.mate.state,
+            AgentState::Error {
+                message: "mate crashed".to_owned(),
+            }
+        );
+        assert_eq!(
+            completed_summary.captain.model_id.as_deref(),
+            Some("claude-restored")
+        );
+        assert_eq!(completed_summary.mate.context_remaining_percent, Some(17));
+
+        let completed_detail = Ship::get_session(&ship, completed_id.clone()).await;
+        assert_eq!(completed_detail.captain.state, AgentState::ContextExhausted);
+        assert_eq!(
+            completed_detail.mate.state,
+            AgentState::Error {
+                message: "mate crashed".to_owned(),
+            }
+        );
+        assert_eq!(
+            completed_detail.captain.model_id.as_deref(),
+            Some("claude-restored")
+        );
+        assert_eq!(completed_detail.mate.context_remaining_percent, Some(17));
+
+        let active_summary = summaries
+            .get(&active_id)
+            .expect("active session should be listed");
+        let expected_restart_state = AgentState::Error {
+            message: "Server restarted — agents need respawn.".to_owned(),
+        };
+        assert_eq!(active_summary.captain.state, expected_restart_state.clone());
+        assert_eq!(active_summary.mate.state, expected_restart_state.clone());
+        assert_eq!(
+            active_summary.startup_state,
+            SessionStartupState::Failed {
+                stage: SessionStartupStage::StartingCaptain,
+                message: "Server restarted — agents need respawn.".to_owned(),
+            }
+        );
+        assert_eq!(
+            active_summary.captain.model_id.as_deref(),
+            Some("claude-active")
+        );
+        assert_eq!(active_summary.captain.context_remaining_percent, Some(88));
+        assert_eq!(
+            active_summary.mate.effort_config_id.as_deref(),
+            Some("mate-effort")
+        );
+        assert_eq!(
+            active_summary.mate.effort_value_id.as_deref(),
+            Some("medium")
+        );
+        assert_eq!(
+            active_summary.mate.available_effort_values,
+            vec![active_effort.clone()]
+        );
+        assert_eq!(active_summary.mate.context_remaining_percent, Some(41));
+
+        let active_detail = Ship::get_session(&ship, active_id.clone()).await;
+        assert_eq!(active_detail.captain.state, expected_restart_state.clone());
+        assert_eq!(active_detail.mate.state, expected_restart_state);
+        assert_eq!(
+            active_detail.captain.model_id.as_deref(),
+            Some("claude-active")
+        );
+        assert_eq!(active_detail.captain.context_remaining_percent, Some(88));
+        assert_eq!(
+            active_detail.mate.effort_config_id.as_deref(),
+            Some("mate-effort")
+        );
+        assert_eq!(
+            active_detail.mate.effort_value_id.as_deref(),
+            Some("medium")
+        );
+        assert_eq!(
+            active_detail.mate.available_effort_values,
+            vec![active_effort]
+        );
+        assert_eq!(active_detail.mate.context_remaining_percent, Some(41));
+        assert_eq!(
+            active_detail
+                .current_task
+                .as_ref()
+                .expect("active task should remain present")
+                .status,
+            TaskStatus::Working
         );
 
         let _ = std::fs::remove_dir_all(dir);
