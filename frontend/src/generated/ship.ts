@@ -431,6 +431,10 @@ export interface TranscribeSegment {
   text: string;
 }
 
+export type TranscribeMessage =
+  | { tag: 'Segment'; value: TranscribeSegment }
+  | { tag: 'Error'; message: string };
+
 // Request/Response type aliases
 export type ListProjectsRequest = [];
 export type ListProjectsResponse = ProjectInfo[];
@@ -541,7 +545,7 @@ export type SubscribeGlobalEventsResponse = void;
 
 export type TranscribeAudioRequest = [
   Rx<Uint8Array>, // audio_in
-  Tx<TranscribeSegment>, // segments_out
+  Tx<TranscribeMessage>, // segments_out
 ];
 export type TranscribeAudioResponse = void;
 
@@ -586,7 +590,7 @@ export interface ShipCaller {
    * Client sends 16kHz mono f32 PCM audio as raw bytes via `audio_in`.
    * Server sends back transcribed segments via `segments_out`.
    */
-  transcribeAudio(audioIn: Rx<Uint8Array>, segmentsOut: Tx<TranscribeSegment>): CallBuilder<void>;
+  transcribeAudio(audioIn: Rx<Uint8Array>, segmentsOut: Tx<TranscribeMessage>): CallBuilder<void>;
   /** Synthesize text to speech and stream 24kHz mono f32 LE PCM bytes. */
   speakText(text: string, audioOut: Tx<Uint8Array>): CallBuilder<void>;
 }
@@ -1014,7 +1018,7 @@ export class ShipClient implements ShipCaller {
    * Client sends 16kHz mono f32 PCM audio as raw bytes via `audio_in`.
    * Server sends back transcribed segments via `segments_out`.
    */
-  transcribeAudio(audioIn: Rx<Uint8Array>, segmentsOut: Tx<TranscribeSegment>): CallBuilder<void> {
+  transcribeAudio(audioIn: Rx<Uint8Array>, segmentsOut: Tx<TranscribeMessage>): CallBuilder<void> {
     const descriptor = ship_descriptor.methods[28];
     // Bind any Tx/Rx channels in arguments and collect channel IDs
     const channels = bindChannels(
@@ -1104,7 +1108,7 @@ export interface ShipHandler {
   openInTerminal(session: SessionId): Promise<void> | void;
   subscribeEvents(session: SessionId, output: Tx<SubscribeMessage>): Promise<void> | void;
   subscribeGlobalEvents(output: Tx<GlobalEvent>): Promise<void> | void;
-  transcribeAudio(audioIn: Rx<Uint8Array>, segmentsOut: Tx<TranscribeSegment>): Promise<void> | void;
+  transcribeAudio(audioIn: Rx<Uint8Array>, segmentsOut: Tx<TranscribeMessage>): Promise<void> | void;
   speakText(text: string, audioOut: Tx<Uint8Array>): Promise<void> | void;
 }
 
@@ -1315,9 +1319,9 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0x2bb0ea74ec8d7c79n) {
+    } else if (method.id === 0x662c155f66ca120bn) {
       try {
-        const result = await this.handler.transcribeAudio(args[0] as Rx<Uint8Array>, args[1] as Tx<TranscribeSegment>);
+        const result = await this.handler.transcribeAudio(args[0] as Rx<Uint8Array>, args[1] as Tx<TranscribeMessage>);
         (args[1] as { close(): void }).close(); // close segmentsOut before reply
         call.reply(result);
       } catch {
@@ -1400,6 +1404,7 @@ const ship_schema_registry: SchemaRegistry = new Map<string, Schema>([
   ["SubscribeMessage", { kind: 'enum', variants: [{ name: 'Event', fields: { kind: 'ref', name: 'SessionEventEnvelope' } }, { name: 'ReplayComplete', fields: null }] }],
   ["GlobalEvent", { kind: 'enum', variants: [{ name: 'SessionListChanged', fields: { 'sessions': { kind: 'vec', element: { kind: 'ref', name: 'SessionSummary' } } } }, { name: 'ProjectListChanged', fields: { 'projects': { kind: 'vec', element: { kind: 'ref', name: 'ProjectInfo' } } } }] }],
   ["TranscribeSegment", { kind: 'struct', fields: { 'start_ms': { kind: 'u64' }, 'end_ms': { kind: 'u64' }, 'text': { kind: 'string' } } }],
+  ["TranscribeMessage", { kind: 'enum', variants: [{ name: 'Segment', fields: { kind: 'ref', name: 'TranscribeSegment' } }, { name: 'Error', fields: { 'message': { kind: 'string' } } }] }],
 ]);
 
 // Service descriptor for runtime schema-driven dispatch
@@ -1577,8 +1582,8 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: 'transcribeAudio',
-      id: 0x2bb0ea74ec8d7c79n,
-      args: { kind: 'tuple', elements: [{ kind: 'rx', element: { kind: 'bytes' } }, { kind: 'tx', element: { kind: 'ref', name: 'TranscribeSegment' } }] },
+      id: 0x662c155f66ca120bn,
+      args: { kind: 'tuple', elements: [{ kind: 'rx', element: { kind: 'bytes' } }, { kind: 'tx', element: { kind: 'ref', name: 'TranscribeMessage' } }] },
       result: { kind: 'enum', variants: [{ name: 'Ok', fields: { kind: 'struct', fields: {} } }, { name: 'Err', fields: { kind: 'enum', variants: [{ name: 'User', fields: null }, { name: 'UnknownMethod', fields: null }, { name: 'InvalidPayload', fields: null }, { name: 'Cancelled', fields: null }] } }] },
     },
     {
