@@ -56,6 +56,9 @@ import {
   taskRecapHeader,
   taskRecapSummary,
   taskRecapTitle,
+  workflowMilestoneItem,
+  workflowMilestoneItemMono,
+  workflowMilestoneList,
   thinkingAvatarBtn,
   thinkingAvatarImg,
   thinkingAvatarStop,
@@ -480,8 +483,31 @@ function TaskRecapBlock({
   );
 }
 
+function dedupeWorkflowMilestoneItems(items: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+  for (const item of items) {
+    if (seen.has(item)) continue;
+    seen.add(item);
+    deduped.push(item);
+  }
+  return deduped;
+}
+
+function isWorkflowMilestoneDiffLike(item: string): boolean {
+  const trimmed = item.trim();
+  if (trimmed === "") return false;
+  if (/^(Diff:|diff --git|\+\+\+|---|@@)/.test(trimmed)) return true;
+  if (/^[+-](?=\S)/.test(trimmed)) return true;
+  if (/^\d+\s+files?\s+changed(?:,.*)?$/i.test(trimmed)) return true;
+  if (/^\d+\s+insertions?\(\+\)(?:,.*)?$/i.test(trimmed)) return true;
+  if (/^\d+\s+deletions?\(-\)(?:,.*)?$/i.test(trimmed)) return true;
+  return false;
+}
+
 function WorkflowMilestoneBlock({ block }: { block: WorkflowMilestoneBlockType }) {
   const tone = workflowMilestoneTone(block.kind);
+  const items = dedupeWorkflowMilestoneItems(block.items ?? []);
 
   return (
     <Box
@@ -503,13 +529,24 @@ function WorkflowMilestoneBlock({ block }: { block: WorkflowMilestoneBlockType }
             )}
           </Box>
         </Flex>
-        {block.items.length > 0 && (
-          <Box className={taskRecapCommitList}>
-            {block.items.map((item, index) => (
-              <Box key={`${index}-${item}`} className={taskRecapCommitRow}>
-                <Text className={taskRecapCommitSubject}>{item}</Text>
-              </Box>
-            ))}
+        {items.length > 0 && (
+          <Box className={workflowMilestoneList}>
+            {items.map((item) => {
+              const isDiffLike = isWorkflowMilestoneDiffLike(item);
+              const className = isDiffLike
+                ? `${workflowMilestoneItem} ${workflowMilestoneItemMono}`
+                : workflowMilestoneItem;
+              return (
+                <Text
+                  key={item}
+                  className={className}
+                  data-testid="workflow-milestone-item"
+                  data-item-style={isDiffLike ? "diff" : "text"}
+                >
+                  {item}
+                </Text>
+              );
+            })}
           </Box>
         )}
       </Box>

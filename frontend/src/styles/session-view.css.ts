@@ -410,6 +410,31 @@ export const taskRecapDiffInner = style({
   minWidth: "max-content",
 });
 
+export const workflowMilestoneList = style({
+  display: "flex",
+  flexDirection: "column",
+  gap: "var(--space-1)",
+  width: "100%",
+  minWidth: 0,
+  marginTop: "var(--space-2)",
+});
+
+export const workflowMilestoneItem = style({
+  display: "block",
+  minWidth: 0,
+  fontSize: "var(--font-size-2)",
+  lineHeight: "var(--line-height-2)",
+  color: "var(--gray-12)",
+});
+
+export const workflowMilestoneItemMono = style({
+  fontFamily: monoFontStack,
+  fontSize: "var(--font-size-1)",
+  lineHeight: 1.5,
+  whiteSpace: "pre-wrap",
+  color: "var(--gray-12)",
+});
+
 export const feedToolGroupHeader = style({
   display: "flex",
   alignItems: "center",
