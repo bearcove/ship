@@ -4,7 +4,7 @@ import { Box, Button, Callout, Flex, Spinner, Text } from "@radix-ui/themes";
 import { Warning } from "@phosphor-icons/react";
 import { useSession } from "../hooks/useSession";
 import { useSessionState } from "../hooks/useSessionState";
-import { refreshSessionList, useSessionList } from "../hooks/useSessionList";
+import { refreshSessionList } from "../hooks/useSessionList";
 import { UnifiedFeed } from "../components/UnifiedFeed";
 import { UnifiedComposer } from "../components/UnifiedComposer";
 import { SessionHeader } from "../components/SessionHeader";
@@ -31,7 +31,7 @@ import { useSwipeGesture } from "../hooks/useSwipeGesture";
 // r[view.session]
 // r[ui.layout.session-view]
 // r[proto.hydration-flow]
-export function SessionViewPage({ debugMode }: { debugMode: boolean; onOpenSidebar?: () => void }) {
+export function SessionViewPage({ debugMode, allSessions }: { debugMode: boolean; allSessions: SessionSummary[]; onOpenSidebar?: () => void }) {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
   const [archiving, setArchiving] = useState(false);
@@ -40,7 +40,6 @@ export function SessionViewPage({ debugMode }: { debugMode: boolean; onOpenSideb
   const [slideDirection, setSlideDirection] = useState<"left" | "right" | null>(null);
   const [rootEl, setRootEl] = useState<HTMLDivElement | null>(null);
 
-  const allSessions = useSessionList();
   const currentIndex = allSessions.findIndex((s) => s.id === sessionId);
   const prevSession = currentIndex > 0 ? allSessions[currentIndex - 1] : null;
   const nextSession = currentIndex >= 0 && currentIndex < allSessions.length - 1 ? allSessions[currentIndex + 1] : null;

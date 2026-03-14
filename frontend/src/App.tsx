@@ -115,7 +115,7 @@ export function App() {
             <Route
               path="/sessions/:sessionId"
               element={
-                <SessionViewPage debugMode={debugMode} onOpenSidebar={() => setSidebarOpen(true)} />
+                <SessionViewPage debugMode={debugMode} allSessions={allSessions} onOpenSidebar={() => setSidebarOpen(true)} />
               }
             />
           </Routes>
