@@ -32,6 +32,7 @@ import { getShipClient } from "../api/client";
 import { SessionRecordingBadge } from "../components/SessionRecordingBadge";
 import { agentKindTooltip, sortSessions } from "./session-list-utils";
 import { useWorktreeDiffStats } from "../hooks/useWorktreeDiffStats";
+import { relativeTime } from "../utils/time";
 
 // r[ui.session-list.status-colors]
 const STATUS_COLOR: Record<
@@ -591,15 +592,6 @@ export function AddProjectDialog({
 }
 
 const LAST_PROJECT_KEY = "ship.lastProject";
-
-function relativeTime(dateString: string): string {
-  const diff = (Date.now() - new Date(dateString).getTime()) / 1000;
-  if (diff < 60) return "just now";
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  if (diff < 518400) return `${Math.floor(diff / 86400)}d ago`;
-  return new Date(dateString).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
 
 // r[ui.session-list.layout]
 function SessionCard({
