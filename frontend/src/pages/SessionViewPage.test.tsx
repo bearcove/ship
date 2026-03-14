@@ -48,6 +48,7 @@ vi.mock("../api/client", () => ({
     accept: async () => undefined,
     cancel: async () => undefined,
     interruptCaptain: async () => undefined,
+    markSessionRead: async () => undefined,
     listWorktreeFiles: async () => [],
   }),
   onClientReady: () => () => {},
