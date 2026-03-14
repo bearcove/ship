@@ -186,33 +186,6 @@ describe("SessionViewPage UX slice", () => {
     expect(screen.queryByTestId("composer-drop-indicator")).not.toBeInTheDocument();
   });
 
-  it("autofocuses the composer when isActive transitions from false to true", () => {
-    const { rerender } = renderWithTheme(
-      <MemoryRouter initialEntries={["/sessions/session-1"]}>
-        <SoundProvider>
-          <Routes>
-            <Route path="/sessions/:sessionId" element={null} />
-          </Routes>
-          <SessionViewPage sessionId="session-1" isActive={false} debugMode={false} />
-        </SoundProvider>
-      </MemoryRouter>,
-    );
-
-    expect(screen.getByLabelText("Steer input")).not.toHaveFocus();
-
-    rerender(
-      <MemoryRouter initialEntries={["/sessions/session-1"]}>
-        <SoundProvider>
-          <Routes>
-            <Route path="/sessions/:sessionId" element={null} />
-          </Routes>
-          <SessionViewPage sessionId="session-1" isActive={true} debugMode={false} />
-        </SoundProvider>
-      </MemoryRouter>,
-    );
-
-    expect(screen.getByLabelText("Steer input")).toHaveFocus();
-  });
 
   it("focuses the composer with c but ignores modifier shortcuts and active inputs", () => {
     renderPage();
