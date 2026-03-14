@@ -37,6 +37,7 @@ export interface PlanStep {
   title: string;
   description: string;
   status: PlanStepStatus;
+  started_at: string | null;
 }
 
 export type ToolCallKind =
@@ -146,6 +147,8 @@ export interface WorktreeDiffStats {
   lines_added: bigint;
   lines_removed: bigint;
   files_changed: bigint;
+  uncommitted_lines_added: bigint;
+  uncommitted_lines_removed: bigint;
 }
 
 export type AutonomyMode =
@@ -519,6 +522,12 @@ export type ListWorktreeFilesResponse = string[];
 export type GetWorktreeDiffStatsRequest = [SessionId];
 export type GetWorktreeDiffStatsResponse = WorktreeDiffStats | null;
 
+export type OpenInEditorRequest = [SessionId];
+export type OpenInEditorResponse = void;
+
+export type OpenInTerminalRequest = [SessionId];
+export type OpenInTerminalResponse = void;
+
 export type SubscribeEventsRequest = [
   SessionId, // session
   Tx<SubscribeMessage>, // output
@@ -566,6 +575,8 @@ export interface ShipCaller {
   archiveSession(req: ArchiveSessionRequest): CallBuilder<ArchiveSessionResponse>;
   listWorktreeFiles(session: SessionId, query: string): CallBuilder<string[]>;
   getWorktreeDiffStats(session: SessionId): CallBuilder<WorktreeDiffStats | null>;
+  openInEditor(session: SessionId): CallBuilder<void>;
+  openInTerminal(session: SessionId): CallBuilder<void>;
   subscribeEvents(session: SessionId, output: Tx<SubscribeMessage>): CallBuilder<void>;
   subscribeGlobalEvents(output: Tx<GlobalEvent>): CallBuilder<void>;
   /**
@@ -922,8 +933,36 @@ export class ShipClient implements ShipCaller {
     });
   }
 
-  subscribeEvents(session: SessionId, output: Tx<SubscribeMessage>): CallBuilder<void> {
+  openInEditor(session: SessionId): CallBuilder<void> {
     const descriptor = ship_descriptor.methods[24];
+    return new CallBuilder(async (metadata) => {
+      const value = await this.caller.call({
+        method: "Ship.openInEditor",
+        args: { session },
+        descriptor,
+        schemaRegistry: ship_descriptor.schema_registry,
+        metadata,
+      });
+      return value as void;
+    });
+  }
+
+  openInTerminal(session: SessionId): CallBuilder<void> {
+    const descriptor = ship_descriptor.methods[25];
+    return new CallBuilder(async (metadata) => {
+      const value = await this.caller.call({
+        method: "Ship.openInTerminal",
+        args: { session },
+        descriptor,
+        schemaRegistry: ship_descriptor.schema_registry,
+        metadata,
+      });
+      return value as void;
+    });
+  }
+
+  subscribeEvents(session: SessionId, output: Tx<SubscribeMessage>): CallBuilder<void> {
+    const descriptor = ship_descriptor.methods[26];
     // Bind any Tx/Rx channels in arguments and collect channel IDs
     const channels = bindChannels(
       descriptor.args.elements,
@@ -946,7 +985,7 @@ export class ShipClient implements ShipCaller {
   }
 
   subscribeGlobalEvents(output: Tx<GlobalEvent>): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[25];
+    const descriptor = ship_descriptor.methods[27];
     // Bind any Tx/Rx channels in arguments and collect channel IDs
     const channels = bindChannels(
       descriptor.args.elements,
@@ -974,7 +1013,7 @@ export class ShipClient implements ShipCaller {
    * Server sends back transcribed segments via `segments_out`.
    */
   transcribeAudio(audioIn: Rx<Uint8Array>, segmentsOut: Tx<TranscribeSegment>): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[26];
+    const descriptor = ship_descriptor.methods[28];
     // Bind any Tx/Rx channels in arguments and collect channel IDs
     const channels = bindChannels(
       descriptor.args.elements,
@@ -998,7 +1037,7 @@ export class ShipClient implements ShipCaller {
 
   /** Synthesize text to speech and stream 24kHz mono f32 LE PCM bytes. */
   speakText(text: string, audioOut: Tx<Uint8Array>): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[27];
+    const descriptor = ship_descriptor.methods[29];
     // Bind any Tx/Rx channels in arguments and collect channel IDs
     const channels = bindChannels(
       descriptor.args.elements,
@@ -1059,6 +1098,8 @@ export interface ShipHandler {
   archiveSession(req: ArchiveSessionRequest): Promise<ArchiveSessionResponse> | ArchiveSessionResponse;
   listWorktreeFiles(session: SessionId, query: string): Promise<string[]> | string[];
   getWorktreeDiffStats(session: SessionId): Promise<WorktreeDiffStats | null> | WorktreeDiffStats | null;
+  openInEditor(session: SessionId): Promise<void> | void;
+  openInTerminal(session: SessionId): Promise<void> | void;
   subscribeEvents(session: SessionId, output: Tx<SubscribeMessage>): Promise<void> | void;
   subscribeGlobalEvents(output: Tx<GlobalEvent>): Promise<void> | void;
   transcribeAudio(audioIn: Rx<Uint8Array>, segmentsOut: Tx<TranscribeSegment>): Promise<void> | void;
@@ -1095,7 +1136,7 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0x45748f60542850c5n) {
+    } else if (method.id === 0xaf76c9a268076623n) {
       try {
         const result = await this.handler.listSessions();
         call.reply(result);
@@ -1116,7 +1157,7 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0xb2a990501b45ab4an) {
+    } else if (method.id === 0x5e11d84f77dfc307n) {
       try {
         const result = await this.handler.getSession(args[0] as SessionId);
         call.reply(result);
@@ -1235,14 +1276,28 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0x766312de7ecc6c75n) {
+    } else if (method.id === 0x6ac0d6158723a42cn) {
       try {
         const result = await this.handler.getWorktreeDiffStats(args[0] as SessionId);
         call.reply(result);
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0x9017d59848d59cf1n) {
+    } else if (method.id === 0x34e918352addd9a2n) {
+      try {
+        const result = await this.handler.openInEditor(args[0] as SessionId);
+        call.reply(result);
+      } catch {
+        call.replyInternalError();
+      }
+    } else if (method.id === 0x1f8db242abe8eba9n) {
+      try {
+        const result = await this.handler.openInTerminal(args[0] as SessionId);
+        call.reply(result);
+      } catch {
+        call.replyInternalError();
+      }
+    } else if (method.id === 0xc46321fe0eee3588n) {
       try {
         const result = await this.handler.subscribeEvents(args[0] as SessionId, args[1] as Tx<SubscribeMessage>);
         (args[1] as { close(): void }).close(); // close output before reply
@@ -1250,7 +1305,7 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0xf10610921e5d86fan) {
+    } else if (method.id === 0x5ca414bc72f5bd2dn) {
       try {
         const result = await this.handler.subscribeGlobalEvents(args[0] as Tx<GlobalEvent>);
         (args[0] as { close(): void }).close(); // close output before reply
@@ -1286,7 +1341,7 @@ const ship_schema_registry: SchemaRegistry = new Map<string, Schema>([
   ["Role", { kind: 'enum', variants: [{ name: 'Captain', fields: null }, { name: 'Mate', fields: null }] }],
   ["AgentKind", { kind: 'enum', variants: [{ name: 'Claude', fields: null }, { name: 'Codex', fields: null }, { name: 'OpenCode', fields: null }] }],
   ["PlanStepStatus", { kind: 'enum', variants: [{ name: 'Pending', fields: null }, { name: 'InProgress', fields: null }, { name: 'Completed', fields: null }, { name: 'Failed', fields: null }] }],
-  ["PlanStep", { kind: 'struct', fields: { 'title': { kind: 'string' }, 'description': { kind: 'string' }, 'status': { kind: 'ref', name: 'PlanStepStatus' } } }],
+  ["PlanStep", { kind: 'struct', fields: { 'title': { kind: 'string' }, 'description': { kind: 'string' }, 'status': { kind: 'ref', name: 'PlanStepStatus' }, 'started_at': { kind: 'option', inner: { kind: 'string' } } } }],
   ["ToolCallKind", { kind: 'enum', variants: [{ name: 'Read', fields: null }, { name: 'Edit', fields: null }, { name: 'Delete', fields: null }, { name: 'Move', fields: null }, { name: 'Search', fields: null }, { name: 'Execute', fields: null }, { name: 'Think', fields: null }, { name: 'Fetch', fields: null }, { name: 'SwitchMode', fields: null }, { name: 'Other', fields: null }] }],
   ["ToolTarget", { kind: 'enum', variants: [{ name: 'None', fields: null }, { name: 'File', fields: { 'path': { kind: 'string' }, 'display_path': { kind: 'option', inner: { kind: 'string' } }, 'line': { kind: 'option', inner: { kind: 'u32' } } } }, { name: 'Move', fields: { 'source_path': { kind: 'string' }, 'source_display_path': { kind: 'option', inner: { kind: 'string' } }, 'destination_path': { kind: 'string' }, 'destination_display_path': { kind: 'option', inner: { kind: 'string' } } } }, { name: 'Search', fields: { 'query': { kind: 'option', inner: { kind: 'string' } }, 'path': { kind: 'option', inner: { kind: 'string' } }, 'display_path': { kind: 'option', inner: { kind: 'string' } }, 'glob': { kind: 'option', inner: { kind: 'string' } } } }, { name: 'Command', fields: { 'command': { kind: 'string' }, 'cwd': { kind: 'option', inner: { kind: 'string' } }, 'display_cwd': { kind: 'option', inner: { kind: 'string' } } } }] }],
   ["JsonEntry", { kind: 'struct', fields: { 'key': { kind: 'string' }, 'value': { kind: 'ref', name: 'JsonValue' } } }],
@@ -1300,7 +1355,7 @@ const ship_schema_registry: SchemaRegistry = new Map<string, Schema>([
   ["SessionStartupStage", { kind: 'enum', variants: [{ name: 'ResolvingMcp', fields: null }, { name: 'CreatingWorktree', fields: null }, { name: 'StartingCaptain', fields: null }, { name: 'StartingMate', fields: null }, { name: 'GreetingCaptain', fields: null }] }],
   ["SessionStartupState", { kind: 'enum', variants: [{ name: 'Pending', fields: null }, { name: 'Running', fields: { 'stage': { kind: 'ref', name: 'SessionStartupStage' }, 'message': { kind: 'string' } } }, { name: 'Ready', fields: null }, { name: 'Failed', fields: { 'stage': { kind: 'ref', name: 'SessionStartupStage' }, 'message': { kind: 'string' } } }] }],
   ["TaskStatus", { kind: 'enum', variants: [{ name: 'Assigned', fields: null }, { name: 'Working', fields: null }, { name: 'ReviewPending', fields: null }, { name: 'SteerPending', fields: null }, { name: 'Accepted', fields: null }, { name: 'Cancelled', fields: null }] }],
-  ["WorktreeDiffStats", { kind: 'struct', fields: { 'branch_name': { kind: 'string' }, 'lines_added': { kind: 'u64' }, 'lines_removed': { kind: 'u64' }, 'files_changed': { kind: 'u64' } } }],
+  ["WorktreeDiffStats", { kind: 'struct', fields: { 'branch_name': { kind: 'string' }, 'lines_added': { kind: 'u64' }, 'lines_removed': { kind: 'u64' }, 'files_changed': { kind: 'u64' }, 'uncommitted_lines_added': { kind: 'u64' }, 'uncommitted_lines_removed': { kind: 'u64' } } }],
   ["AutonomyMode", { kind: 'enum', variants: [{ name: 'HumanInTheLoop', fields: null }, { name: 'Autonomous', fields: null }] }],
   ["SessionSummary", { kind: 'struct', fields: { 'id': { kind: 'string' }, 'slug': { kind: 'string' }, 'project': { kind: 'string' }, 'branch_name': { kind: 'string' }, 'title': { kind: 'option', inner: { kind: 'string' } }, 'captain': { kind: 'ref', name: 'AgentSnapshot' }, 'mate': { kind: 'ref', name: 'AgentSnapshot' }, 'startup_state': { kind: 'ref', name: 'SessionStartupState' }, 'current_task_title': { kind: 'option', inner: { kind: 'string' } }, 'current_task_description': { kind: 'option', inner: { kind: 'string' } }, 'task_status': { kind: 'option', inner: { kind: 'ref', name: 'TaskStatus' } }, 'diff_stats': { kind: 'option', inner: { kind: 'ref', name: 'WorktreeDiffStats' } }, 'tasks_done': { kind: 'u32' }, 'tasks_total': { kind: 'u32' }, 'autonomy_mode': { kind: 'ref', name: 'AutonomyMode' }, 'created_at': { kind: 'string' } } }],
   ["AgentDiscovery", { kind: 'struct', fields: { 'claude': { kind: 'bool' }, 'codex': { kind: 'bool' }, 'opencode': { kind: 'bool' } } }],
@@ -1370,7 +1425,7 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: 'listSessions',
-      id: 0x45748f60542850c5n,
+      id: 0xaf76c9a268076623n,
       args: { kind: 'tuple', elements: [] },
       result: { kind: 'enum', variants: [{ name: 'Ok', fields: { kind: 'vec', element: { kind: 'ref', name: 'SessionSummary' } } }, { name: 'Err', fields: { kind: 'enum', variants: [{ name: 'User', fields: null }, { name: 'UnknownMethod', fields: null }, { name: 'InvalidPayload', fields: null }, { name: 'Cancelled', fields: null }] } }] },
     },
@@ -1388,7 +1443,7 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: 'getSession',
-      id: 0xb2a990501b45ab4an,
+      id: 0x5e11d84f77dfc307n,
       args: { kind: 'tuple', elements: [{ kind: 'string' }] },
       result: { kind: 'enum', variants: [{ name: 'Ok', fields: { kind: 'ref', name: 'SessionDetail' } }, { name: 'Err', fields: { kind: 'enum', variants: [{ name: 'User', fields: null }, { name: 'UnknownMethod', fields: null }, { name: 'InvalidPayload', fields: null }, { name: 'Cancelled', fields: null }] } }] },
     },
@@ -1490,19 +1545,31 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: 'getWorktreeDiffStats',
-      id: 0x766312de7ecc6c75n,
+      id: 0x6ac0d6158723a42cn,
       args: { kind: 'tuple', elements: [{ kind: 'string' }] },
       result: { kind: 'enum', variants: [{ name: 'Ok', fields: { kind: 'option', inner: { kind: 'ref', name: 'WorktreeDiffStats' } } }, { name: 'Err', fields: { kind: 'enum', variants: [{ name: 'User', fields: null }, { name: 'UnknownMethod', fields: null }, { name: 'InvalidPayload', fields: null }, { name: 'Cancelled', fields: null }] } }] },
     },
     {
+      name: 'openInEditor',
+      id: 0x34e918352addd9a2n,
+      args: { kind: 'tuple', elements: [{ kind: 'string' }] },
+      result: { kind: 'enum', variants: [{ name: 'Ok', fields: { kind: 'struct', fields: {} } }, { name: 'Err', fields: { kind: 'enum', variants: [{ name: 'User', fields: null }, { name: 'UnknownMethod', fields: null }, { name: 'InvalidPayload', fields: null }, { name: 'Cancelled', fields: null }] } }] },
+    },
+    {
+      name: 'openInTerminal',
+      id: 0x1f8db242abe8eba9n,
+      args: { kind: 'tuple', elements: [{ kind: 'string' }] },
+      result: { kind: 'enum', variants: [{ name: 'Ok', fields: { kind: 'struct', fields: {} } }, { name: 'Err', fields: { kind: 'enum', variants: [{ name: 'User', fields: null }, { name: 'UnknownMethod', fields: null }, { name: 'InvalidPayload', fields: null }, { name: 'Cancelled', fields: null }] } }] },
+    },
+    {
       name: 'subscribeEvents',
-      id: 0x9017d59848d59cf1n,
+      id: 0xc46321fe0eee3588n,
       args: { kind: 'tuple', elements: [{ kind: 'string' }, { kind: 'tx', element: { kind: 'ref', name: 'SubscribeMessage' } }] },
       result: { kind: 'enum', variants: [{ name: 'Ok', fields: { kind: 'struct', fields: {} } }, { name: 'Err', fields: { kind: 'enum', variants: [{ name: 'User', fields: null }, { name: 'UnknownMethod', fields: null }, { name: 'InvalidPayload', fields: null }, { name: 'Cancelled', fields: null }] } }] },
     },
     {
       name: 'subscribeGlobalEvents',
-      id: 0xf10610921e5d86fan,
+      id: 0x5ca414bc72f5bd2dn,
       args: { kind: 'tuple', elements: [{ kind: 'tx', element: { kind: 'ref', name: 'GlobalEvent' } }] },
       result: { kind: 'enum', variants: [{ name: 'Ok', fields: { kind: 'struct', fields: {} } }, { name: 'Err', fields: { kind: 'enum', variants: [{ name: 'User', fields: null }, { name: 'UnknownMethod', fields: null }, { name: 'InvalidPayload', fields: null }, { name: 'Cancelled', fields: null }] } }] },
     },
