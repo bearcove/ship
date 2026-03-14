@@ -10667,6 +10667,108 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
+    #[tokio::test]
+    async fn handle_mate_stop_reason_cancelled_invalidates_mate_activity_summary_state() {
+        let (dir, ship, session_id) =
+            create_session_for_workflow_test("mate-stop-cancelled-invalidates-summary").await;
+
+        {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(&session_id).expect("session should exist");
+            let task = session.current_task.as_mut().expect("task should exist");
+            task.record.status = TaskStatus::Working;
+            session.utility_last_task_id = Some(task.record.id.clone());
+            session
+                .mate_activity_buffer
+                .push("[speech] stale update".to_owned());
+            session.mate_activity_first_at = Some(std::time::Instant::now());
+        }
+
+        ship.handle_mate_stop_reason(&session_id, StopReason::Cancelled)
+            .await
+            .expect("cancelled stop reason should succeed");
+
+        let sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+        let session = sessions.get(&session_id).expect("session should exist");
+        assert_eq!(
+            session
+                .current_task
+                .as_ref()
+                .expect("task should exist")
+                .record
+                .status,
+            TaskStatus::Working
+        );
+        assert!(
+            session.mate_activity_buffer.is_empty(),
+            "mate activity buffer should be cleared"
+        );
+        assert!(
+            session.mate_activity_first_at.is_none(),
+            "mate activity timer should be cleared"
+        );
+        assert!(
+            session.utility_last_task_id.is_none(),
+            "utility task marker should be cleared"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn flush_mate_activity_skips_archived_task_summaries() {
+        let _guard = lock_fake_agent_driver_tests();
+        let fake_driver = FakeAgentDriver::default();
+        let _driver_guard = TestAgentDriverGuard::set(fake_driver.clone());
+        let (dir, ship, session_id) =
+            create_session_for_workflow_test("flush-mate-activity-skips-archived").await;
+
+        let task_id = {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(&session_id).expect("session should exist");
+            let task_id = session
+                .current_task
+                .as_ref()
+                .expect("task should exist")
+                .record
+                .id
+                .clone();
+            session.current_task = None;
+            task_id
+        };
+
+        ship.flush_mate_activity(
+            session_id.clone(),
+            super::MateActivityFlushData {
+                buffer: "[speech] finished work".to_owned(),
+                task_id: Some(task_id),
+                task_context: None,
+            },
+        )
+        .await;
+
+        assert!(
+            fake_driver.spawn_records().is_empty(),
+            "stale flush should not spawn a utility agent"
+        );
+
+        let sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+        let session = sessions.get(&session_id).expect("session should exist");
+        let has_summary = session.session_event_log.iter().any(|envelope| {
+            matches!(
+                &envelope.event,
+                SessionEvent::BlockAppend {
+                    role: Role::Captain,
+                    block: ContentBlock::Text { text, .. },
+                    ..
+                } if text.contains("<mate-activity-summary>")
+            )
+        });
+        assert!(!has_summary, "stale flush should not notify the captain");
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
     // r[verify mate.system-prompt]
     #[test]
     fn mate_task_preamble_describes_checkpoints_and_worktree_scope() {
