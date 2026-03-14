@@ -545,7 +545,12 @@ pub mod events {
             kind: WorkflowMilestoneKind,
             title: String,
             summary: String,
+            #[facet(default)]
             items: Vec<String>,
+            #[facet(default)]
+            commits: Vec<CommitSummary>,
+            #[facet(default)]
+            stats: Option<TaskRecapStats>,
         },
         // r[task.recap]
         TaskRecap {
