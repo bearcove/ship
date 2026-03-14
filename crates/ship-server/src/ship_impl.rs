@@ -131,6 +131,9 @@ const RUN_COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
 struct AutoCommitResult {
     commit_hash: String,
     diff_stat: String,
+    commit_subject: String,
+    commit_diff: Option<String>,
+    stats: Option<TaskRecapStats>,
 }
 
 struct PreparedEdit {
