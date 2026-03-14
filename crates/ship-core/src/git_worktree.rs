@@ -142,9 +142,9 @@ impl WorktreeOps for GitWorktreeOps {
                 .map_err(|error| WorktreeError {
                     message: format!("failed to read {}: {error}", file_path.display()),
                 })?;
-            if contains_conflict_marker(&bytes, b"<<<<<<<")
-                || contains_conflict_marker(&bytes, b"=======")
-                || contains_conflict_marker(&bytes, b">>>>>>>")
+            if contains_conflict_marker(&bytes, repeated_byte(b'<'))
+                || contains_conflict_marker(&bytes, repeated_byte(b'='))
+                || contains_conflict_marker(&bytes, repeated_byte(b'>'))
             {
                 paths.push(relative.to_owned());
             }
@@ -526,8 +526,15 @@ async fn git_path_exists(worktree_path: &Path, suffix: &str) -> Result<bool, Wor
     Ok(fs_err::tokio::metadata(git_path.trim()).await.is_ok())
 }
 
-fn contains_conflict_marker(bytes: &[u8], marker: &[u8]) -> bool {
-    bytes.windows(marker.len()).any(|window| window == marker)
+fn contains_conflict_marker(bytes: &[u8], marker: [u8; 7]) -> bool {
+    bytes.split(|&byte| byte == b'\n').any(|line| {
+        let line = line.strip_suffix(b"\r").unwrap_or(line);
+        line.starts_with(&marker)
+    })
+}
+
+fn repeated_byte(byte: u8) -> [u8; 7] {
+    [byte; 7]
 }
 
 fn repo_root_for_worktree(path: &Path) -> Result<&Path, WorktreeError> {

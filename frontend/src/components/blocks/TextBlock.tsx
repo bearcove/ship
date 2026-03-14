@@ -5,9 +5,7 @@ import remarkGfm from "remark-gfm";
 import { bundledLanguages, codeToHtml } from "shiki";
 import type { BundledLanguage } from "shiki";
 import { Check, CircleNotch, CopySimple, SpeakerHigh } from "@phosphor-icons/react";
-import { channel } from "@bearcove/roam-core";
 import type { ContentBlock } from "../../generated/ship";
-import { getShipClient } from "../../api/client";
 import {
   bubbleActions,
   bubbleContent,
@@ -17,6 +15,7 @@ import {
   textBlockRoot,
 } from "../../styles/session-view.css";
 import { spinAnimation } from "../../styles/global.css";
+import { usePlayback } from "../../context/PlaybackContext";
 
 type TextBlockType = Extract<ContentBlock, { tag: "Text" }>;
 
@@ -90,8 +89,6 @@ export function MarkdownCodeBlock({ className, code }: { className?: string; cod
   );
 }
 
-type SpeakState = "idle" | "loading" | "playing";
-
 function formatTime(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
@@ -100,7 +97,7 @@ function formatTime(iso: string): string {
 
 export function BubbleActions({ block, speakable, isLast, timestamp }: BubbleActionsProps) {
   const [copied, setCopied] = useState(false);
-  const [speakState, setSpeakState] = useState<SpeakState>("idle");
+  const playback = usePlayback();
 
   const handleCopy = () => {
     void navigator.clipboard.writeText(block.text).then(() => {
@@ -109,66 +106,7 @@ export function BubbleActions({ block, speakable, isLast, timestamp }: BubbleAct
     });
   };
 
-  const handleSpeak = async () => {
-    if (speakState !== "idle") return;
-    setSpeakState("loading");
-
-    try {
-      const client = await getShipClient();
-      const [tx, rx] = channel<Uint8Array>();
-
-      const callPromise = client.speakText(block.text, tx);
-
-      const chunks: Uint8Array[] = [];
-      while (true) {
-        const chunk = await rx.recv();
-        if (chunk === null) break;
-        chunks.push(chunk);
-      }
-
-      await callPromise;
-
-      if (chunks.length === 0) {
-        console.warn("speak_text: no audio received");
-        setSpeakState("idle");
-        return;
-      }
-
-      const totalBytes = chunks.reduce((sum, c) => sum + c.length, 0);
-      const allBytes = new Uint8Array(totalBytes);
-      let offset = 0;
-      for (const chunk of chunks) {
-        allBytes.set(chunk, offset);
-        offset += chunk.length;
-      }
-
-      const sampleCount = allBytes.length / 4;
-      const samples = new Float32Array(sampleCount);
-      const view = new DataView(allBytes.buffer, allBytes.byteOffset, allBytes.byteLength);
-      for (let i = 0; i < sampleCount; i++) {
-        samples[i] = view.getFloat32(i * 4, true);
-      }
-
-      setSpeakState("playing");
-      const ctx = new AudioContext({ sampleRate: 24000 });
-      const buffer = ctx.createBuffer(1, samples.length, 24000);
-      buffer.copyToChannel(samples, 0);
-      const src = ctx.createBufferSource();
-      src.buffer = buffer;
-      src.connect(ctx.destination);
-
-      await new Promise<void>((resolve) => {
-        src.onended = () => resolve();
-        src.start();
-      });
-
-      await ctx.close();
-      setSpeakState("idle");
-    } catch (err) {
-      console.error("speak_text failed:", err);
-      setSpeakState("idle");
-    }
-  };
+  const isBusy = playback.state !== "idle";
 
   return (
     <div className={bubbleActions}>
@@ -176,14 +114,14 @@ export function BubbleActions({ block, speakable, isLast, timestamp }: BubbleAct
         <IconButton
           size="2"
           variant="ghost"
-          onClick={() => void handleSpeak()}
+          onClick={() => playback.speak(block.text)}
           aria-label="Speak"
-          disabled={speakState !== "idle"}
+          disabled={isBusy}
         >
-          {speakState === "idle" ? (
-            <SpeakerHigh size={16} />
-          ) : (
+          {isBusy ? (
             <CircleNotch size={16} style={{ animation: `${spinAnimation} 1s linear infinite` }} />
+          ) : (
+            <SpeakerHigh size={16} />
           )}
         </IconButton>
       )}

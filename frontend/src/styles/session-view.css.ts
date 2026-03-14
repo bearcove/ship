@@ -1316,6 +1316,16 @@ export const composerRoot = style({
   flexShrink: 0,
 });
 
+export const playbackBar = style({
+  display: "flex",
+  alignItems: "center",
+  gap: "var(--space-2)",
+  padding: "6px 8px",
+  borderRadius: "var(--radius-2)",
+  background: "var(--gray-a2)",
+  height: 40,
+});
+
 export const composerInputWrapper = style({
   position: "relative",
   flex: 1,

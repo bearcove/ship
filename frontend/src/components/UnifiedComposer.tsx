@@ -35,11 +35,13 @@ import {
   fileMentionItem,
   fileMentionPopup,
   pageDropOverlay,
+  playbackBar,
   transcriptPreview,
 } from "../styles/session-view.css";
 import { Waveform } from "./Waveform";
 import { useDocumentDrop } from "../hooks/useDocumentDrop";
 import { useTranscription } from "../hooks/useTranscription";
+import { usePlayback } from "../context/PlaybackContext";
 
 const SUBMIT_TIMEOUT_MS = 15_000;
 
@@ -203,6 +205,7 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
   const [fileMatches, setFileMatches] = useState<string[]>([]);
   const isDragOver = useDocumentDrop(addImageFiles);
   const transcription = useTranscription();
+  const playback = usePlayback();
 
   // Restore draft from localStorage on mount
   useEffect(() => {
@@ -546,6 +549,21 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
           e.target.value = "";
         }}
       />
+
+      {playback.state === "playing" && playback.analyser && (
+        <div className={playbackBar}>
+          <Waveform analyser={playback.analyser} />
+          <button
+            type="button"
+            className={composerInlineBtn}
+            onClick={playback.stop}
+            title="Stop playback"
+            style={{ position: "static", transform: "none", flexShrink: 0 }}
+          >
+            <Stop size={18} weight="fill" />
+          </button>
+        </div>
+      )}
 
       {isRecording && transcription.result && (
         <div ref={transcriptPreviewRef} className={transcriptPreview}>

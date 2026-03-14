@@ -6,6 +6,7 @@ import "@radix-ui/themes/styles.css";
 import "./styles/global.css.ts";
 import { App } from "./App";
 import { SoundProvider } from "./context/SoundContext";
+import { PlaybackProvider } from "./context/PlaybackContext";
 
 // r[frontend.react]
 // r[frontend.routing]
@@ -21,7 +22,9 @@ createRoot(document.getElementById("root")!).render(
         scaling="100%"
       >
         <SoundProvider>
-          <App />
+          <PlaybackProvider>
+            <App />
+          </PlaybackProvider>
         </SoundProvider>
       </Theme>
     </BrowserRouter>

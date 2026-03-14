@@ -9892,9 +9892,12 @@ mod tests {
         let (dir, ship, session_id, _project_root, worktree_path, _review_error) =
             create_conflicted_rebase_session("captain-continue-rebase-markers").await;
 
+        let ours = "<".repeat(7);
+        let base = "=".repeat(7);
+        let theirs = ">".repeat(7);
         std::fs::write(
             worktree_path.join("tracked.txt"),
-            "<<<<<<< ours\nresolved\n=======\nother\n>>>>>>> theirs\n",
+            format!("{ours} ours\nresolved\n{base}\nother\n{theirs} theirs\n"),
         )
         .expect("conflicted file should be rewritten");
         git_succeeds(
