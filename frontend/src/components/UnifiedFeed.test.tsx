@@ -320,8 +320,13 @@ describe("UnifiedFeed", () => {
       },
     ]);
 
-    expect(screen.getByText("Commit: abc1234")).toHaveAttribute("data-item-style", "text");
-    expect(screen.getByText("Diff: 1 file changed, 1 insertion(+)")).toHaveAttribute("data-item-style", "diff");
+    const commitItem = screen.getByText("Commit: abc1234").closest('[data-testid="workflow-milestone-item"]');
+    const diffItem = screen
+      .getByText("Diff: 1 file changed, 1 insertion(+)")
+      .closest('[data-testid="workflow-milestone-item"]');
+
+    expect(commitItem).toHaveAttribute("data-item-style", "text");
+    expect(diffItem).toHaveAttribute("data-item-style", "diff");
   });
 
   it("deduplicates repeated workflow milestone items while preserving order", () => {
