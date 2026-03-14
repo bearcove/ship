@@ -11,6 +11,8 @@ const OPENCODE_BINARY: &str = "opencode";
 const CLAUDE_AGENT_NPX_PACKAGE: &str = "@zed-industries/claude-agent-acp";
 const CODEX_AGENT_NPX_PACKAGE: &str = "@zed-industries/codex-acp";
 const EMPTY_ARGS: &[&str] = &[];
+const EMPTY_ENV: &[(&str, &str)] = &[];
+const CODEX_ENV: &[(&str, &str)] = &[("RUST_LOG", "warn")];
 const CLAUDE_AGENT_NPX_ARGS: &[&str] = &[CLAUDE_AGENT_NPX_PACKAGE];
 const CODEX_AGENT_NPX_ARGS: &[&str] = &[CODEX_AGENT_NPX_PACKAGE];
 const OPENCODE_ARGS: &[&str] = &["acp"];
@@ -32,11 +34,21 @@ impl BinaryPathProbe for SystemBinaryPathProbe {
 pub struct AgentLauncher {
     pub program: &'static str,
     pub args: &'static [&'static str],
+    pub env: &'static [(&'static str, &'static str)],
 }
 
 impl AgentLauncher {
     pub const fn new(program: &'static str, args: &'static [&'static str]) -> Self {
-        Self { program, args }
+        Self {
+            program,
+            args,
+            env: EMPTY_ENV,
+        }
+    }
+
+    pub const fn with_env(mut self, env: &'static [(&'static str, &'static str)]) -> Self {
+        self.env = env;
+        self
     }
 }
 
@@ -68,10 +80,14 @@ pub fn resolve_agent_launcher(
         }
         AgentKind::Codex => {
             if probe.is_available(CODEX_AGENT_BINARY) {
-                return Some(AgentLauncher::new(CODEX_AGENT_BINARY, EMPTY_ARGS));
+                return Some(
+                    AgentLauncher::new(CODEX_AGENT_BINARY, EMPTY_ARGS).with_env(CODEX_ENV),
+                );
             }
             if probe.is_available(NPX_BINARY) {
-                return Some(AgentLauncher::new(NPX_BINARY, CODEX_AGENT_NPX_ARGS));
+                return Some(
+                    AgentLauncher::new(NPX_BINARY, CODEX_AGENT_NPX_ARGS).with_env(CODEX_ENV),
+                );
             }
             None
         }
@@ -121,8 +137,9 @@ mod tests {
     use ship_types::{AgentDiscovery, AgentKind};
 
     use super::{
-        AgentLauncher, BinaryPathProbe, CLAUDE_AGENT_BINARY, CODEX_AGENT_BINARY, NPX_BINARY,
-        OPENCODE_BINARY, discover_agents, is_binary_available_on_path, resolve_agent_launcher,
+        AgentLauncher, BinaryPathProbe, CLAUDE_AGENT_BINARY, CODEX_AGENT_BINARY, CODEX_ENV,
+        NPX_BINARY, OPENCODE_BINARY, discover_agents, is_binary_available_on_path,
+        resolve_agent_launcher,
     };
 
     fn make_temp_dir(test_name: &str) -> PathBuf {
@@ -277,7 +294,7 @@ mod tests {
                     opencode: false,
                 }
             ),
-            Some(AgentLauncher::new(CODEX_AGENT_BINARY, &[]))
+            Some(AgentLauncher::new(CODEX_AGENT_BINARY, &[]).with_env(CODEX_ENV))
         );
         assert_eq!(
             resolve_agent_launcher(
@@ -289,10 +306,9 @@ mod tests {
                     opencode: false,
                 }
             ),
-            Some(AgentLauncher::new(
-                NPX_BINARY,
-                &["@zed-industries/codex-acp"]
-            ))
+            Some(
+                AgentLauncher::new(NPX_BINARY, &["@zed-industries/codex-acp"]).with_env(CODEX_ENV)
+            )
         );
     }
 

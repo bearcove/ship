@@ -881,10 +881,16 @@ fn command_for_launcher(
             // instead of /var/folders/... (a symlink path not covered by the
             // sandbox policy's literal path matching).
             .env("TMPDIR", "/private/tmp");
+        for (key, value) in launcher.env {
+            command.env(key, value);
+        }
         command
     } else {
         let mut command = Command::new(launcher.program);
         command.args(launcher.args);
+        for (key, value) in launcher.env {
+            command.env(key, value);
+        }
         command
     }
 }
