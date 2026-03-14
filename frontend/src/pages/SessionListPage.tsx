@@ -632,7 +632,11 @@ function SessionCard({
                 ? "Session startup is queued."
                 : session.startup_state.message}
             </Text>
-          ) : null}
+          ) : (
+            <Text size="3" weight="bold" color="gray" style={{ lineHeight: 1.4 }}>
+              Untitled
+            </Text>
+          )}
           {session.task_status && (
             <Badge color={STATUS_COLOR[session.task_status.tag]} size="1" ml="auto">
               {session.task_status.tag}
