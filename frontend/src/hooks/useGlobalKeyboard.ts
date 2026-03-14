@@ -26,6 +26,8 @@ export function useGlobalKeyboard(
 
   // A-A chord state
   const lastAPress = useRef<number>(0);
+  // Space hold-to-record: timestamp of keydown, 0 when idle
+  const spaceDownAt = useRef<number>(0);
 
   useEffect(() => {
     const orderedSessions = sortSessions(allSessions);
@@ -33,7 +35,7 @@ export function useGlobalKeyboard(
       ? allSessions.find((s) => s.slug === currentSessionId)
       : undefined;
 
-    function handler(e: KeyboardEvent) {
+    function handleKeyDown(e: KeyboardEvent) {
       // Alt+Escape: stop agents — works globally, even in text inputs
       if (e.key === "Escape" && e.altKey && currentSession) {
         e.preventDefault();
@@ -68,12 +70,14 @@ export function useGlobalKeyboard(
         return;
       }
 
-      // Space: toggle voice recording
-      if (e.key === " " && composerRef?.current) {
+      // Space: tap to toggle recording, hold to record-and-send
+      if (e.key === " " && !e.repeat && composerRef?.current) {
         e.preventDefault();
         if (composerRef.current.isRecording()) {
-          composerRef.current.stopRecording();
+          composerRef.current.stopAndSend();
+          spaceDownAt.current = 0;
         } else {
+          spaceDownAt.current = Date.now();
           composerRef.current.startRecording();
         }
         return;
@@ -100,7 +104,26 @@ export function useGlobalKeyboard(
       }
     }
 
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
+    function handleKeyUp(e: KeyboardEvent) {
+      if (e.key !== " ") return;
+      if (isEditableTarget(e.target)) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      e.preventDefault();
+      if (
+        spaceDownAt.current > 0 &&
+        composerRef?.current?.isRecording() &&
+        Date.now() - spaceDownAt.current > 300
+      ) {
+        composerRef.current.stopAndSend();
+      }
+      spaceDownAt.current = 0;
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
   }, [allSessions, currentSessionId, navigate, onSessionArchived]);
 }
