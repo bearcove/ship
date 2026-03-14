@@ -501,17 +501,7 @@ export function NewSessionDialog({
               </Button>
             </Dialog.Close>
             <Button disabled={createDisabled} loading={submitting} onClick={handleCreate}>
-              <Flex align="center" gap="2">
-                <Text>Create session</Text>
-                <Flex align="center" gap="1" aria-hidden="true">
-                  <Box asChild className={keyboardShortcutKey}>
-                    <kbd>&#8984;</kbd>
-                  </Box>
-                  <Box asChild className={keyboardShortcutKey}>
-                    <kbd>&#8617;</kbd>
-                  </Box>
-                </Flex>
-              </Flex>
+              Create session
             </Button>
           </Flex>
         </Flex>
