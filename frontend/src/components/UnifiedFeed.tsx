@@ -822,6 +822,18 @@ const SingleBlock = memo(function SingleBlock({
       }
 
       if (block.source.tag === "Steer" && role.tag === "Mate") {
+        const isSystemNotif = /<system-notification>[\s\S]*?<\/system-notification>/.test((block as TextBlockType).text);
+        if (isSystemNotif) {
+          return (
+            <Box
+              className={feedSystemMessage}
+              data-testid="synthetic-steer-text"
+              data-synthetic-kind="task-assigned"
+            >
+              <Text className={feedSystemMessageText}>Task assigned</Text>
+            </Box>
+          );
+        }
         const className = `${feedBubble} ${feedBubbleSteer}${isSelected ? ` ${feedBubbleSelected}` : ""}`;
         return (
           <Box className={feedRowAgent}>
