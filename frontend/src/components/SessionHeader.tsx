@@ -331,6 +331,32 @@ export function SessionHeader({
 
           {/* Side buttons: switcher + menu (always) + Zed/iTerm (desktop only) */}
           <Flex align="center" gap="4" px="4">
+            <Button
+              variant="ghost"
+              color="gray"
+              className={`${sessionHeaderSideButton} ${sessionHeaderSideButtonDesktopOnly}`}
+              title="Open in Zed"
+              aria-label="Open in Zed"
+              onClick={(e) => {
+                e.stopPropagation();
+                void getShipClient().then((c) => c.openInEditor(sessionId));
+              }}
+            >
+              <CodeSimple size={sideButtonSize} />
+            </Button>
+            <Button
+              variant="ghost"
+              color="gray"
+              className={`${sessionHeaderSideButton} ${sessionHeaderSideButtonDesktopOnly}`}
+              title="Open in iTerm"
+              aria-label="Open in iTerm"
+              onClick={(e) => {
+                e.stopPropagation();
+                void getShipClient().then((c) => c.openInTerminal(sessionId));
+              }}
+            >
+              <TerminalWindowIcon size={sideButtonSize} />
+            </Button>
             <Popover.Root open={switcherOpen} onOpenChange={setSwitcherOpen}>
               <Popover.Trigger
                 className={sessionHeaderSideButton}
@@ -412,32 +438,6 @@ export function SessionHeader({
                 )}
               </DropdownMenu.Content>
             </DropdownMenu.Root>
-            <Button
-              variant="ghost"
-              color="gray"
-              className={`${sessionHeaderSideButton} ${sessionHeaderSideButtonDesktopOnly}`}
-              title="Open in Zed"
-              aria-label="Open in Zed"
-              onClick={(e) => {
-                e.stopPropagation();
-                void getShipClient().then((c) => c.openInEditor(sessionId));
-              }}
-            >
-              <CodeSimple size={sideButtonSize} />
-            </Button>
-            <Button
-              variant="ghost"
-              color="gray"
-              className={`${sessionHeaderSideButton} ${sessionHeaderSideButtonDesktopOnly}`}
-              title="Open in iTerm"
-              aria-label="Open in iTerm"
-              onClick={(e) => {
-                e.stopPropagation();
-                void getShipClient().then((c) => c.openInTerminal(sessionId));
-              }}
-            >
-              <TerminalWindowIcon size={sideButtonSize} />
-            </Button>
 
           </Flex>
         </div>{/* end sessionHeaderCollapsedArea */}

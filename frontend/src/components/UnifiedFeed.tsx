@@ -279,7 +279,7 @@ function RawBlockDebug({ entry }: { entry: BlockEntry }) {
         style={{
           fontFamily: "monospace",
           fontSize: "var(--font-size-1)",
-          whiteSpace: "pre",
+          whiteSpace: "pre-wrap",
           marginTop: "var(--space-1)",
           background: "var(--gray-a2)",
           borderRadius: "var(--radius-1)",
