@@ -47,11 +47,17 @@ export function SessionViewPage({ debugMode }: { debugMode: boolean; onOpenSideb
 
   const handleSwipe = useCallback(
     (direction: "left" | "right") => {
-      const target = direction === "left" ? nextSession : prevSession;
-      if (!target) return;
+      if (direction === "left") {
+        if (!nextSession) {
+          navigate("/");
+          return;
+        }
+      } else {
+        if (!prevSession) return;
+      }
       setSlideDirection(direction);
     },
-    [nextSession, prevSession],
+    [nextSession, prevSession, navigate],
   );
 
   useSwipeGesture(rootRef, handleSwipe);
