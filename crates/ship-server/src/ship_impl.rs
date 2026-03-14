@@ -40,8 +40,6 @@ use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 
 const PRESET_CONTINUATION_PROMPT: &str = "Sorry for the interruption, please continue";
-const PRESET_RESPAWN_NOT_IMPLEMENTED: &str =
-    "preset switches that require respawning the agent are not implemented yet";
 
 struct SpawnedRoleAgent {
     spawn: ship_core::AgentSpawnInfo,
@@ -1009,6 +1007,317 @@ impl ShipImpl {
                 info: acp_info,
             },
         );
+    }
+
+    async fn collect_agent_notifications(
+        &self,
+        handle: &ship_core::AgentHandle,
+    ) -> Vec<SessionEvent> {
+        #[cfg(test)]
+        if let Some(driver) = Self::test_agent_driver() {
+            return driver.notifications(handle).collect().await;
+        }
+
+        self.agent_driver.notifications(handle).collect().await
+    }
+
+    async fn prompt_staged_agent_parts(
+        &self,
+        handle: &ship_core::AgentHandle,
+        parts: Vec<PromptContentPart>,
+    ) -> Result<(ship_core::StopReason, Vec<SessionEvent>), String> {
+        let response = self
+            .agent_prompt(handle, &parts)
+            .await
+            .map_err(|error| error.message)?;
+        let events = self.collect_agent_notifications(handle).await;
+        Ok((response.stop_reason, events))
+    }
+
+    async fn prompt_staged_agent_text(
+        &self,
+        handle: &ship_core::AgentHandle,
+        text: String,
+    ) -> Result<(ship_core::StopReason, Vec<SessionEvent>), String> {
+        self.prompt_staged_agent_parts(handle, vec![PromptContentPart::Text { text }])
+            .await
+    }
+
+    fn build_preset_switch_handoff_text(
+        session: &ActiveSession,
+        role: Role,
+        preset: &ship_types::AgentPreset,
+    ) -> String {
+        let mut lines = vec![
+            "Ship switched this role onto a fresh agent session because the preset requires a provider or kind change.".to_owned(),
+            "The previous ACP session is not available in this new runtime. Use the Ship-side history below as the source of truth and continue from it.".to_owned(),
+            format!("Target role: {role:?}"),
+            format!("Target preset: {} ({})", preset.label, preset.id.0),
+            format!("Target kind: {:?}", preset.kind),
+            format!("Target provider: {}", preset.provider.0),
+            format!("Target model: {}", preset.model_id),
+        ];
+
+        if let Some(task) = session.current_task.as_ref() {
+            lines.push("Current active task:".to_owned());
+            lines.push(format!("Title: {}", task.record.title));
+            lines.push(format!("Description: {}", task.record.description));
+            lines.push(format!("Status: {:?}", task.record.status));
+            if !task.record.steps.is_empty() {
+                lines.push("Plan:".to_owned());
+                lines.extend(
+                    task.record
+                        .steps
+                        .iter()
+                        .enumerate()
+                        .map(|(index, step)| format!("{}. {}", index + 1, step.description)),
+                );
+            }
+        }
+
+        let transcript = Self::build_preset_switch_transcript(session);
+        if !transcript.is_empty() {
+            lines.push("Recorded Ship transcript:".to_owned());
+            lines.push(transcript);
+        }
+
+        lines.join("\n")
+    }
+
+    fn build_preset_switch_transcript(session: &ActiveSession) -> String {
+        fn append_transcript_events(
+            lines: &mut Vec<String>,
+            line_by_block_id: &mut HashMap<String, usize>,
+            envelopes: &[SessionEventEnvelope],
+        ) {
+            for envelope in envelopes {
+                match &envelope.event {
+                    SessionEvent::BlockAppend {
+                        block_id,
+                        role,
+                        block,
+                    } => match block {
+                        ContentBlock::Text { text, source } => {
+                            let index = lines.len();
+                            lines.push(format!("{role:?} {source:?}: {text}"));
+                            line_by_block_id.insert(block_id.0.clone(), index);
+                        }
+                        ContentBlock::Image { mime_type, .. } => {
+                            lines.push(format!("{role:?}: [image: {mime_type}]"));
+                        }
+                        ContentBlock::Error { message } => {
+                            lines.push(format!("{role:?}: [error] {message}"));
+                        }
+                        ContentBlock::ToolCall {
+                            tool_name, status, ..
+                        } => {
+                            lines.push(format!("{role:?}: [tool {status:?}] {tool_name}"));
+                        }
+                        ContentBlock::PlanUpdate { steps } => {
+                            lines.push(format!("{role:?}: [plan updated]"));
+                            lines.extend(steps.iter().enumerate().map(|(index, step)| {
+                                format!("  {}. {}", index + 1, step.description)
+                            }));
+                        }
+                        ContentBlock::Permission {
+                            tool_name,
+                            description,
+                            resolution,
+                            ..
+                        } => {
+                            lines.push(format!(
+                                "{role:?}: [permission {resolution:?}] {tool_name} - {description}"
+                            ));
+                        }
+                        ContentBlock::TaskRecap { commits, .. } => {
+                            lines.push(format!(
+                                "{role:?}: [task recap] {} commit(s)",
+                                commits.len()
+                            ));
+                        }
+                    },
+                    SessionEvent::BlockPatch {
+                        block_id,
+                        patch: ship_types::BlockPatch::TextAppend { text },
+                        ..
+                    } => {
+                        if let Some(index) = line_by_block_id.get(&block_id.0).copied() {
+                            lines[index].push_str(text);
+                        }
+                    }
+                    SessionEvent::TaskStarted {
+                        title, description, ..
+                    } => {
+                        lines.push(format!("[task started] {title}: {description}"));
+                    }
+                    SessionEvent::TaskStatusChanged { status, .. } => {
+                        lines.push(format!("[task status] {status:?}"));
+                    }
+                    SessionEvent::SessionTitleChanged { title } => {
+                        lines.push(format!("[session title] {title}"));
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let mut lines = Vec::new();
+        let mut line_by_block_id = HashMap::new();
+        append_transcript_events(
+            &mut lines,
+            &mut line_by_block_id,
+            &session.session_event_log,
+        );
+        if let Some(task) = session.current_task.as_ref() {
+            append_transcript_events(&mut lines, &mut line_by_block_id, &task.event_log);
+        }
+        lines.join("\n")
+    }
+
+    fn apply_staged_preset_switch_event(session: &mut ActiveSession, event: SessionEvent) {
+        match event {
+            SessionEvent::MateGuidanceQueued {
+                role: Role::Mate,
+                message,
+            } => Self::queue_mate_guidance(session, &message),
+            SessionEvent::MateGuidanceQueued {
+                role: Role::Captain,
+                ..
+            } => {
+                tracing::warn!(
+                    "dropping captain guidance queued during staged preset switch cutover"
+                );
+            }
+            other => apply_event(session, other),
+        }
+    }
+
+    async fn set_agent_preset_via_fresh_session(
+        &self,
+        session_id: &SessionId,
+        role: Role,
+        old_handle: ship_core::AgentHandle,
+        preset: ship_types::AgentPreset,
+    ) -> SetAgentPresetResponse {
+        let cancel_result = match role {
+            Role::Captain => self.cancel_captain_prompt(session_id).await,
+            Role::Mate => self.cancel_mate_prompt(session_id).await,
+        };
+        if let Err(message) = cancel_result {
+            return SetAgentPresetResponse::Failed { message };
+        }
+
+        let session_snapshot = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let Some(session_state) = sessions.get(session_id) else {
+                return SetAgentPresetResponse::SessionNotFound;
+            };
+            session_state.clone()
+        };
+
+        let spawned = match self
+            .spawn_session_role(session_id, role, preset.kind, None)
+            .await
+        {
+            Ok(spawned) => spawned,
+            Err(message) => return SetAgentPresetResponse::Failed { message },
+        };
+        let staged_handle = spawned.spawn.handle.clone();
+        let spawned_available_models = spawned.spawn.available_models.clone();
+
+        if let Err(error) = self.agent_set_model(&staged_handle, &preset.model_id).await {
+            let _ = self.agent_kill(&staged_handle).await;
+            return SetAgentPresetResponse::Failed {
+                message: error.message,
+            };
+        }
+
+        let handoff_text = Self::build_preset_switch_handoff_text(&session_snapshot, role, &preset);
+        let (handoff_stop_reason, handoff_events) = match self
+            .prompt_staged_agent_text(&staged_handle, handoff_text)
+            .await
+        {
+            Ok(result) => result,
+            Err(message) => {
+                let _ = self.agent_kill(&staged_handle).await;
+                return SetAgentPresetResponse::Failed { message };
+            }
+        };
+        if handoff_stop_reason == ship_core::StopReason::ContextExhausted {
+            let _ = self.agent_kill(&staged_handle).await;
+            return SetAgentPresetResponse::Failed {
+                message: "fresh preset session exhausted context during history handoff".to_owned(),
+            };
+        }
+
+        let (continuation_stop_reason, continuation_events) = match self
+            .prompt_staged_agent_text(&staged_handle, PRESET_CONTINUATION_PROMPT.to_owned())
+            .await
+        {
+            Ok(result) => result,
+            Err(message) => {
+                let _ = self.agent_kill(&staged_handle).await;
+                return SetAgentPresetResponse::Failed { message };
+            }
+        };
+
+        let cutover_applied = {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            if let Some(session_state) = sessions.get_mut(session_id) {
+                match role {
+                    Role::Captain => session_state.config.captain_kind = preset.kind,
+                    Role::Mate => session_state.config.mate_kind = preset.kind,
+                }
+                Self::apply_spawned_role_to_session(session_state, role, spawned);
+                apply_event(
+                    session_state,
+                    SessionEvent::AgentPresetChanged {
+                        role,
+                        preset_id: Some(preset.id.clone()),
+                        kind: preset.kind,
+                        provider: Some(preset.provider.clone()),
+                    },
+                );
+                apply_event(
+                    session_state,
+                    SessionEvent::AgentModelChanged {
+                        role,
+                        model_id: Some(preset.model_id.clone()),
+                        available_models: spawned_available_models,
+                    },
+                );
+                for event in handoff_events.into_iter().chain(continuation_events) {
+                    Self::apply_staged_preset_switch_event(session_state, event);
+                }
+                let final_state =
+                    if continuation_stop_reason == ship_core::StopReason::ContextExhausted {
+                        AgentState::ContextExhausted
+                    } else {
+                        AgentState::Idle
+                    };
+                set_agent_state(session_state, role, final_state);
+                true
+            } else {
+                false
+            }
+        };
+        if !cutover_applied {
+            let _ = self.agent_kill(&staged_handle).await;
+            return SetAgentPresetResponse::SessionNotFound;
+        }
+
+        match self.persist_session(session_id).await {
+            Ok(()) => {
+                if let Err(error) = self.agent_kill(&old_handle).await {
+                    Self::log_error(
+                        "set_agent_preset_via_fresh_session_kill_old",
+                        &error.message,
+                    );
+                }
+                SetAgentPresetResponse::Ok
+            }
+            Err(message) => SetAgentPresetResponse::Failed { message },
+        }
     }
 
     async fn resolve_project_root(
@@ -7426,9 +7735,9 @@ impl Ship for ShipImpl {
         };
 
         if preset.kind != current_kind || preset.provider != current_provider {
-            return SetAgentPresetResponse::Failed {
-                message: PRESET_RESPAWN_NOT_IMPLEMENTED.to_owned(),
-            };
+            return self
+                .set_agent_preset_via_fresh_session(&session, role, handle, preset)
+                .await;
         }
 
         let Some(previous_model_id) = current_model_id else {
