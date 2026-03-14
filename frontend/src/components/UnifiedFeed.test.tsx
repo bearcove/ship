@@ -4,7 +4,7 @@ import type { ContentBlock } from "../generated/ship";
 import type { BlockEntry } from "../state/blockStore";
 import { feedRowAnimate } from "../styles/session-view.css";
 import { renderWithTheme } from "../test/render";
-import { UnifiedFeed } from "./UnifiedFeed";
+import { UnifiedFeed, resetUnifiedFeedAnimationStateForTests } from "./UnifiedFeed";
 
 function makeTaskRecapBlock(): Extract<ContentBlock, { tag: "TaskRecap" }> {
   return {
@@ -48,10 +48,13 @@ function makeTextEntry(blockId: string, text: string): BlockEntry {
   };
 }
 
-function feedUi(blocks: BlockEntry[], loading = false) {
+function feedUi(
+  blocks: BlockEntry[],
+  { loading = false, sessionId = "session-1" }: { loading?: boolean; sessionId?: string } = {},
+) {
   return (
     <UnifiedFeed
-      sessionId="session-1"
+      sessionId={sessionId}
       captain={null}
       mate={null}
       blocks={blocks}
@@ -62,11 +65,15 @@ function feedUi(blocks: BlockEntry[], loading = false) {
   );
 }
 
-function renderFeed(blocks: BlockEntry[], { loading = false }: { loading?: boolean } = {}) {
-  return renderWithTheme(feedUi(blocks, loading));
+function renderFeed(
+  blocks: BlockEntry[],
+  options: { loading?: boolean; sessionId?: string } = {},
+) {
+  return renderWithTheme(feedUi(blocks, options));
 }
 
 beforeEach(() => {
+  resetUnifiedFeedAnimationStateForTests();
   if (!HTMLElement.prototype.scrollTo) {
     HTMLElement.prototype.scrollTo = () => {};
   }
@@ -127,15 +134,38 @@ describe("UnifiedFeed", () => {
 
     expect(container.querySelectorAll(`.${feedRowAnimate}`)).toHaveLength(0);
 
-    rerender(feedUi(replayedBlocks, true));
+    rerender(feedUi(replayedBlocks, { loading: true }));
 
     expect(screen.getByText("Historical block one")).toBeInTheDocument();
     expect(screen.getByText("Historical block two")).toBeInTheDocument();
     expect(container.querySelectorAll(`.${feedRowAnimate}`)).toHaveLength(0);
 
-    rerender(feedUi(replayedBlocks, false));
+    rerender(feedUi(replayedBlocks));
 
     expect(container.querySelectorAll(`.${feedRowAnimate}`)).toHaveLength(0);
+  });
+
+  it("does not animate the initial population of a freshly mounted session feed", () => {
+    const sessionId = "session-remount";
+    const historicalBlocks = [
+      makeTextEntry("history-1", "Historical block one"),
+      makeTextEntry("history-2", "Historical block two"),
+    ];
+    const firstMount = renderFeed([], { sessionId });
+
+    expect(firstMount.container.querySelectorAll(`.${feedRowAnimate}`)).toHaveLength(0);
+
+    firstMount.rerender(feedUi(historicalBlocks, { sessionId }));
+
+    expect(screen.getByText("Historical block one")).toBeInTheDocument();
+    expect(screen.getByText("Historical block two")).toBeInTheDocument();
+    expect(firstMount.container.querySelectorAll(`.${feedRowAnimate}`)).toHaveLength(0);
+
+    firstMount.unmount();
+
+    const secondMount = renderWithTheme(feedUi(historicalBlocks, { sessionId }));
+
+    expect(secondMount.container.querySelectorAll(`.${feedRowAnimate}`)).toHaveLength(0);
   });
 
   it("animates only blocks appended after the feed becomes live", () => {
@@ -143,12 +173,12 @@ describe("UnifiedFeed", () => {
     const liveBlock = makeTextEntry("live-1", "Fresh live block");
     const { container, rerender } = renderFeed([], { loading: true });
 
-    rerender(feedUi(replayedBlocks, true));
-    rerender(feedUi(replayedBlocks, false));
+    rerender(feedUi(replayedBlocks, { loading: true }));
+    rerender(feedUi(replayedBlocks));
 
     expect(container.querySelectorAll(`.${feedRowAnimate}`)).toHaveLength(0);
 
-    rerender(feedUi([...replayedBlocks, liveBlock], false));
+    rerender(feedUi([...replayedBlocks, liveBlock]));
 
     const animatedWrappers = Array.from(container.querySelectorAll(`.${feedRowAnimate}`));
     expect(animatedWrappers).toHaveLength(1);

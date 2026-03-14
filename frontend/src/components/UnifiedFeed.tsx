@@ -728,6 +728,26 @@ interface Props {
   onImageDragStateChange?: (isDragOver: boolean) => void;
 }
 
+type SessionFeedAnimationBaseline = {
+  blockIds: Set<string>;
+  established: boolean;
+};
+
+const sessionFeedAnimationBaselines = new Map<string, SessionFeedAnimationBaseline>();
+
+function getSessionFeedAnimationBaseline(sessionId: string) {
+  let baseline = sessionFeedAnimationBaselines.get(sessionId);
+  if (!baseline) {
+    baseline = { blockIds: new Set(), established: false };
+    sessionFeedAnimationBaselines.set(sessionId, baseline);
+  }
+  return baseline;
+}
+
+export function resetUnifiedFeedAnimationBaselinesForTest() {
+  sessionFeedAnimationBaselines.clear();
+}
+
 // r[ui.event-stream.grouping]
 // r[view.agent-panel.state]
 export function UnifiedFeed({
@@ -766,18 +786,16 @@ export function UnifiedFeed({
     };
   }, [onImageDragStateChange]);
 
-  // Track which blocks belong to the historical baseline so only blocks that
-  // arrive after replay completes get the entrance animation.
-  const initialBlockIds = useRef<Set<string>>(new Set(blocks.map((b) => b.blockId)));
-  const prevSessionId = useRef(sessionId);
-  if (prevSessionId.current !== sessionId) {
-    initialBlockIds.current = new Set(blocks.map((b) => b.blockId));
-    prevSessionId.current = sessionId;
-  }
-  if (loading) {
+  // Track which blocks belong to the per-session historical baseline so a feed
+  // remount does not replay entrance animations for existing history.
+  const sessionAnimationBaseline = getSessionFeedAnimationBaseline(sessionId);
+  if (loading || !sessionAnimationBaseline.established) {
     for (const block of blocks) {
-      initialBlockIds.current.add(block.blockId);
+      sessionAnimationBaseline.blockIds.add(block.blockId);
     }
+  }
+  if (!loading) {
+    sessionAnimationBaseline.established = true;
   }
 
   const humanMsgCount = blocks.filter(
@@ -928,7 +946,11 @@ export function UnifiedFeed({
                   : seg.entry.role.tag === "Captain"
                     ? captain
                     : mate;
-            const animate = !loading && !initialBlockIds.current.has(seg.entry.blockId);
+            const alreadyKnown = sessionAnimationBaseline.blockIds.has(seg.entry.blockId);
+            const animate = !loading && sessionAnimationBaseline.established && !alreadyKnown;
+            if (!alreadyKnown) {
+              sessionAnimationBaseline.blockIds.add(seg.entry.blockId);
+            }
             const isTaskRecap = seg.entry.block.tag === "TaskRecap";
 
             // Gap detection: check if >2 minutes between previous and current segment
