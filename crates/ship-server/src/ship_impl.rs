@@ -927,7 +927,7 @@ Here's how a typical cycle works:
 4. While the mate works, you can keep researching, then steer with \
    captain_steer if you discover something important or want to adjust the plan.
 5. The mate calls mate_submit when done. You review and either accept \
-   (captain_accept), give feedback (captain_steer), or cancel (captain_cancel).
+   (captain_merge), give feedback (captain_steer), or cancel (captain_cancel).
 
 You can also write files, apply edits, and commit directly using write_file, \
 edit_prepare/edit_confirm, and commit — useful for small fixups or for \
@@ -940,14 +940,14 @@ rebase in progress, transitions the task to `RebaseConflict`, and reports the co
 Resolve them, check `captain_rebase_status`, then use `captain_continue_rebase` or `captain_abort_rebase`.
 
 Your available tools are your Ship MCP tools: captain_assign, captain_steer, \
-captain_accept, captain_cancel, captain_git_status, captain_review_diff, captain_rebase_status, \
+captain_merge, captain_cancel, captain_git_status, captain_review_diff, captain_rebase_status, \
 captain_continue_rebase, captain_abort_rebase, captain_notify_human, read_file, run_command, \
 write_file, edit_prepare, edit_confirm, commit, and web_search. Use run_command for codebase \
 exploration and read-only inspection (rg to search, fd to list files, and read-only git commands \
 such as `git status`, `git log`, `git diff`, and `git show`). Git is not your workflow control \
 surface: do NOT use it to commit, rebase, merge, or advance review state. Ship manages workflow \
 state internally: both you and the mate checkpoint with `commit`, `captain_review_diff` refreshes \
-review state via a managed rebase, and `captain_accept` only succeeds once the session branch is \
+review state via a managed rebase, and `captain_merge` only succeeds once the session branch is \
 actually mergeable. Built-in tools (Bash, Read, Write, Edit) are disabled in this environment — \
 these are Ship MCP tools, not Claude built-ins. If you try a built-in and it fails or is rejected, \
 do not stop — use your MCP tools instead and continue.
@@ -2059,7 +2059,8 @@ Here is your task:
     }
 
     // r[captain.tool.accept]
-    async fn captain_tool_accept(
+    // r[captain.tool.merge]
+    async fn captain_tool_merge(
         &self,
         session_id: &SessionId,
         summary: Option<String>,
@@ -2090,23 +2091,101 @@ Here is your task:
             });
         }
 
-        self.accept_task(session_id, summary.clone()).await?;
-
-        // r[task.duration]
-        let duration_suffix = {
+        let has_active_task = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
-            if let Some(session) = sessions.get(session_id) {
-                session
-                    .task_history
-                    .last()
-                    .and_then(Self::format_task_duration)
-                    .map(|d| format!(" Task took {}.", d))
-                    .unwrap_or_default()
-            } else {
-                String::new()
-            }
+            let session = sessions
+                .get(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            session.current_task.is_some()
         };
-        Ok(format!("Accepted the active task.{}", duration_suffix))
+
+        if has_active_task {
+            self.accept_task(session_id, summary.clone()).await?;
+
+            // r[task.duration]
+            let duration_suffix = {
+                let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                if let Some(session) = sessions.get(session_id) {
+                    session
+                        .task_history
+                        .last()
+                        .and_then(Self::format_task_duration)
+                        .map(|d| format!(" Task took {}.", d))
+                        .unwrap_or_default()
+                } else {
+                    String::new()
+                }
+            };
+            Ok(format!("Merged.{}", duration_suffix))
+        } else {
+            self.merge_branch_without_task(session_id).await?;
+            Ok("Merged.".to_owned())
+        }
+    }
+
+    async fn merge_branch_without_task(
+        &self,
+        session_id: &SessionId,
+    ) -> Result<(), String> {
+        let (worktree_path, base_branch, branch_name) = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions
+                .get(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            let worktree_path = session
+                .worktree_path
+                .clone()
+                .ok_or_else(|| "session worktree not ready".to_owned())?;
+            (
+                worktree_path,
+                session.config.base_branch.clone(),
+                session.config.branch_name.clone(),
+            )
+        };
+
+        let repo_root = Self::repo_root_for_worktree(&worktree_path)
+            .map_err(|error| error.to_string())?
+            .to_path_buf();
+
+        // Verify there are commits to merge.
+        let branch_commits = self
+            .worktree_ops
+            .branch_unmerged_commits(&branch_name, &base_branch, &repo_root)
+            .await
+            .map_err(|error| format!("failed to inspect branch state: {}", error.message))?;
+        if branch_commits.is_empty() {
+            return Err("Session branch has no commits ahead of base.".to_owned());
+        }
+
+        let status = self.collect_captain_git_status(session_id).await?;
+        let blockers = Self::git_safety_blockers(&status);
+        if !blockers.is_empty() {
+            return Err(format!(
+                "Cannot merge while the session branch is not mergeable:\n{}",
+                blockers.join("\n")
+            ));
+        }
+
+        let rebase_outcome = self
+            .worktree_ops
+            .rebase_onto_conflict_ok(&worktree_path, &base_branch)
+            .await
+            .map_err(|error| format!("rebase failed: {}", error.message))?;
+
+        if let RebaseOutcome::Conflict { files } = rebase_outcome {
+            return Err(format!(
+                "Rebase hit conflicts in the following files:\n{}\n\
+                Fix the conflict markers, then call `captain_continue_rebase`.",
+                files.join("\n")
+            ));
+        }
+
+        self.worktree_ops
+            .merge_ff_only(&repo_root, &branch_name)
+            .await
+            .map_err(|error| format!("fast-forward merge failed: {}", error.message))?;
+
+        Ok(())
     }
 
     // r[captain.tool.continue-rebase]
@@ -4617,7 +4696,7 @@ Here is your task:
             let captain_message = format!(
                 "The mate is changing their plan mid-task. Something important may have come up.\n\n\
                 Previous plan:\n{}\n\nProposed new plan:\n{}\n\n\
-                Call `captain_accept` to approve the new plan and unblock the mate, \
+                Call `captain_merge` to approve the new plan and unblock the mate, \
                 or `captain_steer` to reject it and redirect them (the old plan will be restored).",
                 Self::format_plan_status(&old_plan),
                 Self::format_plan_status(&new_plan),
@@ -6188,7 +6267,7 @@ use captain_steer. Otherwise continue your current work."
             Self::build_summary_from_event_log(event_log)
         };
 
-        // Set up review channel so captain_accept/steer/cancel can complete the review.
+        // Set up review channel so captain_merge/steer/cancel can complete the review.
         // We don't await rx — the mate is already done, so the tx is just a signal path.
         {
             let mut ops = self
@@ -7628,11 +7707,11 @@ impl CaptainMcp for CaptainMcpSessionService {
         )
     }
 
-    // r[captain.tool.accept]
-    async fn captain_accept(&self, summary: Option<String>) -> McpToolCallResponse {
+    // r[captain.tool.merge]
+    async fn captain_merge(&self, summary: Option<String>) -> McpToolCallResponse {
         Self::response(
             self.ship
-                .captain_tool_accept(&self.session_id, summary)
+                .captain_tool_merge(&self.session_id, summary)
                 .await,
         )
     }
@@ -9689,7 +9768,7 @@ mod tests {
         );
         assert!(
             prompt.contains(
-                "`captain_accept` only succeeds once the session branch is actually mergeable"
+                "`captain_merge` only succeeds once the session branch is actually mergeable"
             ),
             "unexpected prompt: {prompt}"
         );
@@ -9911,7 +9990,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn captain_accept_is_blocked_for_dirty_worktrees() {
+    async fn captain_merge_is_blocked_for_dirty_worktrees() {
         let (dir, ship, session_id, _project_root, worktree_path, _branch_name) =
             create_git_workflow_session("captain-accept-dirty").await;
 
@@ -9919,7 +9998,7 @@ mod tests {
             .expect("dirty file should be written");
 
         let error = ship
-            .captain_tool_accept(&session_id, None)
+            .captain_tool_merge(&session_id, None)
             .await
             .expect_err("accept should be blocked for dirty worktrees");
         assert!(
@@ -9992,7 +10071,7 @@ mod tests {
         );
 
         let accept_error = ship
-            .captain_tool_accept(&session_id, None)
+            .captain_tool_merge(&session_id, None)
             .await
             .expect_err("accept should be blocked during conflicted rebases");
         assert!(

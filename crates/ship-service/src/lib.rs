@@ -136,8 +136,8 @@ pub trait CaptainMcp {
         add_steps: Option<Vec<PlanStepInput>>,
     ) -> McpToolCallResponse;
 
-    // r[captain.tool.accept]
-    async fn captain_accept(&self, summary: Option<String>) -> McpToolCallResponse;
+    // r[captain.tool.merge]
+    async fn captain_merge(&self, summary: Option<String>) -> McpToolCallResponse;
 
     // r[captain.tool.cancel]
     async fn captain_cancel(&self, reason: Option<String>) -> McpToolCallResponse;

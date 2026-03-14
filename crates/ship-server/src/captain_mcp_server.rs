@@ -191,13 +191,13 @@ impl ServerHandler for CaptainMcpHandler {
                     .map_err(call_tool_rpc_error)?
             }
             // r[captain.tool.accept]
-            "captain_accept" => {
+            "captain_merge" => {
                 let summary = arguments
                     .get("summary")
                     .and_then(Value::as_str)
                     .map(ToOwned::to_owned);
                 self.client
-                    .captain_accept(summary)
+                    .captain_merge(summary)
                     .await
                     .map_err(call_tool_rpc_error)?
             }
@@ -540,8 +540,8 @@ skips research and goes straight to execution. Omitting files or plan wastes the
             }),
         },
         ToolDefinition {
-            name: "captain_accept",
-            description: "Accept the mate's submitted work. Only valid after the mate calls mate_submit. Ship handles the backend-managed rebase/merge flow for this review step; do not try to do that manually with git.",
+            name: "captain_merge",
+            description: "Merge the session branch into the base branch. Works with or without an active task — if there is no task but the session branch has commits ahead of base, it merges those. Ship handles the rebase/merge flow; do not try to do that manually with git.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
