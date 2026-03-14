@@ -2407,9 +2407,11 @@ You are now active. Wait for messages from captains or the human.\n",
             transition_task(active, TaskStatus::Accepted).map_err(|error| error.to_string())?;
             Self::invalidate_mate_activity_summary_state(active);
             archive_terminal_task(active);
+            active.is_read = false;
         }
 
         self.persist_session(session_id).await?;
+        self.broadcast_session_list();
 
         Ok(())
     }
@@ -3646,6 +3648,7 @@ Here is your task:
                 .get_mut(session_id)
                 .ok_or_else(|| format!("session not found: {}", session_id.0))?;
             session.pending_human_review = Some(review.clone());
+            session.is_read = false;
             apply_event(
                 session,
                 SessionEvent::HumanReviewRequested {
@@ -3658,6 +3661,7 @@ Here is your task:
         self.persist_session(session_id)
             .await
             .map_err(|e| format!("persist failed: {e}"))?;
+        self.broadcast_session_list();
 
         // Emit activity log entry for the captain's notification
         let slug = {
@@ -8019,7 +8023,7 @@ use captain_steer. Otherwise continue your current work."
         })
     }
 
-    pub(crate) async fn push_session_list(&self) {
+    fn broadcast_session_list(&self) {
         let sessions = self.sessions.lock().expect("sessions mutex poisoned");
         let mut list: Vec<SessionSummary> =
             sessions.values().map(Self::to_session_summary).collect();
@@ -8032,19 +8036,13 @@ use captain_steer. Otherwise continue your current work."
             .send(GlobalEvent::SessionListChanged { sessions: list });
     }
 
+    pub(crate) async fn push_session_list(&self) {
+        self.broadcast_session_list();
+    }
+
     pub(crate) async fn notify_session_list_changed(&self) {
         self.refresh_all_diff_stats().await;
-
-        let sessions = self.sessions.lock().expect("sessions mutex poisoned");
-        let mut list: Vec<SessionSummary> =
-            sessions.values().map(Self::to_session_summary).collect();
-        drop(sessions);
-        if let Some(admiral) = self.admiral_session_summary() {
-            list.push(admiral);
-        }
-        let _ = self
-            .global_events_tx
-            .send(GlobalEvent::SessionListChanged { sessions: list });
+        self.broadcast_session_list();
     }
 
     async fn notify_project_list_changed(&self) {
