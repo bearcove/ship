@@ -7,6 +7,7 @@ import "./styles/global.css.ts";
 import { App } from "./App";
 import { SoundProvider } from "./context/SoundContext";
 import { PlaybackProvider } from "./context/PlaybackContext";
+import { TranscriptionProvider } from "./context/TranscriptionContext";
 
 // r[frontend.react]
 // r[frontend.routing]
@@ -23,7 +24,9 @@ createRoot(document.getElementById("root")!).render(
       >
         <SoundProvider>
           <PlaybackProvider>
-            <App />
+            <TranscriptionProvider>
+              <App />
+            </TranscriptionProvider>
           </PlaybackProvider>
         </SoundProvider>
       </Theme>
