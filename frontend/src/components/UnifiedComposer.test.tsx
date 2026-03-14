@@ -42,7 +42,7 @@ vi.mock("../context/TranscriptionContext", () => ({
   useTranscription: () => mocks.transcription,
 }));
 
-vi.mock("../context/PlaybackContext", () => {
+vi.mock("../context/PlaybackContext", () => ({
   usePlayback: () => mocks.playback,
 }));
 

@@ -85,9 +85,13 @@ vi.mock("../components/ConnectionBanner", () => ({
   ConnectionBanner: () => null,
 }));
 
-vi.mock("../context/TranscriptionContext", () => ({
-  useTranscription: () => mocks.transcription,
-}));
+vi.mock("../context/TranscriptionContext", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../context/TranscriptionContext")>();
+  return {
+    ...actual,
+    useTranscription: () => mocks.transcription,
+  };
+});
 
 function makeSession(): SessionDetail {
   return {
