@@ -538,6 +538,7 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
 
   const isRecording = isTargetSession && transcription.state.tag === "recording";
   const isProcessing = isTargetSession && transcription.state.tag === "processing";
+  const isTranscriptionError = isTargetSession && transcription.state.tag === "error";
   const isWorking = captainStateTag === "Working" || mateStateTag === "Working";
   const hasAgentStateChips = [captain, mate].some((agent) => {
     if (!agent) return false;
@@ -684,7 +685,7 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
           aria-label="Steer input"
-          style={{ visibility: isRecording || isProcessing ? "hidden" : undefined }}
+          style={{ visibility: isRecording || isProcessing || isTranscriptionError ? "hidden" : undefined }}
         />
 
         {isRecording && transcription.analyser && (
@@ -712,6 +713,23 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
             <Text size="2" color="gray">
               {transcription.sendAfterTranscription ? "Sending…" : "Transcribing…"}
             </Text>
+          </div>
+        )}
+        {isTranscriptionError && (
+          <div className={composerOverlay}>
+            <Warning size={16} color="var(--red-11)" />
+            <Text size="2" color="red" style={{ flex: 1 }}>
+              {transcription.state.tag === "error" ? transcription.state.message : ""}
+            </Text>
+            <button
+              type="button"
+              className={composerInlineBtn}
+              onClick={() => transcription.dismissError()}
+              title="Dismiss error"
+              style={{ position: "static", transform: "none", flexShrink: 0 }}
+            >
+              <X size={16} />
+            </button>
           </div>
         )}
 
