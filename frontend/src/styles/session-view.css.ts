@@ -198,7 +198,7 @@ export const taskRecapBoundary = style({
   gap: "var(--space-2)",
   width: "100%",
   borderTop: "2px solid var(--green-8)",
-  borderBottom: "1px solid var(--gray-a4)",
+  marginBottom: "var(--space-6)",
   background: "linear-gradient(180deg, var(--green-a3) 0%, var(--gray-a2) 100%)",
 });
 
