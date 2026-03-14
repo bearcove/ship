@@ -35,6 +35,8 @@ export interface SessionViewState {
   currentTaskStatus: TaskStatus | null;
   currentTaskStartedAt: string | null;
   currentTaskCompletedAt: string | null;
+  captainTurnStartedAt: string | null;
+  mateTurnStartedAt: string | null;
   currentTaskSteps: PlanStep[];
   connected: boolean;
   phase: "loading" | "replaying" | "live";
@@ -64,6 +66,8 @@ export function initialSessionViewState(): SessionViewState {
     currentTaskStatus: null,
     currentTaskStartedAt: null,
     currentTaskCompletedAt: null,
+    captainTurnStartedAt: null,
+    mateTurnStartedAt: null,
     currentTaskSteps: [],
     connected: true,
     phase: "loading",
@@ -86,6 +90,18 @@ export type SessionAction =
   | { type: "connected"; attempt: number }
   | { type: "disconnected"; reason: string };
 
+function nextTurnStartedAt(
+  previousState: AgentSnapshot["state"] | null | undefined,
+  nextState: AgentSnapshot["state"],
+  currentTurnStartedAt: string | null,
+  timestamp: string,
+): string | null {
+  if (nextState.tag !== "Working") {
+    return null;
+  }
+  return previousState?.tag === "Working" ? currentTurnStartedAt : timestamp;
+}
+
 // r[event.client.reducer]
 // r[event.client.reducer-purity]
 export function sessionReducer(state: SessionViewState, action: SessionAction): SessionViewState {
@@ -104,6 +120,8 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         currentTaskStatus: action.session.current_task?.status ?? null,
         currentTaskStartedAt: action.session.current_task?.assigned_at ?? null,
         currentTaskCompletedAt: action.session.current_task?.completed_at ?? null,
+        captainTurnStartedAt: null,
+        mateTurnStartedAt: null,
         currentTaskSteps:
           (action.session.current_task as unknown as { steps?: PlanStep[] })?.steps ?? [],
         title: action.session.title ?? null,
@@ -167,6 +185,8 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         currentTaskStatus,
         currentTaskStartedAt,
         currentTaskCompletedAt,
+        captainTurnStartedAt,
+        mateTurnStartedAt,
         currentTaskSteps,
         title,
       } = state;
@@ -191,8 +211,20 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
           }
           case "AgentStateChanged": {
             if (ev.role.tag === "Captain" && captain) {
+              captainTurnStartedAt = nextTurnStartedAt(
+                captain.state,
+                ev.state,
+                captainTurnStartedAt,
+                envelope.timestamp,
+              );
               captain = { ...captain, state: ev.state };
             } else if (ev.role.tag !== "Captain" && mate) {
+              mateTurnStartedAt = nextTurnStartedAt(
+                mate.state,
+                ev.state,
+                mateTurnStartedAt,
+                envelope.timestamp,
+              );
               mate = { ...mate, state: ev.state };
               if (ev.state.tag === "Working" && ev.state.plan) {
                 currentTaskSteps = ev.state.plan;
@@ -309,6 +341,8 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         currentTaskStatus,
         currentTaskStartedAt,
         currentTaskCompletedAt,
+        captainTurnStartedAt,
+        mateTurnStartedAt,
         currentTaskSteps,
         title,
         lastSeq: Number(lastEnvelope.seq),
@@ -385,12 +419,27 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         case "AgentStateChanged": {
           const isCaptain = ev.role.tag === "Captain";
           if (isCaptain && nextState.captain) {
-            return { ...nextState, captain: { ...nextState.captain, state: ev.state } };
+            return {
+              ...nextState,
+              captain: { ...nextState.captain, state: ev.state },
+              captainTurnStartedAt: nextTurnStartedAt(
+                nextState.captain.state,
+                ev.state,
+                nextState.captainTurnStartedAt,
+                envelope.timestamp,
+              ),
+            };
           }
           if (!isCaptain && nextState.mate) {
             return {
               ...nextState,
               mate: { ...nextState.mate, state: ev.state },
+              mateTurnStartedAt: nextTurnStartedAt(
+                nextState.mate.state,
+                ev.state,
+                nextState.mateTurnStartedAt,
+                envelope.timestamp,
+              ),
               ...(ev.state.tag === "Working" && ev.state.plan
                 ? { currentTaskSteps: ev.state.plan }
                 : {}),

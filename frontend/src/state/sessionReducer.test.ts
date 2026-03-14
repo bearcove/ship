@@ -138,6 +138,173 @@ describe("sessionReducer event handling", () => {
     expect(next.captain).toBeNull();
   });
 
+  it("tracks captain turn start only when live events enter Working", () => {
+    let state = sessionReducer(freshState(), {
+      type: "hydrate",
+      session: {
+        id: "session-1",
+        slug: "aaaa",
+        project: "ship",
+        branch_name: "ship/123/test",
+        captain: {
+          role: { tag: "Captain" },
+          kind: { tag: "Claude" },
+          state: { tag: "Idle" },
+          context_remaining_percent: 75,
+          preset_id: null,
+          provider: null,
+          model_id: null,
+          available_models: [],
+          effort_config_id: null,
+          effort_value_id: null,
+          available_effort_values: [],
+        },
+        mate: {
+          role: { tag: "Mate" },
+          kind: { tag: "Codex" },
+          state: { tag: "Idle" },
+          context_remaining_percent: 55,
+          preset_id: null,
+          provider: null,
+          model_id: null,
+          available_models: [],
+          effort_config_id: null,
+          effort_value_id: null,
+          available_effort_values: [],
+        },
+        startup_state: { tag: "Ready" },
+        current_task: null,
+        task_history: [],
+        autonomy_mode: { tag: "HumanInTheLoop" },
+        pending_steer: null,
+        pending_human_review: null,
+        title: null,
+        created_at: "2026-01-01T00:00:00Z",
+        user_avatar_url: null,
+        captain_acp_info: null,
+        mate_acp_info: null,
+      },
+    });
+
+    state = sessionReducer(state, {
+      type: "event",
+      envelope: {
+        seq: 1n,
+        timestamp: "2026-01-01T00:01:00Z",
+        event: {
+          tag: "AgentStateChanged",
+          role: { tag: "Captain" },
+          state: { tag: "Working", plan: null, activity: "Prompt in progress" },
+        },
+      },
+    });
+    expect(state.captainTurnStartedAt).toBe("2026-01-01T00:01:00Z");
+
+    state = sessionReducer(state, {
+      type: "event",
+      envelope: {
+        seq: 2n,
+        timestamp: "2026-01-01T00:02:00Z",
+        event: {
+          tag: "AgentStateChanged",
+          role: { tag: "Captain" },
+          state: { tag: "Working", plan: null, activity: "Permission resolved" },
+        },
+      },
+    });
+    expect(state.captainTurnStartedAt).toBe("2026-01-01T00:01:00Z");
+
+    state = sessionReducer(state, {
+      type: "event",
+      envelope: {
+        seq: 3n,
+        timestamp: "2026-01-01T00:03:00Z",
+        event: {
+          tag: "AgentStateChanged",
+          role: { tag: "Captain" },
+          state: { tag: "Idle" },
+        },
+      },
+    });
+    expect(state.captainTurnStartedAt).toBeNull();
+  });
+
+  it("keeps the original turn start across replayed mid-turn Working updates", () => {
+    const state = sessionReducer(
+      sessionReducer(freshState(), {
+        type: "hydrate",
+        session: {
+          id: "session-1",
+          slug: "aaaa",
+          project: "ship",
+          branch_name: "ship/123/test",
+          captain: {
+            role: { tag: "Captain" },
+            kind: { tag: "Claude" },
+            state: { tag: "Idle" },
+            context_remaining_percent: 75,
+            preset_id: null,
+            provider: null,
+            model_id: null,
+            available_models: [],
+            effort_config_id: null,
+            effort_value_id: null,
+            available_effort_values: [],
+          },
+          mate: {
+            role: { tag: "Mate" },
+            kind: { tag: "Codex" },
+            state: { tag: "Idle" },
+            context_remaining_percent: 55,
+            preset_id: null,
+            provider: null,
+            model_id: null,
+            available_models: [],
+            effort_config_id: null,
+            effort_value_id: null,
+            available_effort_values: [],
+          },
+          startup_state: { tag: "Ready" },
+          current_task: null,
+          task_history: [],
+          autonomy_mode: { tag: "HumanInTheLoop" },
+          pending_steer: null,
+          pending_human_review: null,
+          title: null,
+          created_at: "2026-01-01T00:00:00Z",
+          user_avatar_url: null,
+          captain_acp_info: null,
+          mate_acp_info: null,
+        },
+      }),
+      {
+        type: "replay-batch",
+        envelopes: [
+          {
+            seq: 1n,
+            timestamp: "2026-01-01T00:01:00Z",
+            event: {
+              tag: "AgentStateChanged",
+              role: { tag: "Mate" },
+              state: { tag: "Working", plan: null, activity: "Prompt in progress" },
+            },
+          },
+          {
+            seq: 2n,
+            timestamp: "2026-01-01T00:02:00Z",
+            event: {
+              tag: "AgentStateChanged",
+              role: { tag: "Mate" },
+              state: { tag: "Working", plan: null, activity: "Completed step: Investigate" },
+            },
+          },
+        ],
+      },
+    );
+
+    expect(state.mateTurnStartedAt).toBe("2026-01-01T00:01:00Z");
+  });
+
   it("TaskStarted clears blocks and sets task id", () => {
     let state = freshState();
     // add a block so we can verify it gets cleared
