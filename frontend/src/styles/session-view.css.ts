@@ -397,7 +397,7 @@ export const liveBubble = style({
 
 export const liveBubbleSlot = style({
   minHeight: 52,
-  width: 280,
+  width: 200,
   flexShrink: 0,
   transition: "opacity 0.15s ease",
 });
