@@ -221,7 +221,7 @@ export function SessionHeader({
   archiving,
 }: Props) {
   const hasActivePlan = !!matePlan && matePlan.length > 0;
-  const [expanded, setExpanded] = useState(hasActivePlan);
+  const [expanded, setExpanded] = useState(false);
   const activePlan = hasActivePlan ? matePlan! : planSteps;
   const inProgressStep =
     activePlan.find((s) => s.status.tag === "InProgress") ??
@@ -230,6 +230,7 @@ export function SessionHeader({
   const [newSessionOpen, setNewSessionOpen] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const contentId = useId();
+  useEffect(() => { setExpanded(false); }, [sessionId]);
   const navigate = useNavigate();
   const allSessions = useSessionList();
 

@@ -187,7 +187,7 @@ export function SessionTaskDrawer({
   matePlan,
 }: Props) {
   const hasActivePlan = !!matePlan && matePlan.length > 0;
-  const [expanded, setExpanded] = useState(hasActivePlan);
+  const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
   const contentId = useId();
 
