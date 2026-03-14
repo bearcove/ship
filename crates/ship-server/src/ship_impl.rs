@@ -19,7 +19,10 @@ use ship_core::{
     load_agent_presets, load_project_hooks, rebuild_materialized_from_event_log,
     resolve_mcp_servers, run_hooks, set_agent_state, transition_task,
 };
-use ship_service::{CaptainMcp, CaptainMcpDispatcher, MateMcp, MateMcpDispatcher, Ship};
+use ship_service::{
+    AdmiralMcp, AdmiralMcpDispatcher, CaptainMcp, CaptainMcpDispatcher, MateMcp, MateMcpDispatcher,
+    Ship,
+};
 use ship_types::{
     AgentAcpInfo, AgentDiscovery, AgentKind, AgentPreset, AgentPresetId, AgentSnapshot, AgentState,
     ArchiveSessionRequest, ArchiveSessionResponse, AutonomyMode, BlockId, BlockPatch,
@@ -264,6 +267,17 @@ impl ActivityLog {
     }
 }
 
+/// The admiral's session ID is a well-known constant.
+const ADMIRAL_SESSION_ID: &str = "admiral";
+
+/// State for the singleton Admiral agent.
+struct AdmiralSession {
+    /// ACP agent handle for prompting the admiral.
+    handle: ship_core::AgentHandle,
+    /// ACP session ID for resume across restarts.
+    acp_session_id: Option<String>,
+}
+
 // r[server.multi-repo]
 #[derive(Clone)]
 pub struct ShipImpl {
@@ -282,6 +296,7 @@ pub struct ShipImpl {
     kyutai_model: Arc<Mutex<Option<crate::kyutai_tts::KyutaiTtsModel>>>,
     global_events_tx: broadcast::Sender<GlobalEvent>,
     activity_log: Arc<Mutex<ActivityLog>>,
+    admiral_session: Arc<Mutex<Option<AdmiralSession>>>,
 }
 
 /// Default whisper model filename to look for.
@@ -318,6 +333,7 @@ impl ShipImpl {
             kyutai_model: Arc::new(Mutex::new(None)),
             global_events_tx,
             activity_log: Arc::new(Mutex::new(activity_log)),
+            admiral_session: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -1709,6 +1725,151 @@ Continue where you left off — wait for the human to give you direction."
             ],
             env: Vec::new(),
         }))
+    }
+
+    // r[admiral.mcp-server]
+    fn install_admiral_mcp_server(&self) -> Result<McpServerConfig, String> {
+        let command = std::env::current_exe()
+            .map_err(|error| format!("failed to locate current executable: {error}"))?;
+        let server_ws_url = self
+            .server_ws_url
+            .lock()
+            .expect("server websocket url mutex poisoned")
+            .clone();
+
+        Ok(McpServerConfig::Stdio(McpStdioServerConfig {
+            name: "ship".to_owned(),
+            command: command.display().to_string(),
+            args: vec![
+                "admiral-mcp-server".to_owned(),
+                "--session".to_owned(),
+                ADMIRAL_SESSION_ID.to_owned(),
+                "--server-ws-url".to_owned(),
+                server_ws_url,
+            ],
+            env: Vec::new(),
+        }))
+    }
+
+    /// Load the persisted ACP session ID for the admiral from disk.
+    fn load_admiral_acp_session_id(&self) -> Option<String> {
+        let path = self.store.dir().join("admiral-acp-session-id.txt");
+        fs::read_to_string(&path)
+            .ok()
+            .map(|s| s.trim().to_owned())
+            .filter(|s| !s.is_empty())
+    }
+
+    /// Persist the admiral's ACP session ID to disk for resume across restarts.
+    fn persist_admiral_acp_session_id(&self, acp_session_id: &str) {
+        let path = self.store.dir().join("admiral-acp-session-id.txt");
+        if let Err(error) = fs::write(&path, acp_session_id) {
+            tracing::warn!("failed to persist admiral ACP session ID: {error}");
+        }
+    }
+
+    // r[admiral.start]
+    pub async fn start_admiral(&self) {
+        let ship_mcp = match self.install_admiral_mcp_server() {
+            Ok(config) => config,
+            Err(error) => {
+                tracing::error!("failed to install admiral MCP server: {error}");
+                return;
+            }
+        };
+
+        let resume_session_id = self.load_admiral_acp_session_id();
+        let config_dir = self.store.dir().to_path_buf();
+        let config = AgentSessionConfig {
+            worktree_path: config_dir.clone(),
+            mcp_servers: vec![ship_mcp],
+            resume_session_id,
+        };
+
+        let spawn = match self
+            .agent_driver
+            .spawn(AgentKind::Claude, Role::Captain, &config)
+            .await
+        {
+            Ok(info) => info,
+            Err(error) => {
+                tracing::error!("failed to spawn admiral agent: {}", error.message);
+                return;
+            }
+        };
+
+        let was_resumed = spawn.was_resumed;
+        self.persist_admiral_acp_session_id(&spawn.acp_session_id);
+
+        let handle = spawn.handle.clone();
+        {
+            let mut admiral = self
+                .admiral_session
+                .lock()
+                .expect("admiral_session mutex poisoned");
+            *admiral = Some(AdmiralSession {
+                handle: spawn.handle,
+                acp_session_id: Some(spawn.acp_session_id),
+            });
+        }
+
+        // Send bootstrap or resume prompt
+        let prompt = if was_resumed {
+            "This session has been resumed. You have your full conversation history. \
+Continue where you left off — wait for captain messages or human input."
+                .to_owned()
+        } else {
+            let mut prompt = String::from(
+                "You are the Admiral — a persistent coordinator agent that oversees all active \
+lanes (sessions) in Ship. You are NOT an implementer. You coordinate, monitor, and \
+communicate between captains and the human.\n\
+\n\
+Your available tools:\n\
+- admiral_list_lanes: see all active sessions and their status\n\
+- admiral_create_lane: create a new session for a project\n\
+- admiral_steer_captain: send a message to a captain in a specific session\n\
+- admiral_post_to_human: surface a message to the human via the activity log\n\
+- admiral_list_projects: list registered projects\n\
+- read_file: read any file by absolute path\n\
+- run_command: run shell commands (pass cwd as absolute path)\n\
+- web_search: search the web\n\
+\n\
+You do NOT have write_file, edit, commit, or git tools. You are read-only to project repos.\n\
+\n\
+Convention: When captains send you messages (via captain_notify_human), you receive them as \
+prompts. Decide whether to handle internally (e.g. steer another captain) or surface to the \
+human via admiral_post_to_human.\n\
+\n\
+You are now active. Wait for messages from captains or the human.\n",
+            );
+
+            // Load preamble from ~/.config/ship/admiral.md if it exists
+            if let Some(home) = dirs_next::home_dir() {
+                let preamble_path = home.join(".config/ship/admiral.md");
+                if let Ok(preamble) = fs::read_to_string(&preamble_path) {
+                    prompt
+                        .push_str("\n--- Admiral preamble (from ~/.config/ship/admiral.md) ---\n");
+                    prompt.push_str(&preamble);
+                    prompt.push('\n');
+                }
+            }
+
+            prompt
+        };
+
+        let ship = self.clone();
+        tokio::spawn(async move {
+            match ship
+                .agent_driver
+                .prompt(&handle, &[PromptContentPart::Text { text: prompt }])
+                .await
+            {
+                Ok(_) => {}
+                Err(error) => {
+                    tracing::error!("admiral bootstrap prompt failed: {}", error.message);
+                }
+            }
+        });
     }
 
     pub fn ship_mcp_connection_acceptor(&self) -> ShipMcpConnectionAcceptor {
@@ -8872,10 +9033,34 @@ impl ConnectionAcceptor for ShipMcpConnectionAcceptor {
         let Some(service_name) = metadata_string(metadata, "ship-service") else {
             return Err(rejection_metadata("missing ship-service metadata"));
         };
-        let Some(session_id) = metadata_string(metadata, "ship-session-id") else {
+        let Some(session_id_str) = metadata_string(metadata, "ship-session-id") else {
             return Err(rejection_metadata("missing ship-session-id metadata"));
         };
-        let session_id = SessionId(session_id.to_owned());
+
+        let ship = self.ship.clone();
+        let settings = ConnectionSettings {
+            parity: peer_settings.parity.other(),
+            max_concurrent_requests: 64,
+        };
+
+        // Admiral connections use a well-known session ID and bypass self.sessions
+        if service_name == "admiral-mcp" && session_id_str == ADMIRAL_SESSION_ID {
+            return Ok(AcceptedConnection {
+                settings,
+                metadata: Vec::new(),
+                setup: Box::new(move |connection| {
+                    tokio::spawn(async move {
+                        let mut driver = Driver::new(
+                            connection,
+                            AdmiralMcpDispatcher::new(AdmiralMcpService { ship }),
+                        );
+                        driver.run().await;
+                    });
+                }),
+            });
+        }
+
+        let session_id = SessionId(session_id_str.to_owned());
         if !self
             .ship
             .sessions
@@ -8885,12 +9070,6 @@ impl ConnectionAcceptor for ShipMcpConnectionAcceptor {
         {
             return Err(rejection_metadata("unknown session"));
         }
-
-        let ship = self.ship.clone();
-        let settings = ConnectionSettings {
-            parity: peer_settings.parity.other(),
-            max_concurrent_requests: 64,
-        };
 
         match service_name {
             "captain-mcp" => Ok(AcceptedConnection {
@@ -9239,6 +9418,269 @@ impl MateMcp for MateMcpSessionService {
     // r[mate.tool.submit]
     async fn mate_submit(&self, summary: String) -> McpToolCallResponse {
         Self::response(self.ship.mate_tool_submit(&self.session_id, summary).await)
+    }
+}
+
+#[derive(Clone)]
+struct AdmiralMcpService {
+    ship: ShipImpl,
+}
+
+impl AdmiralMcpService {
+    fn response(result: Result<String, String>) -> McpToolCallResponse {
+        match result {
+            Ok(text) => McpToolCallResponse {
+                text,
+                is_error: false,
+                diffs: vec![],
+            },
+            Err(text) => McpToolCallResponse {
+                text,
+                is_error: true,
+                diffs: vec![],
+            },
+        }
+    }
+}
+
+impl AdmiralMcp for AdmiralMcpService {
+    // r[admiral.tool.list-lanes]
+    async fn admiral_list_lanes(&self) -> McpToolCallResponse {
+        let sessions = self.ship.sessions.lock().expect("sessions mutex poisoned");
+        let mut lines = Vec::new();
+        for session in sessions.values() {
+            let slug = SessionGitNames::from_session_id(&session.id).slug;
+            let title = session.title.as_deref().unwrap_or("(untitled)");
+            let status = session
+                .current_task
+                .as_ref()
+                .map(|t| format!("{:?}", t.record.status))
+                .unwrap_or_else(|| "Idle".to_owned());
+            lines.push(format!(
+                "- {slug} | {title} | {status} | project: {}",
+                session.config.project.0
+            ));
+        }
+        if lines.is_empty() {
+            McpToolCallResponse {
+                text: "No active sessions.".to_owned(),
+                is_error: false,
+                diffs: vec![],
+            }
+        } else {
+            McpToolCallResponse {
+                text: lines.join("\n"),
+                is_error: false,
+                diffs: vec![],
+            }
+        }
+    }
+
+    // r[admiral.tool.create-lane]
+    async fn admiral_create_lane(
+        &self,
+        project: String,
+        description: String,
+    ) -> McpToolCallResponse {
+        let req = CreateSessionRequest {
+            project: ProjectName(project),
+            captain_kind: AgentKind::Claude,
+            mate_kind: AgentKind::Claude,
+            base_branch: "main".to_owned(),
+            mcp_servers: None,
+            captain_preset_id: None,
+            mate_preset_id: None,
+        };
+        let response = Ship::create_session(&self.ship, req).await;
+        match response {
+            CreateSessionResponse::Created {
+                session_id, slug, ..
+            } => {
+                // Send the description as the first prompt to the captain
+                let parts = vec![PromptContentPart::Text { text: description }];
+                Ship::steer(&self.ship, session_id.clone(), parts).await;
+                McpToolCallResponse {
+                    text: format!("Lane created: {slug} (id: {})", session_id.0),
+                    is_error: false,
+                    diffs: vec![],
+                }
+            }
+            CreateSessionResponse::Failed { message } => McpToolCallResponse {
+                text: format!("Failed to create lane: {message}"),
+                is_error: true,
+                diffs: vec![],
+            },
+        }
+    }
+
+    // r[admiral.tool.steer-captain]
+    async fn admiral_steer_captain(
+        &self,
+        session_id: SessionId,
+        message: String,
+    ) -> McpToolCallResponse {
+        let parts = vec![PromptContentPart::Text { text: message }];
+        Ship::steer(&self.ship, session_id, parts).await;
+        McpToolCallResponse {
+            text: "Message sent to captain.".to_owned(),
+            is_error: false,
+            diffs: vec![],
+        }
+    }
+
+    // r[admiral.tool.post-to-human]
+    async fn admiral_post_to_human(&self, message: String) -> McpToolCallResponse {
+        let admiral_session_id = SessionId(ADMIRAL_SESSION_ID.to_owned());
+        self.ship.emit_activity(
+            &admiral_session_id,
+            ADMIRAL_SESSION_ID,
+            Some("Admiral".to_owned()),
+            ship_types::ActivityKind::AdmiralMessage {
+                message: message.clone(),
+            },
+        );
+        McpToolCallResponse {
+            text: "Message posted to human.".to_owned(),
+            is_error: false,
+            diffs: vec![],
+        }
+    }
+
+    // r[admiral.tool.list-projects]
+    async fn admiral_list_projects(&self) -> McpToolCallResponse {
+        let projects = Ship::list_projects(&self.ship).await;
+        let mut lines = Vec::new();
+        for project in &projects {
+            let status = if project.valid { "valid" } else { "invalid" };
+            lines.push(format!(
+                "- {} | {} | {}",
+                project.name.0, project.path, status
+            ));
+        }
+        if lines.is_empty() {
+            McpToolCallResponse {
+                text: "No projects registered.".to_owned(),
+                is_error: false,
+                diffs: vec![],
+            }
+        } else {
+            McpToolCallResponse {
+                text: lines.join("\n"),
+                is_error: false,
+                diffs: vec![],
+            }
+        }
+    }
+
+    // r[admiral.tool.read-file]
+    async fn admiral_read_file(
+        &self,
+        path: String,
+        offset: Option<u64>,
+        limit: Option<u64>,
+    ) -> McpToolCallResponse {
+        let offset = match offset {
+            Some(0) => {
+                return Self::response(Err("offset must be at least 1".to_owned()));
+            }
+            Some(offset) => match usize::try_from(offset) {
+                Ok(o) => o,
+                Err(_) => return Self::response(Err("offset is too large".to_owned())),
+            },
+            None => 1,
+        };
+        let limit = match limit {
+            Some(0) => {
+                return Self::response(Err("limit must be at least 1".to_owned()));
+            }
+            Some(limit) => match usize::try_from(limit) {
+                Ok(l) => l,
+                Err(_) => return Self::response(Err("limit is too large".to_owned())),
+            },
+            None => 2000,
+        };
+        let abs_path = PathBuf::from(&path);
+        if !abs_path.is_absolute() {
+            return Self::response(Err(
+                "path must be absolute (the admiral has no worktree)".to_owned()
+            ));
+        }
+        match tokio::task::spawn_blocking(move || {
+            ShipImpl::format_read_file_excerpt(&abs_path, offset, limit)
+        })
+        .await
+        {
+            Ok(result) => Self::response(result),
+            Err(error) => Self::response(Err(format!("read_file task failed: {error}"))),
+        }
+    }
+
+    // r[admiral.tool.run-command]
+    async fn admiral_run_command(
+        &self,
+        command: String,
+        cwd: Option<String>,
+    ) -> McpToolCallResponse {
+        if let Some(reason) = ShipImpl::is_dangerous_command(&command) {
+            return Self::response(Err(format!(
+                "The command `{command}` has been blocked. {reason}"
+            )));
+        }
+
+        let resolved_cwd = match cwd {
+            Some(dir) => {
+                let p = PathBuf::from(&dir);
+                if !p.is_absolute() {
+                    return Self::response(Err(
+                        "cwd must be absolute (the admiral has no worktree)".to_owned(),
+                    ));
+                }
+                p
+            }
+            None => self.ship.store.dir().to_path_buf(),
+        };
+
+        let normalized_rg = ShipImpl::normalize_rg_command(&command);
+        let command_to_run = normalized_rg
+            .as_ref()
+            .map_or(command.as_str(), |n| n.command.as_str())
+            .to_owned();
+
+        let shell_command = format!("exec 2>&1; {command_to_run}");
+        let child = match TokioCommand::new("sh")
+            .arg("-c")
+            .arg(&shell_command)
+            .current_dir(&resolved_cwd)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+        {
+            Ok(child) => child,
+            Err(error) => return Self::response(Err(format!("Failed to spawn command: {error}"))),
+        };
+
+        let output =
+            match tokio::time::timeout(Duration::from_secs(120), child.wait_with_output()).await {
+                Ok(Ok(output)) => output,
+                Ok(Err(error)) => {
+                    return Self::response(Err(format!("Command execution failed: {error}")));
+                }
+                Err(_) => {
+                    return Self::response(Err("Command timed out after 120 seconds.".to_owned()));
+                }
+            };
+
+        let combined = String::from_utf8_lossy(&output.stdout);
+        let mut text = combined.to_string();
+        if !output.status.success() {
+            text.push_str(&format!(
+                "\nexit code: {}",
+                output.status.code().unwrap_or(-1)
+            ));
+        } else {
+            text.push_str("\nexit code: 0");
+        }
+        Self::response(Ok(text))
     }
 }
 
