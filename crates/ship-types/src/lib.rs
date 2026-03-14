@@ -201,6 +201,8 @@ pub mod agent {
         pub kind: AgentKind,
         pub provider: AgentProviderId,
         pub model_id: String,
+        #[facet(default)]
+        pub logo: Option<String>,
     }
 
     #[derive(Debug, Clone, Default, PartialEq, Eq, facet::Facet)]
