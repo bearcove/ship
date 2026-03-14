@@ -2376,6 +2376,8 @@ You are now active. Wait for messages from captains or the human.\n",
                     "Task accepted",
                     "Work merged to base branch",
                     Vec::new(),
+                    Vec::new(),
+                    None,
                 );
             } else {
                 apply_event(
@@ -3424,6 +3426,8 @@ Here is your task:
                         "Rebase conflict",
                         "Review hit conflicts while rebasing onto the base branch.",
                         conflicted_files.to_vec(),
+                        Vec::new(),
+                        None,
                     );
                     true
                 }
@@ -5629,6 +5633,8 @@ Here is your task:
         title: impl Into<String>,
         summary: impl Into<String>,
         items: Vec<String>,
+        commits: Vec<CommitSummary>,
+        stats: Option<TaskRecapStats>,
     ) {
         apply_event(
             session,
@@ -5640,6 +5646,8 @@ Here is your task:
                     title: title.into(),
                     summary: summary.into(),
                     items,
+                    commits,
+                    stats,
                 },
             },
         );
@@ -5774,6 +5782,8 @@ Here is your task:
                         .enumerate()
                         .map(|(index, step)| format!("{}. {}", index + 1, step.description))
                         .collect(),
+                    Vec::new(),
+                    None,
                 );
             }
             self.persist_session(session_id).await?;
@@ -5991,6 +6001,8 @@ Here is your task:
                         "Checkpoint committed",
                         format!("Completed step {}: {step_description}", step_index + 1),
                         items,
+                        Vec::new(),
+                        None,
                     );
                 }
                 self.persist_session(session_id).await?;
@@ -6125,6 +6137,8 @@ Here is your task:
                     "Work submitted for review",
                     summary.clone(),
                     Vec::new(),
+                    Vec::new(),
+                    None,
                 );
                 Self::invalidate_mate_activity_summary_state(active);
             }
