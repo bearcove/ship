@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import { channel, type Tx } from "@bearcove/roam-core";
 import { getShipClient } from "../api/client";
-import type { TranscribeSegment } from "../generated/ship";
+import type { TranscribeMessage, TranscribeSegment } from "../generated/ship";
 
 const TARGET_SAMPLE_RATE = 16000;
 
@@ -67,7 +67,7 @@ export function useTranscription() {
 
       // Create roam channels
       const [audioTx, audioRx] = channel<Uint8Array>();
-      const [segTx, segRx] = channel<TranscribeSegment>();
+      const [segTx, segRx] = channel<TranscribeMessage>();
 
       // Start the RPC call
       const client = await getShipClient();
@@ -140,15 +140,23 @@ export function useTranscription() {
       // replace per-block but append across blocks.
       void (async () => {
         const allSegments: TranscribeSegment[] = [];
+        let gotError = false;
         while (true) {
-          const seg = await segRx.recv();
-          if (seg === null) break;
-          allSegments.push(seg);
+          const msg = await segRx.recv();
+          if (msg === null) break;
+          if (msg.tag === "Error") {
+            setState({ tag: "error", message: msg.message });
+            gotError = true;
+            break;
+          }
+          allSegments.push(msg.value);
           const fullText = allSegments.map((s) => s.text.trim()).join(" ");
           setResult({ text: fullText, segments: [...allSegments] });
         }
         await callPromise;
-        setState({ tag: "idle" });
+        if (!gotError) {
+          setState({ tag: "idle" });
+        }
       })();
     } catch (err) {
       setState({
@@ -177,6 +185,15 @@ export function useTranscription() {
     await active.audioContext.close();
 
     setState({ tag: "processing" });
+
+    // Safety timeout: if still "processing" after 15s, transition to error
+    setTimeout(() => {
+      setState((prev) =>
+        prev.tag === "processing"
+          ? { tag: "error", message: "Transcription timed out" }
+          : prev,
+      );
+    }, 15_000);
   }, []);
 
   const cancelRecording = useCallback(() => {
