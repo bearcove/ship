@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useState } from "react";
-import { Badge, Box, Button, Code, DropdownMenu, Flex, Popover, Spinner, Text } from "@radix-ui/themes";
+import { Badge, Box, Button, Code, Flex, Popover, Spinner, Text } from "@radix-ui/themes";
 import {
   Archive,
   CaretDown,
@@ -7,7 +7,6 @@ import {
   ChatsCircle,
   CheckCircle,
   Circle,
-  DotsThree,
   Plus,
   XCircle,
   Terminal,
@@ -454,30 +453,6 @@ export function SessionHeader({
                 )}
               </Popover.Content>
             </Popover.Root>
-            <DropdownMenu.Root>
-              <DropdownMenu.Trigger
-                className={sessionHeaderSideButton}
-                aria-label="Session menu"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <DotsThree size={sideButtonSize} weight="bold" />
-              </DropdownMenu.Trigger>
-              <DropdownMenu.Content size="2" align="end">
-                <DropdownMenu.Item onClick={() => setNewSessionOpen(true)}>
-                  <Plus size={13} />
-                  New session
-                </DropdownMenu.Item>
-                {canArchiveSession && (
-                  <>
-                    <DropdownMenu.Separator />
-                    <DropdownMenu.Item color="red" onClick={onArchive} disabled={archiving}>
-                      <Archive size={13} />
-                      {archiving ? "Archiving…" : "Archive session"}
-                    </DropdownMenu.Item>
-                  </>
-                )}
-              </DropdownMenu.Content>
-            </DropdownMenu.Root>
 
           </Flex>
         </div>{/* end sessionHeaderCollapsedArea */}
