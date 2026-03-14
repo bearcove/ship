@@ -21,7 +21,7 @@ use axum::routing::any;
 use figue::{self as args, FigueBuiltins};
 use futures_util::{SinkExt, StreamExt};
 use roam::channel;
-use ship_core::{AgentDriver, AgentSessionConfig, ProjectRegistry};
+use ship_core::{AcpAgentDriver, AgentDriver, AgentSessionConfig, ProjectRegistry};
 use ship_impl::ShipImpl;
 use ship_service::{ShipClient, ShipDispatcher};
 use ship_types::{
@@ -1343,6 +1343,54 @@ fn resolve_list_models_kinds(
     }
 }
 
+async fn collect_model_listing(
+    driver: &impl AgentDriver,
+    kind: AgentKind,
+    worktree_path: &Path,
+) -> Result<ModelListing, String> {
+    let spawn = driver
+        .spawn(
+            kind,
+            Role::Captain,
+            &AgentSessionConfig {
+                worktree_path: worktree_path.to_path_buf(),
+                mcp_servers: Vec::new(),
+                resume_session_id: None,
+            },
+        )
+        .await
+        .map_err(|error| {
+            format!(
+                "failed to start temporary {kind:?} ACP session: {}",
+                error.message
+            )
+        })?;
+
+    let handle = spawn.handle.clone();
+    let models = spawn.available_models;
+
+    driver.kill(&handle).await.map_err(|error| {
+        format!(
+            "failed to stop temporary {kind:?} ACP session: {}",
+            error.message
+        )
+    })?;
+
+    Ok(ModelListing { kind, models })
+}
+
+async fn collect_model_listings(
+    driver: &impl AgentDriver,
+    kinds: &[AgentKind],
+    worktree_path: &Path,
+) -> Result<Vec<ModelListing>, String> {
+    let mut listings = Vec::with_capacity(kinds.len());
+    for &kind in kinds {
+        listings.push(collect_model_listing(driver, kind, worktree_path).await?);
+    }
+    Ok(listings)
+}
+
 async fn run_list_models(args: ListModelsArgs) -> Result<(), Box<dyn std::error::Error>> {
     let discovery = discover_agents(&SystemBinaryPathProbe);
     let worktree_path = match args.worktree {
@@ -1350,11 +1398,17 @@ async fn run_list_models(args: ListModelsArgs) -> Result<(), Box<dyn std::error:
         None => std::env::current_dir()?,
     };
     let kinds = resolve_list_models_kinds(&discovery, args.kind)?;
+    let driver = AcpAgentDriver::new();
+    let listings = collect_model_listings(&driver, &kinds, &worktree_path).await?;
 
-    let _ = worktree_path;
-    let _ = kinds;
+    for listing in listings {
+        println!("{:?}", listing.kind);
+        for model in listing.models {
+            println!("  {model}");
+        }
+    }
 
-    Err("models command not implemented yet".into())
+    Ok(())
 }
 
 async fn run_speak(args: SpeakArgs) -> Result<(), Box<dyn std::error::Error>> {
@@ -1576,10 +1630,11 @@ mod tests {
 
     use axum::http::Method;
 
+    use ship_core::FakeAgentDriver;
     use ship_types::{AgentDiscovery, AgentKind};
 
     use super::{
-        FrontendMode, build_frontend_mode, ensure_ship_entry_for_project,
+        FrontendMode, build_frontend_mode, collect_model_listing, ensure_ship_entry_for_project,
         resolve_list_models_kinds, resolve_listen_addrs, should_spa_fallback,
     };
 
@@ -1735,6 +1790,31 @@ mod tests {
         .expect("installed kinds should resolve");
 
         assert_eq!(kinds, vec![AgentKind::Claude, AgentKind::Codex]);
+    }
+
+    #[tokio::test]
+    async fn collect_model_listing_uses_fresh_session_config_and_kills_handle() {
+        let fake_driver = FakeAgentDriver::default();
+        let worktree_path = make_temp_dir("list-models-worktree");
+
+        let listing = collect_model_listing(&fake_driver, AgentKind::Codex, &worktree_path)
+            .await
+            .expect("temporary spawn should succeed");
+
+        assert_eq!(listing.kind, AgentKind::Codex);
+        assert!(listing.models.is_empty());
+
+        let spawns = fake_driver.spawn_records();
+        assert_eq!(spawns.len(), 1);
+        assert_eq!(spawns[0].kind, AgentKind::Codex);
+        assert_eq!(spawns[0].role, ship_types::Role::Captain);
+        assert_eq!(spawns[0].session_config.worktree_path, worktree_path);
+        assert_eq!(spawns[0].session_config.resume_session_id, None);
+
+        let killed = fake_driver.killed_handles();
+        assert_eq!(killed, vec![spawns[0].handle.clone()]);
+
+        let _ = std::fs::remove_dir_all(&worktree_path);
     }
 
     // r[verify server.listen]
