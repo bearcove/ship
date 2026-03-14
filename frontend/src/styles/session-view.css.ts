@@ -102,7 +102,6 @@ export const feedRowAgent = style({
   alignItems: "flex-start",
   gap: "var(--space-2)",
   width: "100%",
-  animation: `${bubbleEntrance} 0.35s ease-out both`,
 });
 
 export const feedRowUser = style({
@@ -111,6 +110,9 @@ export const feedRowUser = style({
   alignItems: "flex-start",
   gap: "var(--space-2)",
   width: "100%",
+});
+
+export const feedRowAnimate = style({
   animation: `${bubbleEntrance} 0.35s ease-out both`,
 });
 
@@ -155,6 +157,11 @@ export const feedBubbleRelay = style({
   background: "color-mix(in srgb, var(--amber-a3) 50%, var(--gray-a2))",
   borderColor: "var(--amber-a4)",
   opacity: 0.85,
+});
+
+export const feedBubbleSteer = style({
+  background: "color-mix(in srgb, var(--teal-a3) 60%, var(--gray-a2))",
+  borderColor: "var(--teal-a5)",
 });
 
 export const feedBubbleActivitySummary = style({

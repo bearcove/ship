@@ -1253,7 +1253,7 @@ Continue where you left off — wait for the human to give you direction."
                 let block = match part {
                     PromptContentPart::Text { text } => ContentBlock::Text {
                         text: text.clone(),
-                        source: ship_types::TextSource::Human,
+                        source: ship_types::TextSource::Steer,
                     },
                     PromptContentPart::Image { mime_type, data } => ContentBlock::Image {
                         mime_type: mime_type.clone(),

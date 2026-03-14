@@ -29,10 +29,12 @@ import {
   feedBubbleCaptain,
   feedBubbleMate,
   feedBubbleRelay,
+  feedBubbleSteer,
   feedBubbleUser,
   feedBubbleActivitySummary,
   feedTimestamp,
   feedRowAgent,
+  feedRowAnimate,
   feedRowUser,
   feedSystemMessage,
   liveBubbleDot,
@@ -118,9 +120,9 @@ function buildSegments(blocks: BlockEntry[], debugMode: boolean): FeedSegment[] 
       b.block.tag !== "PlanUpdate" &&
       (debugMode || b.block.tag !== "ToolCall") &&
       !(b.block.tag === "Text" && b.block.source.tag === "AgentThought") &&
-      // Allow Mate-role Human blocks through (steers relayed to the mate)
+      // Allow Mate-role Human/Steer blocks through (messages relayed to the mate)
       (b.role.tag !== "Mate" ||
-        (b.block.tag === "Text" && b.block.source.tag === "Human")),
+        (b.block.tag === "Text" && (b.block.source.tag === "Human" || b.block.source.tag === "Steer"))),
   );
   return visible.map((entry) => ({ kind: "single", entry }));
 }
@@ -128,6 +130,9 @@ function buildSegments(blocks: BlockEntry[], debugMode: boolean): FeedSegment[] 
 // Returns the "agent side" role of a segment, or null if it's a real user message.
 function segmentAgentRole(seg: FeedSegment): Role | null {
   const { block, role } = seg.entry;
+  if (block.tag === "Text" && block.source.tag === "Steer") {
+    return { tag: "Captain" }; // captain steer to mate → left side
+  }
   if (block.tag === "Text" && block.source.tag === "Human" && !isSystemInjection(block)) {
     if (role.tag === "Captain") return null; // real user message → right side
     return { tag: "Captain" }; // captain relaying to mate → left side
@@ -475,6 +480,27 @@ function SingleBlock({
         );
       }
 
+      // Captain steer to mate — left side, teal tint
+      if (block.source.tag === "Steer" && role.tag === "Mate") {
+        return (
+          <Box className={feedRowAgent}>
+            <Box className={feedBubbleWithActions}>
+              <Box className={feedBubbleCol}>
+                <Box className={`${feedBubble} ${feedBubbleSteer}`}>
+                  <TextBlock block={block as TextBlockType} />
+                </Box>
+              </Box>
+              <BubbleActions
+                block={block as TextBlockType}
+                speakable
+                isLast={isLast}
+                timestamp={entry.timestamp ?? undefined}
+              />
+            </Box>
+          </Box>
+        );
+      }
+
       // Captain relaying to mate — left side, amber tint
       if (isHuman && role.tag === "Mate") {
         return (
@@ -687,6 +713,15 @@ export function UnifiedFeed({
   const stickyScroll = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
 
+  // Track which blocks existed when the session was loaded so we only
+  // animate genuinely new bubbles, not the entire history on switch.
+  const initialBlockIds = useRef<Set<string>>(new Set(blocks.map((b) => b.blockId)));
+  const prevSessionId = useRef(sessionId);
+  if (prevSessionId.current !== sessionId) {
+    initialBlockIds.current = new Set(blocks.map((b) => b.blockId));
+    prevSessionId.current = sessionId;
+  }
+
   const humanMsgCount = blocks.filter(
     (b) => b.block.tag === "Text" && b.block.source.tag === "Human",
   ).length;
@@ -844,18 +879,34 @@ export function UnifiedFeed({
                     : seg.entry.role.tag === "Captain"
                       ? captain
                       : mate;
+              const animate = !initialBlockIds.current.has(seg.entry.blockId);
               return (
                 <Fragment key={seg.entry.blockId}>
-                  <SingleBlock
-                    entry={seg.entry}
-                    sessionId={sessionId}
-                    lastUnresolvedPermBlockId={lastUnresolvedPermBlockId}
-                    agentForBlock={agentForBlock}
-                    isLast={idx === segments.length - 1}
-                    userAvatarUrl={userAvatarUrl}
-                    taskCompletedDuration={taskCompletedDuration}
-                    debugMode={debugMode}
-                  />
+                  {animate ? (
+                    <div className={feedRowAnimate}>
+                      <SingleBlock
+                        entry={seg.entry}
+                        sessionId={sessionId}
+                        lastUnresolvedPermBlockId={lastUnresolvedPermBlockId}
+                        agentForBlock={agentForBlock}
+                        isLast={idx === segments.length - 1}
+                        userAvatarUrl={userAvatarUrl}
+                        taskCompletedDuration={taskCompletedDuration}
+                        debugMode={debugMode}
+                      />
+                    </div>
+                  ) : (
+                    <SingleBlock
+                      entry={seg.entry}
+                      sessionId={sessionId}
+                      lastUnresolvedPermBlockId={lastUnresolvedPermBlockId}
+                      agentForBlock={agentForBlock}
+                      isLast={idx === segments.length - 1}
+                      userAvatarUrl={userAvatarUrl}
+                      taskCompletedDuration={taskCompletedDuration}
+                      debugMode={debugMode}
+                    />
+                  )}
                   {debugMode && <RawBlockDebug entry={seg.entry} />}
                 </Fragment>
               );

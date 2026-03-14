@@ -387,6 +387,7 @@ pub mod events {
         Human,
         AgentMessage,
         AgentThought,
+        Steer,
     }
 
     #[repr(u8)]

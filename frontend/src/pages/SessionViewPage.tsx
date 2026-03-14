@@ -82,10 +82,22 @@ export function SessionViewPage({ debugMode, allSessions }: { debugMode: boolean
         e.preventDefault();
         setDuplicateOpen(true);
       }
+      if (e.metaKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+        e.preventDefault();
+        if (allSessions.length === 0) return;
+        const idx = allSessions.findIndex((s) => s.slug === sessionId);
+        let next: number;
+        if (e.key === "ArrowUp") {
+          next = idx <= 0 ? allSessions.length - 1 : idx - 1;
+        } else {
+          next = idx >= allSessions.length - 1 ? 0 : idx + 1;
+        }
+        navigate(`/sessions/${allSessions[next].slug}`);
+      }
     }
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [navigate]);
+  }, [navigate, allSessions, sessionId]);
 
   if (error) {
     return (

@@ -328,7 +328,8 @@ export type BlockId = string;
 export type TextSource =
   | { tag: 'Human' }
   | { tag: 'AgentMessage' }
-  | { tag: 'AgentThought' };
+  | { tag: 'AgentThought' }
+  | { tag: 'Steer' };
 
 export interface ToolCallLocation {
   path: string;
@@ -1298,7 +1299,7 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0x6b853b649ea4f713n) {
+    } else if (method.id === 0xbe0077482d84b9e9n) {
       try {
         const result = await this.handler.subscribeEvents(args[0] as SessionId, args[1] as Tx<SubscribeMessage>);
         (args[1] as { close(): void }).close(); // close output before reply
@@ -1382,7 +1383,7 @@ const ship_schema_registry: SchemaRegistry = new Map<string, Schema>([
   ["ArchiveSessionRequest", { kind: 'struct', fields: { 'id': { kind: 'string' }, 'force': { kind: 'bool' } } }],
   ["ArchiveSessionResponse", { kind: 'enum', variants: [{ name: 'Archived', fields: null }, { name: 'RequiresConfirmation', fields: { 'unmerged_commits': { kind: 'vec', element: { kind: 'string' } } } }, { name: 'NotFound', fields: null }, { name: 'Failed', fields: { 'message': { kind: 'string' } } }] }],
   ["BlockId", { kind: 'string' }],
-  ["TextSource", { kind: 'enum', variants: [{ name: 'Human', fields: null }, { name: 'AgentMessage', fields: null }, { name: 'AgentThought', fields: null }] }],
+  ["TextSource", { kind: 'enum', variants: [{ name: 'Human', fields: null }, { name: 'AgentMessage', fields: null }, { name: 'AgentThought', fields: null }, { name: 'Steer', fields: null }] }],
   ["ToolCallLocation", { kind: 'struct', fields: { 'path': { kind: 'string' }, 'display_path': { kind: 'option', inner: { kind: 'string' } }, 'line': { kind: 'option', inner: { kind: 'u32' } } } }],
   ["ToolCallStatus", { kind: 'enum', variants: [{ name: 'Running', fields: null }, { name: 'Success', fields: null }, { name: 'Failure', fields: null }] }],
   ["TerminalExit", { kind: 'struct', fields: { 'exit_code': { kind: 'option', inner: { kind: 'u32' } }, 'signal': { kind: 'option', inner: { kind: 'string' } } } }],
@@ -1564,7 +1565,7 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: 'subscribeEvents',
-      id: 0x6b853b649ea4f713n,
+      id: 0xbe0077482d84b9e9n,
       args: { kind: 'tuple', elements: [{ kind: 'string' }, { kind: 'tx', element: { kind: 'ref', name: 'SubscribeMessage' } }] },
       result: { kind: 'enum', variants: [{ name: 'Ok', fields: { kind: 'struct', fields: {} } }, { name: 'Err', fields: { kind: 'enum', variants: [{ name: 'User', fields: null }, { name: 'UnknownMethod', fields: null }, { name: 'InvalidPayload', fields: null }, { name: 'Cancelled', fields: null }] } }] },
     },
