@@ -751,6 +751,8 @@ export const sessionHeaderSideButton = style({
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
+  width: "52px",
+  height: "100%",
   padding: "0 var(--space-3)",
   border: "none",
   background: "transparent",
