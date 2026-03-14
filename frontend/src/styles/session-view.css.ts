@@ -178,6 +178,32 @@ export const feedBubbleCaptain = style({
   padding: "0 !important",
 });
 
+export const feedBubbleSelected = style({
+  transform: "scale(0.98)",
+  borderColor: "var(--gray-a6)",
+  transition: "transform 0.12s ease, border-color 0.12s ease, outline 0.12s ease",
+});
+
+// Captain bubbles have border:none, so use outline for selected state
+globalStyle(`${feedBubbleCaptain}${feedBubbleSelected}`, {
+  outline: "1px solid var(--gray-a5)",
+  outlineOffset: "4px",
+  borderRadius: "12px",
+});
+
+const actionBarEntrance = keyframes({
+  "0%": { opacity: 0, transform: "translateY(-4px)" },
+  "100%": { opacity: 1, transform: "translateY(0)" },
+});
+
+export const feedBubbleActionBar = style({
+  display: "flex",
+  flexDirection: "row",
+  gap: "var(--space-1)",
+  paddingTop: "var(--space-2)",
+  animation: `${actionBarEntrance} 0.15s ease-out both`,
+});
+
 export const feedToolGroup = style({
   maxWidth: "80%",
 });
