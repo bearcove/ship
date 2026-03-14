@@ -7845,7 +7845,8 @@ use captain_steer. Otherwise continue your current work."
     }
 
     async fn prompt_mate_from_steer(&self, session_id: SessionId, parts: Vec<PromptContentPart>) {
-        // Prepend "Captain steer:\n" to the text parts for the first prompt.
+        // Wrap the first text part through mate_steer_message so the mate gets
+        // a system-notification with a reminder not to reply via text.
         let initial_parts: Vec<PromptContentPart> = {
             let mut result = Vec::with_capacity(parts.len() + 1);
             let mut prefixed = false;
@@ -7854,7 +7855,7 @@ use captain_steer. Otherwise continue your current work."
                     PromptContentPart::Text { text } => {
                         if !prefixed {
                             result.push(PromptContentPart::Text {
-                                text: format!("Captain steer:\n{text}"),
+                                text: Self::mate_steer_message(text),
                             });
                             prefixed = true;
                         } else {
@@ -7864,7 +7865,7 @@ use captain_steer. Otherwise continue your current work."
                     PromptContentPart::Image { .. } => {
                         if !prefixed {
                             result.push(PromptContentPart::Text {
-                                text: "Captain steer:\n".to_owned(),
+                                text: Self::mate_steer_message(""),
                             });
                             prefixed = true;
                         }
@@ -7874,7 +7875,7 @@ use captain_steer. Otherwise continue your current work."
             }
             if !prefixed {
                 result.push(PromptContentPart::Text {
-                    text: "Captain steer:".to_owned(),
+                    text: Self::mate_steer_message(""),
                 });
             }
             result
