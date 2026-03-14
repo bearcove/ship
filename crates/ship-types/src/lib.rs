@@ -361,6 +361,7 @@ pub mod task {
         RebaseConflict,
         Accepted,
         Cancelled,
+        WaitingForHuman,
     }
 
     // r[task.status.terminal]
