@@ -73,6 +73,16 @@ pub mod agent {
         OpenCode,
     }
 
+    impl AgentKind {
+        pub fn default_provider_id(self) -> AgentProviderId {
+            match self {
+                Self::Claude => AgentProviderId("anthropic".to_owned()),
+                Self::Codex => AgentProviderId("openai".to_owned()),
+                Self::OpenCode => AgentProviderId("opencode".to_owned()),
+            }
+        }
+    }
+
     #[repr(u8)]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, facet::Facet)]
     pub enum Role {
@@ -207,6 +217,10 @@ pub mod agent {
         pub kind: AgentKind,
         pub state: AgentState,
         pub context_remaining_percent: Option<u8>,
+        #[facet(default)]
+        pub preset_id: Option<AgentPresetId>,
+        #[facet(default)]
+        pub provider: Option<AgentProviderId>,
         pub model_id: Option<String>,
         pub available_models: Vec<String>,
         pub effort_config_id: Option<String>,
@@ -399,7 +413,10 @@ pub mod session {
 
 pub mod events {
     use crate::TaskId;
-    use crate::agent::{AgentAcpInfo, AgentState, EffortValue, PlanStep, Role};
+    use crate::agent::{
+        AgentAcpInfo, AgentKind, AgentPresetId, AgentProviderId, AgentState, EffortValue, PlanStep,
+        Role,
+    };
     use crate::ids::BlockId;
     use crate::protocol::{ProjectInfo, SessionSummary};
     use crate::session::SessionStartupState;
@@ -600,6 +617,12 @@ pub mod events {
             model_id: Option<String>,
             available_models: Vec<String>,
         },
+        AgentPresetChanged {
+            role: Role,
+            preset_id: Option<AgentPresetId>,
+            kind: AgentKind,
+            provider: Option<AgentProviderId>,
+        },
         AgentEffortChanged {
             role: Role,
             effort_config_id: Option<String>,
@@ -785,6 +808,16 @@ pub mod protocol {
         Ok,
         SessionNotFound,
         AgentNotSpawned,
+        Failed { message: String },
+    }
+
+    #[repr(u8)]
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub enum SetAgentPresetResponse {
+        Ok,
+        SessionNotFound,
+        AgentNotSpawned,
+        PresetNotFound,
         Failed { message: String },
     }
 
@@ -1068,7 +1101,8 @@ pub use protocol::{
     CloseSessionResponse, CreateSessionRequest, CreateSessionResponse, HumanReviewRequest,
     McpDiffContent, McpEnvVar, McpHeader, McpHttpServerConfig, McpServerConfig, McpSseServerConfig,
     McpStdioServerConfig, McpToolCallResponse, ProjectInfo, ServerInfo, SessionDetail,
-    SessionSummary, SetAgentEffortResponse, SetAgentModelResponse, WorktreeDiffStats,
+    SessionSummary, SetAgentEffortResponse, SetAgentModelResponse, SetAgentPresetResponse,
+    WorktreeDiffStats,
 };
 pub use session::{SessionStartupStage, SessionStartupState};
 pub use structured::{

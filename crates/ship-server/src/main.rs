@@ -470,6 +470,16 @@ fn log_message(started_at: Instant, message: &SubscribeMessage) {
                         "model changed role={role:?} model_id={model_id:?} available={available_models:?}"
                     )
                 }
+                SessionEvent::AgentPresetChanged {
+                    role,
+                    preset_id,
+                    kind,
+                    provider,
+                } => {
+                    format!(
+                        "preset changed role={role:?} preset_id={preset_id:?} kind={kind:?} provider={provider:?}"
+                    )
+                }
                 SessionEvent::AgentEffortChanged {
                     role,
                     effort_config_id,

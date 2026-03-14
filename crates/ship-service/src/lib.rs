@@ -1,10 +1,11 @@
 use roam::{Rx, Tx};
 use ship_types::{
-    AgentDiscovery, ArchiveSessionRequest, ArchiveSessionResponse, CaptainAssignExtras,
-    CloseSessionRequest, CloseSessionResponse, CreateSessionRequest, CreateSessionResponse,
-    GlobalEvent, McpToolCallResponse, PlanStepInput, ProjectInfo, ProjectName, PromptContentPart,
-    Role, ServerInfo, SessionDetail, SessionId, SessionSummary, SetAgentEffortResponse,
-    SetAgentModelResponse, SubscribeMessage, TranscribeMessage, WorktreeDiffStats,
+    AgentDiscovery, AgentPresetId, ArchiveSessionRequest, ArchiveSessionResponse,
+    CaptainAssignExtras, CloseSessionRequest, CloseSessionResponse, CreateSessionRequest,
+    CreateSessionResponse, GlobalEvent, McpToolCallResponse, PlanStepInput, ProjectInfo,
+    ProjectName, PromptContentPart, Role, ServerInfo, SessionDetail, SessionId, SessionSummary,
+    SetAgentEffortResponse, SetAgentModelResponse, SetAgentPresetResponse, SubscribeMessage,
+    TranscribeMessage, WorktreeDiffStats,
 };
 
 // r[backend.rpc]
@@ -73,6 +74,13 @@ pub trait Ship {
         role: Role,
         model_id: String,
     ) -> SetAgentModelResponse;
+
+    async fn set_agent_preset(
+        &self,
+        session: SessionId,
+        role: Role,
+        preset_id: AgentPresetId,
+    ) -> SetAgentPresetResponse;
 
     // r[proto.set-agent-effort]
     async fn set_agent_effort(

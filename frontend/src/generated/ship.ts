@@ -104,6 +104,10 @@ export type AgentState =
   | { tag: 'ContextExhausted' }
   | { tag: 'Error'; message: string };
 
+export type AgentPresetId = string;
+
+export type AgentProviderId = string;
+
 export interface EffortValue {
   id: string;
   name: string;
@@ -114,6 +118,8 @@ export interface AgentSnapshot {
   kind: AgentKind;
   state: AgentState;
   context_remaining_percent: number | null;
+  preset_id: AgentPresetId | null;
+  provider: AgentProviderId | null;
   model_id: string | null;
   available_models: string[];
   effort_config_id: string | null;
@@ -295,6 +301,13 @@ export type SetAgentModelResponse =
   | { tag: 'AgentNotSpawned' }
   | { tag: 'Failed'; message: string };
 
+export type SetAgentPresetResponse =
+  | { tag: 'Ok' }
+  | { tag: 'SessionNotFound' }
+  | { tag: 'AgentNotSpawned' }
+  | { tag: 'PresetNotFound' }
+  | { tag: 'Failed'; message: string };
+
 export type SetAgentEffortResponse =
   | { tag: 'Ok' }
   | { tag: 'SessionNotFound' }
@@ -404,6 +417,7 @@ export type SessionEvent =
   | { tag: 'ContextUpdated'; role: Role; remaining_percent: number }
   | { tag: 'TaskStarted'; task_id: TaskId; title: string; description: string; steps: PlanStep[] }
   | { tag: 'AgentModelChanged'; role: Role; model_id: string | null; available_models: string[] }
+  | { tag: 'AgentPresetChanged'; role: Role; preset_id: AgentPresetId | null; kind: AgentKind; provider: AgentProviderId | null }
   | { tag: 'AgentEffortChanged'; role: Role; effort_config_id: string | null; effort_value_id: string | null; available_effort_values: EffortValue[] }
   | { tag: 'MateGuidanceQueued'; role: Role; message: string }
   | { tag: 'HumanReviewRequested'; message: string; diff: string; worktree_path: string }
@@ -510,6 +524,12 @@ export type SetAgentModelRequest = [
   string, // model_id
 ];
 
+export type SetAgentPresetRequest = [
+  SessionId, // session
+  Role, // role
+  AgentPresetId, // preset_id
+];
+
 export type SetAgentEffortRequest = [
   SessionId, // session
   Role, // role
@@ -576,6 +596,7 @@ export interface ShipCaller {
   resolvePermission(session: SessionId, permissionId: string, optionId: string): CallBuilder<void>;
   retryAgent(session: SessionId, role: Role): CallBuilder<void>;
   setAgentModel(session: SessionId, role: Role, modelId: string): CallBuilder<SetAgentModelResponse>;
+  setAgentPreset(session: SessionId, role: Role, presetId: AgentPresetId): CallBuilder<SetAgentPresetResponse>;
   setAgentEffort(session: SessionId, role: Role, configId: string, valueId: string): CallBuilder<SetAgentEffortResponse>;
   closeSession(req: CloseSessionRequest): CallBuilder<CloseSessionResponse>;
   archiveSession(req: ArchiveSessionRequest): CallBuilder<ArchiveSessionResponse>;
@@ -869,8 +890,22 @@ export class ShipClient implements ShipCaller {
     });
   }
 
-  setAgentEffort(session: SessionId, role: Role, configId: string, valueId: string): CallBuilder<SetAgentEffortResponse> {
+  setAgentPreset(session: SessionId, role: Role, presetId: AgentPresetId): CallBuilder<SetAgentPresetResponse> {
     const descriptor = ship_descriptor.methods[19];
+    return new CallBuilder(async (metadata) => {
+      const value = await this.caller.call({
+        method: "Ship.setAgentPreset",
+        args: { session, role, presetId },
+        descriptor,
+        schemaRegistry: ship_descriptor.schema_registry,
+        metadata,
+      });
+      return value as SetAgentPresetResponse;
+    });
+  }
+
+  setAgentEffort(session: SessionId, role: Role, configId: string, valueId: string): CallBuilder<SetAgentEffortResponse> {
+    const descriptor = ship_descriptor.methods[20];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.setAgentEffort",
@@ -884,7 +919,7 @@ export class ShipClient implements ShipCaller {
   }
 
   closeSession(req: CloseSessionRequest): CallBuilder<CloseSessionResponse> {
-    const descriptor = ship_descriptor.methods[20];
+    const descriptor = ship_descriptor.methods[21];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.closeSession",
@@ -898,7 +933,7 @@ export class ShipClient implements ShipCaller {
   }
 
   archiveSession(req: ArchiveSessionRequest): CallBuilder<ArchiveSessionResponse> {
-    const descriptor = ship_descriptor.methods[21];
+    const descriptor = ship_descriptor.methods[22];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.archiveSession",
@@ -912,7 +947,7 @@ export class ShipClient implements ShipCaller {
   }
 
   listWorktreeFiles(session: SessionId, query: string): CallBuilder<string[]> {
-    const descriptor = ship_descriptor.methods[22];
+    const descriptor = ship_descriptor.methods[23];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.listWorktreeFiles",
@@ -926,7 +961,7 @@ export class ShipClient implements ShipCaller {
   }
 
   getWorktreeDiffStats(session: SessionId): CallBuilder<WorktreeDiffStats | null> {
-    const descriptor = ship_descriptor.methods[23];
+    const descriptor = ship_descriptor.methods[24];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.getWorktreeDiffStats",
@@ -940,7 +975,7 @@ export class ShipClient implements ShipCaller {
   }
 
   openInEditor(session: SessionId): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[24];
+    const descriptor = ship_descriptor.methods[25];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.openInEditor",
@@ -954,7 +989,7 @@ export class ShipClient implements ShipCaller {
   }
 
   openInTerminal(session: SessionId): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[25];
+    const descriptor = ship_descriptor.methods[26];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.openInTerminal",
@@ -968,7 +1003,7 @@ export class ShipClient implements ShipCaller {
   }
 
   subscribeEvents(session: SessionId, output: Tx<SubscribeMessage>): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[26];
+    const descriptor = ship_descriptor.methods[27];
     // Bind any Tx/Rx channels in arguments and collect channel IDs
     const channels = bindChannels(
       descriptor.args.elements,
@@ -991,7 +1026,7 @@ export class ShipClient implements ShipCaller {
   }
 
   subscribeGlobalEvents(output: Tx<GlobalEvent>): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[27];
+    const descriptor = ship_descriptor.methods[28];
     // Bind any Tx/Rx channels in arguments and collect channel IDs
     const channels = bindChannels(
       descriptor.args.elements,
@@ -1019,7 +1054,7 @@ export class ShipClient implements ShipCaller {
    * Server sends back transcribed segments via `segments_out`.
    */
   transcribeAudio(audioIn: Rx<Uint8Array>, segmentsOut: Tx<TranscribeMessage>): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[28];
+    const descriptor = ship_descriptor.methods[29];
     // Bind any Tx/Rx channels in arguments and collect channel IDs
     const channels = bindChannels(
       descriptor.args.elements,
@@ -1043,7 +1078,7 @@ export class ShipClient implements ShipCaller {
 
   /** Synthesize text to speech and stream 24kHz mono f32 LE PCM bytes. */
   speakText(text: string, audioOut: Tx<Uint8Array>): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[29];
+    const descriptor = ship_descriptor.methods[30];
     // Bind any Tx/Rx channels in arguments and collect channel IDs
     const channels = bindChannels(
       descriptor.args.elements,
@@ -1099,6 +1134,7 @@ export interface ShipHandler {
   resolvePermission(session: SessionId, permissionId: string, optionId: string): Promise<void> | void;
   retryAgent(session: SessionId, role: Role): Promise<void> | void;
   setAgentModel(session: SessionId, role: Role, modelId: string): Promise<SetAgentModelResponse> | SetAgentModelResponse;
+  setAgentPreset(session: SessionId, role: Role, presetId: AgentPresetId): Promise<SetAgentPresetResponse> | SetAgentPresetResponse;
   setAgentEffort(session: SessionId, role: Role, configId: string, valueId: string): Promise<SetAgentEffortResponse> | SetAgentEffortResponse;
   closeSession(req: CloseSessionRequest): Promise<CloseSessionResponse> | CloseSessionResponse;
   archiveSession(req: ArchiveSessionRequest): Promise<ArchiveSessionResponse> | ArchiveSessionResponse;
@@ -1142,7 +1178,7 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0x4373a0d462262adbn) {
+    } else if (method.id === 0x03581e2e35db64b9n) {
       try {
         const result = await this.handler.listSessions();
         call.reply(result);
@@ -1163,7 +1199,7 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0x6aaaaab1cecedeb3n) {
+    } else if (method.id === 0x8e2f9b74296031e6n) {
       try {
         const result = await this.handler.getSession(args[0] as SessionId);
         call.reply(result);
@@ -1254,6 +1290,13 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
+    } else if (method.id === 0xd86db803209ab3e1n) {
+      try {
+        const result = await this.handler.setAgentPreset(args[0] as SessionId, args[1] as Role, args[2] as AgentPresetId);
+        call.reply(result);
+      } catch {
+        call.replyInternalError();
+      }
     } else if (method.id === 0x39620afcc046e187n) {
       try {
         const result = await this.handler.setAgentEffort(args[0] as SessionId, args[1] as Role, args[2] as string, args[3] as string);
@@ -1303,7 +1346,7 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0xbe0077482d84b9e9n) {
+    } else if (method.id === 0x273cf4c87613cbffn) {
       try {
         const result = await this.handler.subscribeEvents(args[0] as SessionId, args[1] as Tx<SubscribeMessage>);
         (args[1] as { close(): void }).close(); // close output before reply
@@ -1311,7 +1354,7 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0xce934dcd79685bcbn) {
+    } else if (method.id === 0xede327b9d8c492a7n) {
       try {
         const result = await this.handler.subscribeGlobalEvents(args[0] as Tx<GlobalEvent>);
         (args[0] as { close(): void }).close(); // close output before reply
@@ -1356,8 +1399,10 @@ const ship_schema_registry: SchemaRegistry = new Map<string, Schema>([
   ["PermissionOption", { kind: 'struct', fields: { 'option_id': { kind: 'string' }, 'label': { kind: 'string' }, 'kind': { kind: 'ref', name: 'PermissionOptionKind' } } }],
   ["PermissionRequest", { kind: 'struct', fields: { 'permission_id': { kind: 'string' }, 'tool_call_id': { kind: 'option', inner: { kind: 'string' } }, 'tool_name': { kind: 'string' }, 'arguments': { kind: 'string' }, 'description': { kind: 'string' }, 'kind': { kind: 'option', inner: { kind: 'ref', name: 'ToolCallKind' } }, 'target': { kind: 'option', inner: { kind: 'ref', name: 'ToolTarget' } }, 'raw_input': { kind: 'option', inner: { kind: 'ref', name: 'JsonValue' } }, 'options': { kind: 'option', inner: { kind: 'vec', element: { kind: 'ref', name: 'PermissionOption' } } } } }],
   ["AgentState", { kind: 'enum', variants: [{ name: 'Working', fields: { 'plan': { kind: 'option', inner: { kind: 'vec', element: { kind: 'ref', name: 'PlanStep' } } }, 'activity': { kind: 'option', inner: { kind: 'string' } } } }, { name: 'Idle', fields: null }, { name: 'AwaitingPermission', fields: { 'request': { kind: 'ref', name: 'PermissionRequest' } } }, { name: 'ContextExhausted', fields: null }, { name: 'Error', fields: { 'message': { kind: 'string' } } }] }],
+  ["AgentPresetId", { kind: 'string' }],
+  ["AgentProviderId", { kind: 'string' }],
   ["EffortValue", { kind: 'struct', fields: { 'id': { kind: 'string' }, 'name': { kind: 'string' } } }],
-  ["AgentSnapshot", { kind: 'struct', fields: { 'role': { kind: 'ref', name: 'Role' }, 'kind': { kind: 'ref', name: 'AgentKind' }, 'state': { kind: 'ref', name: 'AgentState' }, 'context_remaining_percent': { kind: 'option', inner: { kind: 'u8' } }, 'model_id': { kind: 'option', inner: { kind: 'string' } }, 'available_models': { kind: 'vec', element: { kind: 'string' } }, 'effort_config_id': { kind: 'option', inner: { kind: 'string' } }, 'effort_value_id': { kind: 'option', inner: { kind: 'string' } }, 'available_effort_values': { kind: 'vec', element: { kind: 'ref', name: 'EffortValue' } } } }],
+  ["AgentSnapshot", { kind: 'struct', fields: { 'role': { kind: 'ref', name: 'Role' }, 'kind': { kind: 'ref', name: 'AgentKind' }, 'state': { kind: 'ref', name: 'AgentState' }, 'context_remaining_percent': { kind: 'option', inner: { kind: 'u8' } }, 'preset_id': { kind: 'option', inner: { kind: 'string' } }, 'provider': { kind: 'option', inner: { kind: 'string' } }, 'model_id': { kind: 'option', inner: { kind: 'string' } }, 'available_models': { kind: 'vec', element: { kind: 'string' } }, 'effort_config_id': { kind: 'option', inner: { kind: 'string' } }, 'effort_value_id': { kind: 'option', inner: { kind: 'string' } }, 'available_effort_values': { kind: 'vec', element: { kind: 'ref', name: 'EffortValue' } } } }],
   ["SessionStartupStage", { kind: 'enum', variants: [{ name: 'ResolvingMcp', fields: null }, { name: 'CreatingWorktree', fields: null }, { name: 'StartingCaptain', fields: null }, { name: 'StartingMate', fields: null }, { name: 'GreetingCaptain', fields: null }] }],
   ["SessionStartupState", { kind: 'enum', variants: [{ name: 'Pending', fields: null }, { name: 'Running', fields: { 'stage': { kind: 'ref', name: 'SessionStartupStage' }, 'message': { kind: 'string' } } }, { name: 'Ready', fields: null }, { name: 'Failed', fields: { 'stage': { kind: 'ref', name: 'SessionStartupStage' }, 'message': { kind: 'string' } } }] }],
   ["TaskStatus", { kind: 'enum', variants: [{ name: 'Assigned', fields: null }, { name: 'Working', fields: null }, { name: 'ReviewPending', fields: null }, { name: 'SteerPending', fields: null }, { name: 'RebaseConflict', fields: null }, { name: 'Accepted', fields: null }, { name: 'Cancelled', fields: null }] }],
@@ -1381,6 +1426,7 @@ const ship_schema_registry: SchemaRegistry = new Map<string, Schema>([
   ["CreateSessionResponse", { kind: 'enum', variants: [{ name: 'Created', fields: { 'session_id': { kind: 'string' }, 'slug': { kind: 'string' } } }, { name: 'Failed', fields: { 'message': { kind: 'string' } } }] }],
   ["PromptContentPart", { kind: 'enum', variants: [{ name: 'Text', fields: { 'text': { kind: 'string' } } }, { name: 'Image', fields: { 'mime_type': { kind: 'string' }, 'data': { kind: 'bytes' } } }] }],
   ["SetAgentModelResponse", { kind: 'enum', variants: [{ name: 'Ok', fields: null }, { name: 'SessionNotFound', fields: null }, { name: 'AgentNotSpawned', fields: null }, { name: 'Failed', fields: { 'message': { kind: 'string' } } }] }],
+  ["SetAgentPresetResponse", { kind: 'enum', variants: [{ name: 'Ok', fields: null }, { name: 'SessionNotFound', fields: null }, { name: 'AgentNotSpawned', fields: null }, { name: 'PresetNotFound', fields: null }, { name: 'Failed', fields: { 'message': { kind: 'string' } } }] }],
   ["SetAgentEffortResponse", { kind: 'enum', variants: [{ name: 'Ok', fields: null }, { name: 'SessionNotFound', fields: null }, { name: 'AgentNotSpawned', fields: null }, { name: 'Failed', fields: { 'message': { kind: 'string' } } }] }],
   ["CloseSessionRequest", { kind: 'struct', fields: { 'id': { kind: 'string' }, 'force': { kind: 'bool' } } }],
   ["CloseSessionResponse", { kind: 'enum', variants: [{ name: 'Closed', fields: null }, { name: 'RequiresConfirmation', fields: null }, { name: 'NotFound', fields: null }, { name: 'Failed', fields: { 'message': { kind: 'string' } } }] }],
@@ -1399,7 +1445,7 @@ const ship_schema_registry: SchemaRegistry = new Map<string, Schema>([
   ["TaskRecapStats", { kind: 'struct', fields: { 'files_changed': { kind: 'u32' }, 'insertions': { kind: 'u32' }, 'deletions': { kind: 'u32' } } }],
   ["ContentBlock", { kind: 'enum', variants: [{ name: 'Text', fields: { 'text': { kind: 'string' }, 'source': { kind: 'ref', name: 'TextSource' } } }, { name: 'ToolCall', fields: { 'tool_call_id': { kind: 'option', inner: { kind: 'string' } }, 'tool_name': { kind: 'string' }, 'arguments': { kind: 'string' }, 'kind': { kind: 'option', inner: { kind: 'ref', name: 'ToolCallKind' } }, 'target': { kind: 'option', inner: { kind: 'ref', name: 'ToolTarget' } }, 'raw_input': { kind: 'option', inner: { kind: 'ref', name: 'JsonValue' } }, 'raw_output': { kind: 'option', inner: { kind: 'ref', name: 'JsonValue' } }, 'locations': { kind: 'vec', element: { kind: 'ref', name: 'ToolCallLocation' } }, 'status': { kind: 'ref', name: 'ToolCallStatus' }, 'content': { kind: 'vec', element: { kind: 'ref', name: 'ToolCallContent' } }, 'error': { kind: 'option', inner: { kind: 'ref', name: 'ToolCallError' } } } }, { name: 'PlanUpdate', fields: { 'steps': { kind: 'vec', element: { kind: 'ref', name: 'PlanStep' } } } }, { name: 'Error', fields: { 'message': { kind: 'string' } } }, { name: 'Permission', fields: { 'permission_id': { kind: 'option', inner: { kind: 'string' } }, 'tool_call_id': { kind: 'option', inner: { kind: 'string' } }, 'tool_name': { kind: 'string' }, 'description': { kind: 'string' }, 'arguments': { kind: 'string' }, 'kind': { kind: 'option', inner: { kind: 'ref', name: 'ToolCallKind' } }, 'target': { kind: 'option', inner: { kind: 'ref', name: 'ToolTarget' } }, 'raw_input': { kind: 'option', inner: { kind: 'ref', name: 'JsonValue' } }, 'options': { kind: 'option', inner: { kind: 'vec', element: { kind: 'ref', name: 'PermissionOption' } } }, 'resolution': { kind: 'option', inner: { kind: 'ref', name: 'PermissionResolution' } } } }, { name: 'Image', fields: { 'mime_type': { kind: 'string' }, 'data': { kind: 'bytes' } } }, { name: 'TaskRecap', fields: { 'commits': { kind: 'vec', element: { kind: 'ref', name: 'CommitSummary' } }, 'stats': { kind: 'option', inner: { kind: 'ref', name: 'TaskRecapStats' } } } }] }],
   ["BlockPatch", { kind: 'enum', variants: [{ name: 'TextAppend', fields: { 'text': { kind: 'string' } } }, { name: 'ToolCallUpdate', fields: { 'tool_name': { kind: 'option', inner: { kind: 'string' } }, 'kind': { kind: 'option', inner: { kind: 'ref', name: 'ToolCallKind' } }, 'target': { kind: 'option', inner: { kind: 'ref', name: 'ToolTarget' } }, 'raw_input': { kind: 'option', inner: { kind: 'ref', name: 'JsonValue' } }, 'raw_output': { kind: 'option', inner: { kind: 'ref', name: 'JsonValue' } }, 'status': { kind: 'ref', name: 'ToolCallStatus' }, 'locations': { kind: 'option', inner: { kind: 'vec', element: { kind: 'ref', name: 'ToolCallLocation' } } }, 'content': { kind: 'option', inner: { kind: 'vec', element: { kind: 'ref', name: 'ToolCallContent' } } }, 'error': { kind: 'option', inner: { kind: 'ref', name: 'ToolCallError' } } } }, { name: 'PlanReplace', fields: { 'steps': { kind: 'vec', element: { kind: 'ref', name: 'PlanStep' } } } }, { name: 'PermissionResolve', fields: { 'resolution': { kind: 'ref', name: 'PermissionResolution' } } }] }],
-  ["SessionEvent", { kind: 'enum', variants: [{ name: 'BlockAppend', fields: { 'block_id': { kind: 'string' }, 'role': { kind: 'ref', name: 'Role' }, 'block': { kind: 'ref', name: 'ContentBlock' } } }, { name: 'BlockPatch', fields: { 'block_id': { kind: 'string' }, 'role': { kind: 'ref', name: 'Role' }, 'patch': { kind: 'ref', name: 'BlockPatch' } } }, { name: 'AgentStateChanged', fields: { 'role': { kind: 'ref', name: 'Role' }, 'state': { kind: 'ref', name: 'AgentState' } } }, { name: 'SessionStartupChanged', fields: { 'state': { kind: 'ref', name: 'SessionStartupState' } } }, { name: 'TaskStatusChanged', fields: { 'task_id': { kind: 'string' }, 'status': { kind: 'ref', name: 'TaskStatus' } } }, { name: 'ContextUpdated', fields: { 'role': { kind: 'ref', name: 'Role' }, 'remaining_percent': { kind: 'u8' } } }, { name: 'TaskStarted', fields: { 'task_id': { kind: 'string' }, 'title': { kind: 'string' }, 'description': { kind: 'string' }, 'steps': { kind: 'vec', element: { kind: 'ref', name: 'PlanStep' } } } }, { name: 'AgentModelChanged', fields: { 'role': { kind: 'ref', name: 'Role' }, 'model_id': { kind: 'option', inner: { kind: 'string' } }, 'available_models': { kind: 'vec', element: { kind: 'string' } } } }, { name: 'AgentEffortChanged', fields: { 'role': { kind: 'ref', name: 'Role' }, 'effort_config_id': { kind: 'option', inner: { kind: 'string' } }, 'effort_value_id': { kind: 'option', inner: { kind: 'string' } }, 'available_effort_values': { kind: 'vec', element: { kind: 'ref', name: 'EffortValue' } } } }, { name: 'MateGuidanceQueued', fields: { 'role': { kind: 'ref', name: 'Role' }, 'message': { kind: 'string' } } }, { name: 'HumanReviewRequested', fields: { 'message': { kind: 'string' }, 'diff': { kind: 'string' }, 'worktree_path': { kind: 'string' } } }, { name: 'HumanReviewCleared', fields: null }, { name: 'SessionTitleChanged', fields: { 'title': { kind: 'string' } } }, { name: 'AgentAcpInfoChanged', fields: { 'role': { kind: 'ref', name: 'Role' }, 'info': { kind: 'ref', name: 'AgentAcpInfo' } } }] }],
+  ["SessionEvent", { kind: 'enum', variants: [{ name: 'BlockAppend', fields: { 'block_id': { kind: 'string' }, 'role': { kind: 'ref', name: 'Role' }, 'block': { kind: 'ref', name: 'ContentBlock' } } }, { name: 'BlockPatch', fields: { 'block_id': { kind: 'string' }, 'role': { kind: 'ref', name: 'Role' }, 'patch': { kind: 'ref', name: 'BlockPatch' } } }, { name: 'AgentStateChanged', fields: { 'role': { kind: 'ref', name: 'Role' }, 'state': { kind: 'ref', name: 'AgentState' } } }, { name: 'SessionStartupChanged', fields: { 'state': { kind: 'ref', name: 'SessionStartupState' } } }, { name: 'TaskStatusChanged', fields: { 'task_id': { kind: 'string' }, 'status': { kind: 'ref', name: 'TaskStatus' } } }, { name: 'ContextUpdated', fields: { 'role': { kind: 'ref', name: 'Role' }, 'remaining_percent': { kind: 'u8' } } }, { name: 'TaskStarted', fields: { 'task_id': { kind: 'string' }, 'title': { kind: 'string' }, 'description': { kind: 'string' }, 'steps': { kind: 'vec', element: { kind: 'ref', name: 'PlanStep' } } } }, { name: 'AgentModelChanged', fields: { 'role': { kind: 'ref', name: 'Role' }, 'model_id': { kind: 'option', inner: { kind: 'string' } }, 'available_models': { kind: 'vec', element: { kind: 'string' } } } }, { name: 'AgentPresetChanged', fields: { 'role': { kind: 'ref', name: 'Role' }, 'preset_id': { kind: 'option', inner: { kind: 'string' } }, 'kind': { kind: 'ref', name: 'AgentKind' }, 'provider': { kind: 'option', inner: { kind: 'string' } } } }, { name: 'AgentEffortChanged', fields: { 'role': { kind: 'ref', name: 'Role' }, 'effort_config_id': { kind: 'option', inner: { kind: 'string' } }, 'effort_value_id': { kind: 'option', inner: { kind: 'string' } }, 'available_effort_values': { kind: 'vec', element: { kind: 'ref', name: 'EffortValue' } } } }, { name: 'MateGuidanceQueued', fields: { 'role': { kind: 'ref', name: 'Role' }, 'message': { kind: 'string' } } }, { name: 'HumanReviewRequested', fields: { 'message': { kind: 'string' }, 'diff': { kind: 'string' }, 'worktree_path': { kind: 'string' } } }, { name: 'HumanReviewCleared', fields: null }, { name: 'SessionTitleChanged', fields: { 'title': { kind: 'string' } } }, { name: 'AgentAcpInfoChanged', fields: { 'role': { kind: 'ref', name: 'Role' }, 'info': { kind: 'ref', name: 'AgentAcpInfo' } } }] }],
   ["SessionEventEnvelope", { kind: 'struct', fields: { 'seq': { kind: 'u64' }, 'timestamp': { kind: 'string' }, 'event': { kind: 'ref', name: 'SessionEvent' } } }],
   ["SubscribeMessage", { kind: 'enum', variants: [{ name: 'Event', fields: { kind: 'ref', name: 'SessionEventEnvelope' } }, { name: 'ReplayComplete', fields: null }] }],
   ["GlobalEvent", { kind: 'enum', variants: [{ name: 'SessionListChanged', fields: { 'sessions': { kind: 'vec', element: { kind: 'ref', name: 'SessionSummary' } } } }, { name: 'ProjectListChanged', fields: { 'projects': { kind: 'vec', element: { kind: 'ref', name: 'ProjectInfo' } } } }] }],
@@ -1432,7 +1478,7 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: 'listSessions',
-      id: 0x4373a0d462262adbn,
+      id: 0x03581e2e35db64b9n,
       args: { kind: 'tuple', elements: [] },
       result: { kind: 'enum', variants: [{ name: 'Ok', fields: { kind: 'vec', element: { kind: 'ref', name: 'SessionSummary' } } }, { name: 'Err', fields: { kind: 'enum', variants: [{ name: 'User', fields: null }, { name: 'UnknownMethod', fields: null }, { name: 'InvalidPayload', fields: null }, { name: 'Cancelled', fields: null }] } }] },
     },
@@ -1450,7 +1496,7 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: 'getSession',
-      id: 0x6aaaaab1cecedeb3n,
+      id: 0x8e2f9b74296031e6n,
       args: { kind: 'tuple', elements: [{ kind: 'string' }] },
       result: { kind: 'enum', variants: [{ name: 'Ok', fields: { kind: 'ref', name: 'SessionDetail' } }, { name: 'Err', fields: { kind: 'enum', variants: [{ name: 'User', fields: null }, { name: 'UnknownMethod', fields: null }, { name: 'InvalidPayload', fields: null }, { name: 'Cancelled', fields: null }] } }] },
     },
@@ -1527,6 +1573,12 @@ export const ship_descriptor: ServiceDescriptor = {
       result: { kind: 'enum', variants: [{ name: 'Ok', fields: { kind: 'ref', name: 'SetAgentModelResponse' } }, { name: 'Err', fields: { kind: 'enum', variants: [{ name: 'User', fields: null }, { name: 'UnknownMethod', fields: null }, { name: 'InvalidPayload', fields: null }, { name: 'Cancelled', fields: null }] } }] },
     },
     {
+      name: 'setAgentPreset',
+      id: 0xd86db803209ab3e1n,
+      args: { kind: 'tuple', elements: [{ kind: 'string' }, { kind: 'ref', name: 'Role' }, { kind: 'string' }] },
+      result: { kind: 'enum', variants: [{ name: 'Ok', fields: { kind: 'ref', name: 'SetAgentPresetResponse' } }, { name: 'Err', fields: { kind: 'enum', variants: [{ name: 'User', fields: null }, { name: 'UnknownMethod', fields: null }, { name: 'InvalidPayload', fields: null }, { name: 'Cancelled', fields: null }] } }] },
+    },
+    {
       name: 'setAgentEffort',
       id: 0x39620afcc046e187n,
       args: { kind: 'tuple', elements: [{ kind: 'string' }, { kind: 'ref', name: 'Role' }, { kind: 'string' }, { kind: 'string' }] },
@@ -1570,13 +1622,13 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: 'subscribeEvents',
-      id: 0xbe0077482d84b9e9n,
+      id: 0x273cf4c87613cbffn,
       args: { kind: 'tuple', elements: [{ kind: 'string' }, { kind: 'tx', element: { kind: 'ref', name: 'SubscribeMessage' } }] },
       result: { kind: 'enum', variants: [{ name: 'Ok', fields: { kind: 'struct', fields: {} } }, { name: 'Err', fields: { kind: 'enum', variants: [{ name: 'User', fields: null }, { name: 'UnknownMethod', fields: null }, { name: 'InvalidPayload', fields: null }, { name: 'Cancelled', fields: null }] } }] },
     },
     {
       name: 'subscribeGlobalEvents',
-      id: 0xce934dcd79685bcbn,
+      id: 0xede327b9d8c492a7n,
       args: { kind: 'tuple', elements: [{ kind: 'tx', element: { kind: 'ref', name: 'GlobalEvent' } }] },
       result: { kind: 'enum', variants: [{ name: 'Ok', fields: { kind: 'struct', fields: {} } }, { name: 'Err', fields: { kind: 'enum', variants: [{ name: 'User', fields: null }, { name: 'UnknownMethod', fields: null }, { name: 'InvalidPayload', fields: null }, { name: 'Cancelled', fields: null }] } }] },
     },

@@ -20,17 +20,18 @@ use ship_core::{
 };
 use ship_service::{CaptainMcp, CaptainMcpDispatcher, MateMcp, MateMcpDispatcher, Ship};
 use ship_types::{
-    AgentAcpInfo, AgentDiscovery, AgentKind, AgentSnapshot, AgentState, ArchiveSessionRequest,
-    ArchiveSessionResponse, AutonomyMode, BlockId, BlockPatch, CaptainAssignExtras,
-    CaptainGitStatus, CaptainRebaseStatus, CaptainReviewDiff, CaptainReviewDiffState,
-    CloseSessionRequest, CloseSessionResponse, CommitSummary, ContentBlock, CreateSessionRequest,
-    CreateSessionResponse, CurrentTask, DirtySessionStrategy, GlobalEvent, HumanReviewRequest,
-    McpDiffContent, McpServerConfig, McpStdioServerConfig, McpToolCallResponse, PersistedSession,
-    PlanStep, PlanStepInput, PlanStepStatus, ProjectInfo, ProjectName, PromptContentPart, Role,
-    ServerInfo, SessionConfig, SessionDetail, SessionEvent, SessionEventEnvelope, SessionId,
-    SessionStartupStage, SessionStartupState, SessionSummary, SetAgentEffortResponse,
-    SetAgentModelResponse, SubscribeMessage, TaskId, TaskRecapStats, TaskRecord, TaskStatus,
-    TextSource, ToolCallKind, ToolTarget, TranscribeMessage, TranscribeSegment, WorktreeDiffStats,
+    AgentAcpInfo, AgentDiscovery, AgentKind, AgentPresetId, AgentSnapshot, AgentState,
+    ArchiveSessionRequest, ArchiveSessionResponse, AutonomyMode, BlockId, BlockPatch,
+    CaptainAssignExtras, CaptainGitStatus, CaptainRebaseStatus, CaptainReviewDiff,
+    CaptainReviewDiffState, CloseSessionRequest, CloseSessionResponse, CommitSummary, ContentBlock,
+    CreateSessionRequest, CreateSessionResponse, CurrentTask, DirtySessionStrategy, GlobalEvent,
+    HumanReviewRequest, McpDiffContent, McpServerConfig, McpStdioServerConfig, McpToolCallResponse,
+    PersistedSession, PlanStep, PlanStepInput, PlanStepStatus, ProjectInfo, ProjectName,
+    PromptContentPart, Role, ServerInfo, SessionConfig, SessionDetail, SessionEvent,
+    SessionEventEnvelope, SessionId, SessionStartupStage, SessionStartupState, SessionSummary,
+    SetAgentEffortResponse, SetAgentModelResponse, SetAgentPresetResponse, SubscribeMessage,
+    TaskId, TaskRecapStats, TaskRecord, TaskStatus, TextSource, ToolCallKind, ToolTarget,
+    TranscribeMessage, TranscribeSegment, WorktreeDiffStats,
 };
 use similar::TextDiff;
 use tokio::process::Command as TokioCommand;
@@ -453,6 +454,8 @@ impl ShipImpl {
                 message: "session not found".to_owned(),
             },
             context_remaining_percent: None,
+            preset_id: None,
+            provider: Some(kind.default_provider_id()),
             model_id: None,
             available_models: Vec::new(),
             effort_config_id: None,
@@ -575,6 +578,7 @@ impl ShipImpl {
             SessionEvent::ContextUpdated { .. } => "ContextUpdated",
             SessionEvent::TaskStarted { .. } => "TaskStarted",
             SessionEvent::AgentModelChanged { .. } => "AgentModelChanged",
+            SessionEvent::AgentPresetChanged { .. } => "AgentPresetChanged",
             SessionEvent::AgentEffortChanged { .. } => "AgentEffortChanged",
             SessionEvent::MateGuidanceQueued { .. } => "MateGuidanceQueued",
             SessionEvent::HumanReviewRequested { .. } => "HumanReviewRequested",
@@ -591,6 +595,7 @@ impl ShipImpl {
             | SessionEvent::AgentStateChanged { role, .. }
             | SessionEvent::ContextUpdated { role, .. }
             | SessionEvent::AgentModelChanged { role, .. }
+            | SessionEvent::AgentPresetChanged { role, .. }
             | SessionEvent::AgentEffortChanged { role, .. } => Some(*role),
             SessionEvent::SessionStartupChanged { .. }
             | SessionEvent::TaskStatusChanged { .. }
@@ -613,6 +618,7 @@ impl ShipImpl {
             | SessionEvent::ContextUpdated { .. }
             | SessionEvent::TaskStarted { .. }
             | SessionEvent::AgentModelChanged { .. }
+            | SessionEvent::AgentPresetChanged { .. }
             | SessionEvent::AgentEffortChanged { .. }
             | SessionEvent::MateGuidanceQueued { .. }
             | SessionEvent::HumanReviewRequested { .. }
@@ -632,6 +638,7 @@ impl ShipImpl {
             | SessionEvent::SessionStartupChanged { .. }
             | SessionEvent::ContextUpdated { .. }
             | SessionEvent::AgentModelChanged { .. }
+            | SessionEvent::AgentPresetChanged { .. }
             | SessionEvent::AgentEffortChanged { .. }
             | SessionEvent::MateGuidanceQueued { .. }
             | SessionEvent::HumanReviewRequested { .. }
@@ -6809,6 +6816,8 @@ impl Ship for ShipImpl {
                 kind: req.captain_kind,
                 state: AgentState::Idle,
                 context_remaining_percent: None,
+                preset_id: None,
+                provider: Some(req.captain_kind.default_provider_id()),
                 model_id: None,
                 available_models: Vec::new(),
                 effort_config_id: None,
@@ -6820,6 +6829,8 @@ impl Ship for ShipImpl {
                 kind: req.mate_kind,
                 state: AgentState::Idle,
                 context_remaining_percent: None,
+                preset_id: None,
+                provider: Some(req.mate_kind.default_provider_id()),
                 model_id: None,
                 available_models: Vec::new(),
                 effort_config_id: None,
@@ -7172,6 +7183,17 @@ impl Ship for ShipImpl {
             Err(error) => SetAgentModelResponse::Failed {
                 message: error.message,
             },
+        }
+    }
+
+    async fn set_agent_preset(
+        &self,
+        _session: SessionId,
+        _role: Role,
+        _preset_id: AgentPresetId,
+    ) -> SetAgentPresetResponse {
+        SetAgentPresetResponse::Failed {
+            message: "set_agent_preset is not implemented yet".to_owned(),
         }
     }
 
@@ -8171,6 +8193,8 @@ mod tests {
             kind,
             state,
             context_remaining_percent: None,
+            preset_id: None,
+            provider: Some(kind.default_provider_id()),
             model_id: None,
             available_models: Vec::new(),
             effort_config_id: None,
@@ -8287,19 +8311,24 @@ mod tests {
 
         let session_id = SessionId::new();
         let (events_tx, _) = broadcast::channel(256);
-        let idle_agent = |role| AgentSnapshot {
-            role,
-            kind: match role {
+        let idle_agent = |role| {
+            let kind = match role {
                 Role::Captain => AgentKind::Claude,
                 Role::Mate => AgentKind::Codex,
-            },
-            state: AgentState::Idle,
-            context_remaining_percent: None,
-            model_id: None,
-            available_models: Vec::new(),
-            effort_config_id: None,
-            effort_value_id: None,
-            available_effort_values: Vec::new(),
+            };
+            AgentSnapshot {
+                role,
+                kind,
+                state: AgentState::Idle,
+                context_remaining_percent: None,
+                preset_id: None,
+                provider: Some(kind.default_provider_id()),
+                model_id: None,
+                available_models: Vec::new(),
+                effort_config_id: None,
+                effort_value_id: None,
+                available_effort_values: Vec::new(),
+            }
         };
         let session = super::ActiveSession {
             id: session_id.clone(),

@@ -174,6 +174,8 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                 kind: req.captain_kind,
                 state: AgentState::Idle,
                 context_remaining_percent: None,
+                preset_id: None,
+                provider: Some(req.captain_kind.default_provider_id()),
                 model_id: None,
                 available_models: Vec::new(),
                 effort_config_id: None,
@@ -185,6 +187,8 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                 kind: req.mate_kind,
                 state: AgentState::Idle,
                 context_remaining_percent: None,
+                preset_id: None,
+                provider: Some(req.mate_kind.default_provider_id()),
                 model_id: None,
                 available_models: Vec::new(),
                 effort_config_id: None,
@@ -1384,6 +1388,23 @@ pub fn apply_event_to_materialized_state(session: &mut ActiveSession, event: &Se
             Role::Mate => {
                 session.mate.model_id = model_id.clone();
                 session.mate.available_models = available_models.clone();
+            }
+        },
+        SessionEvent::AgentPresetChanged {
+            role,
+            preset_id,
+            kind,
+            provider,
+        } => match role {
+            Role::Captain => {
+                session.captain.preset_id = preset_id.clone();
+                session.captain.kind = *kind;
+                session.captain.provider = provider.clone();
+            }
+            Role::Mate => {
+                session.mate.preset_id = preset_id.clone();
+                session.mate.kind = *kind;
+                session.mate.provider = provider.clone();
             }
         },
         SessionEvent::AgentEffortChanged {
