@@ -20,6 +20,7 @@ import {
   appColRight,
   floatingHamburger,
 } from "./styles/session-view.css";
+import { sortSessions } from "./pages/session-list-utils";
 
 function readDebugPreference(): boolean {
   try {
