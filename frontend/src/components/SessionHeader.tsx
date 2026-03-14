@@ -366,6 +366,24 @@ export function SessionHeader({
                 <ChatsCircle size={sideButtonSize} />
               </Popover.Trigger>
               <Popover.Content align="end" size="1" style={{ padding: "var(--space-1)" }}>
+                <Flex
+                  align="center"
+                  gap="2"
+                  px="2"
+                  py="1"
+                  style={{ cursor: "pointer", borderRadius: "var(--radius-1)" }}
+                  className="rt-reset"
+                  onClick={() => {
+                    setNewSessionOpen(true);
+                    setSwitcherOpen(false);
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "var(--gray-a3)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                >
+                  <Plus size={14} color="var(--gray-11)" />
+                  <Text size="2" color="gray">New session</Text>
+                </Flex>
+                <div style={{ height: 1, background: "var(--gray-a4)", margin: "var(--space-1) 0" }} />
                 <div className={sessionSwitcherList}>
                   {sortSessions(allSessions).map((session) => {
                     const isActive = session.id === sessionId;
