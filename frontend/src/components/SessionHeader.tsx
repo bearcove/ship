@@ -329,15 +329,12 @@ export function SessionHeader({
           {/* Side buttons: switcher + menu (always) + Zed/iTerm (desktop only) */}
           <div className={sessionHeaderSideButtons}>
             <Popover.Root open={switcherOpen} onOpenChange={setSwitcherOpen}>
-              <Popover.Trigger asChild>
-                <button
-                  type="button"
-                  className={sessionHeaderSideButton}
-                  aria-label="Switch session"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <ChatsCircle size={20} />
-                </button>
+              <Popover.Trigger
+                className={sessionHeaderSideButton}
+                aria-label="Switch session"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <ChatsCircle size={20} />
               </Popover.Trigger>
               <Popover.Content align="end" size="1" style={{ padding: "var(--space-1)" }}>
                 <div className={sessionSwitcherList}>
