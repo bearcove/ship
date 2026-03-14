@@ -803,6 +803,20 @@ export function UnifiedFeed({
     el.scrollTop = el.scrollHeight;
   }, [blocks, captain?.state, mate?.state]);
 
+  // Re-snap to bottom when the scroll container resizes (e.g. composer
+  // auto-grow causes flex reflow, or window resize).
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      if (stickyScroll.current) {
+        el.scrollTop = el.scrollHeight;
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   function handleScroll() {
     const el = scrollRef.current;
     if (!el) return;
