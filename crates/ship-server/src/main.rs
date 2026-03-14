@@ -1501,11 +1501,10 @@ async fn run_speak(args: SpeakArgs) -> Result<(), Box<dyn std::error::Error>> {
             data[..n].copy_from_slice(&samples2[p..p + n]);
             data[n..].fill(0.0);
             pos2.fetch_add(n, std::sync::atomic::Ordering::Relaxed);
-            if p + n >= samples2.len() {
-                if let Some(tx) = done_tx.lock().expect("done_tx mutex poisoned").take() {
+            if p + n >= samples2.len()
+                && let Some(tx) = done_tx.lock().expect("done_tx mutex poisoned").take() {
                     let _ = tx.send(());
                 }
-            }
         },
         |err| tracing::error!("cpal output error: {err}"),
         None,

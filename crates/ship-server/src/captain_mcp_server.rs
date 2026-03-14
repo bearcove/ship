@@ -704,8 +704,7 @@ async fn kagi_web_search(
         .get("data")
         .and_then(|d| d.get("references"))
         .and_then(Value::as_array)
-    {
-        if !refs.is_empty() {
+        && !refs.is_empty() {
             text.push_str("\n\n## References\n");
             for r in refs {
                 let title = r.get("title").and_then(Value::as_str).unwrap_or("Untitled");
@@ -718,7 +717,6 @@ async fn kagi_web_search(
                 }
             }
         }
-    }
 
     tool_result(&text, false)
 }

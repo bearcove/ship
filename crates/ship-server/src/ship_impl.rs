@@ -1903,7 +1903,7 @@ You are now active. Wait for messages from captains or the human.\n",
                     session,
                     SessionEvent::BlockAppend {
                         block_id: BlockId::new(),
-                        role: role.clone(),
+                        role,
                         block,
                     },
                 );
@@ -2085,8 +2085,8 @@ You are now active. Wait for messages from captains or the human.\n",
             .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned());
 
         // Run checks before fast-forwarding into the base branch.
-        if let Ok(hooks) = load_project_hooks(&repo_root).await {
-            if !hooks.checks.is_empty() {
+        if let Ok(hooks) = load_project_hooks(&repo_root).await
+            && !hooks.checks.is_empty() {
                 let (worktree_path, events_tx) = {
                     let sessions = self.sessions.lock().expect("sessions mutex poisoned");
                     let s = sessions.get(session_id);
@@ -2158,7 +2158,6 @@ You are now active. Wait for messages from captains or the human.\n",
                     }
                 }
             }
-        }
 
         self.worktree_ops
             .merge_ff_only(&repo_root, &branch_name)
@@ -2708,11 +2707,10 @@ Here is your task:
             let new_steps = Self::build_plan_steps(steps);
             {
                 let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
-                if let Some(session) = sessions.get_mut(session_id) {
-                    if let Some(task) = session.current_task.as_mut() {
+                if let Some(session) = sessions.get_mut(session_id)
+                    && let Some(task) = session.current_task.as_mut() {
                         task.record.steps = new_steps;
                     }
-                }
             }
             self.persist_session(session_id).await?;
             Some("Plan replaced by captain.".to_owned())
@@ -2720,11 +2718,10 @@ Here is your task:
             let extra_steps = Self::build_plan_steps(steps);
             {
                 let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
-                if let Some(session) = sessions.get_mut(session_id) {
-                    if let Some(task) = session.current_task.as_mut() {
+                if let Some(session) = sessions.get_mut(session_id)
+                    && let Some(task) = session.current_task.as_mut() {
                         task.record.steps.extend(extra_steps);
                     }
-                }
             }
             self.persist_session(session_id).await?;
             Some("Steps appended to plan by captain.".to_owned())
@@ -2746,11 +2743,10 @@ Here is your task:
             if plan_change_note.is_none() {
                 {
                     let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
-                    if let Some(session) = sessions.get_mut(session_id) {
-                        if let Some(task) = session.current_task.as_mut() {
+                    if let Some(session) = sessions.get_mut(session_id)
+                        && let Some(task) = session.current_task.as_mut() {
                             task.record.steps = old_plan;
                         }
-                    }
                 }
                 self.persist_session(session_id).await?;
             }
@@ -2919,8 +2915,8 @@ Here is your task:
         }
 
         // Run checks before fast-forwarding into the base branch.
-        if let Ok(hooks) = load_project_hooks(&repo_root).await {
-            if !hooks.checks.is_empty() {
+        if let Ok(hooks) = load_project_hooks(&repo_root).await
+            && !hooks.checks.is_empty() {
                 let events_tx = {
                     let sessions = self.sessions.lock().expect("sessions mutex poisoned");
                     sessions.get(session_id).map(|s| s.events_tx.clone())
@@ -2985,7 +2981,6 @@ Here is your task:
                     return Err(format!("checks failed:\n{detail}"));
                 }
             }
-        }
 
         self.worktree_ops
             .merge_ff_only(&repo_root, &branch_name)
@@ -3019,8 +3014,8 @@ Here is your task:
             )
         };
 
-        if let Some(status) = task_status {
-            if status != TaskStatus::RebaseConflict {
+        if let Some(status) = task_status
+            && status != TaskStatus::RebaseConflict {
                 let git_status = self.collect_captain_git_status(session_id).await?;
                 if !git_status.rebase_in_progress {
                     return Err(format!(
@@ -3035,7 +3030,6 @@ Here is your task:
                 self.mark_rebase_conflict(session_id, &conflicted_files)
                     .await?;
             }
-        }
 
         let repo_root = Self::repo_root_for_worktree(&worktree_path)
             .map_err(|error| error.to_string())?
@@ -4020,13 +4014,12 @@ Here is your task:
         for token in tokens.iter().skip(1) {
             if expect_pattern {
                 expect_pattern = false;
-                if !fixed_strings {
-                    if let Some(replacement) = Self::normalized_rg_pattern_replacement(&token.text)
+                if !fixed_strings
+                    && let Some(replacement) = Self::normalized_rg_pattern_replacement(&token.text)
                     {
                         replacements.push((token.start, token.end, replacement));
                         corrected_alternation = true;
                     }
-                }
                 continue;
             }
 
@@ -4037,14 +4030,13 @@ Here is your task:
 
             if after_double_dash {
                 if !saw_positional_pattern {
-                    if !fixed_strings {
-                        if let Some(replacement) =
+                    if !fixed_strings
+                        && let Some(replacement) =
                             Self::normalized_rg_pattern_replacement(&token.text)
                         {
                             replacements.push((token.start, token.end, replacement));
                             corrected_alternation = true;
                         }
-                    }
                     saw_positional_pattern = true;
                 }
                 continue;
@@ -4070,13 +4062,12 @@ Here is your task:
             }
 
             if !saw_positional_pattern {
-                if !fixed_strings {
-                    if let Some(replacement) = Self::normalized_rg_pattern_replacement(&token.text)
+                if !fixed_strings
+                    && let Some(replacement) = Self::normalized_rg_pattern_replacement(&token.text)
                     {
                         replacements.push((token.start, token.end, replacement));
                         corrected_alternation = true;
                     }
-                }
                 saw_positional_pattern = true;
             }
         }
@@ -4728,11 +4719,10 @@ Here is your task:
                 let target_path =
                     Self::resolve_worktree_file_path(&canonical_worktree, &relative_path)?;
 
-                if let Ok(metadata) = fs::metadata(&target_path) {
-                    if metadata.is_dir() {
+                if let Ok(metadata) = fs::metadata(&target_path)
+                    && metadata.is_dir() {
                         return Err("Path is a directory, not a file.".to_owned());
                     }
-                }
 
                 let old_text = fs::read_to_string(&target_path).ok();
 
@@ -5129,8 +5119,8 @@ Here is your task:
             };
 
             Self::write_text_file(&canonical_file, &new_content, &pending_edit.path)?;
-            if pending_edit.path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
-                if let Err(error) = Self::validate_rust_file(&canonical_file, &pending_edit.path) {
+            if pending_edit.path.extension().and_then(|ext| ext.to_str()) == Some("rs")
+                && let Err(error) = Self::validate_rust_file(&canonical_file, &pending_edit.path) {
                     let restore_error = Self::restore_file_from_content(
                         &canonical_file,
                         &pending_edit.path,
@@ -5141,7 +5131,6 @@ Here is your task:
                         Err(restore_error) => Err(format!("{error}\n{restore_error}")),
                     };
                 }
-            }
 
             Ok((old_before_write, new_content))
         })
@@ -5747,13 +5736,12 @@ Here is your task:
         let repo_root = Self::repo_root_for_worktree(&worktree_path)
             .map_err(|e| e.to_string())?
             .to_path_buf();
-        if let Ok(hooks) = load_project_hooks(&repo_root).await {
-            if !hooks.pre_commit.is_empty() {
+        if let Ok(hooks) = load_project_hooks(&repo_root).await
+            && !hooks.pre_commit.is_empty() {
                 run_hooks(&hooks.pre_commit, &worktree_path)
                     .await
                     .map_err(|error| format!("pre-commit hooks failed:\n{error}"))?;
             }
-        }
 
         let commit = Self::auto_commit_worktree(&worktree_path, message).await?;
 
@@ -5763,9 +5751,9 @@ Here is your task:
 
         // Spawn checks in the background after rebase — don't block the mate.
         // Emit lifecycle events via the session broadcast channel.
-        if commit.is_some() {
-            if let Ok(hooks) = load_project_hooks(&repo_root).await {
-                if !hooks.checks.is_empty() {
+        if commit.is_some()
+            && let Ok(hooks) = load_project_hooks(&repo_root).await
+                && !hooks.checks.is_empty() {
                     let events_tx = {
                         let sessions = self.sessions.lock().expect("sessions mutex poisoned");
                         sessions.get(session_id).map(|s| s.events_tx.clone())
@@ -5813,8 +5801,6 @@ Here is your task:
                         });
                     }
                 }
-            }
-        }
 
         let commit_summary = Self::commit_summary(commit.as_ref());
         if let Some(step_description) = step_description {
@@ -6109,9 +6095,9 @@ Here is your task:
 
         // Run worktree-setup hooks (e.g. pnpm install) before starting agents.
         let step_started_at = Instant::now();
-        if let Ok(hooks) = load_project_hooks(&repo_root).await {
-            if !hooks.worktree_setup.is_empty() {
-                if let Err(error) = run_hooks(&hooks.worktree_setup, &worktree_path).await {
+        if let Ok(hooks) = load_project_hooks(&repo_root).await
+            && !hooks.worktree_setup.is_empty()
+                && let Err(error) = run_hooks(&hooks.worktree_setup, &worktree_path).await {
                     self.fail_startup(
                         &session_id,
                         SessionStartupStage::CreatingWorktree,
@@ -6120,8 +6106,6 @@ Here is your task:
                     .await;
                     return;
                 }
-            }
-        }
         self.log_startup_step_elapsed(&session_id, "worktree-setup-hooks", step_started_at);
 
         let step_started_at = Instant::now();
@@ -6669,11 +6653,10 @@ Here is your task:
                 patch: BlockPatch::TextAppend { text },
                 ..
             } => {
-                if let Some(last) = session.mate_activity_buffer.last_mut() {
-                    if last.starts_with("[speech]") {
+                if let Some(last) = session.mate_activity_buffer.last_mut()
+                    && last.starts_with("[speech]") {
                         last.push_str(text);
                     }
-                }
             }
             _ => {}
         }
@@ -6791,14 +6774,13 @@ Here is your task:
 
         // Use Haiku if available for cost efficiency
         let haiku_model = "claude-haiku-4-5-20251001";
-        if info.available_models.iter().any(|m| m == haiku_model) {
-            if let Err(error) = self.agent_driver.set_model(&info.handle, haiku_model).await {
+        if info.available_models.iter().any(|m| m == haiku_model)
+            && let Err(error) = self.agent_driver.set_model(&info.handle, haiku_model).await {
                 tracing::warn!(
                     error = %error.message,
                     "failed to set utility agent model to Haiku"
                 );
             }
-        }
 
         // Send the initial persona prompt and discard the acknowledgement
         let init_prompt = "You are a mate activity summarizer. A coding agent (\"the mate\") works \
@@ -8243,12 +8225,11 @@ impl Ship for ShipImpl {
 
         let this = self.clone();
         tokio::spawn(async move {
-            if captain_needs_restart {
-                if let Err(error) = this.restart_captain(&session, false).await {
+            if captain_needs_restart
+                && let Err(error) = this.restart_captain(&session, false).await {
                     Self::log_error("prompt_captain restart_captain", &error);
                     return;
                 }
-            }
             if let Err(error) = this.interrupt_captain_with_parts(&session, parts).await {
                 Self::log_error("prompt_captain", &error);
             }
@@ -8980,7 +8961,7 @@ impl Ship for ShipImpl {
                 match audio_in.recv().await {
                     Ok(Some(chunk)) => {
                         let bytes: &[u8] = &chunk;
-                        if bytes.len() % 4 != 0 {
+                        if !bytes.len().is_multiple_of(4) {
                             tracing::warn!(
                                 "transcribe_audio: non-aligned chunk length: {}",
                                 bytes.len()
