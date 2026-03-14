@@ -53,7 +53,7 @@ export const scrollToBottomBtn = style({
 export const unifiedFeedStream = style({
   display: "flex",
   flexDirection: "column",
-  gap: "var(--space-2)",
+  gap: "var(--space-3)",
   paddingTop: "var(--space-3)",
   paddingBottom: "var(--space-2)",
 });
