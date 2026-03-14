@@ -19,6 +19,7 @@ import {
   sessionRowTitle,
   sidebarBackdrop,
   sidebarHomeLink,
+  sidebarLogoFlip,
   sidebarRoot,
   sidebarScrollArea,
   sidebarSpinner,
@@ -145,6 +146,7 @@ export function SessionSidebar({
   onNewSession,
 }: Props) {
   const [addProjectOpen, setAddProjectOpen] = useState(false);
+  const [logoFlipping, setLogoFlipping] = useState(false);
   const clientLogs = useClientLogs();
   const sortedSessions = useMemo(() => sortSessions(sessions), [sessions]);
 
@@ -153,13 +155,18 @@ export function SessionSidebar({
       {isOpen && <div className={sidebarBackdrop} onClick={onClose} />}
       <Box className={sidebarRoot} data-open={isOpen ? "true" : undefined}>
         <div className={sidebarHomeLink}>
-          <Link to="/" style={{ textDecoration: "none", color: "inherit", display: "flex", justifyContent: "center" }}>
+          <div
+            className={sidebarLogoFlip}
+            data-flipping={logoFlipping ? "true" : "false"}
+            onClick={() => setLogoFlipping(true)}
+            onTransitionEnd={() => setLogoFlipping(false)}
+          >
             <img
               src="/ship-logo-w256.png"
               alt="Ship"
               style={{ width: 120, height: 120, objectFit: "contain", padding: 20 }}
             />
-          </Link>
+          </div>
         </div>
 
         <Box className={sidebarScrollArea}>

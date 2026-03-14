@@ -55,6 +55,18 @@ export const sidebarHomeLink = style({
   },
 });
 
+export const sidebarLogoFlip = style({
+  cursor: "pointer",
+  display: "flex",
+  justifyContent: "center",
+  transition: "transform 0.6s ease",
+  selectors: {
+    '&[data-flipping="true"]': {
+      transform: "rotateY(360deg)",
+    },
+  },
+});
+
 export const sidebarScrollArea = style({
   flex: 1,
   overflowY: "auto",
