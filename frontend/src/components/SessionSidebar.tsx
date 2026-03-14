@@ -80,7 +80,6 @@ function SessionRow({
           <Text size="2" className={sessionRowTitle} color={hasTitle ? undefined : "gray"}>
             {title}
           </Text>
-          <SessionRecordingBadge sessionId={session.id} compact />
         </Flex>
         <Text
           size="1"
@@ -104,6 +103,7 @@ function SessionRow({
           )}
         </Text>
       </Flex>
+      <SessionRecordingBadge sessionId={session.id} compact />
     </Link>
   );
 }
