@@ -67,7 +67,7 @@ import {
   taskDescriptionRoot,
 } from "../styles/session-view.css";
 import type { ChecksState } from "../state/sessionReducer";
-import { NewSessionDialog } from "../pages/SessionListPage";
+import { NewSessionDialog } from "./NewSessionDialog";
 import { useSessionList } from "../hooks/useSessionList";
 import { getShipClient } from "../api/client";
 import { sortSessions } from "../pages/session-list-utils";

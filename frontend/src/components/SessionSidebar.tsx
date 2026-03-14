@@ -8,7 +8,7 @@ import {
   NotePencilIcon,
 } from "@phosphor-icons/react";
 import type { SessionSummary, TaskStatus } from "../generated/ship";
-import { AddProjectDialog } from "../pages/SessionListPage";
+import { AddProjectDialog } from "./AddProjectDialog";
 import { sortSessions } from "../pages/session-list-utils";
 import { relativeTime } from "../utils/time";
 import { useClientLogs } from "../api/client";

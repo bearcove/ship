@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Routes, Route, Navigate, useMatch } from "react-router-dom";
 import { Flex, Box, IconButton } from "@radix-ui/themes";
 import { List } from "@phosphor-icons/react";
-import { NewSessionDialog } from "./pages/SessionListPage";
+import { NewSessionDialog } from "./components/NewSessionDialog";
 import { SessionViewPage } from "./pages/SessionViewPage";
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { ConnectingSplash } from "./components/ConnectingSplash";
