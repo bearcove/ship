@@ -211,11 +211,47 @@ function segmentAgentRole(seg: FeedSegment): Role | null {
   return role;
 }
 
-function computeTurnStats(blocks: BlockEntry[], roleTag: "Captain" | "Mate"): TurnStats {
+function computeToolCallTokenCount(block: ToolCallBlockType): number {
+  let tokens = countTokens(block.arguments) + countStructuredTokens(block.raw_output);
+
+  for (const content of block.content) {
+    switch (content.tag) {
+      case "Text":
+        tokens += countTokens(content.text);
+        break;
+      case "Diff":
+        tokens += countTokens(content.unified_diff);
+        break;
+      case "Terminal":
+        if (content.snapshot?.output) {
+          tokens += countTokens(content.snapshot.output);
+        }
+        break;
+      case "Raw":
+        tokens += countStructuredTokens(content.data);
+        break;
+    }
+  }
+
+  if (block.error) {
+    tokens += countTokens(block.error.message);
+    tokens += countStructuredTokens(block.error.details);
+  }
+
+  return tokens;
+}
+
+function computeTurnStats(
+  blocks: BlockEntry[],
+  roleTag: "Captain" | "Mate",
+  turnStartedAt?: string | null,
+): TurnStats {
   let tokens = 0;
   let ok = 0;
   let failed = 0;
   let lastUtterance = "";
+  const turnStartMs = parseTimestampMs(turnStartedAt);
+  let turnStarted = turnStartMs == null;
   let lastMsgIdx = -1;
 
   for (let i = blocks.length - 1; i >= 0; i--) {
@@ -231,6 +267,15 @@ function computeTurnStats(blocks: BlockEntry[], roleTag: "Captain" | "Mate"): Tu
   }
 
   for (const blockEntry of blocks.slice(lastMsgIdx + 1)) {
+    if (!turnStarted) {
+      const blockMs = parseTimestampMs(blockEntry.timestamp);
+      if (blockMs != null && blockMs >= turnStartMs) {
+        turnStarted = true;
+      } else {
+        continue;
+      }
+    }
+
     if (blockEntry.role.tag !== roleTag) continue;
     if (blockEntry.block.tag === "Text" && blockEntry.block.source.tag === "AgentThought") {
       tokens += countTokens(blockEntry.block.text);
@@ -238,8 +283,7 @@ function computeTurnStats(blocks: BlockEntry[], roleTag: "Captain" | "Mate"): Tu
     } else if (blockEntry.block.tag === "ToolCall") {
       if (blockEntry.block.status.tag === "Success") ok++;
       else if (blockEntry.block.status.tag === "Failure") failed++;
-      tokens += countTokens(blockEntry.block.arguments);
-      tokens += countStructuredTokens(blockEntry.block.raw_output);
+      tokens += computeToolCallTokenCount(blockEntry.block);
     }
   }
 
