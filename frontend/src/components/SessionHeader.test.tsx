@@ -28,6 +28,7 @@ vi.mock("../api/client", () => ({
     setAgentPreset: apiMocks.setAgentPreset,
     openInEditor: apiMocks.openInEditor,
     openInTerminal: apiMocks.openInTerminal,
+    agentDiscovery: async () => ({ claude: false, codex: false, opencode: false }),
   }),
   onClientReady: apiMocks.onClientReady,
 }));
