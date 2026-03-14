@@ -2015,6 +2015,18 @@ Here is your task:
             );
         }
 
+        // Verify there is an active, non-terminal task before doing anything.
+        {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions
+                .get(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            let status = current_task_status(session).map_err(|error| error.to_string())?;
+            if status.is_terminal() {
+                return Err("cannot steer: task is in a terminal state".to_owned());
+            }
+        }
+
         // Apply plan changes before dispatching the steer.
         let plan_change_note = if let Some(steps) = new_plan {
             let new_steps = Self::build_plan_steps(steps);
