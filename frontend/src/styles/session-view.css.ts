@@ -1964,6 +1964,14 @@ globalStyle(`${textBlockRoot} :where(ul, ol)`, {
   paddingLeft: "var(--space-5)",
 });
 
+globalStyle(`${textBlockRoot} :where(li > p)`, {
+  marginBottom: 0,
+});
+
+globalStyle(`${textBlockRoot} :where(li + li)`, {
+  marginTop: "var(--space-1)",
+});
+
 globalStyle(`${textBlockRoot} :where(pre)`, {
   margin: 0,
 });
@@ -2046,6 +2054,14 @@ globalStyle(
 
 globalStyle(`${taskDescriptionRoot} :where(ul, ol)`, {
   paddingLeft: "var(--space-4)",
+});
+
+globalStyle(`${taskDescriptionRoot} :where(li > p)`, {
+  marginBottom: 0,
+});
+
+globalStyle(`${taskDescriptionRoot} :where(li + li)`, {
+  marginTop: "var(--space-1)",
 });
 
 globalStyle(`${taskDescriptionRoot} :where(pre)`, {
