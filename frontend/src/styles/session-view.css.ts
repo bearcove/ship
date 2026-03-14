@@ -194,7 +194,6 @@ globalStyle(`${feedBubbleSelected} > *`, {
 globalStyle(`${feedBubbleCaptain}${feedBubbleSelected}`, {
   outline: "1px solid var(--gray-a5)",
   outlineOffset: "4px",
-  padding: "var(--space-2) var(--space-3)",
 });
 
 const actionBarEntrance = keyframes({
