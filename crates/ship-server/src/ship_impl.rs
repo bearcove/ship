@@ -7649,6 +7649,7 @@ use captain_steer. Otherwise continue your current work."
                         .map_err(|error| error.to_string())?;
                     Self::invalidate_mate_activity_summary_state(session);
                 }
+                session.mate_handle = None;
             }
             ship_core::StopReason::ContextExhausted => {
                 let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
