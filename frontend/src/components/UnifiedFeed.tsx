@@ -630,6 +630,8 @@ function ThinkingBubble({
   sessionId,
   avatarSrc,
   agentName,
+  agent,
+  lastThought,
   thinkingTokens,
   toolsOk,
   toolsFailed,
@@ -637,12 +639,69 @@ function ThinkingBubble({
   sessionId: string;
   avatarSrc: string;
   agentName: string;
+  agent: AgentSnapshot;
+  lastThought: string;
   thinkingTokens: number;
   toolsOk: number;
   toolsFailed: number;
 }) {
+  const [hovered, setHovered] = useState(false);
+
+  const modelLabel = agent.model_id ?? "unknown";
+  const effortLabel = agent.effort_value_id;
+
   return (
-    <Box className={feedRowAgent} style={{ paddingBottom: 0 }}>
+    <Box
+      className={feedRowAgent}
+      style={{ paddingBottom: 0, position: "relative" }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      {hovered && lastThought && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: "100%",
+            left: 0,
+            right: 0,
+            marginBottom: 8,
+            padding: "var(--space-3)",
+            background: "var(--color-panel-solid)",
+            border: "1px solid var(--gray-a5)",
+            borderRadius: "var(--radius-3)",
+            boxShadow: "0 4px 16px var(--black-a4)",
+            zIndex: 10,
+            maxHeight: 240,
+            overflow: "hidden",
+          }}
+        >
+          <Flex align="center" gap="2" mb="2">
+            <img
+              src={avatarSrc}
+              alt={agentName}
+              style={{ width: 20, height: 20, borderRadius: "50%" }}
+            />
+            <Text size="2" weight="bold">{agentName}</Text>
+            <Text size="1" color="gray">{modelLabel}</Text>
+            {effortLabel && (
+              <Text size="1" color="gray">({effortLabel})</Text>
+            )}
+          </Flex>
+          <Text
+            size="2"
+            style={{
+              color: "var(--gray-11)",
+              whiteSpace: "pre-wrap",
+              display: "-webkit-box",
+              WebkitLineClamp: 8,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+            }}
+          >
+            {lastThought}
+          </Text>
+        </div>
+      )}
       <div className={thinkingBubble}>
         <button
           type="button"
@@ -762,69 +821,38 @@ export function UnifiedFeed({
   const truncated = blocks.length > MAX_RENDERED_BLOCKS;
   const visibleBlocks = truncated ? blocks.slice(blocks.length - MAX_RENDERED_BLOCKS) : blocks;
 
-  let thinkingTokens = 0;
-  let toolsOk = 0;
-  let toolsFailed = 0;
-  if (captainWorking) {
-    let lastCaptainMsgIdx = -1;
+  function computeTurnStats(roleTag: "Captain" | "Mate") {
+    let tokens = 0;
+    let ok = 0;
+    let failed = 0;
+    let lastThought = "";
+    let lastMsgIdx = -1;
     for (let i = visibleBlocks.length - 1; i >= 0; i--) {
       const b = visibleBlocks[i];
-      if (
-        b.role.tag === "Captain" &&
-        b.block.tag === "Text" &&
-        b.block.source.tag === "AgentMessage"
-      ) {
-        lastCaptainMsgIdx = i;
+      if (b.role.tag === roleTag && b.block.tag === "Text" && b.block.source.tag === "AgentMessage") {
+        lastMsgIdx = i;
         break;
       }
     }
-    const turnBlocks = visibleBlocks.slice(lastCaptainMsgIdx + 1);
-    for (const b of turnBlocks) {
-      if (b.role.tag !== "Captain") continue;
+    for (const b of visibleBlocks.slice(lastMsgIdx + 1)) {
+      if (b.role.tag !== roleTag) continue;
       if (b.block.tag === "Text" && b.block.source.tag === "AgentThought") {
-        thinkingTokens += countTokens(b.block.text);
+        tokens += countTokens(b.block.text);
+        lastThought = b.block.text;
       } else if (b.block.tag === "ToolCall") {
-        if (b.block.status.tag === "Success") toolsOk++;
-        else if (b.block.status.tag === "Failure") toolsFailed++;
-        thinkingTokens += countTokens(b.block.arguments);
+        if (b.block.status.tag === "Success") ok++;
+        else if (b.block.status.tag === "Failure") failed++;
+        tokens += countTokens(b.block.arguments);
         if (b.block.raw_output != null) {
-          thinkingTokens += countTokens(JSON.stringify(b.block.raw_output));
+          tokens += countTokens(JSON.stringify(b.block.raw_output));
         }
       }
     }
+    return { tokens, ok, failed, lastThought };
   }
 
-  let mateThinkingTokens = 0;
-  let mateToolsOk = 0;
-  let mateToolsFailed = 0;
-  if (mateWorking) {
-    let lastMateMsgIdx = -1;
-    for (let i = visibleBlocks.length - 1; i >= 0; i--) {
-      const b = visibleBlocks[i];
-      if (
-        b.role.tag === "Mate" &&
-        b.block.tag === "Text" &&
-        b.block.source.tag === "AgentMessage"
-      ) {
-        lastMateMsgIdx = i;
-        break;
-      }
-    }
-    const mateTurnBlocks = visibleBlocks.slice(lastMateMsgIdx + 1);
-    for (const b of mateTurnBlocks) {
-      if (b.role.tag !== "Mate") continue;
-      if (b.block.tag === "Text" && b.block.source.tag === "AgentThought") {
-        mateThinkingTokens += countTokens(b.block.text);
-      } else if (b.block.tag === "ToolCall") {
-        if (b.block.status.tag === "Success") mateToolsOk++;
-        else if (b.block.status.tag === "Failure") mateToolsFailed++;
-        mateThinkingTokens += countTokens(b.block.arguments);
-        if (b.block.raw_output != null) {
-          mateThinkingTokens += countTokens(JSON.stringify(b.block.raw_output));
-        }
-      }
-    }
-  }
+  const captainTurn = captainWorking ? computeTurnStats("Captain") : null;
+  const mateTurn = mateWorking ? computeTurnStats("Mate") : null;
 
   let lastUnresolvedPermBlockId: string | undefined;
   for (const entry of visibleBlocks) {
@@ -914,24 +942,28 @@ export function UnifiedFeed({
           </Box>
 
           <Box className={liveBubblesRow}>
-            {captainWorking && (
+            {captainTurn && captain && (
               <ThinkingBubble
                 sessionId={sessionId}
                 avatarSrc={captainAvatar}
                 agentName="Captain"
-                thinkingTokens={thinkingTokens}
-                toolsOk={toolsOk}
-                toolsFailed={toolsFailed}
+                agent={captain}
+                lastThought={captainTurn.lastThought}
+                thinkingTokens={captainTurn.tokens}
+                toolsOk={captainTurn.ok}
+                toolsFailed={captainTurn.failed}
               />
             )}
-            {mateWorking && (
+            {mateTurn && mate && (
               <ThinkingBubble
                 sessionId={sessionId}
                 avatarSrc={mateAvatar}
                 agentName="Mate"
-                thinkingTokens={mateThinkingTokens}
-                toolsOk={mateToolsOk}
-                toolsFailed={mateToolsFailed}
+                agent={mate}
+                lastThought={mateTurn.lastThought}
+                thinkingTokens={mateTurn.tokens}
+                toolsOk={mateTurn.ok}
+                toolsFailed={mateTurn.failed}
               />
             )}
           </Box>
