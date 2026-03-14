@@ -27,6 +27,7 @@ interface TranscriptionContextValue {
   stopAndSend(): void;
   cancelRecording(): void;
   clearResult(): void;
+  dismissError(): void;
   isRecording(): boolean;
 }
 
@@ -251,6 +252,12 @@ export function TranscriptionProvider({ children }: { children: React.ReactNode 
     setSendAfterTranscription(false);
   }, []);
 
+  const dismissError = useCallback(() => {
+    setState((prev) => (prev.tag === "error" ? { tag: "idle" } : prev));
+    setTargetSessionId(null);
+    setSendAfterTranscription(false);
+  }, []);
+
   const isRecording = useCallback(() => {
     return activeRef.current !== null;
   }, []);
@@ -267,6 +274,7 @@ export function TranscriptionProvider({ children }: { children: React.ReactNode 
       stopAndSend,
       cancelRecording,
       clearResult,
+      dismissError,
       isRecording,
     }),
     [
@@ -280,6 +288,7 @@ export function TranscriptionProvider({ children }: { children: React.ReactNode 
       stopAndSend,
       cancelRecording,
       clearResult,
+      dismissError,
       isRecording,
     ],
   );

@@ -223,5 +223,8 @@ export function useTranscription() {
     stopRecording,
     cancelRecording,
     clearResult: useCallback(() => setResult(null), []),
+    dismissError: useCallback(() => {
+      setState((prev) => (prev.tag === "error" ? { tag: "idle" } : prev));
+    }, []),
   };
 }
