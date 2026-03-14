@@ -1218,6 +1218,73 @@ The captain MUST have access to a `captain_abort_rebase` tool that aborts an
 in-progress managed rebase and returns the session worktree to pre-rebase
 state.
 
+### Admiral Tools
+
+The Admiral is a persistent Opus agent that acts as the human's single point
+of contact across all lanes. It orchestrates work by creating lanes, steering
+captains, and surfacing captain messages to the human.
+
+r[admiral.tool.implementation]
+Admiral tools MUST be implemented as MCP tools served by Ship itself. The
+admiral's `NewSessionRequest` MUST include Ship's admiral MCP server in its
+`mcp_servers` list so the admiral can discover and call these tools. The
+admiral MCP server is a global singleton (not per-session) and is connected
+via a well-known session identifier.
+
+r[admiral.mcp-server]
+Ship MUST expose admiral MCP tools via a dedicated stdio server process. This
+server is spawned once at startup and persists for the lifetime of the Ship
+process. It connects to the Ship backend using a reserved session ID
+(`"admiral"`) and service name (`"admiral-mcp"`).
+
+r[admiral.start]
+Ship MUST start the admiral agent on startup. The admiral runs as an ACP
+session with a persisted session ID stored alongside the sessions directory so
+it can be resumed across Ship restarts. The admiral is represented in the
+session list as a pinned entry with `is_admiral: true`.
+
+r[admiral.tool.list-lanes]
+The admiral MUST have access to an `admiral_list_lanes` tool that returns the
+current list of lanes (sessions). Each entry includes the session ID, slug,
+title, status, and whether it has an active task.
+
+r[admiral.tool.create-lane]
+The admiral MUST have access to an `admiral_create_lane` tool that takes a
+`title` (string) and a `project_id` (string) and creates a new captain session
+for the given project. The admiral uses this to spin up new lanes on behalf of
+the human.
+
+r[admiral.tool.steer-captain]
+The admiral MUST have access to an `admiral_steer_captain` tool that takes a
+`session_id` (string) and a `message` (string) and forwards the message to the
+specified captain session. This is the admiral's mechanism for directing
+captains.
+
+r[admiral.tool.post-to-human]
+The admiral MUST have access to an `admiral_post_to_human` tool that takes a
+`message` (string). When called, the backend records the message as an
+`AdmiralMessage` activity entry and pushes it to the frontend via the global
+event stream. This is the admiral's only channel for surfacing information to
+the human.
+
+r[admiral.tool.list-projects]
+The admiral MUST have access to an `admiral_list_projects` tool that returns
+the current list of projects known to Ship. Each entry includes the project ID,
+name, and worktree path, giving the admiral the context needed to create
+appropriately targeted lanes.
+
+r[admiral.tool.read-file]
+The admiral MUST have access to a `read_file` tool that takes an absolute
+`path` (string) and returns the file contents. Unlike the captain/mate
+equivalents, this operates on absolute paths (not session-worktree-relative),
+reflecting the admiral's read-only, cross-project scope.
+
+r[admiral.tool.run-command]
+The admiral MUST have access to a `run_command` tool that takes a `command`
+(string) and runs it in a shell. This gives the admiral read-only observability
+into the system (e.g. `git log`, `grep`, directory listings) without write
+capabilities.
+
 ### Mate Tools
 
 r[mate.tool.implementation]
