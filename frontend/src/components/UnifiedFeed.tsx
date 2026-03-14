@@ -6,6 +6,7 @@ import mateAvatar from "../assets/avatars/mate.png";
 import type { AgentSnapshot, ContentBlock, Role, SessionStartupState } from "../generated/ship";
 import type { BlockEntry } from "../state/blockStore";
 import { TextBlock } from "./blocks/TextBlock";
+import { BubbleActionBar } from "./blocks/BubbleActionBar";
 import { ErrorBlock } from "./blocks/ErrorBlock";
 import { PermissionBlock } from "./blocks/PermissionBlock";
 import { ImageBlock } from "./blocks/ImageBlock";
@@ -76,6 +77,7 @@ import {
   taskRecapDiff,
   taskRecapDiffInner,
   feedTimeGap,
+  feedBubbleSelected,
 } from "../styles/session-view.css";
 
 type TextBlockType = Extract<ContentBlock, { tag: "Text" }>;
@@ -433,6 +435,9 @@ function SingleBlock({
   userAvatarUrl,
   taskCompletedDuration,
   debugMode = false,
+  selectedBlockId,
+  onSelectBlock,
+  onReplyRequest,
 }: {
   entry: BlockEntry;
   sessionId: string;
@@ -441,9 +446,18 @@ function SingleBlock({
   userAvatarUrl: string | null;
   taskCompletedDuration: number | null;
   debugMode?: boolean;
+  selectedBlockId: string | null;
+  onSelectBlock: (id: string | null) => void;
+  onReplyRequest?: () => void;
 }) {
   const { block, blockId, role } = entry;
   const isCaptain = role.tag === "Captain";
+  const isSelected = selectedBlockId === blockId;
+
+  function handleBubbleClick(e: React.MouseEvent) {
+    e.stopPropagation();
+    onSelectBlock(isSelected ? null : blockId);
+  }
 
   switch (block.tag) {
     case "Text": {
@@ -451,6 +465,7 @@ function SingleBlock({
 
       const isHuman = block.source.tag === "Human";
       const isThought = block.source.tag === "AgentThought";
+      const isAgent = block.source.tag === "AgentMessage";
 
       // Server-injected system message — hide
       if (isHuman && isSystemInjection(block)) {
@@ -461,12 +476,14 @@ function SingleBlock({
       if (isHuman && isMateActivitySummary(block)) {
         const summary = extractMateActivitySummary(block.text);
         const summaryBlock = { ...block, text: summary };
+        const cls = `${feedBubble} ${feedBubbleActivitySummary}${isSelected ? ` ${feedBubbleSelected}` : ""}`;
         return (
           <Box className={feedRowAgent}>
             <Box className={feedBubbleCol}>
-              <Box className={`${feedBubble} ${feedBubbleActivitySummary}`}>
+              <Box className={cls} onClick={handleBubbleClick}>
                 <TextBlock block={summaryBlock as TextBlockType} />
               </Box>
+              {isSelected && <BubbleActionBar text={summary} onReply={onReplyRequest} />}
             </Box>
           </Box>
         );
@@ -474,12 +491,14 @@ function SingleBlock({
 
       // Real user message — right side
       if (isHuman && role.tag === "Captain") {
+        const cls = `${feedBubble} ${feedBubbleUser}${isSelected ? ` ${feedBubbleSelected}` : ""}`;
         return (
           <Box className={feedRowUser}>
             <Box className={`${feedBubbleCol} ${feedBubbleColUser}`}>
-              <Box className={`${feedBubble} ${feedBubbleUser}`}>
+              <Box className={cls} onClick={handleBubbleClick}>
                 <TextBlock block={block as TextBlockType} />
               </Box>
+              {isSelected && <BubbleActionBar text={block.text} onReply={onReplyRequest} />}
             </Box>
           </Box>
         );
@@ -487,12 +506,14 @@ function SingleBlock({
 
       // Captain steer to mate — left side, teal tint
       if (block.source.tag === "Steer" && role.tag === "Mate") {
+        const cls = `${feedBubble} ${feedBubbleSteer}${isSelected ? ` ${feedBubbleSelected}` : ""}`;
         return (
           <Box className={feedRowAgent}>
             <Box className={feedBubbleCol}>
-              <Box className={`${feedBubble} ${feedBubbleSteer}`}>
+              <Box className={cls} onClick={handleBubbleClick}>
                 <TextBlock block={block as TextBlockType} />
               </Box>
+              {isSelected && <BubbleActionBar text={block.text} speakable onReply={onReplyRequest} />}
             </Box>
           </Box>
         );
@@ -500,12 +521,14 @@ function SingleBlock({
 
       // Captain relaying to mate — left side, amber tint
       if (isHuman && role.tag === "Mate") {
+        const cls = `${feedBubble} ${feedBubbleRelay}${isSelected ? ` ${feedBubbleSelected}` : ""}`;
         return (
           <Box className={feedRowAgent}>
             <Box className={feedBubbleCol}>
-              <Box className={`${feedBubble} ${feedBubbleRelay}`}>
+              <Box className={cls} onClick={handleBubbleClick}>
                 <TextBlock block={block as TextBlockType} />
               </Box>
+              {isSelected && <BubbleActionBar text={block.text} speakable onReply={onReplyRequest} />}
             </Box>
           </Box>
         );
@@ -517,17 +540,19 @@ function SingleBlock({
       }
 
       // Agent message — left side
-      return (
-        <Box className={feedRowAgent}>
-          <Box className={feedBubbleCol}>
-            <Box
-              className={`${feedBubble}${isCaptain ? ` ${feedBubbleCaptain}` : ` ${feedBubbleMate}`}`}
-            >
-              <TextBlock block={block as TextBlockType} />
+      {
+        const cls = `${feedBubble}${isCaptain ? ` ${feedBubbleCaptain}` : ` ${feedBubbleMate}`}${isSelected ? ` ${feedBubbleSelected}` : ""}`;
+        return (
+          <Box className={feedRowAgent}>
+            <Box className={feedBubbleCol}>
+              <Box className={cls} onClick={handleBubbleClick}>
+                <TextBlock block={block as TextBlockType} />
+              </Box>
+              {isSelected && <BubbleActionBar text={block.text} speakable={isAgent} onReply={onReplyRequest} />}
             </Box>
           </Box>
-        </Box>
-      );
+        );
+      }
     }
 
     case "ToolCall":
