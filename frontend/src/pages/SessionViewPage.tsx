@@ -159,8 +159,27 @@ export function SessionViewPage({
         composerRef.current?.focusComposer();
       }
     }
+
+    function copyHandler(e: ClipboardEvent) {
+      if (isEditableTarget(e.target)) return;
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
+      const fragment = sel.getRangeAt(0).cloneContents();
+      const div = document.createElement("div");
+      div.appendChild(fragment);
+      const html = div.innerHTML;
+      if (!html.trim()) return;
+      const markdown = turndown.turndown(html);
+      e.clipboardData?.setData("text/plain", markdown);
+      e.preventDefault();
+    }
+
     window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
+    document.addEventListener("copy", copyHandler);
+    return () => {
+      window.removeEventListener("keydown", handler);
+      document.removeEventListener("copy", copyHandler);
+    };
   }, [currentIndex, hasSessionCycle, isActive, navigate, orderedSessions]);
 
   if (error) {
