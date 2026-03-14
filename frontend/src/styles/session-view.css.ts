@@ -183,7 +183,14 @@ export const feedBubbleSelected = style({
   transition: "border-color 0.12s ease",
 });
 
-// Captain bubbles have border:none, so use outline + padding for selected state
+// Scale inner content when selected — bubble stays same size, content shrinks inward
+globalStyle(`${feedBubbleSelected} > *`, {
+  transform: "scale(0.96)",
+  transformOrigin: "center center",
+  transition: "transform 0.12s ease",
+});
+
+// Captain bubbles have border:none, so use outline for selected state
 globalStyle(`${feedBubbleCaptain}${feedBubbleSelected}`, {
   outline: "1px solid var(--gray-a5)",
   outlineOffset: "4px",
