@@ -1,5 +1,5 @@
 import { channel } from "@bearcove/roam-core";
-import type { ActivityEntry, GlobalEvent, ProjectInfo, SessionSummary } from "../generated/ship";
+import type { GlobalEvent, ProjectInfo, SessionSummary } from "../generated/ship";
 import { getShipClient, onClientReady } from "../api/client";
 
 // --- Session list state ---
@@ -24,22 +24,9 @@ export function onProjectListChanged(cb: ProjectListListener): () => void {
   return () => projectListListeners.delete(cb);
 }
 
-// --- Activity entries state ---
-let cachedActivityEntries: ActivityEntry[] = [];
-type ActivityListener = (entries: ActivityEntry[]) => void;
-const activityListeners = new Set<ActivityListener>();
-
-export function onActivityChanged(cb: ActivityListener): () => void {
-  activityListeners.add(cb);
-  cb(cachedActivityEntries);
-  return () => activityListeners.delete(cb);
-}
-
 // --- Subscription lifecycle ---
 let subscriptionActive = false;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
-
-const ACTIVITY_MAX_ENTRIES = 200;
 
 function handleGlobalEvent(event: GlobalEvent) {
   if (event.tag === "SessionListChanged") {
@@ -48,14 +35,6 @@ function handleGlobalEvent(event: GlobalEvent) {
   } else if (event.tag === "ProjectListChanged") {
     cachedProjects = event.projects;
     for (const cb of projectListListeners) cb(cachedProjects);
-  } else if (event.tag === "Activity") {
-    cachedActivityEntries = [...cachedActivityEntries, event.entry];
-    if (cachedActivityEntries.length > ACTIVITY_MAX_ENTRIES) {
-      cachedActivityEntries = cachedActivityEntries.slice(
-        cachedActivityEntries.length - ACTIVITY_MAX_ENTRIES,
-      );
-    }
-    for (const cb of activityListeners) cb(cachedActivityEntries);
   }
 }
 
