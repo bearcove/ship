@@ -17,6 +17,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
 export function useGlobalKeyboard(
   allSessions: SessionSummary[],
   onSessionArchived?: (slug: string) => void,
+  onNewSession?: () => void,
 ) {
   const navigate = useNavigate();
   const sessionMatch = useMatch("/sessions/:sessionId");
@@ -94,6 +95,13 @@ export function useGlobalKeyboard(
         return;
       }
 
+      // N: open new session dialog
+      if (e.key === "n") {
+        e.preventDefault();
+        onNewSession?.();
+        return;
+      }
+
       // A-A chord: archive current session
       if (e.key === "a" && activeSession) {
         const now = Date.now();
@@ -138,5 +146,5 @@ export function useGlobalKeyboard(
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [allSessions, navigate, onSessionArchived]);
+  }, [allSessions, navigate, onSessionArchived, onNewSession]);
 }
