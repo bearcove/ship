@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSwipeable } from "react-swipeable";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { Box, Button, Callout, Flex, Spinner, Text } from "@radix-ui/themes";
 import { Warning } from "@phosphor-icons/react";
 import { useSession } from "../hooks/useSession";
@@ -33,16 +33,19 @@ import { sortSessions } from "./session-list-utils";
 // r[ui.layout.session-view]
 // r[proto.hydration-flow]
 export function SessionViewPage({
+  sessionId,
+  isActive,
   debugMode,
   allSessions = [],
+  onArchived,
 }: {
+  sessionId: string;
+  isActive: boolean;
   debugMode: boolean;
   allSessions?: SessionSummary[];
-  onOpenSidebar?: () => void;
+  onArchived?: () => void;
 }) {
-  const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
-  const location = useLocation();
   const composerRef = useRef<UnifiedComposerHandle>(null);
   const [archiving, setArchiving] = useState(false);
   const [archiveConfirm, setArchiveConfirm] = useState<string[] | null>(null);
@@ -61,11 +64,12 @@ export function SessionViewPage({
 
   const handleSwipe = useCallback(
     (direction: "left" | "right") => {
+      if (!isActive) return;
       const target = direction === "right" ? prevSession : nextSession;
       if (!target) return;
       setSlideDirection(direction);
     },
-    [nextSession, prevSession],
+    [isActive, nextSession, prevSession],
   );
 
   const swipeHandlers = useSwipeable({
@@ -78,11 +82,11 @@ export function SessionViewPage({
   });
 
   // r[event.client.hydration-sequence]: Step 1 — structural state
-  const { session, error } = useSession(sessionId ?? "");
+  const { session, error } = useSession(sessionId);
   // r[event.client.hydration-sequence]: Step 2/3 — event subscription + replay
-  const eventState = useSessionState(sessionId ?? "", session);
+  const eventState = useSessionState(sessionId, session);
 
-  const diffStats = useWorktreeDiffStats(sessionId ?? "");
+  const diffStats = useWorktreeDiffStats(sessionId);
 
   function isEditableTarget(target: EventTarget | null): boolean {
     return (
@@ -92,14 +96,9 @@ export function SessionViewPage({
     );
   }
 
-  useEffect(() => {
-    if ((location.state as { autofocusComposer?: boolean } | null)?.autofocusComposer) {
-      composerRef.current?.focusComposer();
-    }
-  }, [location.key, location.state]);
-
   // r[ui.keys.nav]
   useEffect(() => {
+    if (!isActive) return;
     function handler(e: KeyboardEvent) {
       if (isEditableTarget(e.target)) return;
       if (e.key === "d" && e.metaKey) {
@@ -127,7 +126,7 @@ export function SessionViewPage({
     }
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [navigate, orderedSessions, sessionId]);
+  }, [isActive, navigate, orderedSessions, sessionId]);
 
   if (error) {
     return (
@@ -241,6 +240,7 @@ export function SessionViewPage({
       const result = await client.archiveSession({ id: sessionDetail.id, force });
       if (result.tag === "Archived") {
         setArchiveConfirm(null);
+        onArchived?.();
         await refreshSessionList();
         navigate("/");
       } else if (result.tag === "RequiresConfirmation") {

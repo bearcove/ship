@@ -134,13 +134,22 @@ export function App() {
         <Box className={appColCenter} style={{ overflow: inSessionView ? "hidden" : "auto" }}>
           <Routes>
             <Route path="/" element={<SessionListPage />} />
-            <Route
-              path="/sessions/:sessionId"
-              element={
-                <SessionViewPage debugMode={debugMode} allSessions={allSessions} onOpenSidebar={() => setSidebarOpen(true)} />
-              }
-            />
+            <Route path="/sessions/:sessionId" element={null} />
           </Routes>
+          {[...visitedSessions].map((slug) => (
+            <div
+              key={slug}
+              style={{ display: slug === currentSessionId ? "contents" : "none" }}
+            >
+              <SessionViewPage
+                sessionId={slug}
+                isActive={slug === currentSessionId}
+                debugMode={debugMode}
+                allSessions={allSessions}
+                onArchived={() => removeVisitedSession(slug)}
+              />
+            </div>
+          ))}
         </Box>
         <Box className={appColRight} />
       </Box>
