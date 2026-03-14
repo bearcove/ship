@@ -5858,7 +5858,14 @@ Here is your task:
 
         let stage = SessionStartupStage::StartingCaptain;
         let _ = self.set_startup_stage(&session_id, stage).await;
-        let (captain_kind, mate_kind, captain_resume_id, mate_resume_id) = {
+        let (
+            captain_kind,
+            mate_kind,
+            captain_resume_id,
+            mate_resume_id,
+            captain_target_model_id,
+            mate_target_model_id,
+        ) = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let session = sessions.get(&session_id).expect("session exists");
             (
@@ -5866,6 +5873,8 @@ Here is your task:
                 session.config.mate_kind,
                 session.captain_acp_session_id.clone(),
                 session.mate_acp_session_id.clone(),
+                session.config.captain_model_id.clone(),
+                session.config.mate_model_id.clone(),
             )
         };
         let captain_config = AgentSessionConfig {
@@ -5914,6 +5923,39 @@ Here is your task:
                 return;
             }
         };
+
+        if let Some(target_model_id) = captain_target_model_id.as_deref()
+            && captain_spawn.model_id.as_deref() != Some(target_model_id)
+            && let Err(error) = self
+                .agent_set_model(&captain_spawn.handle, target_model_id)
+                .await
+        {
+            let _ = self.agent_driver.kill(&captain_spawn.handle).await;
+            let _ = self.agent_driver.kill(&mate_spawn.handle).await;
+            self.fail_startup(&session_id, stage, error.message).await;
+            return;
+        }
+
+        if let Some(target_model_id) = mate_target_model_id.as_deref()
+            && mate_spawn.model_id.as_deref() != Some(target_model_id)
+            && let Err(error) = self
+                .agent_set_model(&mate_spawn.handle, target_model_id)
+                .await
+        {
+            let _ = self.agent_driver.kill(&captain_spawn.handle).await;
+            let _ = self.agent_driver.kill(&mate_spawn.handle).await;
+            self.fail_startup(
+                &session_id,
+                SessionStartupStage::StartingMate,
+                error.message,
+            )
+            .await;
+            return;
+        }
+
+        let captain_model_id = captain_target_model_id.or(captain_spawn.model_id.clone());
+        let mate_model_id = mate_target_model_id.or(mate_spawn.model_id.clone());
+
         let captain_acp_info = AgentAcpInfo {
             acp_session_id: captain_spawn.acp_session_id.clone(),
             was_resumed: captain_spawn.was_resumed,
@@ -5955,7 +5997,7 @@ Here is your task:
                     session,
                     ship_types::SessionEvent::AgentModelChanged {
                         role: Role::Captain,
-                        model_id: captain_spawn.model_id,
+                        model_id: captain_model_id,
                         available_models: captain_spawn.available_models,
                     },
                 );
@@ -5979,7 +6021,7 @@ Here is your task:
                     session,
                     ship_types::SessionEvent::AgentModelChanged {
                         role: Role::Mate,
-                        model_id: mate_spawn.model_id,
+                        model_id: mate_model_id,
                         available_models: mate_spawn.available_models,
                     },
                 );
@@ -7675,6 +7717,53 @@ impl Ship for ShipImpl {
             }
         };
 
+        let configured_presets = match self.load_configured_agent_presets().await {
+            Ok(presets) => presets,
+            Err(message) => return CreateSessionResponse::Failed { message },
+        };
+
+        let resolve_create_session_agent = |role_name: &str,
+                                            kind: AgentKind,
+                                            preset_id: Option<AgentPresetId>|
+         -> Result<
+            (
+                AgentKind,
+                Option<AgentPresetId>,
+                Option<ship_types::AgentProviderId>,
+                Option<String>,
+            ),
+            String,
+        > {
+            if let Some(preset_id) = preset_id {
+                let Some(preset) = configured_presets
+                    .iter()
+                    .find(|preset| preset.id == preset_id)
+                else {
+                    return Err(format!("{role_name} preset not found: {}", preset_id.0));
+                };
+
+                return Ok((
+                    preset.kind,
+                    Some(preset.id.clone()),
+                    Some(preset.provider.clone()),
+                    Some(preset.model_id.clone()),
+                ));
+            }
+
+            Ok((kind, None, Some(kind.default_provider_id()), None))
+        };
+
+        let (captain_kind, captain_preset_id, captain_provider, captain_model_id) =
+            match resolve_create_session_agent("captain", req.captain_kind, req.captain_preset_id) {
+                Ok(resolved) => resolved,
+                Err(message) => return CreateSessionResponse::Failed { message },
+            };
+        let (mate_kind, mate_preset_id, mate_provider, mate_model_id) =
+            match resolve_create_session_agent("mate", req.mate_kind, req.mate_preset_id) {
+                Ok(resolved) => resolved,
+                Err(message) => return CreateSessionResponse::Failed { message },
+            };
+
         let session_id = SessionId::new();
         let session_git_names = SessionGitNames::from_session_id(&session_id);
         let (events_tx, _) = broadcast::channel(256);
@@ -7685,8 +7774,14 @@ impl Ship for ShipImpl {
                 project: req.project,
                 base_branch: req.base_branch,
                 branch_name: session_git_names.branch_name,
-                captain_kind: req.captain_kind,
-                mate_kind: req.mate_kind,
+                captain_kind,
+                mate_kind,
+                captain_preset_id: captain_preset_id.clone(),
+                mate_preset_id: mate_preset_id.clone(),
+                captain_provider: captain_provider.clone(),
+                mate_provider: mate_provider.clone(),
+                captain_model_id: captain_model_id.clone(),
+                mate_model_id: mate_model_id.clone(),
                 autonomy_mode: AutonomyMode::HumanInTheLoop,
                 mcp_servers: effective_mcp_servers,
             },
@@ -7695,12 +7790,12 @@ impl Ship for ShipImpl {
             mate_handle: None,
             captain: AgentSnapshot {
                 role: Role::Captain,
-                kind: req.captain_kind,
+                kind: captain_kind,
                 state: AgentState::Idle,
                 context_remaining_percent: None,
-                preset_id: None,
-                provider: Some(req.captain_kind.default_provider_id()),
-                model_id: None,
+                preset_id: captain_preset_id,
+                provider: captain_provider,
+                model_id: captain_model_id,
                 available_models: Vec::new(),
                 effort_config_id: None,
                 effort_value_id: None,
@@ -7708,12 +7803,12 @@ impl Ship for ShipImpl {
             },
             mate: AgentSnapshot {
                 role: Role::Mate,
-                kind: req.mate_kind,
+                kind: mate_kind,
                 state: AgentState::Idle,
                 context_remaining_percent: None,
-                preset_id: None,
-                provider: Some(req.mate_kind.default_provider_id()),
-                model_id: None,
+                preset_id: mate_preset_id,
+                provider: mate_provider,
+                model_id: mate_model_id,
                 available_models: Vec::new(),
                 effort_config_id: None,
                 effort_value_id: None,
@@ -9243,6 +9338,8 @@ mod tests {
                 project: ProjectName("project".to_owned()),
                 captain_kind: AgentKind::Claude,
                 mate_kind: AgentKind::Codex,
+                captain_preset_id: None,
+                mate_preset_id: None,
                 base_branch: "main".to_owned(),
                 mcp_servers: None,
             },
@@ -9341,6 +9438,12 @@ mod tests {
                 branch_name: branch_name.to_owned(),
                 captain_kind: AgentKind::Claude,
                 mate_kind: AgentKind::Codex,
+                captain_preset_id: None,
+                mate_preset_id: None,
+                captain_provider: Some(AgentKind::Claude.default_provider_id()),
+                mate_provider: Some(AgentKind::Codex.default_provider_id()),
+                captain_model_id: None,
+                mate_model_id: None,
                 autonomy_mode: AutonomyMode::HumanInTheLoop,
                 mcp_servers: Vec::new(),
             },
@@ -10203,6 +10306,8 @@ mod tests {
                 project: ProjectName("project".to_owned()),
                 captain_kind: AgentKind::Claude,
                 mate_kind: AgentKind::Codex,
+                captain_preset_id: None,
+                mate_preset_id: None,
                 base_branch: "main".to_owned(),
                 mcp_servers: None,
             },
@@ -10259,6 +10364,8 @@ mod tests {
                 project: ProjectName("project".to_owned()),
                 captain_kind: AgentKind::Claude,
                 mate_kind: AgentKind::Codex,
+                captain_preset_id: None,
+                mate_preset_id: None,
                 base_branch: "main".to_owned(),
                 mcp_servers: None,
             },
@@ -10317,6 +10424,12 @@ mod tests {
                 branch_name: "ship/completed".to_owned(),
                 captain_kind: AgentKind::Claude,
                 mate_kind: AgentKind::Codex,
+                captain_preset_id: None,
+                mate_preset_id: None,
+                captain_provider: Some(AgentKind::Claude.default_provider_id()),
+                mate_provider: Some(AgentKind::Codex.default_provider_id()),
+                captain_model_id: None,
+                mate_model_id: None,
                 autonomy_mode: AutonomyMode::HumanInTheLoop,
                 mcp_servers: Vec::new(),
             },
@@ -10393,6 +10506,12 @@ mod tests {
                 branch_name: "ship/active".to_owned(),
                 captain_kind: AgentKind::Claude,
                 mate_kind: AgentKind::Codex,
+                captain_preset_id: None,
+                mate_preset_id: None,
+                captain_provider: Some(AgentKind::Claude.default_provider_id()),
+                mate_provider: Some(AgentKind::Codex.default_provider_id()),
+                captain_model_id: None,
+                mate_model_id: None,
                 autonomy_mode: AutonomyMode::HumanInTheLoop,
                 mcp_servers: Vec::new(),
             },

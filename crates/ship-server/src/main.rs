@@ -344,6 +344,8 @@ async fn run_probe(args: ProbeArgs) -> Result<(), Box<dyn std::error::Error>> {
             project: ship_types::ProjectName(args.project.clone()),
             captain_kind,
             mate_kind,
+            captain_preset_id: None,
+            mate_preset_id: None,
             base_branch: base_branch.clone(),
             mcp_servers: None,
         })

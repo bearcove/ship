@@ -18,6 +18,8 @@ fn make_request() -> CreateSessionRequest {
         project: ProjectName("ship-backend".to_owned()),
         captain_kind: AgentKind::Claude,
         mate_kind: AgentKind::Codex,
+        captain_preset_id: None,
+        mate_preset_id: None,
         base_branch: "main".to_owned(),
         mcp_servers: None,
     }

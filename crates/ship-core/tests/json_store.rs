@@ -47,6 +47,12 @@ fn make_persisted_session(id: &str, description: &str) -> PersistedSession {
             branch_name,
             captain_kind: AgentKind::Claude,
             mate_kind: AgentKind::Codex,
+            captain_preset_id: None,
+            mate_preset_id: None,
+            captain_provider: Some(AgentKind::Claude.default_provider_id()),
+            mate_provider: Some(AgentKind::Codex.default_provider_id()),
+            captain_model_id: None,
+            mate_model_id: None,
             autonomy_mode: AutonomyMode::HumanInTheLoop,
             mcp_servers: vec![McpServerConfig::Stdio(McpStdioServerConfig {
                 name: "filesystem".to_owned(),

@@ -807,6 +807,10 @@ pub mod protocol {
         pub project: ProjectName,
         pub captain_kind: AgentKind,
         pub mate_kind: AgentKind,
+        #[facet(default)]
+        pub captain_preset_id: Option<crate::agent::AgentPresetId>,
+        #[facet(default)]
+        pub mate_preset_id: Option<crate::agent::AgentPresetId>,
         pub base_branch: String,
         pub mcp_servers: Option<Vec<McpServerConfig>>,
     }
@@ -1167,6 +1171,18 @@ pub mod persistence {
         pub branch_name: String,
         pub captain_kind: AgentKind,
         pub mate_kind: AgentKind,
+        #[facet(default)]
+        pub captain_preset_id: Option<crate::agent::AgentPresetId>,
+        #[facet(default)]
+        pub mate_preset_id: Option<crate::agent::AgentPresetId>,
+        #[facet(default)]
+        pub captain_provider: Option<crate::agent::AgentProviderId>,
+        #[facet(default)]
+        pub mate_provider: Option<crate::agent::AgentProviderId>,
+        #[facet(default)]
+        pub captain_model_id: Option<String>,
+        #[facet(default)]
+        pub mate_model_id: Option<String>,
         pub autonomy_mode: AutonomyMode,
         pub mcp_servers: Vec<McpServerConfig>,
     }
