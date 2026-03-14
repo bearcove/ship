@@ -423,6 +423,12 @@ export type BlockPatch =
   | { tag: 'PlanReplace'; steps: PlanStep[] }
   | { tag: 'PermissionResolve'; resolution: PermissionResolution };
 
+export interface HookCheckResult {
+  name: string;
+  passed: boolean;
+  output: string;
+}
+
 export type SessionEvent =
   | { tag: 'BlockAppend'; block_id: BlockId; role: Role; block: ContentBlock }
   | { tag: 'BlockPatch'; block_id: BlockId; role: Role; patch: BlockPatch }
@@ -441,12 +447,6 @@ export type SessionEvent =
   | { tag: 'AgentAcpInfoChanged'; role: Role; info: AgentAcpInfo }
   | { tag: 'ChecksStarted'; context: string; hooks: string[] }
   | { tag: 'ChecksFinished'; context: string; all_passed: boolean; results: HookCheckResult[] };
-
-export interface HookCheckResult {
-  name: string;
-  passed: boolean;
-  output: string;
-}
 
 export interface SessionEventEnvelope {
   seq: bigint;
@@ -1207,7 +1207,7 @@ export interface ShipHandler {
 
 // Dispatcher for Ship
 export class ShipDispatcher implements ChannelingDispatcher {
-  constructor(private readonly handler: ShipHandler) { }
+  constructor(private readonly handler: ShipHandler) {}
 
   getDescriptor(): ServiceDescriptor {
     return ship_descriptor;
@@ -1410,7 +1410,7 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0xc0b5d977876883abn) {
+    } else if (method.id === 0x8c4d4ad559de71ddn) {
       try {
         const result = await this.handler.subscribeEvents(args[0] as SessionId, args[1] as Tx<SubscribeMessage>);
         (args[1] as { close(): void }).close(); // close output before reply
@@ -1511,7 +1511,8 @@ const ship_schema_registry: SchemaRegistry = new Map<string, Schema>([
   ["TaskRecapStats", { kind: 'struct', fields: { 'files_changed': { kind: 'u32' }, 'insertions': { kind: 'u32' }, 'deletions': { kind: 'u32' } } }],
   ["ContentBlock", { kind: 'enum', variants: [{ name: 'Text', fields: { 'text': { kind: 'string' }, 'source': { kind: 'ref', name: 'TextSource' } } }, { name: 'ToolCall', fields: { 'tool_call_id': { kind: 'option', inner: { kind: 'string' } }, 'tool_name': { kind: 'string' }, 'arguments': { kind: 'string' }, 'kind': { kind: 'option', inner: { kind: 'ref', name: 'ToolCallKind' } }, 'target': { kind: 'option', inner: { kind: 'ref', name: 'ToolTarget' } }, 'raw_input': { kind: 'option', inner: { kind: 'ref', name: 'JsonValue' } }, 'raw_output': { kind: 'option', inner: { kind: 'ref', name: 'JsonValue' } }, 'locations': { kind: 'vec', element: { kind: 'ref', name: 'ToolCallLocation' } }, 'status': { kind: 'ref', name: 'ToolCallStatus' }, 'content': { kind: 'vec', element: { kind: 'ref', name: 'ToolCallContent' } }, 'error': { kind: 'option', inner: { kind: 'ref', name: 'ToolCallError' } } } }, { name: 'PlanUpdate', fields: { 'steps': { kind: 'vec', element: { kind: 'ref', name: 'PlanStep' } } } }, { name: 'Error', fields: { 'message': { kind: 'string' } } }, { name: 'Permission', fields: { 'permission_id': { kind: 'option', inner: { kind: 'string' } }, 'tool_call_id': { kind: 'option', inner: { kind: 'string' } }, 'tool_name': { kind: 'string' }, 'description': { kind: 'string' }, 'arguments': { kind: 'string' }, 'kind': { kind: 'option', inner: { kind: 'ref', name: 'ToolCallKind' } }, 'target': { kind: 'option', inner: { kind: 'ref', name: 'ToolTarget' } }, 'raw_input': { kind: 'option', inner: { kind: 'ref', name: 'JsonValue' } }, 'options': { kind: 'option', inner: { kind: 'vec', element: { kind: 'ref', name: 'PermissionOption' } } }, 'resolution': { kind: 'option', inner: { kind: 'ref', name: 'PermissionResolution' } } } }, { name: 'Image', fields: { 'mime_type': { kind: 'string' }, 'data': { kind: 'bytes' } } }, { name: 'WorkflowMilestone', fields: { 'kind': { kind: 'ref', name: 'WorkflowMilestoneKind' }, 'title': { kind: 'string' }, 'summary': { kind: 'string' }, 'items': { kind: 'vec', element: { kind: 'string' } } } }, { name: 'TaskRecap', fields: { 'commits': { kind: 'vec', element: { kind: 'ref', name: 'CommitSummary' } }, 'stats': { kind: 'option', inner: { kind: 'ref', name: 'TaskRecapStats' } } } }] }],
   ["BlockPatch", { kind: 'enum', variants: [{ name: 'TextAppend', fields: { 'text': { kind: 'string' } } }, { name: 'ToolCallUpdate', fields: { 'tool_name': { kind: 'option', inner: { kind: 'string' } }, 'kind': { kind: 'option', inner: { kind: 'ref', name: 'ToolCallKind' } }, 'target': { kind: 'option', inner: { kind: 'ref', name: 'ToolTarget' } }, 'raw_input': { kind: 'option', inner: { kind: 'ref', name: 'JsonValue' } }, 'raw_output': { kind: 'option', inner: { kind: 'ref', name: 'JsonValue' } }, 'status': { kind: 'ref', name: 'ToolCallStatus' }, 'locations': { kind: 'option', inner: { kind: 'vec', element: { kind: 'ref', name: 'ToolCallLocation' } } }, 'content': { kind: 'option', inner: { kind: 'vec', element: { kind: 'ref', name: 'ToolCallContent' } } }, 'error': { kind: 'option', inner: { kind: 'ref', name: 'ToolCallError' } } } }, { name: 'PlanReplace', fields: { 'steps': { kind: 'vec', element: { kind: 'ref', name: 'PlanStep' } } } }, { name: 'PermissionResolve', fields: { 'resolution': { kind: 'ref', name: 'PermissionResolution' } } }] }],
-  ["SessionEvent", { kind: 'enum', variants: [{ name: 'BlockAppend', fields: { 'block_id': { kind: 'string' }, 'role': { kind: 'ref', name: 'Role' }, 'block': { kind: 'ref', name: 'ContentBlock' } } }, { name: 'BlockPatch', fields: { 'block_id': { kind: 'string' }, 'role': { kind: 'ref', name: 'Role' }, 'patch': { kind: 'ref', name: 'BlockPatch' } } }, { name: 'AgentStateChanged', fields: { 'role': { kind: 'ref', name: 'Role' }, 'state': { kind: 'ref', name: 'AgentState' } } }, { name: 'SessionStartupChanged', fields: { 'state': { kind: 'ref', name: 'SessionStartupState' } } }, { name: 'TaskStatusChanged', fields: { 'task_id': { kind: 'string' }, 'status': { kind: 'ref', name: 'TaskStatus' } } }, { name: 'ContextUpdated', fields: { 'role': { kind: 'ref', name: 'Role' }, 'remaining_percent': { kind: 'u8' } } }, { name: 'TaskStarted', fields: { 'task_id': { kind: 'string' }, 'title': { kind: 'string' }, 'description': { kind: 'string' }, 'steps': { kind: 'vec', element: { kind: 'ref', name: 'PlanStep' } } } }, { name: 'AgentModelChanged', fields: { 'role': { kind: 'ref', name: 'Role' }, 'model_id': { kind: 'option', inner: { kind: 'string' } }, 'available_models': { kind: 'vec', element: { kind: 'string' } } } }, { name: 'AgentPresetChanged', fields: { 'role': { kind: 'ref', name: 'Role' }, 'preset_id': { kind: 'option', inner: { kind: 'string' } }, 'kind': { kind: 'ref', name: 'AgentKind' }, 'provider': { kind: 'option', inner: { kind: 'string' } } } }, { name: 'AgentEffortChanged', fields: { 'role': { kind: 'ref', name: 'Role' }, 'effort_config_id': { kind: 'option', inner: { kind: 'string' } }, 'effort_value_id': { kind: 'option', inner: { kind: 'string' } }, 'available_effort_values': { kind: 'vec', element: { kind: 'ref', name: 'EffortValue' } } } }, { name: 'MateGuidanceQueued', fields: { 'role': { kind: 'ref', name: 'Role' }, 'message': { kind: 'string' } } }, { name: 'HumanReviewRequested', fields: { 'message': { kind: 'string' }, 'diff': { kind: 'string' }, 'worktree_path': { kind: 'string' } } }, { name: 'HumanReviewCleared', fields: null }, { name: 'SessionTitleChanged', fields: { 'title': { kind: 'string' } } }, { name: 'AgentAcpInfoChanged', fields: { 'role': { kind: 'ref', name: 'Role' }, 'info': { kind: 'ref', name: 'AgentAcpInfo' } } }] }],
+  ["HookCheckResult", { kind: 'struct', fields: { 'name': { kind: 'string' }, 'passed': { kind: 'bool' }, 'output': { kind: 'string' } } }],
+  ["SessionEvent", { kind: 'enum', variants: [{ name: 'BlockAppend', fields: { 'block_id': { kind: 'string' }, 'role': { kind: 'ref', name: 'Role' }, 'block': { kind: 'ref', name: 'ContentBlock' } } }, { name: 'BlockPatch', fields: { 'block_id': { kind: 'string' }, 'role': { kind: 'ref', name: 'Role' }, 'patch': { kind: 'ref', name: 'BlockPatch' } } }, { name: 'AgentStateChanged', fields: { 'role': { kind: 'ref', name: 'Role' }, 'state': { kind: 'ref', name: 'AgentState' } } }, { name: 'SessionStartupChanged', fields: { 'state': { kind: 'ref', name: 'SessionStartupState' } } }, { name: 'TaskStatusChanged', fields: { 'task_id': { kind: 'string' }, 'status': { kind: 'ref', name: 'TaskStatus' } } }, { name: 'ContextUpdated', fields: { 'role': { kind: 'ref', name: 'Role' }, 'remaining_percent': { kind: 'u8' } } }, { name: 'TaskStarted', fields: { 'task_id': { kind: 'string' }, 'title': { kind: 'string' }, 'description': { kind: 'string' }, 'steps': { kind: 'vec', element: { kind: 'ref', name: 'PlanStep' } } } }, { name: 'AgentModelChanged', fields: { 'role': { kind: 'ref', name: 'Role' }, 'model_id': { kind: 'option', inner: { kind: 'string' } }, 'available_models': { kind: 'vec', element: { kind: 'string' } } } }, { name: 'AgentPresetChanged', fields: { 'role': { kind: 'ref', name: 'Role' }, 'preset_id': { kind: 'option', inner: { kind: 'string' } }, 'kind': { kind: 'ref', name: 'AgentKind' }, 'provider': { kind: 'option', inner: { kind: 'string' } } } }, { name: 'AgentEffortChanged', fields: { 'role': { kind: 'ref', name: 'Role' }, 'effort_config_id': { kind: 'option', inner: { kind: 'string' } }, 'effort_value_id': { kind: 'option', inner: { kind: 'string' } }, 'available_effort_values': { kind: 'vec', element: { kind: 'ref', name: 'EffortValue' } } } }, { name: 'MateGuidanceQueued', fields: { 'role': { kind: 'ref', name: 'Role' }, 'message': { kind: 'string' } } }, { name: 'HumanReviewRequested', fields: { 'message': { kind: 'string' }, 'diff': { kind: 'string' }, 'worktree_path': { kind: 'string' } } }, { name: 'HumanReviewCleared', fields: null }, { name: 'SessionTitleChanged', fields: { 'title': { kind: 'string' } } }, { name: 'AgentAcpInfoChanged', fields: { 'role': { kind: 'ref', name: 'Role' }, 'info': { kind: 'ref', name: 'AgentAcpInfo' } } }, { name: 'ChecksStarted', fields: { 'context': { kind: 'string' }, 'hooks': { kind: 'vec', element: { kind: 'string' } } } }, { name: 'ChecksFinished', fields: { 'context': { kind: 'string' }, 'all_passed': { kind: 'bool' }, 'results': { kind: 'vec', element: { kind: 'ref', name: 'HookCheckResult' } } } }] }],
   ["SessionEventEnvelope", { kind: 'struct', fields: { 'seq': { kind: 'u64' }, 'timestamp': { kind: 'string' }, 'event': { kind: 'ref', name: 'SessionEvent' } } }],
   ["SubscribeMessage", { kind: 'enum', variants: [{ name: 'Event', fields: { kind: 'ref', name: 'SessionEventEnvelope' } }, { name: 'ReplayComplete', fields: null }] }],
   ["ActivityKind", { kind: 'enum', variants: [{ name: 'CaptainMessage', fields: { 'message': { kind: 'string' } } }, { name: 'SessionCreated', fields: null }, { name: 'SessionArchived', fields: null }] }],
@@ -1696,7 +1697,7 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: 'subscribeEvents',
-      id: 0xc0b5d977876883abn,
+      id: 0x8c4d4ad559de71ddn,
       args: { kind: 'tuple', elements: [{ kind: 'string' }, { kind: 'tx', element: { kind: 'ref', name: 'SubscribeMessage' } }] },
       result: { kind: 'enum', variants: [{ name: 'Ok', fields: { kind: 'struct', fields: {} } }, { name: 'Err', fields: { kind: 'enum', variants: [{ name: 'User', fields: null }, { name: 'UnknownMethod', fields: null }, { name: 'InvalidPayload', fields: null }, { name: 'Cancelled', fields: null }] } }] },
     },
@@ -1720,3 +1721,4 @@ export const ship_descriptor: ServiceDescriptor = {
     },
   ],
 };
+
