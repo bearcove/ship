@@ -2258,7 +2258,7 @@ You are now active. Wait for messages from captains or the human.\n",
         }
 
         self.worktree_ops
-            .merge_ff_only(&repo_root, &branch_name)
+            .merge_ff_only(&repo_root, &branch_name, &base_branch)
             .await
             .map_err(|error| format!("fast-forward merge failed: {}", error.message))?;
 
@@ -3085,7 +3085,7 @@ Here is your task:
         }
 
         self.worktree_ops
-            .merge_ff_only(&repo_root, &branch_name)
+            .merge_ff_only(&repo_root, &branch_name, &base_branch)
             .await
             .map_err(|error| format!("fast-forward merge failed: {}", error.message))?;
 
