@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { Box, Flex, Text, TextArea } from "@radix-ui/themes";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { Flex, Text, TextArea } from "@radix-ui/themes";
 import {
   ArrowUp,
   Microphone,
@@ -24,6 +24,7 @@ import {
   attachedImageThumbList,
   attachedImageThumbWrapper,
   composerActivityDot,
+  composerDropIndicator,
   composerEscHint,
   composerInlineBtn,
   composerInput,
@@ -34,12 +35,10 @@ import {
   composerStatusRow,
   fileMentionItem,
   fileMentionPopup,
-  pageDropOverlay,
   playbackBar,
   transcriptPreview,
 } from "../styles/session-view.css";
 import { Waveform } from "./Waveform";
-import { useDocumentDrop } from "../hooks/useDocumentDrop";
 import { useTranscription } from "../hooks/useTranscription";
 import { usePlayback } from "../context/PlaybackContext";
 
@@ -127,6 +126,12 @@ interface Props {
   taskStatus: TaskStatus | null;
 }
 
+export interface UnifiedComposerHandle {
+  focusComposer(): void;
+  addImageFiles(files: FileList | File[]): void;
+  setDragOver(isDragOver: boolean): void;
+}
+
 function parseTarget(text: string): { target: "captain" | "mate"; content: string } {
   const match = text.match(/^@mate\s*/i);
   if (match) return { target: "mate", content: text.slice(match[0].length) };
@@ -191,7 +196,10 @@ function formatElapsed(ms: number): string {
 // r[ui.keys.steer-send]
 // r[ui.composer.image-attach]
 // r[view.agent-panel.activity]
-export function UnifiedComposer({ sessionId, captain, mate, startupState, taskStatus }: Props) {
+export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function UnifiedComposer(
+  { sessionId, captain, mate, startupState, taskStatus }: Props,
+  ref,
+) {
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -199,11 +207,11 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
   const [sendAfterTranscription, setSendAfterTranscription] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const transcriptPreviewRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [fileMatches, setFileMatches] = useState<string[]>([]);
-  const isDragOver = useDocumentDrop(addImageFiles);
   const transcription = useTranscription();
   const playback = usePlayback();
 
@@ -398,6 +406,7 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
   }
 
   function addImageFiles(files: FileList | File[]) {
+    setIsDragOver(false);
     for (const file of Array.from(files)) {
       if (!file.type.startsWith("image/")) continue;
       void convertToSupportedFormat(file)
@@ -418,6 +427,20 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
         });
     }
   }
+
+  function focusComposer() {
+    textareaRef.current?.focus();
+  }
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      focusComposer,
+      addImageFiles,
+      setDragOver: setIsDragOver,
+    }),
+    [],
+  );
 
   function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
     const imageFiles: File[] = [];
@@ -496,8 +519,6 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
 
   return (
     <Flex className={composerRoot} direction="column" gap="2">
-      {isDragOver && <div className={pageDropOverlay}>Drop image to attach</div>}
-
       {(isWorking || mateUnavailable || hasAgentStateChips) && (
         <Flex
           className={composerStatusRow}
@@ -550,13 +571,13 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
         }}
       />
 
-      {playback.state === "playing" && playback.analyser && (
+      {playback?.state === "playing" && playback.analyser && (
         <div className={playbackBar}>
           <Waveform analyser={playback.analyser} />
           <button
             type="button"
             className={composerInlineBtn}
-            onClick={playback.stop}
+            onClick={() => playback.stop()}
             title="Stop playback"
             style={{ position: "static", transform: "none", flexShrink: 0 }}
           >
@@ -572,6 +593,11 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
       )}
 
       <div className={composerInputWrapper} data-target={target === "mate" ? "mate" : undefined}>
+        {isDragOver && (
+          <div className={composerDropIndicator} data-testid="composer-drop-indicator">
+            Drop image to attach
+          </div>
+        )}
         {mentionQuery !== null && totalMentionItems > 0 && (
           <div className={fileMentionPopup}>
             {showMateEntry && (
@@ -730,4 +756,4 @@ export function UnifiedComposer({ sessionId, captain, mate, startupState, taskSt
       )}
     </Flex>
   );
-}
+});

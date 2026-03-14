@@ -10,6 +10,7 @@ import { ErrorBlock } from "./blocks/ErrorBlock";
 import { PermissionBlock } from "./blocks/PermissionBlock";
 import { ImageBlock } from "./blocks/ImageBlock";
 import { getShipClient } from "../api/client";
+import { useDocumentDrop } from "../hooks/useDocumentDrop";
 import { AgentKindIcon } from "./AgentKindIcon";
 import { encode } from "gpt-tokenizer";
 
@@ -753,6 +754,8 @@ interface Props {
   loading?: boolean;
   loadingLabel?: string;
   debugMode?: boolean;
+  onImageDrop?: (files: File[]) => void;
+  onImageDragStateChange?: (isDragOver: boolean) => void;
 }
 
 // r[ui.event-stream.grouping]
@@ -768,10 +771,24 @@ export function UnifiedFeed({
   loading,
   loadingLabel,
   debugMode = false,
+  onImageDrop,
+  onImageDragStateChange,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickyScroll = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
+  const [dropTarget, setDropTarget] = useState<HTMLDivElement | null>(null);
+  const isImageDragOver = useDocumentDrop(dropTarget, onImageDrop ?? (() => undefined));
+
+  useEffect(() => {
+    onImageDragStateChange?.(isImageDragOver);
+  }, [isImageDragOver, onImageDragStateChange]);
+
+  useEffect(() => {
+    return () => {
+      onImageDragStateChange?.(false);
+    };
+  }, [onImageDragStateChange]);
 
   // Track which blocks existed when the session was loaded so we only
   // animate genuinely new bubbles, not the entire history on switch.
@@ -884,7 +901,7 @@ export function UnifiedFeed({
   const segments = buildSegments(visibleBlocks, debugMode);
 
   return (
-    <Box className={unifiedFeedRoot}>
+    <Box ref={setDropTarget} className={unifiedFeedRoot} data-testid="session-feed-drop-target">
       {loading && (
         <Flex align="center" gap="2" px="3" py="2" style={{ flexShrink: 0 }}>
           <Spinner size="1" />

@@ -432,7 +432,7 @@ export function NewSessionDialog({
       }
       await refreshSessionList();
       onOpenChange(false);
-      navigate(`/sessions/${result.slug}`);
+      navigate(`/sessions/${result.slug}`, { state: { autofocusComposer: true } });
     } finally {
       setSubmitting(false);
     }

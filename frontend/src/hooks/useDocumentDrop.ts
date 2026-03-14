@@ -1,53 +1,72 @@
 import { useEffect, useRef, useState } from "react";
 
+function getDraggedImageFiles(event: DragEvent): File[] {
+  const files = event.dataTransfer?.files;
+  if (!files) return [];
+  return Array.from(files).filter((file) => file.type.startsWith("image/"));
+}
+
+function hasDraggedImageFiles(event: DragEvent): boolean {
+  const items = event.dataTransfer?.items;
+  if (items && items.length > 0) {
+    return Array.from(items).some((item) => item.kind === "file" && item.type.startsWith("image/"));
+  }
+  return getDraggedImageFiles(event).length > 0;
+}
+
 // r[ui.composer.image-attach]
-export function useDocumentDrop(onDrop: (files: File[]) => void): boolean {
+export function useDocumentDrop(
+  target: HTMLElement | null,
+  onDrop: (files: File[]) => void,
+): boolean {
   const [counter, setCounter] = useState(0);
   const onDropRef = useRef(onDrop);
   onDropRef.current = onDrop;
 
   useEffect(() => {
-    function hasFiles(event: DragEvent): boolean {
-      return event.dataTransfer?.types.includes("Files") ?? false;
+    if (!target) {
+      setCounter(0);
+      return;
     }
 
     function handleDragEnter(event: DragEvent) {
-      if (!hasFiles(event)) return;
+      if (!hasDraggedImageFiles(event)) return;
       event.preventDefault();
-      setCounter((c) => c + 1);
+      setCounter((current) => current + 1);
     }
 
     function handleDragOver(event: DragEvent) {
-      if (!hasFiles(event)) return;
+      if (!hasDraggedImageFiles(event)) return;
       event.preventDefault();
     }
 
     function handleDragLeave(event: DragEvent) {
-      if (!hasFiles(event)) return;
-      setCounter((c) => Math.max(0, c - 1));
+      if (!hasDraggedImageFiles(event)) return;
+      setCounter((current) => Math.max(0, current - 1));
     }
 
     function handleDrop(event: DragEvent) {
+      if (!hasDraggedImageFiles(event)) return;
       event.preventDefault();
       setCounter(0);
-      const files = event.dataTransfer?.files;
-      if (files && files.length > 0) {
-        onDropRef.current(Array.from(files));
+      const files = getDraggedImageFiles(event);
+      if (files.length > 0) {
+        onDropRef.current(files);
       }
     }
 
-    document.addEventListener("dragenter", handleDragEnter);
-    document.addEventListener("dragover", handleDragOver);
-    document.addEventListener("dragleave", handleDragLeave);
-    document.addEventListener("drop", handleDrop);
+    target.addEventListener("dragenter", handleDragEnter);
+    target.addEventListener("dragover", handleDragOver);
+    target.addEventListener("dragleave", handleDragLeave);
+    target.addEventListener("drop", handleDrop);
 
     return () => {
-      document.removeEventListener("dragenter", handleDragEnter);
-      document.removeEventListener("dragover", handleDragOver);
-      document.removeEventListener("dragleave", handleDragLeave);
-      document.removeEventListener("drop", handleDrop);
+      target.removeEventListener("dragenter", handleDragEnter);
+      target.removeEventListener("dragover", handleDragOver);
+      target.removeEventListener("dragleave", handleDragLeave);
+      target.removeEventListener("drop", handleDrop);
     };
-  }, []);
+  }, [target]);
 
   return counter > 0;
 }

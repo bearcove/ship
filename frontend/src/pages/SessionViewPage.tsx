@@ -1,13 +1,13 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSwipeable } from "react-swipeable";
-import { useParams, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { Box, Button, Callout, Flex, Spinner, Text } from "@radix-ui/themes";
 import { Warning } from "@phosphor-icons/react";
 import { useSession } from "../hooks/useSession";
 import { useSessionState } from "../hooks/useSessionState";
 import { refreshSessionList } from "../hooks/useSessionList";
 import { UnifiedFeed } from "../components/UnifiedFeed";
-import { UnifiedComposer } from "../components/UnifiedComposer";
+import { UnifiedComposer, type UnifiedComposerHandle } from "../components/UnifiedComposer";
 import { SessionHeader } from "../components/SessionHeader";
 import { SteerReview } from "../components/SteerReview";
 import { HumanReview } from "../components/HumanReview";
@@ -42,6 +42,8 @@ export function SessionViewPage({
 }) {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  const composerRef = useRef<UnifiedComposerHandle>(null);
   const [archiving, setArchiving] = useState(false);
   const [archiveConfirm, setArchiveConfirm] = useState<string[] | null>(null);
   const [duplicateOpen, setDuplicateOpen] = useState(false);
@@ -82,13 +84,28 @@ export function SessionViewPage({
 
   const diffStats = useWorktreeDiffStats(sessionId ?? "");
 
+  function isEditableTarget(target: EventTarget | null): boolean {
+    return (
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      (target instanceof HTMLElement && target.isContentEditable)
+    );
+  }
+
+  useEffect(() => {
+    if ((location.state as { autofocusComposer?: boolean } | null)?.autofocusComposer) {
+      composerRef.current?.focusComposer();
+    }
+  }, [location.key, location.state]);
+
   // r[ui.keys.nav]
   useEffect(() => {
     function handler(e: KeyboardEvent) {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (isEditableTarget(e.target)) return;
       if (e.key === "d" && e.metaKey) {
         e.preventDefault();
         setDuplicateOpen(true);
+        return;
       }
       if (e.metaKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
         e.preventDefault();
@@ -101,6 +118,11 @@ export function SessionViewPage({
           next = idx >= orderedSessions.length - 1 ? 0 : idx + 1;
         }
         navigate(`/sessions/${orderedSessions[next].slug}`);
+        return;
+      }
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "c") {
+        e.preventDefault();
+        composerRef.current?.focusComposer();
       }
     }
     window.addEventListener("keydown", handler);
@@ -291,6 +313,13 @@ export function SessionViewPage({
               loading={isReplaying}
               loadingLabel={replayLabel}
               debugMode={debugMode}
+              onImageDrop={(files) => {
+                composerRef.current?.addImageFiles(files);
+                composerRef.current?.focusComposer();
+              }}
+              onImageDragStateChange={(isDragOver) => {
+                composerRef.current?.setDragOver(isDragOver);
+              }}
             />
             {debugMode && (
               <SessionDebugPanel
@@ -308,6 +337,7 @@ export function SessionViewPage({
               )}
             <Box className={feedContentColumn}>
               <UnifiedComposer
+                ref={composerRef}
                 sessionId={session.id}
                 captain={captain}
                 mate={mate}

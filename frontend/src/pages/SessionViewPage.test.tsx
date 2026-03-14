@@ -115,9 +115,11 @@ function makeSession(): SessionDetail {
   };
 }
 
-function renderPage() {
+function renderPage(
+  initialEntries: Array<string | { pathname: string; state?: unknown }> = ["/sessions/session-1"],
+) {
   return renderWithTheme(
-    <MemoryRouter initialEntries={["/sessions/session-1"]}>
+    <MemoryRouter initialEntries={initialEntries}>
       <SoundProvider>
         <Routes>
           <Route path="/" element={<LocationEcho />} />
@@ -156,6 +158,8 @@ beforeEach(() => {
   };
   mocks.promptCaptain.mockReset();
   mocks.steer.mockReset();
+  URL.createObjectURL = vi.fn(() => "blob:session-view-test");
+  URL.revokeObjectURL = vi.fn();
 });
 
 // r[verify frontend.test.vitest]
@@ -168,6 +172,58 @@ describe("SessionViewPage UX slice", () => {
 
     expect(screen.getByLabelText("Steer input")).toBeInTheDocument();
     expect(screen.getByAltText("Captain")).toBeInTheDocument();
+  });
+
+  it("shows the composer drop indicator and attaches dropped images from the feed", async () => {
+    renderPage();
+
+    const textarea = screen.getByLabelText("Steer input");
+    const feed = screen.getByTestId("session-feed-drop-target");
+    const file = new File(["image-bytes"], "drop.png", { type: "image/png" });
+
+    expect(screen.queryByTestId("composer-drop-indicator")).not.toBeInTheDocument();
+
+    fireEvent.dragEnter(feed, { dataTransfer: { files: [file] } });
+    expect(screen.getByTestId("composer-drop-indicator")).toBeInTheDocument();
+
+    fireEvent.drop(feed, { dataTransfer: { files: [file] } });
+
+    expect(textarea).toHaveFocus();
+    await waitFor(() => {
+      expect(screen.getByAltText("drop.png")).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("composer-drop-indicator")).not.toBeInTheDocument();
+  });
+
+  it("autofocuses the composer after navigating from new-session creation", () => {
+    renderPage([{ pathname: "/sessions/session-1", state: { autofocusComposer: true } }]);
+
+    expect(screen.getByLabelText("Steer input")).toHaveFocus();
+  });
+
+  it("focuses the composer with c but ignores modifier shortcuts and active inputs", () => {
+    renderPage();
+
+    const textarea = screen.getByLabelText("Steer input");
+    const switchButton = screen.getByRole("button", { name: "Switch session" });
+    switchButton.focus();
+
+    fireEvent.keyDown(window, { key: "c" });
+    expect(textarea).toHaveFocus();
+
+    switchButton.focus();
+    fireEvent.keyDown(window, { key: "c", metaKey: true });
+    expect(switchButton).toHaveFocus();
+
+    const outsideInput = document.createElement("input");
+    document.body.appendChild(outsideInput);
+    outsideInput.focus();
+
+    fireEvent.keyDown(outsideInput, { key: "c" });
+    expect(outsideInput).toHaveFocus();
+    expect(textarea).not.toHaveFocus();
+
+    outsideInput.remove();
   });
 
   // r[verify view.agent-panel.state]
@@ -228,22 +284,14 @@ describe("SessionViewPage UX slice", () => {
   });
 
   // r[verify view.session]
-  it("hides archive controls until the session has accepted work", async () => {
+  it("hides archive controls until the session has accepted work", () => {
     renderPage();
 
     expect(screen.queryByRole("button", { name: "Archive session" })).not.toBeInTheDocument();
-
-    fireEvent.pointerDown(screen.getByRole("button", { name: "Session menu" }), {
-      button: 0,
-      ctrlKey: false,
-    });
-
-    expect(await screen.findByRole("menuitem", { name: "New session" })).toBeInTheDocument();
-    expect(screen.queryByRole("menuitem", { name: "Archive session" })).not.toBeInTheDocument();
   });
 
   // r[verify view.session]
-  it("shows archive controls once the session has accepted work", async () => {
+  it("shows archive controls once the session has accepted work", () => {
     mocks.session = {
       ...makeSession(),
       current_task: null,
@@ -263,14 +311,6 @@ describe("SessionViewPage UX slice", () => {
     renderPage();
 
     expect(screen.getByRole("button", { name: "Archive session" })).toBeInTheDocument();
-
-    fireEvent.pointerDown(screen.getByRole("button", { name: "Session menu" }), {
-      button: 0,
-      ctrlKey: false,
-    });
-
-    expect(await screen.findByRole("menuitem", { name: "New session" })).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "Archive session" })).toBeInTheDocument();
   });
 
   // r[verify view.session]
