@@ -38,7 +38,7 @@ export function AgentKindIcon({ kind }: Props) {
         width: 18,
         height: 18,
         flexShrink: 0,
-        color: kind.tag === "Claude" ? "#D97757" : "var(--gray-12)",
+        color: kind.tag === "Claude" ? "#D97757" : "currentColor",
       }}
     >
       <Icon />
