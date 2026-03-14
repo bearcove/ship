@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Routes, Route, Navigate, useMatch } from "react-router-dom";
 import { Flex, Box, IconButton } from "@radix-ui/themes";
 import { List } from "@phosphor-icons/react";
-import { SessionListPage } from "./pages/SessionListPage";
+import { SessionListPage, NewSessionDialog } from "./pages/SessionListPage";
 import { SessionViewPage } from "./pages/SessionViewPage";
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { ConnectingSplash } from "./components/ConnectingSplash";
@@ -46,6 +46,7 @@ export function App() {
   const orderedSessions = useMemo(() => sortSessions(allSessions), [allSessions]);
   const [debugMode, setDebugMode] = useState(readDebugPreference);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [newSessionOpen, setNewSessionOpen] = useState(false);
   const [connState, setConnState] = useState(() => getConnectionState());
   const hasEverConnected = useRef(connState === "connected");
   const [visitedSessions, setVisitedSessions] = useState<Set<string>>(() => new Set());
@@ -138,11 +139,12 @@ export function App() {
             onToggleDebug={toggleDebug}
             isOpen={sidebarOpen}
             onClose={() => setSidebarOpen(false)}
+            onNewSession={() => setNewSessionOpen(true)}
           />
         </Box>
         <Box className={appColCenter} style={{ overflow: inSessionView ? "hidden" : "auto" }}>
           <Routes>
-            <Route path="/" element={<SessionListPage />} />
+            <Route path="/" element={<SessionListPage onNewSession={() => setNewSessionOpen(true)} />} />
             <Route path="/admiral" element={<Navigate to="/sessions/admiral" replace />} />
             <Route path="/sessions/:sessionId" element={null} />
           </Routes>
@@ -165,6 +167,8 @@ export function App() {
       </Box>
 
       {connState === "reconnecting" && hasEverConnected.current && <ReconnectingIndicator />}
+
+      <NewSessionDialog open={newSessionOpen} onOpenChange={setNewSessionOpen} />
     </Flex>
   );
 }
