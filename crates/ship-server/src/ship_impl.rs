@@ -373,20 +373,6 @@ impl ShipImpl {
 
             const RESPAWN_MSG: &str = "Server restarted — agents need respawn.";
 
-            let (agent_state, startup_state) = if needs_respawn {
-                (
-                    AgentState::Error {
-                        message: RESPAWN_MSG.into(),
-                    },
-                    SessionStartupState::Failed {
-                        stage: SessionStartupStage::StartingCaptain,
-                        message: RESPAWN_MSG.into(),
-                    },
-                )
-            } else {
-                (AgentState::Idle, persisted.startup_state.clone())
-            };
-
             let next_event_seq = persisted
                 .session_event_log
                 .iter()
@@ -403,22 +389,16 @@ impl ShipImpl {
 
             let (events_tx, _) = broadcast::channel(256);
             let session_id = persisted.id.clone();
-            let session = ActiveSession {
+            let mut session = ActiveSession {
                 id: persisted.id,
                 created_at: persisted.created_at,
                 config: persisted.config,
                 worktree_path: None,
                 captain_handle: None,
                 mate_handle: None,
-                captain: AgentSnapshot {
-                    state: agent_state.clone(),
-                    ..persisted.captain
-                },
-                mate: AgentSnapshot {
-                    state: agent_state,
-                    ..persisted.mate
-                },
-                startup_state,
+                captain: persisted.captain,
+                mate: persisted.mate,
+                startup_state: persisted.startup_state,
                 session_event_log: persisted.session_event_log,
                 current_task: persisted.current_task,
                 task_history: persisted.task_history,
@@ -429,7 +409,7 @@ impl ShipImpl {
                 pending_edits: HashMap::new(),
                 pending_steer: None,
                 pending_human_review: None,
-                title: persisted.title.clone(),
+                title: persisted.title,
                 archived_at: None,
                 captain_acp_session_id: persisted.captain_acp_session_id,
                 mate_acp_session_id: persisted.mate_acp_session_id,
@@ -444,6 +424,19 @@ impl ShipImpl {
                 mate_activity_buffer: Vec::new(),
                 mate_activity_first_at: None,
             };
+            rebuild_materialized_from_event_log(&mut session);
+
+            if needs_respawn {
+                let restart_state = AgentState::Error {
+                    message: RESPAWN_MSG.into(),
+                };
+                session.captain.state = restart_state.clone();
+                session.mate.state = restart_state;
+                session.startup_state = SessionStartupState::Failed {
+                    stage: SessionStartupStage::StartingCaptain,
+                    message: RESPAWN_MSG.into(),
+                };
+            }
 
             tracing::info!(session_id = %session_id.0, needs_respawn, "loaded persisted session");
             sessions.insert(session_id, session);
