@@ -1,30 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
-import { Box, Code, IconButton } from "@radix-ui/themes";
+import { Box, Code } from "@radix-ui/themes";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { bundledLanguages, codeToHtml } from "shiki";
 import type { BundledLanguage } from "shiki";
-import { Check, CircleNotch, CopySimple, SpeakerHigh } from "@phosphor-icons/react";
 import type { ContentBlock } from "../../generated/ship";
 import { fixMarkdownBackticks } from "../../utils/fixMarkdownBackticks";
 import {
-  bubbleActions,
   bubbleContent,
   textBlockCodeBlock,
   textBlockCodeFallback,
   textBlockRoot,
 } from "../../styles/session-view.css";
-import { spinAnimation } from "../../styles/global.css";
-import { usePlayback } from "../../context/PlaybackContext";
 
 type TextBlockType = Extract<ContentBlock, { tag: "Text" }>;
-
-interface BubbleActionsProps {
-  block: TextBlockType;
-  speakable?: boolean;
-}
-
-
 
 function useColorScheme(): "dark" | "light" {
   const [scheme, setScheme] = useState<"dark" | "light">(() =>
@@ -84,44 +73,6 @@ export function MarkdownCodeBlock({ className, code }: { className?: string; cod
     <pre className={textBlockCodeFallback}>
       <code>{code}</code>
     </pre>
-  );
-}
-
-export function BubbleActions({ block, speakable }: BubbleActionsProps) {
-  const [copied, setCopied] = useState(false);
-  const playback = usePlayback();
-
-  const handleCopy = () => {
-    void navigator.clipboard.writeText(block.text).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  };
-
-  const isThisActive = playback.state !== "idle" && playback.activeText === block.text;
-  const isBusy = playback.state !== "idle";
-
-  return (
-    <div className={bubbleActions}>
-      {speakable && (
-        <IconButton
-          size="2"
-          variant="ghost"
-          onClick={() => isThisActive ? playback.stop() : playback.speak(block.text)}
-          aria-label={isThisActive ? "Stop" : "Speak"}
-          disabled={isBusy && !isThisActive}
-        >
-          {isThisActive ? (
-            <CircleNotch size={16} style={{ animation: `${spinAnimation} 2.5s linear infinite` }} />
-          ) : (
-            <SpeakerHigh size={16} />
-          )}
-        </IconButton>
-      )}
-      <IconButton size="2" variant="ghost" onClick={handleCopy} aria-label="Copy">
-        {copied ? <Check size={16} /> : <CopySimple size={16} />}
-      </IconButton>
-    </div>
   );
 }
 
