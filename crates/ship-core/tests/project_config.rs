@@ -12,7 +12,7 @@ fn make_temp_dir(test_name: &str) -> PathBuf {
 fn write_project_config(project_root: &Path, config: &str) {
     let config_dir = project_root.join(".config/ship");
     std::fs::create_dir_all(&config_dir).expect("config dir should be created");
-    std::fs::write(config_dir.join("config.styx"), config).expect("config file should be written");
+    std::fs::write(config_dir.join("project.styx"), config).expect("config file should be written");
 }
 
 #[tokio::test]
@@ -71,6 +71,7 @@ hooks {
             name: "pnpm-install".to_owned(),
             command: "pnpm install".to_owned(),
             cwd: None,
+            glob: vec![],
         }]
     );
 
@@ -80,6 +81,7 @@ hooks {
             name: "format-rust".to_owned(),
             command: "cargo fmt".to_owned(),
             cwd: None,
+            glob: vec![],
         }]
     );
 
@@ -91,11 +93,13 @@ hooks {
                 name: "clippy".to_owned(),
                 command: "cargo clippy --workspace".to_owned(),
                 cwd: None,
+                glob: vec![],
             },
             HookDef {
                 name: "typecheck".to_owned(),
                 command: "pnpm typecheck".to_owned(),
                 cwd: Some("frontend".to_owned()),
+                glob: vec![],
             },
         ]
     );
@@ -220,7 +224,7 @@ hooks {
 #[tokio::test]
 async fn reports_invalid_config_with_file_context() {
     let root = make_temp_dir("project-hooks-invalid");
-    let config_path = root.join(".config/ship/config.styx");
+    let config_path = root.join(".config/ship/project.styx");
     write_project_config(
         &root,
         r#"

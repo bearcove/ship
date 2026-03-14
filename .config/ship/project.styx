@@ -1,0 +1,31 @@
+hooks {
+    worktree_setup {
+        pnpm-install {
+            command "pnpm install"
+        }
+    }
+
+    pre_commit {
+        codegen {
+            command "cargo xtask codegen --check"
+            glob ("**/*.rs")
+        }
+
+        typecheck {
+            command "pnpm exec tsgo --noEmit"
+            cwd frontend
+            glob ("**/*.ts" "**/*.tsx")
+        }
+
+        tracey {
+            command "tracey query validate"
+            glob ("**/*.rs" "**/*.md")
+        }
+    }
+
+    pre_merge {
+        capn {
+            command "capn pre-push"
+        }
+    }
+}

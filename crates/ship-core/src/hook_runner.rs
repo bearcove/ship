@@ -2,6 +2,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use globset::{Glob, GlobSetBuilder};
 use ship_types::HookDef;
 use tokio::process::Command;
 use tokio::task::JoinSet;
@@ -69,6 +70,9 @@ fn indent(s: &str) -> String {
 /// Run all hooks in parallel. All hooks run to completion regardless of
 /// individual failures. Returns `Ok` with all outcomes when every hook
 /// succeeds, or `Err` with all outcomes when any hook fails.
+///
+/// Hooks with a `glob` list are skipped if none of the worktree's changed
+/// files match any of the patterns.
 pub async fn run_hooks(
     hooks: &[HookDef],
     worktree_root: &Path,
@@ -77,9 +81,25 @@ pub async fn run_hooks(
         return Ok(Vec::new());
     }
 
+    // Only pay the cost of a git invocation if at least one hook has globs.
+    let changed_files: Option<Vec<String>> = if hooks.iter().any(|h| !h.glob.is_empty()) {
+        Some(collect_changed_files(worktree_root).await)
+    } else {
+        None
+    };
+
     let mut join_set = JoinSet::new();
 
     for hook in hooks {
+        if !hook.glob.is_empty() {
+            if let Some(ref files) = changed_files {
+                if !any_file_matches(&hook.glob, files) {
+                    // No changed file matches — skip this hook entirely.
+                    continue;
+                }
+            }
+        }
+
         let name = hook.name.clone();
         let command = hook.command.clone();
         let cwd = worktree_root.join(hook.cwd.as_deref().unwrap_or("."));
@@ -91,8 +111,7 @@ pub async fn run_hooks(
         match result {
             Ok(outcome) => outcomes.push(outcome),
             Err(join_err) => {
-                // A task panicked or was cancelled — this shouldn't happen in
-                // normal operation but we treat it as a hook failure.
+                // A task panicked or was cancelled — treat as failure.
                 outcomes.push(HookOutcome {
                     name: "<unknown>".to_owned(),
                     command: String::new(),
@@ -113,6 +132,55 @@ pub async fn run_hooks(
     } else {
         Ok(outcomes)
     }
+}
+
+/// Returns the list of files that differ from HEAD in the worktree.
+/// Falls back to an empty list if git is unavailable or there is no HEAD yet,
+/// which causes glob-filtered hooks to be skipped rather than incorrectly run.
+async fn collect_changed_files(worktree_root: &Path) -> Vec<String> {
+    let output = Command::new("git")
+        .args(["diff", "--name-only", "HEAD"])
+        .current_dir(worktree_root)
+        .output()
+        .await;
+
+    match output {
+        Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(|l| l.to_owned())
+            .collect(),
+        // No HEAD yet (empty repo) or any other git error — run all hooks.
+        _ => Vec::new(),
+    }
+}
+
+/// Returns true if any file in `files` matches at least one glob in `patterns`.
+/// Invalid glob patterns are silently ignored (they never match).
+fn any_file_matches(patterns: &[String], files: &[String]) -> bool {
+    if files.is_empty() {
+        // No changed files recorded — don't skip (e.g. fresh worktree).
+        return true;
+    }
+
+    let mut builder = GlobSetBuilder::new();
+    let mut any_valid = false;
+    for pattern in patterns {
+        if let Ok(glob) = Glob::new(pattern) {
+            builder.add(glob);
+            any_valid = true;
+        }
+    }
+
+    if !any_valid {
+        return true;
+    }
+
+    let Ok(globset) = builder.build() else {
+        return true;
+    };
+
+    files.iter().any(|f| globset.is_match(f))
 }
 
 async fn run_single_hook(name: String, command: String, cwd: PathBuf) -> HookOutcome {

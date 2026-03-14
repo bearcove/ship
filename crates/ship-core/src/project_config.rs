@@ -17,10 +17,10 @@ impl std::fmt::Display for ProjectConfigError {
 
 impl std::error::Error for ProjectConfigError {}
 
-/// Load project hooks from `.config/ship/config.styx` at the project root.
+/// Load project hooks from `.config/ship/project.styx` at the project root.
 /// Returns empty/default hooks if the config file doesn't exist.
 pub async fn load_project_hooks(project_root: &Path) -> Result<ResolvedHooks, ProjectConfigError> {
-    let config_path = project_root.join(".config/ship/config.styx");
+    let config_path = project_root.join(".config/ship/project.styx");
     let source = match fs::read_to_string(&config_path).await {
         Ok(source) => source,
         Err(error) if error.kind() == io::ErrorKind::NotFound => {

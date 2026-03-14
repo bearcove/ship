@@ -1065,6 +1065,8 @@ pub mod hooks {
         pub command: String,
         #[facet(default)]
         pub cwd: Option<String>,
+        #[facet(default)]
+        pub glob: Vec<String>,
     }
 
     /// Raw hooks config as parsed from Styx. Each hook point maps names to configs.
@@ -1084,6 +1086,7 @@ pub mod hooks {
         pub name: String,
         pub command: String,
         pub cwd: Option<String>,
+        pub glob: Vec<String>,
     }
 
     /// Resolved hooks with ordered Vec<HookDef> for each hook point.
@@ -1101,6 +1104,7 @@ pub mod hooks {
                 name,
                 command: entry.command,
                 cwd: entry.cwd,
+                glob: entry.glob,
             })
             .collect();
         hooks.sort_by(|a, b| a.name.cmp(&b.name));

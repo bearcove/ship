@@ -6,7 +6,10 @@ use std::process::Command;
 fn main() -> Result<(), Box<dyn Error>> {
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
-        Some("codegen") => codegen_typescript(&workspace_root()?),
+        Some("codegen") => {
+            let check = args.any(|a| a == "--check");
+            codegen_typescript(&workspace_root()?, check)
+        }
         Some("install") => {
             install(&workspace_root()?);
             Ok(())
@@ -35,8 +38,11 @@ fn print_usage() {
     eprintln!("Usage: cargo xtask <command>");
     eprintln!();
     eprintln!("Commands:");
-    eprintln!("  codegen    Generate TypeScript bindings from the Ship roam service trait");
-    eprintln!("  install    Build and install ship binaries to ~/.cargo/bin");
+    eprintln!("  codegen           Generate TypeScript bindings from the Ship roam service trait");
+    eprintln!(
+        "  codegen --check   Check that generated files are up to date (non-zero exit if not)"
+    );
+    eprintln!("  install           Build and install ship binaries to ~/.cargo/bin");
 }
 
 fn build_frontend(workspace_root: &Path) {
@@ -149,7 +155,7 @@ fn install(workspace_root: &Path) {
 // r[frontend.codegen]
 // r[dep.roam-codegen]
 // r[backend.rpc]
-fn codegen_typescript(workspace_root: &Path) -> Result<(), Box<dyn Error>> {
+fn codegen_typescript(workspace_root: &Path, check: bool) -> Result<(), Box<dyn Error>> {
     let out_dir = workspace_root
         .join("frontend")
         .join("src")
@@ -162,13 +168,20 @@ fn codegen_typescript(workspace_root: &Path) -> Result<(), Box<dyn Error>> {
     ));
 
     let out_path = out_dir.join("ship.ts");
-    write_if_changed(&out_path, code)?;
-
     let index_path = out_dir.join("index.ts");
-    write_if_changed(&index_path, "export * from \"./ship\";\n".to_owned())?;
+    let index_content = "export * from \"./ship\";\n".to_owned();
 
-    println!("generated {}", out_path.display());
-    println!("generated {}", index_path.display());
+    if check {
+        check_if_changed(&out_path, code)?;
+        check_if_changed(&index_path, index_content)?;
+        println!("up to date: {}", out_path.display());
+        println!("up to date: {}", index_path.display());
+    } else {
+        write_if_changed(&out_path, code)?;
+        write_if_changed(&index_path, index_content)?;
+        println!("generated {}", out_path.display());
+        println!("generated {}", index_path.display());
+    }
     Ok(())
 }
 
@@ -198,5 +211,21 @@ fn write_if_changed(path: &Path, content: String) -> Result<(), Box<dyn Error>> 
             std::fs::write(path, content)?;
             Ok(())
         }
+    }
+}
+
+fn check_if_changed(path: &Path, expected: String) -> Result<(), Box<dyn Error>> {
+    match std::fs::read_to_string(path) {
+        Ok(existing) if existing == expected => Ok(()),
+        Ok(_) => Err(format!(
+            "{} is out of date — run `cargo xtask codegen` to regenerate",
+            path.display()
+        )
+        .into()),
+        Err(_) => Err(format!(
+            "{} does not exist — run `cargo xtask codegen` to generate it",
+            path.display()
+        )
+        .into()),
     }
 }
