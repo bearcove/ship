@@ -24,6 +24,7 @@ export const unifiedFeedScroll = style({
   position: "relative",
   maskImage: "linear-gradient(to bottom, black calc(100% - 24px), transparent 100%)",
   WebkitMaskImage: "linear-gradient(to bottom, black calc(100% - 24px), transparent 100%)",
+  touchAction: "pan-y",
 });
 
 export const scrollToBottomBtn = style({
