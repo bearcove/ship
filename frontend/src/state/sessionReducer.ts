@@ -1,6 +1,7 @@
 import type {
   AgentAcpInfo,
   AgentSnapshot,
+  HookCheckResult,
   HumanReviewRequest,
   PlanStep,
   SessionDetail,
@@ -16,6 +17,14 @@ import {
   appendBlockMut,
   patchBlockMut,
 } from "./blockStore";
+
+export interface ChecksState {
+  context: string;
+  hooks: string[];
+  status: "running" | "passed" | "failed";
+  results: HookCheckResult[];
+  startedAt: string;
+}
 
 // r[event.client.view-state]
 // r[session.agent.captain]
@@ -48,6 +57,7 @@ export interface SessionViewState {
   connectionAttempt: number;
   pendingHumanReview: HumanReviewRequest | null;
   title: string | null;
+  checksState: ChecksState | null;
 }
 
 export function initialSessionViewState(): SessionViewState {
@@ -79,6 +89,7 @@ export function initialSessionViewState(): SessionViewState {
     connectionAttempt: 0,
     pendingHumanReview: null,
     title: null,
+    checksState: null,
   };
 }
 
@@ -88,7 +99,8 @@ export type SessionAction =
   | { type: "replay-batch"; envelopes: SessionEventEnvelope[] }
   | { type: "replay-complete" }
   | { type: "connected"; attempt: number }
-  | { type: "disconnected"; reason: string };
+  | { type: "disconnected"; reason: string }
+  | { type: "dismiss-checks" };
 
 function nextTurnStartedAt(
   previousState: AgentSnapshot["state"] | null | undefined,
@@ -155,6 +167,9 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         connectionAttempt: state.connectionAttempt,
       };
 
+    case "dismiss-checks":
+      return { ...state, checksState: null };
+
     // r[event.replay-batch]
     case "replay-batch": {
       const { envelopes } = action;
@@ -190,6 +205,7 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         mateTurnStartedAt,
         currentTaskSteps,
         title,
+        checksState,
       } = state;
 
       for (const envelope of envelopes) {
@@ -322,6 +338,24 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
           case "HumanReviewRequested":
           case "HumanReviewCleared":
             break;
+          case "ChecksStarted":
+            checksState = {
+              context: ev.context,
+              hooks: ev.hooks,
+              status: "running",
+              results: [],
+              startedAt: envelope.timestamp,
+            };
+            break;
+          case "ChecksFinished":
+            if (checksState && checksState.context === ev.context) {
+              checksState = {
+                ...checksState,
+                status: ev.all_passed ? "passed" : "failed",
+                results: ev.results,
+              };
+            }
+            break;
         }
       }
 
@@ -346,6 +380,7 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         mateTurnStartedAt,
         currentTaskSteps,
         title,
+        checksState,
         lastSeq: Number(lastEnvelope.seq),
         lastEventKind: lastEnvelope.event.tag,
         eventCount: state.eventCount + envelopes.length,
@@ -578,6 +613,29 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         case "HumanReviewCleared": {
           return { ...nextState, pendingHumanReview: null };
         }
+        case "ChecksStarted":
+          return {
+            ...nextState,
+            checksState: {
+              context: ev.context,
+              hooks: ev.hooks,
+              status: "running",
+              results: [],
+              startedAt: envelope.timestamp,
+            },
+          };
+        case "ChecksFinished":
+          return {
+            ...nextState,
+            checksState:
+              nextState.checksState && nextState.checksState.context === ev.context
+                ? {
+                  ...nextState.checksState,
+                  status: ev.all_passed ? "passed" : "failed",
+                  results: ev.results,
+                }
+                : nextState.checksState,
+          };
         // r[event.session-title-changed]
         case "SessionTitleChanged":
           return { ...nextState, title: ev.title };

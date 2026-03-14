@@ -438,7 +438,15 @@ export type SessionEvent =
   | { tag: 'HumanReviewRequested'; message: string; diff: string; worktree_path: string }
   | { tag: 'HumanReviewCleared' }
   | { tag: 'SessionTitleChanged'; title: string }
-  | { tag: 'AgentAcpInfoChanged'; role: Role; info: AgentAcpInfo };
+  | { tag: 'AgentAcpInfoChanged'; role: Role; info: AgentAcpInfo }
+  | { tag: 'ChecksStarted'; context: string; hooks: string[] }
+  | { tag: 'ChecksFinished'; context: string; all_passed: boolean; results: HookCheckResult[] };
+
+export interface HookCheckResult {
+  name: string;
+  passed: boolean;
+  output: string;
+}
 
 export interface SessionEventEnvelope {
   seq: bigint;
@@ -1199,7 +1207,7 @@ export interface ShipHandler {
 
 // Dispatcher for Ship
 export class ShipDispatcher implements ChannelingDispatcher {
-  constructor(private readonly handler: ShipHandler) {}
+  constructor(private readonly handler: ShipHandler) { }
 
   getDescriptor(): ServiceDescriptor {
     return ship_descriptor;
@@ -1712,4 +1720,3 @@ export const ship_descriptor: ServiceDescriptor = {
     },
   ],
 };
-

@@ -12,6 +12,7 @@ import { UnifiedComposer, type UnifiedComposerHandle } from "../components/Unifi
 import { SessionHeader } from "../components/SessionHeader";
 import { SteerReview } from "../components/SteerReview";
 import { HumanReview } from "../components/HumanReview";
+import { ChecksPanel } from "../components/ChecksPanel";
 import { SessionDebugPanel } from "../components/SessionDebugPanel";
 import {
   agentRail,
@@ -54,6 +55,7 @@ export function SessionViewPage({
   const [archiveConfirm, setArchiveConfirm] = useState<string[] | null>(null);
   const [duplicateOpen, setDuplicateOpen] = useState(false);
   const [slideDirection, setSlideDirection] = useState<"left" | "right" | null>(null);
+  const [checksDismissedStartedAt, setChecksDismissedStartedAt] = useState<string | null>(null);
 
   const orderedSessions = useMemo(() => sortSessions(allSessions), [allSessions]);
   const { currentIndex, hasSessionCycle, prevSession, nextSession } = useMemo(() => {
@@ -194,6 +196,8 @@ export function SessionViewPage({
   const mate = eventState.mate ?? session.mate;
   const startupState = eventState.startupState ?? session.startup_state;
   const pendingHumanReview = eventState.pendingHumanReview;
+  const checksState = eventState.checksState;
+  const showChecks = checksState !== null && checksState.startedAt !== checksDismissedStartedAt;
   const isReplaying = eventState.phase !== "live";
   const replayLabel = eventState.connected
     ? eventState.replayEventCount > 0
@@ -382,6 +386,12 @@ export function SessionViewPage({
           />
         )}
         {pendingHumanReview && <HumanReview sessionId={session.id} review={pendingHumanReview} />}
+        {showChecks && checksState && (
+          <ChecksPanel
+            checks={checksState}
+            onDismiss={() => setChecksDismissedStartedAt(checksState.startedAt)}
+          />
+        )}
       </Flex>
     </>
   );

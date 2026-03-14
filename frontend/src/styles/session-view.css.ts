@@ -2066,6 +2066,32 @@ export const humanReviewCard = style({
   flexShrink: 0,
 });
 
+export const checksCard = style({
+  margin: "var(--space-2) var(--space-4)",
+  flexShrink: 0,
+});
+
+export const checksHookRow = style({
+  display: "flex",
+  alignItems: "flex-start",
+  gap: "var(--space-2)",
+  padding: "var(--space-1) 0",
+});
+
+export const checksHookOutput = style({
+  fontFamily: monoFontStack,
+  fontSize: "var(--font-size-1)",
+  lineHeight: 1.5,
+  whiteSpace: "pre-wrap",
+  wordBreak: "break-all",
+  background: "var(--gray-a3)",
+  borderRadius: "var(--radius-2)",
+  padding: "var(--space-2)",
+  marginTop: "var(--space-1)",
+  maxHeight: "12rem",
+  overflowY: "auto",
+});
+
 export const permissionCard = style({
   background: "var(--accent-a3)",
   border: "1px solid var(--accent-a6)",
