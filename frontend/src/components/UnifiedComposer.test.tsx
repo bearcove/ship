@@ -43,6 +43,8 @@ function makeAgent(role: "Captain" | "Mate", state: AgentSnapshot["state"]): Age
     kind: { tag: role === "Captain" ? "Claude" : "Codex" },
     state,
     context_remaining_percent: 80,
+    preset_id: null,
+    provider: null,
     model_id: null,
     available_models: [],
     effort_config_id: null,

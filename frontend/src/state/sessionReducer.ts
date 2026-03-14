@@ -277,6 +277,18 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
               mateAcpInfo = ev.info;
             }
             break;
+          case "AgentPresetChanged": {
+            if (ev.role.tag === "Captain" && captain) {
+              captain = { ...captain, preset_id: ev.preset_id, kind: ev.kind, provider: ev.provider };
+            } else if (ev.role.tag !== "Captain" && mate) {
+              mate = { ...mate, preset_id: ev.preset_id, kind: ev.kind, provider: ev.provider };
+            }
+            break;
+          }
+          case "MateGuidanceQueued":
+          case "HumanReviewRequested":
+          case "HumanReviewCleared":
+            break;
         }
       }
 
@@ -519,6 +531,32 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         // r[event.session-title-changed]
         case "SessionTitleChanged":
           return { ...nextState, title: ev.title };
+        case "AgentPresetChanged": {
+          const isCaptain = ev.role.tag === "Captain";
+          if (isCaptain && nextState.captain) {
+            return {
+              ...nextState,
+              captain: {
+                ...nextState.captain,
+                preset_id: ev.preset_id,
+                kind: ev.kind,
+                provider: ev.provider,
+              },
+            };
+          }
+          if (!isCaptain && nextState.mate) {
+            return {
+              ...nextState,
+              mate: {
+                ...nextState.mate,
+                preset_id: ev.preset_id,
+                kind: ev.kind,
+                provider: ev.provider,
+              },
+            };
+          }
+          return nextState;
+        }
       }
     }
   }

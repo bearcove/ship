@@ -43,6 +43,7 @@ const STATUS_COLOR = {
   Working: "blue",
   ReviewPending: "amber",
   SteerPending: "amber",
+  RebaseConflict: "red",
   Accepted: "green",
   Cancelled: "gray",
 } as const;

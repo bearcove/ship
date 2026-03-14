@@ -103,6 +103,7 @@ const STATUS_COLOR = {
   Working: "blue",
   ReviewPending: "amber",
   SteerPending: "amber",
+  RebaseConflict: "red",
   Accepted: "green",
   Cancelled: "gray",
 } as const;
@@ -112,6 +113,7 @@ function statusLabel(status: TaskStatus | null): string {
   switch (status.tag) {
     case "ReviewPending": return "Review";
     case "SteerPending": return "Steer";
+    case "RebaseConflict": return "Conflict";
     case "Working": return "Working";
     case "Assigned": return "Starting";
     case "Accepted": return "Done";
@@ -345,7 +347,7 @@ export function SessionHeader({
               <Terminal size={sideButtonSize} />
             </button>
             <Popover.Root open={switcherOpen} onOpenChange={setSwitcherOpen}>
-              <Popover.Trigger asChild>
+              <Popover.Trigger>
                 <button
                   className={sessionHeaderSideButton}
                   aria-label="Switch session"

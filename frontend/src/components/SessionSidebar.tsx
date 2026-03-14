@@ -31,6 +31,8 @@ function statusLabel(status: TaskStatus | null): string {
       return "Review";
     case "SteerPending":
       return "Steer";
+    case "RebaseConflict":
+      return "Conflict";
     case "Working":
       return "Working";
     case "Assigned":

@@ -41,6 +41,7 @@ const STATUS_COLOR: Record<
   Working: "blue",
   ReviewPending: "amber",
   SteerPending: "orange",
+  RebaseConflict: "red",
   Accepted: "green",
   Cancelled: "red",
 };

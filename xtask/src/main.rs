@@ -39,8 +39,36 @@ fn print_usage() {
     eprintln!("  install    Build and install ship binaries to ~/.cargo/bin");
 }
 
+fn build_frontend(workspace_root: &Path) {
+    let frontend_dir = workspace_root.join("frontend");
+
+    println!("Installing frontend dependencies...");
+    let status = Command::new("pnpm")
+        .arg("install")
+        .current_dir(&frontend_dir)
+        .status()
+        .expect("Failed to run pnpm install");
+    if !status.success() {
+        eprintln!("Error: pnpm install failed");
+        std::process::exit(status.code().unwrap_or(1));
+    }
+
+    println!("Building frontend...");
+    let status = Command::new("pnpm")
+        .arg("build")
+        .current_dir(&frontend_dir)
+        .status()
+        .expect("Failed to run pnpm build");
+    if !status.success() {
+        eprintln!("Error: pnpm build failed");
+        std::process::exit(status.code().unwrap_or(1));
+    }
+}
+
 fn install(workspace_root: &Path) {
     let binaries = ["ship"];
+
+    build_frontend(workspace_root);
 
     println!("Building ship binaries...");
     let status = Command::new("cargo")

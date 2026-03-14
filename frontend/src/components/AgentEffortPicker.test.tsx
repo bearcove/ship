@@ -23,6 +23,8 @@ function makeAgent(overrides: Partial<AgentSnapshot> = {}): AgentSnapshot {
     kind: { tag: "Codex" },
     state: { tag: "Working", plan: null, activity: null },
     context_remaining_percent: 82,
+    preset_id: null,
+    provider: null,
     model_id: "gpt-5-codex/high",
     available_models: ["gpt-5-codex/high", "gpt-5/high"],
     effort_config_id: "reasoning.effort",

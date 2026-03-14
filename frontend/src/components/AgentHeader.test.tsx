@@ -35,6 +35,8 @@ function makeAgent(overrides: Partial<AgentSnapshot> = {}): AgentSnapshot {
     kind: { tag: "Claude" },
     state: { tag: "Working", plan: null, activity: null },
     context_remaining_percent: 82,
+    preset_id: null,
+    provider: null,
     model_id: "opencode/openai/gpt-5",
     available_models: [
       "opencode/openai/gpt-5",
