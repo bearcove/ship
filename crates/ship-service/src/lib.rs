@@ -1,6 +1,6 @@
 use roam::{Rx, Tx};
 use ship_types::{
-    AgentDiscovery, AgentPresetId, ArchiveSessionRequest, ArchiveSessionResponse,
+    AgentDiscovery, AgentPreset, AgentPresetId, ArchiveSessionRequest, ArchiveSessionResponse,
     CaptainAssignExtras, CloseSessionRequest, CloseSessionResponse, CreateSessionRequest,
     CreateSessionResponse, GlobalEvent, McpToolCallResponse, PlanStepInput, ProjectInfo,
     ProjectName, PromptContentPart, Role, ServerInfo, SessionDetail, SessionId, SessionSummary,
@@ -25,6 +25,8 @@ pub trait Ship {
 
     // r[server.agent-discovery]
     async fn agent_discovery(&self) -> AgentDiscovery;
+
+    async fn list_agent_presets(&self) -> Vec<AgentPreset>;
 
     async fn get_server_info(&self) -> ServerInfo;
 

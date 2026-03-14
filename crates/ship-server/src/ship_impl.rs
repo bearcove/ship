@@ -21,7 +21,7 @@ use ship_core::{
 };
 use ship_service::{CaptainMcp, CaptainMcpDispatcher, MateMcp, MateMcpDispatcher, Ship};
 use ship_types::{
-    AgentAcpInfo, AgentDiscovery, AgentKind, AgentPresetId, AgentSnapshot, AgentState,
+    AgentAcpInfo, AgentDiscovery, AgentKind, AgentPreset, AgentPresetId, AgentSnapshot, AgentState,
     ArchiveSessionRequest, ArchiveSessionResponse, AutonomyMode, BlockId, BlockPatch,
     CaptainAssignExtras, CaptainGitStatus, CaptainRebaseStatus, CaptainReviewDiff,
     CaptainReviewDiffState, CloseSessionRequest, CloseSessionResponse, CommitSummary, ContentBlock,
@@ -901,17 +901,21 @@ impl ShipImpl {
         Ok((project_root, mcp_servers))
     }
 
-    async fn load_configured_agent_preset(
-        &self,
-        preset_id: &AgentPresetId,
-    ) -> Result<Option<ship_types::AgentPreset>, String> {
+    async fn load_configured_agent_presets(&self) -> Result<Vec<AgentPreset>, String> {
         let config_dir = {
             let registry = self.registry.lock().await;
             registry.config_dir().to_path_buf()
         };
-        let presets = load_agent_presets(&config_dir)
+        load_agent_presets(&config_dir)
             .await
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| error.to_string())
+    }
+
+    async fn load_configured_agent_preset(
+        &self,
+        preset_id: &AgentPresetId,
+    ) -> Result<Option<AgentPreset>, String> {
+        let presets = self.load_configured_agent_presets().await?;
         Ok(presets.into_iter().find(|preset| preset.id == *preset_id))
     }
 
@@ -7211,6 +7215,16 @@ impl Ship for ShipImpl {
 
     async fn agent_discovery(&self) -> AgentDiscovery {
         self.agent_discovery.clone()
+    }
+
+    async fn list_agent_presets(&self) -> Vec<AgentPreset> {
+        match self.load_configured_agent_presets().await {
+            Ok(presets) => presets,
+            Err(error) => {
+                Self::log_error("list_agent_presets", &error);
+                Vec::new()
+            }
+        }
     }
 
     async fn get_server_info(&self) -> ServerInfo {

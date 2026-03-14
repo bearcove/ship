@@ -187,6 +187,14 @@ export interface AgentDiscovery {
   opencode: boolean;
 }
 
+export interface AgentPreset {
+  id: AgentPresetId;
+  label: string;
+  kind: AgentKind;
+  provider: AgentProviderId;
+  model_id: string;
+}
+
 export interface ServerInfo {
   http_urls: string[];
 }
@@ -480,6 +488,9 @@ export type ListSessionsResponse = SessionSummary[];
 export type AgentDiscoveryRequest = [];
 export type AgentDiscoveryResponse = AgentDiscovery;
 
+export type ListAgentPresetsRequest = [];
+export type ListAgentPresetsResponse = AgentPreset[];
+
 export type GetServerInfoRequest = [];
 export type GetServerInfoResponse = ServerInfo;
 
@@ -597,6 +608,7 @@ export interface ShipCaller {
   listBranches(project: ProjectName): CallBuilder<string[]>;
   listSessions(): CallBuilder<SessionSummary[]>;
   agentDiscovery(): CallBuilder<AgentDiscovery>;
+  listAgentPresets(): CallBuilder<AgentPreset[]>;
   getServerInfo(): CallBuilder<ServerInfo>;
   getSession(id: SessionId): CallBuilder<SessionDetail>;
   createSession(req: CreateSessionRequest): CallBuilder<CreateSessionResponse>;
@@ -709,8 +721,22 @@ export class ShipClient implements ShipCaller {
     });
   }
 
-  getServerInfo(): CallBuilder<ServerInfo> {
+  listAgentPresets(): CallBuilder<AgentPreset[]> {
     const descriptor = ship_descriptor.methods[5];
+    return new CallBuilder(async (metadata) => {
+      const value = await this.caller.call({
+        method: "Ship.listAgentPresets",
+        args: {},
+        descriptor,
+        schemaRegistry: ship_descriptor.schema_registry,
+        metadata,
+      });
+      return value as AgentPreset[];
+    });
+  }
+
+  getServerInfo(): CallBuilder<ServerInfo> {
+    const descriptor = ship_descriptor.methods[6];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.getServerInfo",
@@ -724,7 +750,7 @@ export class ShipClient implements ShipCaller {
   }
 
   getSession(id: SessionId): CallBuilder<SessionDetail> {
-    const descriptor = ship_descriptor.methods[6];
+    const descriptor = ship_descriptor.methods[7];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.getSession",
@@ -738,7 +764,7 @@ export class ShipClient implements ShipCaller {
   }
 
   createSession(req: CreateSessionRequest): CallBuilder<CreateSessionResponse> {
-    const descriptor = ship_descriptor.methods[7];
+    const descriptor = ship_descriptor.methods[8];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.createSession",
@@ -752,7 +778,7 @@ export class ShipClient implements ShipCaller {
   }
 
   steer(session: SessionId, parts: PromptContentPart[]): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[8];
+    const descriptor = ship_descriptor.methods[9];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.steer",
@@ -766,7 +792,7 @@ export class ShipClient implements ShipCaller {
   }
 
   promptCaptain(session: SessionId, parts: PromptContentPart[]): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[9];
+    const descriptor = ship_descriptor.methods[10];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.promptCaptain",
@@ -780,7 +806,7 @@ export class ShipClient implements ShipCaller {
   }
 
   accept(session: SessionId): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[10];
+    const descriptor = ship_descriptor.methods[11];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.accept",
@@ -794,7 +820,7 @@ export class ShipClient implements ShipCaller {
   }
 
   replyToHuman(session: SessionId, message: string): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[11];
+    const descriptor = ship_descriptor.methods[12];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.replyToHuman",
@@ -808,7 +834,7 @@ export class ShipClient implements ShipCaller {
   }
 
   cancel(session: SessionId): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[12];
+    const descriptor = ship_descriptor.methods[13];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.cancel",
@@ -822,7 +848,7 @@ export class ShipClient implements ShipCaller {
   }
 
   interruptCaptain(session: SessionId): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[13];
+    const descriptor = ship_descriptor.methods[14];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.interruptCaptain",
@@ -836,7 +862,7 @@ export class ShipClient implements ShipCaller {
   }
 
   interruptMate(session: SessionId): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[14];
+    const descriptor = ship_descriptor.methods[15];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.interruptMate",
@@ -850,7 +876,7 @@ export class ShipClient implements ShipCaller {
   }
 
   stopAgents(session: SessionId): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[15];
+    const descriptor = ship_descriptor.methods[16];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.stopAgents",
@@ -864,7 +890,7 @@ export class ShipClient implements ShipCaller {
   }
 
   resolvePermission(session: SessionId, permissionId: string, optionId: string): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[16];
+    const descriptor = ship_descriptor.methods[17];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.resolvePermission",
@@ -878,7 +904,7 @@ export class ShipClient implements ShipCaller {
   }
 
   retryAgent(session: SessionId, role: Role): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[17];
+    const descriptor = ship_descriptor.methods[18];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.retryAgent",
@@ -892,7 +918,7 @@ export class ShipClient implements ShipCaller {
   }
 
   setAgentModel(session: SessionId, role: Role, modelId: string): CallBuilder<SetAgentModelResponse> {
-    const descriptor = ship_descriptor.methods[18];
+    const descriptor = ship_descriptor.methods[19];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.setAgentModel",
@@ -906,7 +932,7 @@ export class ShipClient implements ShipCaller {
   }
 
   setAgentPreset(session: SessionId, role: Role, presetId: AgentPresetId): CallBuilder<SetAgentPresetResponse> {
-    const descriptor = ship_descriptor.methods[19];
+    const descriptor = ship_descriptor.methods[20];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.setAgentPreset",
@@ -920,7 +946,7 @@ export class ShipClient implements ShipCaller {
   }
 
   setAgentEffort(session: SessionId, role: Role, configId: string, valueId: string): CallBuilder<SetAgentEffortResponse> {
-    const descriptor = ship_descriptor.methods[20];
+    const descriptor = ship_descriptor.methods[21];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.setAgentEffort",
@@ -934,7 +960,7 @@ export class ShipClient implements ShipCaller {
   }
 
   closeSession(req: CloseSessionRequest): CallBuilder<CloseSessionResponse> {
-    const descriptor = ship_descriptor.methods[21];
+    const descriptor = ship_descriptor.methods[22];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.closeSession",
@@ -948,7 +974,7 @@ export class ShipClient implements ShipCaller {
   }
 
   archiveSession(req: ArchiveSessionRequest): CallBuilder<ArchiveSessionResponse> {
-    const descriptor = ship_descriptor.methods[22];
+    const descriptor = ship_descriptor.methods[23];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.archiveSession",
@@ -962,7 +988,7 @@ export class ShipClient implements ShipCaller {
   }
 
   listWorktreeFiles(session: SessionId, query: string): CallBuilder<string[]> {
-    const descriptor = ship_descriptor.methods[23];
+    const descriptor = ship_descriptor.methods[24];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.listWorktreeFiles",
@@ -976,7 +1002,7 @@ export class ShipClient implements ShipCaller {
   }
 
   getWorktreeDiffStats(session: SessionId): CallBuilder<WorktreeDiffStats | null> {
-    const descriptor = ship_descriptor.methods[24];
+    const descriptor = ship_descriptor.methods[25];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.getWorktreeDiffStats",
@@ -990,7 +1016,7 @@ export class ShipClient implements ShipCaller {
   }
 
   openInEditor(session: SessionId): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[25];
+    const descriptor = ship_descriptor.methods[26];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.openInEditor",
@@ -1004,7 +1030,7 @@ export class ShipClient implements ShipCaller {
   }
 
   openInTerminal(session: SessionId): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[26];
+    const descriptor = ship_descriptor.methods[27];
     return new CallBuilder(async (metadata) => {
       const value = await this.caller.call({
         method: "Ship.openInTerminal",
@@ -1018,7 +1044,7 @@ export class ShipClient implements ShipCaller {
   }
 
   subscribeEvents(session: SessionId, output: Tx<SubscribeMessage>): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[27];
+    const descriptor = ship_descriptor.methods[28];
     // Bind any Tx/Rx channels in arguments and collect channel IDs
     const channels = bindChannels(
       descriptor.args.elements,
@@ -1041,7 +1067,7 @@ export class ShipClient implements ShipCaller {
   }
 
   subscribeGlobalEvents(output: Tx<GlobalEvent>): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[28];
+    const descriptor = ship_descriptor.methods[29];
     // Bind any Tx/Rx channels in arguments and collect channel IDs
     const channels = bindChannels(
       descriptor.args.elements,
@@ -1069,7 +1095,7 @@ export class ShipClient implements ShipCaller {
    * Server sends back transcribed segments via `segments_out`.
    */
   transcribeAudio(audioIn: Rx<Uint8Array>, segmentsOut: Tx<TranscribeMessage>): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[29];
+    const descriptor = ship_descriptor.methods[30];
     // Bind any Tx/Rx channels in arguments and collect channel IDs
     const channels = bindChannels(
       descriptor.args.elements,
@@ -1093,7 +1119,7 @@ export class ShipClient implements ShipCaller {
 
   /** Synthesize text to speech and stream 24kHz mono f32 LE PCM bytes. */
   speakText(text: string, audioOut: Tx<Uint8Array>): CallBuilder<void> {
-    const descriptor = ship_descriptor.methods[30];
+    const descriptor = ship_descriptor.methods[31];
     // Bind any Tx/Rx channels in arguments and collect channel IDs
     const channels = bindChannels(
       descriptor.args.elements,
@@ -1135,6 +1161,7 @@ export interface ShipHandler {
   listBranches(project: ProjectName): Promise<string[]> | string[];
   listSessions(): Promise<SessionSummary[]> | SessionSummary[];
   agentDiscovery(): Promise<AgentDiscovery> | AgentDiscovery;
+  listAgentPresets(): Promise<AgentPreset[]> | AgentPreset[];
   getServerInfo(): Promise<ServerInfo> | ServerInfo;
   getSession(id: SessionId): Promise<SessionDetail> | SessionDetail;
   createSession(req: CreateSessionRequest): Promise<CreateSessionResponse> | CreateSessionResponse;
@@ -1203,6 +1230,13 @@ export class ShipDispatcher implements ChannelingDispatcher {
     } else if (method.id === 0x96e192b5aa79d89an) {
       try {
         const result = await this.handler.agentDiscovery();
+        call.reply(result);
+      } catch {
+        call.replyInternalError();
+      }
+    } else if (method.id === 0x6c9c7b7633a5e604n) {
+      try {
+        const result = await this.handler.listAgentPresets();
         call.reply(result);
       } catch {
         call.replyInternalError();
@@ -1425,6 +1459,7 @@ const ship_schema_registry: SchemaRegistry = new Map<string, Schema>([
   ["AutonomyMode", { kind: 'enum', variants: [{ name: 'HumanInTheLoop', fields: null }, { name: 'Autonomous', fields: null }] }],
   ["SessionSummary", { kind: 'struct', fields: { 'id': { kind: 'string' }, 'slug': { kind: 'string' }, 'project': { kind: 'string' }, 'branch_name': { kind: 'string' }, 'title': { kind: 'option', inner: { kind: 'string' } }, 'captain': { kind: 'ref', name: 'AgentSnapshot' }, 'mate': { kind: 'ref', name: 'AgentSnapshot' }, 'startup_state': { kind: 'ref', name: 'SessionStartupState' }, 'current_task_title': { kind: 'option', inner: { kind: 'string' } }, 'current_task_description': { kind: 'option', inner: { kind: 'string' } }, 'task_status': { kind: 'option', inner: { kind: 'ref', name: 'TaskStatus' } }, 'diff_stats': { kind: 'option', inner: { kind: 'ref', name: 'WorktreeDiffStats' } }, 'tasks_done': { kind: 'u32' }, 'tasks_total': { kind: 'u32' }, 'autonomy_mode': { kind: 'ref', name: 'AutonomyMode' }, 'created_at': { kind: 'string' } } }],
   ["AgentDiscovery", { kind: 'struct', fields: { 'claude': { kind: 'bool' }, 'codex': { kind: 'bool' }, 'opencode': { kind: 'bool' } } }],
+  ["AgentPreset", { kind: 'struct', fields: { 'id': { kind: 'string' }, 'label': { kind: 'string' }, 'kind': { kind: 'ref', name: 'AgentKind' }, 'provider': { kind: 'string' }, 'model_id': { kind: 'string' } } }],
   ["ServerInfo", { kind: 'struct', fields: { 'http_urls': { kind: 'vec', element: { kind: 'string' } } } }],
   ["TaskId", { kind: 'string' }],
   ["TaskRecord", { kind: 'struct', fields: { 'id': { kind: 'string' }, 'title': { kind: 'string' }, 'description': { kind: 'string' }, 'status': { kind: 'ref', name: 'TaskStatus' }, 'steps': { kind: 'vec', element: { kind: 'ref', name: 'PlanStep' } }, 'assigned_at': { kind: 'option', inner: { kind: 'string' } }, 'completed_at': { kind: 'option', inner: { kind: 'string' } } } }],
@@ -1504,6 +1539,12 @@ export const ship_descriptor: ServiceDescriptor = {
       id: 0x96e192b5aa79d89an,
       args: { kind: 'tuple', elements: [] },
       result: { kind: 'enum', variants: [{ name: 'Ok', fields: { kind: 'ref', name: 'AgentDiscovery' } }, { name: 'Err', fields: { kind: 'enum', variants: [{ name: 'User', fields: null }, { name: 'UnknownMethod', fields: null }, { name: 'InvalidPayload', fields: null }, { name: 'Cancelled', fields: null }] } }] },
+    },
+    {
+      name: 'listAgentPresets',
+      id: 0x6c9c7b7633a5e604n,
+      args: { kind: 'tuple', elements: [] },
+      result: { kind: 'enum', variants: [{ name: 'Ok', fields: { kind: 'vec', element: { kind: 'ref', name: 'AgentPreset' } } }, { name: 'Err', fields: { kind: 'enum', variants: [{ name: 'User', fields: null }, { name: 'UnknownMethod', fields: null }, { name: 'InvalidPayload', fields: null }, { name: 'Cancelled', fields: null }] } }] },
     },
     {
       name: 'getServerInfo',
