@@ -17,6 +17,10 @@ const mocks = vi.hoisted(() => ({
     stopAndSend: vi.fn(),
     cancelRecording: vi.fn(),
     clearResult: vi.fn(),
+    clearVoiceSubmit: vi.fn(),
+    dismissError: vi.fn(),
+    voiceMode: false,
+    voiceSubmitText: null as string | null,
     isRecording: vi.fn(() => false),
   },
   playback: null as {
