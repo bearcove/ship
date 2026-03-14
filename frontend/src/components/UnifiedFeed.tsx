@@ -118,7 +118,9 @@ function buildSegments(blocks: BlockEntry[], debugMode: boolean): FeedSegment[] 
       b.block.tag !== "PlanUpdate" &&
       (debugMode || b.block.tag !== "ToolCall") &&
       !(b.block.tag === "Text" && b.block.source.tag === "AgentThought") &&
-      b.role.tag !== "Mate",
+      // Allow Mate-role Human blocks through (steers relayed to the mate)
+      (b.role.tag !== "Mate" ||
+        (b.block.tag === "Text" && b.block.source.tag === "Human")),
   );
   return visible.map((entry) => ({ kind: "single", entry }));
 }

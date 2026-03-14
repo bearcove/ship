@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useSwipeable } from "react-swipeable";
 import { useParams, useNavigate } from "react-router-dom";
 import { Box, Button, Callout, Flex, Spinner, Text } from "@radix-ui/themes";
 import { Warning } from "@phosphor-icons/react";
@@ -26,7 +27,6 @@ import { getShipClient } from "../api/client";
 import { ArchiveSessionDialog, NewSessionDialog } from "./SessionListPage";
 import type { SessionSummary } from "../generated/ship";
 import { useWorktreeDiffStats } from "../hooks/useWorktreeDiffStats";
-import { useSwipeGesture } from "../hooks/useSwipeGesture";
 
 // r[view.session]
 // r[ui.layout.session-view]
@@ -38,7 +38,6 @@ export function SessionViewPage({ debugMode, allSessions }: { debugMode: boolean
   const [archiveConfirm, setArchiveConfirm] = useState<string[] | null>(null);
   const [duplicateOpen, setDuplicateOpen] = useState(false);
   const [slideDirection, setSlideDirection] = useState<"left" | "right" | null>(null);
-  const [rootEl, setRootEl] = useState<HTMLDivElement | null>(null);
 
   const currentIndex = allSessions.findIndex((s) => s.slug === sessionId);
   const prevSession = currentIndex > 0 ? allSessions[currentIndex - 1] : null;
@@ -59,7 +58,15 @@ export function SessionViewPage({ debugMode, allSessions }: { debugMode: boolean
     [nextSession, prevSession, navigate],
   );
 
-  useSwipeGesture(rootEl, handleSwipe);
+  const swipeHandlers = useSwipeable({
+    onSwipedLeft: () => handleSwipe("left"),
+    onSwipedRight: () => handleSwipe("right"),
+    delta: 72,
+    preventScrollOnSwipe: true,
+    trackTouch: true,
+    trackMouse: false,
+  });
+
   // r[event.client.hydration-sequence]: Step 1 — structural state
   const { session, error } = useSession(sessionId ?? "");
   // r[event.client.hydration-sequence]: Step 2/3 — event subscription + replay
@@ -126,36 +133,36 @@ export function SessionViewPage({ debugMode, allSessions }: { debugMode: boolean
   const taskCompletedDuration =
     eventState.currentTaskStartedAt && eventState.currentTaskCompletedAt
       ? Math.round(
-          (new Date(eventState.currentTaskCompletedAt).getTime() -
-            new Date(eventState.currentTaskStartedAt).getTime()) /
-            1000,
-        )
+        (new Date(eventState.currentTaskCompletedAt).getTime() -
+          new Date(eventState.currentTaskStartedAt).getTime()) /
+        1000,
+      )
       : null;
 
   const liveTask =
     eventState.currentTaskId &&
-    eventState.currentTaskTitle &&
-    eventState.currentTaskDescription &&
-    eventState.currentTaskStatus
+      eventState.currentTaskTitle &&
+      eventState.currentTaskDescription &&
+      eventState.currentTaskStatus
       ? {
-          id: eventState.currentTaskId,
-          title: eventState.currentTaskTitle,
-          description: eventState.currentTaskDescription,
-          status: eventState.currentTaskStatus,
-          assigned_at: eventState.currentTaskStartedAt,
-          completed_at: eventState.currentTaskCompletedAt,
-          steps: eventState.currentTaskSteps,
-        }
+        id: eventState.currentTaskId,
+        title: eventState.currentTaskTitle,
+        description: eventState.currentTaskDescription,
+        status: eventState.currentTaskStatus,
+        assigned_at: eventState.currentTaskStartedAt,
+        completed_at: eventState.currentTaskCompletedAt,
+        steps: eventState.currentTaskSteps,
+      }
       : session.current_task
         ? {
-            ...session.current_task,
-            steps:
-              (
-                session.current_task as unknown as {
-                  steps?: import("../generated/ship").PlanStep[];
-                }
-              ).steps ?? [],
-          }
+          ...session.current_task,
+          steps:
+            (
+              session.current_task as unknown as {
+                steps?: import("../generated/ship").PlanStep[];
+              }
+            ).steps ?? [],
+        }
         : null;
   const matePlan = mate?.state.tag === "Working" ? (mate.state.plan ?? null) : null;
   const sessionDetail = session;
@@ -221,7 +228,7 @@ export function SessionViewPage({ debugMode, allSessions }: { debugMode: boolean
         preselectedMateKind={session.mate.kind}
       />
       <Flex
-        ref={setRootEl}
+        {...swipeHandlers}
         className={[
           sessionViewRoot,
           slideDirection === "right" ? slideInFromLeft : "",
@@ -229,7 +236,8 @@ export function SessionViewPage({ debugMode, allSessions }: { debugMode: boolean
         ]
           .filter(Boolean)
           .join(" ")}
-        onAnimationEnd={() => {
+        onAnimationEnd={(event) => {
+          if (event.target !== event.currentTarget || slideDirection === null) return;
           const target = slideDirection === "right" ? prevSession : nextSession;
           setSlideDirection(null);
           if (target) navigate(`/sessions/${target.slug}`);
@@ -295,7 +303,7 @@ export function SessionViewPage({ debugMode, allSessions }: { debugMode: boolean
           <SteerReview
             sessionId={session.id}
             steerText={session.pending_steer}
-            onDismiss={() => {}}
+            onDismiss={() => { }}
           />
         )}
         {pendingHumanReview && <HumanReview sessionId={session.id} review={pendingHumanReview} />}
