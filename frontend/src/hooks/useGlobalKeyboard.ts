@@ -1,6 +1,8 @@
+import type React from "react";
 import { useEffect, useRef } from "react";
 import { useNavigate, useMatch } from "react-router-dom";
 import type { SessionSummary } from "../generated/ship";
+import type { UnifiedComposerHandle } from "../components/UnifiedComposer";
 import { sortSessions } from "../pages/session-list-utils";
 import { getShipClient } from "../api/client";
 
@@ -16,6 +18,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
 export function useGlobalKeyboard(
   allSessions: SessionSummary[],
   onSessionArchived?: (slug: string) => void,
+  composerRef?: React.RefObject<UnifiedComposerHandle | null>,
 ) {
   const navigate = useNavigate();
   const sessionMatch = useMatch("/sessions/:sessionId");
@@ -62,6 +65,17 @@ export function useGlobalKeyboard(
         }
         e.preventDefault();
         navigate(`/sessions/${orderedSessions[next].slug}`);
+        return;
+      }
+
+      // Space: toggle voice recording
+      if (e.key === " " && composerRef?.current) {
+        e.preventDefault();
+        if (composerRef.current.isRecording()) {
+          composerRef.current.stopRecording();
+        } else {
+          composerRef.current.startRecording();
+        }
         return;
       }
 
