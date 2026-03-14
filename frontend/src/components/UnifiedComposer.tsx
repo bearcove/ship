@@ -494,7 +494,6 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
       }
       return;
     }
-
   }
 
   const hasContent = text.trim().length > 0 || attachedImages.length > 0;

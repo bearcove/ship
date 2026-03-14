@@ -70,7 +70,7 @@ export function useGlobalKeyboard(allSessions: SessionSummary[]) {
           lastAPress.current = 0;
           void (async () => {
             const client = await getShipClient();
-            const result = await client.archiveSession({ id: currentSession.id, force: false });
+            const result = await client.archiveSession({ id: currentSession.id, force: true });
             if (result.tag === "Archived") {
               navigate("/");
             }
