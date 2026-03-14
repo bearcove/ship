@@ -135,7 +135,7 @@ type TurnStats = {
 type RenderedSegment = {
   seg: FeedSegment;
   agentForBlock: AgentSnapshot | null;
-  isTaskRecap: boolean;
+  isPhaseBreak: boolean;
   gapLabel: string | null;
   timestampMs: number | null;
 };
@@ -1236,7 +1236,8 @@ export function UnifiedFeed({
       return {
         seg,
         agentForBlock,
-        isTaskRecap: seg.entry.block.tag === "TaskRecap",
+        isPhaseBreak:
+          seg.entry.block.tag === "TaskRecap" || seg.entry.block.tag === "WorkflowMilestone",
         gapLabel,
         timestampMs,
       };
@@ -1291,7 +1292,7 @@ export function UnifiedFeed({
             </Flex>
           )}
 
-          {renderedSegments.map(({ seg, agentForBlock, gapLabel, isTaskRecap }) => {
+          {renderedSegments.map(({ seg, agentForBlock, gapLabel, isPhaseBreak }) => {
             const alreadyKnown = sessionAnimationBaseline.blockIds.has(seg.entry.blockId);
             const animate = !loading && sessionAnimationBaseline.established && !alreadyKnown;
             if (!alreadyKnown) {
@@ -1333,7 +1334,7 @@ export function UnifiedFeed({
                     <Text className={feedTimeGap}>{gapLabel}</Text>
                   </Box>
                 )}
-                {isTaskRecap ? blockContent : <Box className={feedContentColumn}>{blockContent}</Box>}
+                {isPhaseBreak ? blockContent : <Box className={feedContentColumn}>{blockContent}</Box>}
                 {debugMode && (
                   <Box className={feedContentColumn}>
                     <RawBlockDebug entry={seg.entry} />
