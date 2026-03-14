@@ -327,7 +327,7 @@ export function SessionHeader({
           </div>{/* end sessionHeaderRows */}
 
           {/* Side buttons: switcher + menu (always) + Zed/iTerm (desktop only) */}
-          <Flex align="center" gap="4" px="4" style={{ borderLeft: "1px solid var(--gray-a4)" }}>
+          <Flex align="stretch" style={{ borderLeft: "1px solid var(--gray-a4)" }}>
             <Button
               variant="ghost"
               color="gray"
