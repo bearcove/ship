@@ -400,6 +400,12 @@ The protocol MUST support a `close_session` operation that tears down both
 agents, triggers worktree cleanup (with confirmation), and removes the session
 from the active list. The session's durable record is retained for history.
 
+r[proto.mark-session-read]
+The protocol MUST support a `mark_session_read` operation that marks a session
+as read (sets `is_read` to `true` and broadcasts the updated session list).
+Sessions become unread automatically when the captain transitions to idle
+(task accepted) or calls `captain_notify_human`.
+
 r[proto.archive-session]
 The protocol MUST support an `archive_session` operation that retires a session:
 tears down both agents, removes the worktree and branch, marks the session as

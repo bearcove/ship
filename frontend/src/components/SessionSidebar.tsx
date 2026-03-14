@@ -39,6 +39,8 @@ function statusLabel(status: TaskStatus | null): string {
       return "Done";
     case "Cancelled":
       return "Cancelled";
+    case "WaitingForHuman":
+      return "Waiting";
   }
 }
 

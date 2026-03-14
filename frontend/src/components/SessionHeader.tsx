@@ -106,6 +106,7 @@ const STATUS_COLOR = {
   RebaseConflict: "red",
   Accepted: "green",
   Cancelled: "gray",
+  WaitingForHuman: "amber",
 } as const;
 
 function statusLabel(status: TaskStatus | null): string {
@@ -118,6 +119,7 @@ function statusLabel(status: TaskStatus | null): string {
     case "Assigned": return "Starting";
     case "Accepted": return "Done";
     case "Cancelled": return "Cancelled";
+    case "WaitingForHuman": return "Waiting";
   }
 }
 

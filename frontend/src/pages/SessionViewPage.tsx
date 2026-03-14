@@ -293,6 +293,7 @@ export function SessionViewPage({
     tasks_done: tasksDone,
     tasks_total: tasksTotal,
     is_admiral: false,
+    is_read: true,
   };
 
   async function handleArchive(force: boolean) {

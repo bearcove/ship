@@ -46,6 +46,7 @@ const STATUS_COLOR = {
   RebaseConflict: "red",
   Accepted: "green",
   Cancelled: "gray",
+  WaitingForHuman: "amber",
 } as const;
 
 function summaryTitle(task: TaskRecord | null): string {
