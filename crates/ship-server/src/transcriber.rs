@@ -1,6 +1,6 @@
 use silero_vad_rust::silero_vad::model::load_silero_vad;
 use silero_vad_rust::silero_vad::utils_vad::{VadEvent, VadIterator, VadIteratorParams};
-use std::path::Path;
+use std::sync::Arc;
 
 const VAD_CHUNK_SIZE: usize = 512;
 
@@ -26,7 +26,7 @@ pub enum SpeechEvent {
 /// Streaming speech transcriber: Silero VAD for speech boundaries,
 /// whisper-cpp for transcription of completed segments.
 pub struct SpeechTranscriber {
-    whisper_ctx: whisper_cpp_plus::WhisperContext,
+    whisper_ctx: Arc<whisper_cpp_plus::WhisperContext>,
     vad_iter: VadIterator,
 
     // Buffering for 512-sample VAD chunks
@@ -42,12 +42,12 @@ pub struct SpeechTranscriber {
 }
 
 impl SpeechTranscriber {
-    /// Create a new transcriber. Loads the Silero VAD model (bundled) and
-    /// the whisper model from the given path.
-    pub fn new(whisper_model_path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
-        let whisper_ctx =
-            whisper_cpp_plus::WhisperContext::new(whisper_model_path.to_str().unwrap())?;
-
+    /// Create a new transcriber with a shared WhisperContext.
+    /// Only loads the Silero VAD model (bundled); the whisper context
+    /// is provided pre-loaded.
+    pub fn new(
+        whisper_ctx: Arc<whisper_cpp_plus::WhisperContext>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let silero_model = load_silero_vad()?;
         let vad_params = VadIteratorParams {
             threshold: 0.5,
