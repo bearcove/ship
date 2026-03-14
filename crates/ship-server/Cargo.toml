@@ -1,3 +1,7 @@
+[build-dependencies]
+facet-styx = "2.0.0"
+ship-types = { path = "../ship-types" }
+
 [package]
 name = "ship-server"
 version = "0.1.0"

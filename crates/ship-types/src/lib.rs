@@ -1117,6 +1117,13 @@ pub mod hooks {
             }
         }
     }
+
+    /// Root project config file structure — lives at `.config/ship/config.styx`.
+    #[derive(Debug, Clone, Default, facet::Facet)]
+    pub struct ProjectConfig {
+        #[facet(default)]
+        pub hooks: HooksConfig,
+    }
 }
 
 pub mod persistence {
@@ -1192,7 +1199,7 @@ pub use events::{
     PermissionResolution, SessionEvent, SessionEventEnvelope, SubscribeMessage, TaskRecapStats,
     TextSource, ToolCallContent, ToolCallLocation, ToolCallStatus, WorkflowMilestoneKind,
 };
-pub use hooks::{HookDef, HookEntryConfig, HooksConfig, ResolvedHooks};
+pub use hooks::{HookDef, HookEntryConfig, HooksConfig, ProjectConfig, ResolvedHooks};
 pub use ids::{BlockId, ProjectName, SessionId, TaskId};
 pub use persistence::{CurrentTask, PersistedSession, SessionConfig, TaskContentRecord};
 pub use prompt::PromptContentPart;
