@@ -210,7 +210,7 @@ interface Props {
   planSteps: PlanStep[];
   matePlan: PlanStep[] | null;
   diffStats: WorktreeDiffStats | null;
-  canArchiveSession: boolean;
+  shouldRecommendArchiveSession: boolean;
   onArchive: () => void;
   archiving: boolean;
 }
@@ -227,7 +227,7 @@ export function SessionHeader({
   planSteps,
   matePlan,
   diffStats,
-  canArchiveSession,
+  shouldRecommendArchiveSession,
   onArchive,
   archiving,
 }: Props) {
@@ -427,28 +427,24 @@ export function SessionHeader({
                     );
                   })}
                 </div>
-                {canArchiveSession && (
-                  <>
-                    <div style={{ height: 1, background: "var(--gray-a4)", margin: "var(--space-1) 0" }} />
-                    <Flex
-                      align="center"
-                      gap="2"
-                      px="2"
-                      py="1"
-                      style={{
-                        cursor: archiving ? "default" : "pointer",
-                        borderRadius: "var(--radius-1)",
-                        opacity: archiving ? 0.5 : 1,
-                      }}
-                      onClick={() => { if (!archiving) onArchive(); }}
-                      onMouseEnter={(e) => { if (!archiving) e.currentTarget.style.background = "var(--gray-a3)"; }}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                    >
-                      <Archive size={14} color="var(--red-9)" />
-                      <Text size="2" color="red">{archiving ? "Archiving…" : "Archive session"}</Text>
-                    </Flex>
-                  </>
-                )}
+                <div style={{ height: 1, background: "var(--gray-a4)", margin: "var(--space-1) 0" }} />
+                <Flex
+                  align="center"
+                  gap="2"
+                  px="2"
+                  py="1"
+                  style={{
+                    cursor: archiving ? "default" : "pointer",
+                    borderRadius: "var(--radius-1)",
+                    opacity: archiving ? 0.5 : 1,
+                  }}
+                  onClick={() => { if (!archiving) onArchive(); }}
+                  onMouseEnter={(e) => { if (!archiving) e.currentTarget.style.background = "var(--gray-a3)"; }}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                >
+                  <Archive size={14} color="var(--red-9)" />
+                  <Text size="2" color="red">{archiving ? "Archiving…" : "Archive session"}</Text>
+                </Flex>
               </Popover.Content>
             </Popover.Root>
 

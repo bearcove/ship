@@ -269,7 +269,7 @@ export function SessionViewPage({ debugMode, allSessions }: { debugMode: boolean
               planSteps={planSteps}
               matePlan={matePlan}
               diffStats={diffStats}
-              canArchiveSession={hasAcceptedSessionWork}
+              shouldRecommendArchiveSession={hasAcceptedSessionWork}
               onArchive={() => void handleArchive(false)}
               archiving={archiving}
             />
