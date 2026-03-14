@@ -13189,6 +13189,7 @@ agent_presets {
                     title,
                     summary,
                     items,
+                    ..
                 } if title == "Initial plan set"
                     && summary == "2 steps ready to execute."
                     && items.iter().any(|item| item == "1. Set up types")
@@ -13223,11 +13224,11 @@ agent_presets {
                     kind: WorkflowMilestoneKind::StepCommitted,
                     title,
                     summary,
-                    items,
+                    commits,
+                    ..
                 } if title == "Checkpoint committed"
                     && summary == "Completed step 1: Set up types"
-                    && items.iter().any(|item| item.starts_with("Commit: "))
-                    && items.iter().any(|item| item.starts_with("Diff: "))
+                    && commits.iter().any(|c| !c.hash.is_empty())
             )));
         }
 
@@ -13837,6 +13838,7 @@ agent_presets {
                             title,
                             summary,
                             items,
+                            ..
                         } if title == "Rebase conflict"
                             && summary
                                 == "Review hit conflicts while rebasing onto the base branch."
@@ -13855,6 +13857,7 @@ agent_presets {
                                 title,
                                 summary,
                                 items,
+                                ..
                             },
                             ..
                         } if title == "Rebase conflict"
