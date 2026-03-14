@@ -12973,11 +12973,22 @@ agent_presets {
         assert_eq!(spawns[0].session_config.worktree_path, recovered_worktree);
 
         let prompts = fake_driver.prompt_log();
-        assert!(matches!(
-            prompts.first().and_then(|(_, parts)| parts.first()),
-            Some(PromptContentPart::Text { text })
-                if text == "Captain steer:\nAsk the mate to add coverage"
-        ));
+        let first_text = match prompts.first().and_then(|(_, parts)| parts.first()) {
+            Some(PromptContentPart::Text { text }) => text.as_str(),
+            other => panic!("expected Text part, got {other:?}"),
+        };
+        assert!(
+            first_text.contains("Captain steer:"),
+            "missing steer prefix: {first_text}"
+        );
+        assert!(
+            first_text.contains("Ask the mate to add coverage"),
+            "missing steer content: {first_text}"
+        );
+        assert!(
+            first_text.contains("Act on this correction"),
+            "missing steer reminder: {first_text}"
+        );
 
         let detail = Ship::get_session(&ship, session_id.clone()).await;
         assert_eq!(
