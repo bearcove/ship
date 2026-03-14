@@ -291,6 +291,34 @@ export function SessionHeader({
           <Text size="3" weight="medium" className={sessionHeaderTitle}>
             {displayTitle}
           </Text>
+          <Tooltip content="Open in Zed">
+            <IconButton
+              variant="ghost"
+              color="gray"
+              size="2"
+              aria-label="Open in Zed"
+              onClick={(e) => {
+                e.stopPropagation();
+                void getShipClient().then(c => c.openInEditor(sessionId));
+              }}
+            >
+              <CodeSimple size={18} />
+            </IconButton>
+          </Tooltip>
+          <Tooltip content="Open in iTerm">
+            <IconButton
+              variant="ghost"
+              color="gray"
+              size="2"
+              aria-label="Open in iTerm"
+              onClick={(e) => {
+                e.stopPropagation();
+                void getShipClient().then(c => c.openInTerminal(sessionId));
+              }}
+            >
+              <TerminalWindow size={18} />
+            </IconButton>
+          </Tooltip>
           <Popover.Root open={switcherOpen} onOpenChange={setSwitcherOpen}>
             <Popover.Trigger asChild>
               <IconButton
@@ -466,28 +494,6 @@ export function SessionHeader({
                   <Text size="1" color="amber">-{String(diffStats.uncommitted_lines_removed)}</Text>
                 </>
               )}
-              <Tooltip content="Open in Zed">
-                <IconButton
-                  variant="ghost"
-                  size="1"
-                  color="gray"
-                  aria-label="Open in Zed"
-                  onClick={() => { void getShipClient().then(c => c.openInEditor(sessionId)); }}
-                >
-                  <CodeSimple size={13} />
-                </IconButton>
-              </Tooltip>
-              <Tooltip content="Open in iTerm">
-                <IconButton
-                  variant="ghost"
-                  size="1"
-                  color="gray"
-                  aria-label="Open in iTerm"
-                  onClick={() => { void getShipClient().then(c => c.openInTerminal(sessionId)); }}
-                >
-                  <TerminalWindow size={13} />
-                </IconButton>
-              </Tooltip>
               <Code variant="ghost" size="1">
                 {branchName}
               </Code>
