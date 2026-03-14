@@ -10668,25 +10668,37 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn handle_mate_stop_reason_cancelled_invalidates_mate_activity_summary_state() {
+    async fn start_task_invalidates_mate_activity_summary_state() {
         let (dir, ship, session_id) =
-            create_session_for_workflow_test("mate-stop-cancelled-invalidates-summary").await;
+            create_session_for_workflow_test("start-task-invalidates-summary").await;
 
         {
             let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
             let session = sessions.get_mut(&session_id).expect("session should exist");
-            let task = session.current_task.as_mut().expect("task should exist");
-            task.record.status = TaskStatus::Working;
-            session.utility_last_task_id = Some(task.record.id.clone());
+            let old_task_id = session
+                .current_task
+                .as_ref()
+                .expect("task should exist")
+                .record
+                .id
+                .clone();
+            session.utility_last_task_id = Some(old_task_id);
             session
                 .mate_activity_buffer
                 .push("[speech] stale update".to_owned());
             session.mate_activity_first_at = Some(std::time::Instant::now());
+            session.current_task = None;
         }
 
-        ship.handle_mate_stop_reason(&session_id, StopReason::Cancelled)
+        let new_task_id = ship
+            .start_task(
+                &session_id,
+                "Fresh task".to_owned(),
+                "Fresh task".to_owned(),
+                Vec::new(),
+            )
             .await
-            .expect("cancelled stop reason should succeed");
+            .expect("start_task should succeed");
 
         let sessions = ship.sessions.lock().expect("sessions mutex poisoned");
         let session = sessions.get(&session_id).expect("session should exist");
@@ -10696,8 +10708,8 @@ mod tests {
                 .as_ref()
                 .expect("task should exist")
                 .record
-                .status,
-            TaskStatus::Working
+                .id,
+            new_task_id
         );
         assert!(
             session.mate_activity_buffer.is_empty(),
