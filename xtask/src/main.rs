@@ -55,7 +55,7 @@ fn build_frontend(workspace_root: &Path) {
 
     println!("Building frontend...");
     let status = Command::new("pnpm")
-        .arg("build")
+        .arg("build-no-check")
         .current_dir(&frontend_dir)
         .status()
         .expect("Failed to run pnpm build");

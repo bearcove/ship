@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "pnpm --filter ship-frontend dev",
     "build": "pnpm --filter ship-frontend build",
+    "build-no-check": "pnpm --filter ship-frontend build-no-check",
     "typecheck": "pnpm --filter ship-frontend typecheck",
     "test": "pnpm --filter ship-frontend test"
   },

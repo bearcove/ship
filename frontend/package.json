@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsgo --noEmit && vite build",
+    "build-no-check": "vite build",
     "typecheck": "tsgo --noEmit",
     "test": "vitest run"
   },
