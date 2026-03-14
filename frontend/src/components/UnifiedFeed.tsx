@@ -505,6 +505,14 @@ function isWorkflowMilestoneDiffLike(item: string): boolean {
   return false;
 }
 
+function toMarkdownTextBlock(text: string): TextBlockType {
+  return {
+    tag: "Text",
+    text,
+    source: { tag: "AgentMessage" },
+  };
+}
+
 function WorkflowMilestoneBlock({ block }: { block: WorkflowMilestoneBlockType }) {
   const tone = workflowMilestoneTone(block.kind);
   const items = dedupeWorkflowMilestoneItems(block.items ?? []);
@@ -521,30 +529,28 @@ function WorkflowMilestoneBlock({ block }: { block: WorkflowMilestoneBlockType }
         <Flex className={taskRecapHeader} align="start" justify="between" gap="3">
           <Box style={{ minWidth: 0 }}>
             <Text className={taskRecapEyebrow}>Phase break</Text>
-            <Text className={taskRecapTitle}>{block.title}</Text>
-            {block.summary && (
-              <Text style={{ fontSize: "var(--font-size-1)", color: "var(--gray-9)" }}>
-                {block.summary}
-              </Text>
-            )}
+            <Box className={taskRecapTitle}>
+              <TextBlock block={toMarkdownTextBlock(block.title)} />
+            </Box>
+            {block.summary && <TextBlock block={toMarkdownTextBlock(block.summary)} />}
           </Box>
         </Flex>
         {items.length > 0 && (
           <Box className={workflowMilestoneList}>
-            {items.map((item) => {
+            {items.map((item, index) => {
               const isDiffLike = isWorkflowMilestoneDiffLike(item);
               const className = isDiffLike
                 ? `${workflowMilestoneItem} ${workflowMilestoneItemMono}`
                 : workflowMilestoneItem;
               return (
-                <Text
-                  key={item}
+                <Box
+                  key={`${index}-${item}`}
                   className={className}
                   data-testid="workflow-milestone-item"
                   data-item-style={isDiffLike ? "diff" : "text"}
                 >
-                  {item}
-                </Text>
+                  <TextBlock block={toMarkdownTextBlock(item)} />
+                </Box>
               );
             })}
           </Box>
