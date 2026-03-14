@@ -515,8 +515,19 @@ function toMarkdownTextBlock(text: string): TextBlockType {
 }
 
 function WorkflowMilestoneBlock({ block }: { block: WorkflowMilestoneBlockType }) {
+  const [expandedHashes, setExpandedHashes] = useState<Set<string>>(() => new Set());
   const tone = workflowMilestoneTone(block.kind);
   const items = dedupeWorkflowMilestoneItems(block.items ?? []);
+  const commits = block.commits ?? [];
+
+  function toggleExpanded(hash: string) {
+    setExpandedHashes((prev) => {
+      const next = new Set(prev);
+      if (next.has(hash)) next.delete(hash);
+      else next.add(hash);
+      return next;
+    });
+  }
 
   return (
     <Box
@@ -535,8 +546,54 @@ function WorkflowMilestoneBlock({ block }: { block: WorkflowMilestoneBlockType }
             </Box>
             {block.summary && <TextBlock block={toMarkdownTextBlock(block.summary)} />}
           </Box>
+          {block.stats && (
+            <Text className={taskRecapSummary}>
+              <span style={{ color: "var(--green-11)" }}>+{block.stats.insertions}</span>{" "}
+              <span style={{ color: "var(--red-11)" }}>−{block.stats.deletions}</span> across{" "}
+              {block.stats.files_changed} file{block.stats.files_changed !== 1 ? "s" : ""}
+            </Text>
+          )}
         </Flex>
-        {items.length > 0 && (
+        {commits.length > 0 && (
+          <Box className={taskRecapCommitList}>
+            {commits.map((commit) => {
+              const expanded = expandedHashes.has(commit.hash);
+              const commitLine = (
+                <>
+                  {commit.diff && (
+                    <CaretRight
+                      size={12}
+                      className={taskRecapCaret}
+                      style={{ transform: expanded ? "rotate(90deg)" : "rotate(0deg)" }}
+                    />
+                  )}
+                  <Text className={taskRecapCommitHash}>{commit.hash}</Text>
+                  <Text className={taskRecapCommitSubject}>{commit.subject}</Text>
+                </>
+              );
+
+              return (
+                <Box key={commit.hash} className={taskRecapCommitRow}>
+                  {commit.diff ? (
+                    <button
+                      type="button"
+                      className={taskRecapCommitToggle}
+                      onClick={() => toggleExpanded(commit.hash)}
+                    >
+                      {commitLine}
+                    </button>
+                  ) : (
+                    <Flex className={taskRecapCommitStatic} align="center" gap="2">
+                      {commitLine}
+                    </Flex>
+                  )}
+                  {expanded && commit.diff && <CommitDiffView diff={commit.diff} />}
+                </Box>
+              );
+            })}
+          </Box>
+        )}
+        {commits.length === 0 && items.length > 0 && (
           <Box className={workflowMilestoneList}>
             {items.map((item, index) => {
               const isDiffLike = isWorkflowMilestoneDiffLike(item);
