@@ -592,7 +592,7 @@ pub mod events {
         /// Captain called captain_notify_human; waiting for human to approve/respond.
         HumanReviewRequested {
             message: String,
-            /// git diff base_branch...HEAD in the session worktree
+            /// Post-rebase diff showing what would merge right now
             diff: String,
             /// Absolute path to the session worktree for manual inspection
             worktree_path: String,
@@ -830,7 +830,7 @@ pub mod protocol {
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub struct HumanReviewRequest {
         pub message: String,
-        /// git diff base_branch...HEAD at the time of the request
+        /// Post-rebase diff showing what would merge right now
         pub diff: String,
         /// Absolute path to the session worktree for manual inspection
         pub worktree_path: String,

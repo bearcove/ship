@@ -207,6 +207,12 @@ pub trait WorktreeOps: Send + Sync {
         worktree_path: &Path,
     ) -> Result<Vec<String>, WorktreeError>;
 
+    async fn review_diff(
+        &self,
+        worktree_path: &Path,
+        base_branch: &str,
+    ) -> Result<String, WorktreeError>;
+
     /// Stage all changes and create a commit with the given message.
     async fn commit_all(&self, worktree_path: &Path, message: &str) -> Result<(), WorktreeError>;
 

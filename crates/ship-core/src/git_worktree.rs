@@ -152,6 +152,25 @@ impl WorktreeOps for GitWorktreeOps {
         Ok(paths)
     }
 
+    async fn review_diff(
+        &self,
+        worktree_path: &Path,
+        base_branch: &str,
+    ) -> Result<String, WorktreeError> {
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(worktree_path)
+            .arg("diff")
+            .arg(format!("{base_branch}..HEAD"))
+            .output()
+            .await
+            .map_err(|error| WorktreeError {
+                message: error.to_string(),
+            })?;
+
+        ensure_success_stdout(output)
+    }
+
     async fn commit_all(&self, worktree_path: &Path, message: &str) -> Result<(), WorktreeError> {
         let add_output = Command::new("git")
             .arg("-C")

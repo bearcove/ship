@@ -212,6 +212,24 @@ impl ServerHandler for CaptainMcpHandler {
                     .await
                     .map_err(call_tool_rpc_error)?
             }
+            // r[captain.tool.git-status]
+            "captain_git_status" => self
+                .client
+                .captain_git_status()
+                .await
+                .map_err(call_tool_rpc_error)?,
+            // r[captain.tool.review-diff]
+            "captain_review_diff" => self
+                .client
+                .captain_review_diff()
+                .await
+                .map_err(call_tool_rpc_error)?,
+            // r[captain.tool.rebase-status]
+            "captain_rebase_status" => self
+                .client
+                .captain_rebase_status()
+                .await
+                .map_err(call_tool_rpc_error)?,
             // r[captain.tool.notify-human]
             "captain_notify_human" => {
                 let Some(message) = arguments.get("message").and_then(Value::as_str) else {
@@ -319,10 +337,16 @@ impl ServerHandler for CaptainMcpHandler {
                 };
                 return Ok(kagi_web_search(&self.http_client, api_key, query).await);
             }
-            // r[captain.tool.continue-rebase]
+            // r[captain.tool.rebase-continue]
             "captain_continue_rebase" => self
                 .client
                 .captain_continue_rebase()
+                .await
+                .map_err(call_tool_rpc_error)?,
+            // r[captain.tool.rebase-abort]
+            "captain_abort_rebase" => self
+                .client
+                .captain_abort_rebase()
                 .await
                 .map_err(call_tool_rpc_error)?,
             other => return Err(CallToolError::unknown_tool(other.to_owned())),
@@ -538,8 +562,35 @@ skips research and goes straight to execution. Omitting files or plan wastes the
             }),
         },
         ToolDefinition {
+            name: "captain_git_status",
+            description: "Inspect the current session branch state before review or accept. Reports the current branch, base branch, dirtiness, rebase state, unresolved paths, and tracked conflict markers.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false,
+            }),
+        },
+        ToolDefinition {
+            name: "captain_review_diff",
+            description: "Rebase the session branch onto the configured base branch and return the post-rebase diff that would merge right now. If the rebase conflicts, Ship leaves the rebase in progress and reports the conflicted files instead of returning a diff.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false,
+            }),
+        },
+        ToolDefinition {
+            name: "captain_rebase_status",
+            description: "Inspect the current rebase state, including whether a rebase is in progress and whether it is safe to continue or abort.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false,
+            }),
+        },
+        ToolDefinition {
             name: "captain_notify_human",
-            description: "Ask the human for guidance. Blocks until the human responds.",
+            description: "Ask the human for guidance using the same post-rebase review diff that Ship would merge right now. Blocks until the human responds.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -558,11 +609,16 @@ skips research and goes straight to execution. Omitting files or plan wastes the
         web_search_tool(),
         ToolDefinition {
             name: "captain_continue_rebase",
-            description: "Continue a paused rebase after resolving conflict markers. \
-Only valid when the task is in RebaseConflict status. \
-Fix all conflict markers in the listed files first, then call this tool. \
-If more conflicts remain, the tool returns an error listing them. \
-When all conflicts are resolved, the rebase completes and the task is accepted.",
+            description: "Continue a paused rebase after resolving conflicts. Ship refuses to continue while unmerged paths remain or tracked files still contain conflict markers.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false,
+            }),
+        },
+        ToolDefinition {
+            name: "captain_abort_rebase",
+            description: "Abort the in-progress rebase and return the session worktree to its pre-rebase state.",
             input_schema: json!({
                 "type": "object",
                 "properties": {},

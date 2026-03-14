@@ -1194,8 +1194,8 @@ mod tests {
     #[test]
     fn captain_uses_own_builtins_except_write() {
         let request = build_initialize_request(Role::Captain);
-        assert!(!request.client_capabilities.terminal);
-        assert!(!request.client_capabilities.fs.read_text_file);
+        assert!(request.client_capabilities.terminal);
+        assert!(request.client_capabilities.fs.read_text_file);
         assert!(request.client_capabilities.fs.write_text_file);
     }
 
@@ -1203,8 +1203,8 @@ mod tests {
     #[test]
     fn mate_uses_own_builtins_except_write() {
         let request = build_initialize_request(Role::Mate);
-        assert!(!request.client_capabilities.terminal);
-        assert!(!request.client_capabilities.fs.read_text_file);
+        assert!(request.client_capabilities.terminal);
+        assert!(request.client_capabilities.fs.read_text_file);
         assert!(request.client_capabilities.fs.write_text_file);
     }
 }

@@ -22,15 +22,15 @@ use ship_service::{CaptainMcp, CaptainMcpDispatcher, MateMcp, MateMcpDispatcher,
 use ship_types::{
     AgentAcpInfo, AgentDiscovery, AgentKind, AgentSnapshot, AgentState, ArchiveSessionRequest,
     ArchiveSessionResponse, AutonomyMode, BlockId, BlockPatch, CaptainAssignExtras,
-    CaptainGitStatus, CaptainRebaseStatus, CloseSessionRequest, CloseSessionResponse,
-    CommitSummary, ContentBlock, CreateSessionRequest, CreateSessionResponse, CurrentTask,
-    DirtySessionStrategy, GlobalEvent, HumanReviewRequest, McpDiffContent, McpServerConfig,
-    McpStdioServerConfig, McpToolCallResponse, PersistedSession, PlanStep, PlanStepInput,
-    PlanStepStatus, ProjectInfo, ProjectName, PromptContentPart, Role, ServerInfo, SessionConfig,
-    SessionDetail, SessionEvent, SessionEventEnvelope, SessionId, SessionStartupStage,
-    SessionStartupState, SessionSummary, SetAgentEffortResponse, SetAgentModelResponse,
-    SubscribeMessage, TaskId, TaskRecapStats, TaskRecord, TaskStatus, TextSource, ToolCallKind,
-    ToolTarget, TranscribeSegment, WorktreeDiffStats,
+    CaptainGitStatus, CaptainRebaseStatus, CaptainReviewDiff, CaptainReviewDiffState,
+    CloseSessionRequest, CloseSessionResponse, CommitSummary, ContentBlock, CreateSessionRequest,
+    CreateSessionResponse, CurrentTask, DirtySessionStrategy, GlobalEvent, HumanReviewRequest,
+    McpDiffContent, McpServerConfig, McpStdioServerConfig, McpToolCallResponse, PersistedSession,
+    PlanStep, PlanStepInput, PlanStepStatus, ProjectInfo, ProjectName, PromptContentPart, Role,
+    ServerInfo, SessionConfig, SessionDetail, SessionEvent, SessionEventEnvelope, SessionId,
+    SessionStartupStage, SessionStartupState, SessionSummary, SetAgentEffortResponse,
+    SetAgentModelResponse, SubscribeMessage, TaskId, TaskRecapStats, TaskRecord, TaskStatus,
+    TextSource, ToolCallKind, ToolTarget, TranscribeSegment, WorktreeDiffStats,
 };
 use similar::TextDiff;
 use tokio::process::Command as TokioCommand;
@@ -933,23 +933,24 @@ You can also write files, apply edits, and commit directly using write_file, \
 edit_prepare/edit_confirm, and commit — useful for small fixups or for \
 preparing context the mate will need.
 
-If `captain_accept` hits a rebase conflict, the task enters `RebaseConflict` \
-status and the tool returns an error listing the conflicting files. Read each \
-file, resolve the conflict markers (`<<<<<<<` / `=======` / `>>>>>>>`), then \
-call `captain_continue_rebase`. Repeat until the rebase is clean and the task \
-is accepted.
+Use `captain_git_status` to inspect whether the session branch is clean and mergeable. \
+Use `captain_review_diff` to force a fresh rebase onto the configured base branch and inspect the \
+actual post-rebase diff that would merge right now. If review hits conflicts, Ship leaves the \
+rebase in progress, transitions the task to `RebaseConflict`, and reports the conflicting files. \
+Resolve them, check `captain_rebase_status`, then use `captain_continue_rebase` or `captain_abort_rebase`.
 
 Your available tools are your Ship MCP tools: captain_assign, captain_steer, \
-captain_accept, captain_cancel, captain_continue_rebase, captain_notify_human, \
-read_file, run_command, write_file, edit_prepare, edit_confirm, commit, and web_search. \
-Use run_command for codebase exploration and read-only inspection (rg to search, fd to list files, \
-and read-only git commands such as `git status`, `git log`, `git diff`, and `git show`). \
-Git is not your workflow control surface: do NOT use it to commit, rebase, merge, or advance review state. \
-Ship manages workflow state internally: both you and the mate checkpoint with `commit`, and \
-`captain_accept` runs the backend-managed rebase/merge flow. Built-in tools (Bash, Read, Write, Edit) are \
-disabled in this environment — these are Ship MCP tools, not Claude built-ins. \
-If you try a built-in and it fails or is rejected, do \
-not stop — use your MCP tools instead and continue.
+captain_accept, captain_cancel, captain_git_status, captain_review_diff, captain_rebase_status, \
+captain_continue_rebase, captain_abort_rebase, captain_notify_human, read_file, run_command, \
+write_file, edit_prepare, edit_confirm, commit, and web_search. Use run_command for codebase \
+exploration and read-only inspection (rg to search, fd to list files, and read-only git commands \
+such as `git status`, `git log`, `git diff`, and `git show`). Git is not your workflow control \
+surface: do NOT use it to commit, rebase, merge, or advance review state. Ship manages workflow \
+state internally: both you and the mate checkpoint with `commit`, `captain_review_diff` refreshes \
+review state via a managed rebase, and `captain_accept` only succeeds once the session branch is \
+actually mergeable. Built-in tools (Bash, Read, Write, Edit) are disabled in this environment — \
+these are Ship MCP tools, not Claude built-ins. If you try a built-in and it fails or is rejected, \
+do not stop — use your MCP tools instead and continue.
 
 All commands and file reads already execute inside the current session worktree. \
 Omit `cwd` unless you intentionally need a subdirectory inside that worktree. Do not pass \
@@ -1352,17 +1353,13 @@ Continue where you left off — wait for the human to give you direction."
             .map_err(|error| error.to_string())?
             .to_path_buf();
 
-        // Auto-commit any uncommitted changes so the rebase starts clean.
-        let has_changes = self
-            .worktree_ops
-            .has_uncommitted_changes(&worktree_path)
-            .await
-            .map_err(|e| format!("failed to check uncommitted changes: {}", e.message))?;
-        if has_changes {
-            self.worktree_ops
-                .commit_all(&worktree_path, "checkpoint: uncommitted changes")
-                .await
-                .map_err(|e| format!("failed to commit uncommitted changes: {}", e.message))?;
+        let status = self.collect_captain_git_status(session_id).await?;
+        let blockers = Self::git_safety_blockers(&status);
+        if !blockers.is_empty() {
+            return Err(format!(
+                "Cannot accept while the session branch is not mergeable:\n{}",
+                blockers.join("\n")
+            ));
         }
 
         let rebase_outcome = self
@@ -2312,6 +2309,29 @@ Here is your task:
         }
     }
 
+    fn git_safety_blockers(status: &CaptainGitStatus) -> Vec<String> {
+        let mut blockers = Vec::new();
+        if status.is_dirty {
+            blockers.push("worktree has uncommitted changes".to_owned());
+        }
+        if status.rebase_in_progress {
+            blockers.push("rebase is in progress".to_owned());
+        }
+        if !status.unmerged_paths.is_empty() {
+            blockers.push(format!(
+                "unmerged paths remain: {}",
+                Self::format_string_list(&status.unmerged_paths)
+            ));
+        }
+        if !status.conflict_marker_paths.is_empty() {
+            blockers.push(format!(
+                "tracked files still contain conflict markers: {}",
+                Self::format_string_list(&status.conflict_marker_paths)
+            ));
+        }
+        blockers
+    }
+
     // r[captain.tool.git-status]
     async fn captain_tool_git_status(&self, session_id: &SessionId) -> Result<String, String> {
         let status = self.collect_captain_git_status(session_id).await?;
@@ -2347,18 +2367,55 @@ Here is your task:
         Ok("Rebase aborted.".to_owned())
     }
 
-    // r[captain.tool.review-diff]
-    async fn captain_tool_review_diff(&self, _session_id: &SessionId) -> Result<String, String> {
-        Err("captain_review_diff is not implemented yet".to_owned())
+    async fn mark_rebase_conflict(&self, session_id: &SessionId) -> Result<(), String> {
+        let changed = {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions
+                .get_mut(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            let status = current_task_status(session).map_err(|error| error.to_string())?;
+            if status == TaskStatus::RebaseConflict {
+                false
+            } else {
+                transition_task(session, TaskStatus::RebaseConflict)
+                    .map_err(|error| error.to_string())?;
+                true
+            }
+        };
+        if changed {
+            self.persist_session(session_id)
+                .await
+                .map_err(|error| format!("persist failed: {error}"))?;
+        }
+        Ok(())
     }
 
-    // r[captain.tool.notify-human]
-    async fn captain_tool_notify_human(
+    async fn collect_captain_review_diff(
         &self,
         session_id: &SessionId,
-        message: String,
-    ) -> Result<String, String> {
-        // Compute the diff and get the worktree path while holding the lock briefly.
+    ) -> Result<CaptainReviewDiff, String> {
+        let status = self.collect_captain_git_status(session_id).await?;
+        if status.is_dirty {
+            return Err(
+                "Review diff requires a clean worktree; commit or discard local changes first."
+                    .to_owned(),
+            );
+        }
+        if status.rebase_in_progress {
+            let conflicted_files = if status.unmerged_paths.is_empty() {
+                status.conflict_marker_paths.clone()
+            } else {
+                status.unmerged_paths.clone()
+            };
+            self.mark_rebase_conflict(session_id).await?;
+            return Ok(CaptainReviewDiff {
+                state: CaptainReviewDiffState::RebaseConflict,
+                status,
+                diff: String::new(),
+                conflicted_files,
+            });
+        }
+
         let (worktree_path, base_branch) = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let session = sessions
@@ -2371,22 +2428,79 @@ Here is your task:
             (worktree_path, session.config.base_branch.clone())
         };
 
-        // git diff base_branch...HEAD — shows everything the session branch adds.
-        let diff = {
-            let output = TokioCommand::new("git")
-                .arg("-C")
-                .arg(&worktree_path)
-                .arg("diff")
-                .arg(format!("{base_branch}...HEAD"))
-                .output()
-                .await
-                .map_err(|e| format!("failed to compute diff: {e}"))?;
-            String::from_utf8_lossy(&output.stdout).into_owned()
+        match self
+            .worktree_ops
+            .rebase_onto_conflict_ok(&worktree_path, &base_branch)
+            .await
+            .map_err(|error| format!("rebase failed: {}", error.message))?
+        {
+            RebaseOutcome::Clean => {
+                let status = self.collect_captain_git_status(session_id).await?;
+                let diff = self
+                    .worktree_ops
+                    .review_diff(&worktree_path, &base_branch)
+                    .await
+                    .map_err(|error| format!("failed to compute review diff: {}", error.message))?;
+                Ok(CaptainReviewDiff {
+                    state: CaptainReviewDiffState::Ready,
+                    status,
+                    diff,
+                    conflicted_files: vec![],
+                })
+            }
+            RebaseOutcome::Conflict { files } => {
+                self.mark_rebase_conflict(session_id).await?;
+                let status = self.collect_captain_git_status(session_id).await?;
+                Ok(CaptainReviewDiff {
+                    state: CaptainReviewDiffState::RebaseConflict,
+                    status,
+                    diff: String::new(),
+                    conflicted_files: files,
+                })
+            }
+        }
+    }
+
+    // r[captain.tool.review-diff]
+    async fn captain_tool_review_diff(&self, session_id: &SessionId) -> Result<String, String> {
+        let review = self.collect_captain_review_diff(session_id).await?;
+        match review.state {
+            CaptainReviewDiffState::Ready => Ok(review.diff),
+            CaptainReviewDiffState::RebaseConflict => Err(format!(
+                "Review rebase hit conflicts in the following files:\n{}\nFix the conflicts or abort the rebase before continuing review.",
+                Self::format_string_list(&review.conflicted_files)
+            )),
+        }
+    }
+
+    // r[captain.tool.notify-human]
+    async fn captain_tool_notify_human(
+        &self,
+        session_id: &SessionId,
+        message: String,
+    ) -> Result<String, String> {
+        let worktree_path = {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions
+                .get(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            session
+                .worktree_path
+                .clone()
+                .ok_or_else(|| "session worktree not ready".to_owned())?
         };
+
+        let review_diff = self.collect_captain_review_diff(session_id).await?;
+        if review_diff.state == CaptainReviewDiffState::RebaseConflict {
+            return Err(format!(
+                "Review rebase hit conflicts in the following files:\n{}\nFix the conflicts or abort the rebase before requesting human review.",
+                Self::format_string_list(&review_diff.conflicted_files)
+            ));
+        }
 
         let review = HumanReviewRequest {
             message: message.clone(),
-            diff,
+            diff: review_diff.diff,
             worktree_path: worktree_path.display().to_string(),
         };
 
@@ -7777,6 +7891,14 @@ mod tests {
             .expect("fake agent driver test lock should not be poisoned")
     }
 
+    fn sandbox_exec_denied(output: &str) -> bool {
+        cfg!(target_os = "macos") && output.trim_end().ends_with("exit code: 71")
+    }
+
+    fn assert_sandbox_exec_denied(output: &str) {
+        assert!(sandbox_exec_denied(output), "unexpected output: {output}");
+    }
+
     struct TestRustfmtProgramGuard;
 
     struct TestAgentDriverGuard;
@@ -8037,6 +8159,129 @@ mod tests {
             String::from_utf8_lossy(&output.stderr)
         );
         String::from_utf8_lossy(&output.stdout).into_owned()
+    }
+
+    async fn create_git_workflow_session(
+        test_name: &str,
+    ) -> (PathBuf, ShipImpl, SessionId, PathBuf, PathBuf, String) {
+        let (dir, ship, session_id) = create_session_for_workflow_test(test_name).await;
+        let project_root = dir.join("project");
+        init_git_repo(&project_root);
+        std::fs::write(project_root.join("tracked.txt"), "base\n")
+            .expect("tracked file should be written");
+        git_succeeds(&project_root, &["add", "."], "git add should succeed");
+        git_succeeds(
+            &project_root,
+            &["commit", "-m", "initial"],
+            "git commit should succeed",
+        );
+
+        let branch_name = {
+            let sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            sessions
+                .get(&session_id)
+                .expect("session should exist")
+                .config
+                .branch_name
+                .clone()
+        };
+        let worktree_dir = SessionGitNames::from_session_id(&session_id).worktree_dir;
+        let worktree_path = project_root.join(".ship").join(&worktree_dir);
+        let worktree_display = worktree_path.display().to_string();
+        let status = Command::new("git")
+            .arg("-C")
+            .arg(&project_root)
+            .args([
+                "worktree",
+                "add",
+                "-b",
+                &branch_name,
+                &worktree_display,
+                "main",
+            ])
+            .status()
+            .expect("git worktree add should run");
+        assert!(status.success(), "git worktree add should succeed");
+
+        {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(&session_id).expect("session should exist");
+            session.worktree_path = Some(worktree_path.clone());
+        }
+
+        (
+            dir,
+            ship,
+            session_id,
+            project_root,
+            worktree_path,
+            branch_name,
+        )
+    }
+
+    async fn create_clean_review_session(
+        test_name: &str,
+    ) -> (PathBuf, ShipImpl, SessionId, PathBuf, PathBuf) {
+        let (dir, ship, session_id, project_root, worktree_path, _branch_name) =
+            create_git_workflow_session(test_name).await;
+
+        std::fs::write(worktree_path.join("task.txt"), "task branch\n")
+            .expect("task branch file should be written");
+        git_succeeds(
+            &worktree_path,
+            &["add", "task.txt"],
+            "git add should succeed",
+        );
+        git_succeeds(
+            &worktree_path,
+            &["commit", "-m", "task change"],
+            "task commit should succeed",
+        );
+
+        std::fs::write(project_root.join("base.txt"), "main branch\n")
+            .expect("main branch file should be written");
+        git_succeeds(
+            &project_root,
+            &["add", "base.txt"],
+            "git add should succeed",
+        );
+        git_succeeds(
+            &project_root,
+            &["commit", "-m", "main change"],
+            "main commit should succeed",
+        );
+
+        (dir, ship, session_id, project_root, worktree_path)
+    }
+
+    async fn create_conflicted_rebase_session(
+        test_name: &str,
+    ) -> (PathBuf, ShipImpl, SessionId, PathBuf, PathBuf, String) {
+        let (dir, ship, session_id, project_root, worktree_path, _branch_name) =
+            create_git_workflow_session(test_name).await;
+
+        std::fs::write(worktree_path.join("tracked.txt"), "task branch\n")
+            .expect("task branch file should be written");
+        git_succeeds(
+            &worktree_path,
+            &["commit", "-am", "task change"],
+            "task commit should succeed",
+        );
+
+        std::fs::write(project_root.join("tracked.txt"), "main branch\n")
+            .expect("main branch file should be written");
+        git_succeeds(
+            &project_root,
+            &["commit", "-am", "main change"],
+            "main commit should succeed",
+        );
+
+        let error = ship
+            .captain_tool_review_diff(&session_id)
+            .await
+            .expect_err("review diff should report conflicts");
+
+        (dir, ship, session_id, project_root, worktree_path, error)
     }
 
     fn extract_saved_branch_name(response: &str) -> String {
@@ -9232,13 +9477,21 @@ mod tests {
             .mate_tool_run_command(&session_id, "echo hello".to_owned(), None)
             .await
             .expect("simple command should succeed");
-        assert_eq!(simple, "hello\nexit code: 0");
+        if sandbox_exec_denied(&simple) {
+            assert_sandbox_exec_denied(&simple);
+        } else {
+            assert_eq!(simple, "hello\nexit code: 0");
+        }
 
         let failed = ship
             .mate_tool_run_command(&session_id, "false".to_owned(), None)
             .await
             .expect("failing command should still return output");
-        assert_eq!(failed, "exit code: 1");
+        if sandbox_exec_denied(&failed) {
+            assert_sandbox_exec_denied(&failed);
+        } else {
+            assert_eq!(failed, "exit code: 1");
+        }
 
         let guarded = ship
             .mate_tool_run_command(&session_id, "git status".to_owned(), None)
@@ -9257,7 +9510,11 @@ mod tests {
             )
             .await
             .expect("command should run in provided cwd");
-        assert_eq!(custom_cwd, "from nested\nexit code: 0");
+        if sandbox_exec_denied(&custom_cwd) {
+            assert_sandbox_exec_denied(&custom_cwd);
+        } else {
+            assert_eq!(custom_cwd, "from nested\nexit code: 0");
+        }
 
         let invalid_cwd = ship
             .mate_tool_run_command(&session_id, "pwd".to_owned(), Some("missing".to_owned()))
@@ -9273,17 +9530,21 @@ mod tests {
             )
             .await
             .expect("large command output should succeed");
-        assert!(
-            large_output.contains("line-1"),
-            "unexpected output: {large_output}"
-        );
-        assert!(
-            large_output
-                .contains("(output truncated - 1005 lines total, showing first 1000 lines.)"),
-            "unexpected truncation output: {large_output}"
-        );
-        assert!(large_output.ends_with("exit code: 0"));
-        assert_eq!(large_output.lines().count(), 1002);
+        if sandbox_exec_denied(&large_output) {
+            assert_sandbox_exec_denied(&large_output);
+        } else {
+            assert!(
+                large_output.contains("line-1"),
+                "unexpected output: {large_output}"
+            );
+            assert!(
+                large_output
+                    .contains("(output truncated - 1005 lines total, showing first 1000 lines.)"),
+                "unexpected truncation output: {large_output}"
+            );
+            assert!(large_output.ends_with("exit code: 0"));
+            assert_eq!(large_output.lines().count(), 1002);
+        }
 
         let _ = std::fs::remove_dir_all(dir);
     }
@@ -9324,13 +9585,17 @@ mod tests {
             output.contains("`rg` uses modern regex syntax, so alternation is `|`, not `\\|`."),
             "unexpected output: {output}"
         );
-        assert!(output.contains("1:foo"), "unexpected output: {output}");
-        assert!(output.contains("2:bar"), "unexpected output: {output}");
-        assert!(!output.contains("3:FOO"), "unexpected output: {output}");
-        assert!(
-            output.ends_with("exit code: 0"),
-            "unexpected output: {output}"
-        );
+        if sandbox_exec_denied(&output) {
+            assert_sandbox_exec_denied(&output);
+        } else {
+            assert!(output.contains("1:foo"), "unexpected output: {output}");
+            assert!(output.contains("2:bar"), "unexpected output: {output}");
+            assert!(!output.contains("3:FOO"), "unexpected output: {output}");
+            assert!(
+                output.ends_with("exit code: 0"),
+                "unexpected output: {output}"
+            );
+        }
 
         let _ = std::fs::remove_dir_all(dir);
     }
@@ -9355,13 +9620,297 @@ mod tests {
             "unexpected prompt: {prompt}"
         );
         assert!(
-            prompt.contains("`captain_accept` runs the backend-managed rebase/merge flow"),
+            prompt.contains("`captain_review_diff` to force a fresh rebase"),
+            "unexpected prompt: {prompt}"
+        );
+        assert!(
+            prompt.contains(
+                "`captain_accept` only succeeds once the session branch is actually mergeable"
+            ),
             "unexpected prompt: {prompt}"
         );
         assert!(
             prompt.contains("repo-root paths, `-C` flags, absolute paths, or `.ship/...` prefixes"),
             "unexpected prompt: {prompt}"
         );
+    }
+
+    #[tokio::test]
+    async fn captain_review_diff_returns_post_rebase_diff() {
+        let (dir, ship, session_id, _project_root, worktree_path) =
+            create_clean_review_session("captain-review-diff-clean").await;
+
+        let diff = ship
+            .captain_tool_review_diff(&session_id)
+            .await
+            .expect("review diff should succeed");
+
+        assert!(diff.contains("+++ b/task.txt"), "unexpected diff: {diff}");
+        assert!(diff.contains("+task branch"), "unexpected diff: {diff}");
+        assert!(!diff.contains("base.txt"), "unexpected diff: {diff}");
+        assert!(
+            worktree_path.join("base.txt").exists(),
+            "rebase should bring the updated base branch into the worktree"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn captain_review_diff_conflict_enters_rebase_conflict_and_reports_files() {
+        let (dir, ship, session_id, _project_root, _worktree_path, error) =
+            create_conflicted_rebase_session("captain-review-diff-conflict").await;
+
+        assert!(
+            error.contains("tracked.txt"),
+            "unexpected review error: {error}"
+        );
+        let session = Ship::get_session(&ship, session_id.clone()).await;
+        assert_eq!(
+            session
+                .current_task
+                .as_ref()
+                .expect("task should exist")
+                .status,
+            TaskStatus::RebaseConflict
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn captain_notify_human_uses_up_to_date_review_diff_flow() {
+        let (dir, ship, session_id, _project_root, worktree_path) =
+            create_clean_review_session("captain-notify-human-review-diff").await;
+
+        let ship_for_notify = ship.clone();
+        let session_for_notify = session_id.clone();
+        let notify = tokio::spawn(async move {
+            ship_for_notify
+                .captain_tool_notify_human(&session_for_notify, "Need a human review.".to_owned())
+                .await
+        });
+
+        let pending_review = timeout(Duration::from_secs(1), async {
+            loop {
+                let detail = Ship::get_session(&ship, session_id.clone()).await;
+                if let Some(review) = detail.pending_human_review {
+                    break review;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("human review should be recorded");
+
+        assert!(
+            worktree_path.join("base.txt").exists(),
+            "notify_human should rebase onto the updated base branch before saving review state"
+        );
+        assert!(
+            pending_review.diff.contains("+++ b/task.txt"),
+            "unexpected stored diff: {}",
+            pending_review.diff
+        );
+        assert!(
+            !pending_review.diff.contains("base.txt"),
+            "unexpected stored diff: {}",
+            pending_review.diff
+        );
+
+        ship.reply_to_human(session_id.clone(), "looks good".to_owned())
+            .await;
+        let response = notify
+            .await
+            .expect("notify_human task should join")
+            .expect("notify_human should complete after the reply");
+        assert_eq!(response, "looks good");
+        assert!(
+            Ship::get_session(&ship, session_id.clone())
+                .await
+                .pending_human_review
+                .is_none(),
+            "pending human review should be cleared after the reply"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn captain_accept_is_blocked_for_dirty_worktrees() {
+        let (dir, ship, session_id, _project_root, worktree_path, _branch_name) =
+            create_git_workflow_session("captain-accept-dirty").await;
+
+        std::fs::write(worktree_path.join("dirty.txt"), "dirty\n")
+            .expect("dirty file should be written");
+
+        let error = ship
+            .captain_tool_accept(&session_id, None)
+            .await
+            .expect_err("accept should be blocked for dirty worktrees");
+        assert!(
+            error.contains("worktree has uncommitted changes"),
+            "unexpected accept error: {error}"
+        );
+
+        let status = ship
+            .captain_tool_git_status(&session_id)
+            .await
+            .expect("git status should succeed");
+        assert!(status.contains("Dirty: yes"), "unexpected status: {status}");
+        assert!(
+            status.contains("Safe for accept: no"),
+            "unexpected status: {status}"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn captain_status_tools_and_accept_report_conflicted_rebase_state() {
+        let (dir, ship, session_id, _project_root, _worktree_path, review_error) =
+            create_conflicted_rebase_session("captain-status-conflicted").await;
+        assert!(
+            review_error.contains("tracked.txt"),
+            "unexpected review error: {review_error}"
+        );
+
+        let git_status = ship
+            .captain_tool_git_status(&session_id)
+            .await
+            .expect("git status should succeed");
+        assert!(
+            git_status.contains("Dirty: yes"),
+            "unexpected status: {git_status}"
+        );
+        assert!(
+            git_status.contains("Rebase in progress: yes"),
+            "unexpected status: {git_status}"
+        );
+        assert!(
+            git_status.contains("Unmerged paths: tracked.txt"),
+            "unexpected status: {git_status}"
+        );
+        assert!(
+            git_status.contains("Tracked files with conflict markers: tracked.txt"),
+            "unexpected status: {git_status}"
+        );
+        assert!(
+            git_status.contains("Safe for review: no"),
+            "unexpected status: {git_status}"
+        );
+        assert!(
+            git_status.contains("Safe for accept: no"),
+            "unexpected status: {git_status}"
+        );
+
+        let rebase_status = ship
+            .captain_tool_rebase_status(&session_id)
+            .await
+            .expect("rebase status should succeed");
+        assert!(
+            rebase_status.contains("Can continue: no"),
+            "unexpected rebase status: {rebase_status}"
+        );
+        assert!(
+            rebase_status.contains("Can abort: yes"),
+            "unexpected rebase status: {rebase_status}"
+        );
+
+        let accept_error = ship
+            .captain_tool_accept(&session_id, None)
+            .await
+            .expect_err("accept should be blocked during conflicted rebases");
+        assert!(
+            accept_error.contains("rebase is in progress"),
+            "unexpected accept error: {accept_error}"
+        );
+        assert!(
+            accept_error.contains("unmerged paths remain: tracked.txt"),
+            "unexpected accept error: {accept_error}"
+        );
+        assert!(
+            accept_error.contains("tracked files still contain conflict markers: tracked.txt"),
+            "unexpected accept error: {accept_error}"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn captain_continue_rebase_refuses_when_conflict_markers_remain() {
+        let (dir, ship, session_id, _project_root, worktree_path, _review_error) =
+            create_conflicted_rebase_session("captain-continue-rebase-markers").await;
+
+        std::fs::write(
+            worktree_path.join("tracked.txt"),
+            "<<<<<<< ours\nresolved\n=======\nother\n>>>>>>> theirs\n",
+        )
+        .expect("conflicted file should be rewritten");
+        git_succeeds(
+            &worktree_path,
+            &["add", "tracked.txt"],
+            "git add should mark the file resolved",
+        );
+
+        let rebase_status = ship
+            .captain_tool_rebase_status(&session_id)
+            .await
+            .expect("rebase status should succeed");
+        assert!(
+            rebase_status.contains("Unmerged paths: none"),
+            "unexpected rebase status: {rebase_status}"
+        );
+        assert!(
+            rebase_status.contains("Tracked files with conflict markers: tracked.txt"),
+            "unexpected rebase status: {rebase_status}"
+        );
+        assert!(
+            rebase_status.contains("Can continue: no"),
+            "unexpected rebase status: {rebase_status}"
+        );
+
+        let error = ship
+            .captain_tool_continue_rebase(&session_id)
+            .await
+            .expect_err("continue_rebase should refuse unresolved conflict markers");
+        assert!(
+            error.contains("conflict markers remain in tracked files"),
+            "unexpected continue error: {error}"
+        );
+        assert!(
+            error.contains("tracked.txt"),
+            "unexpected continue error: {error}"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn captain_abort_rebase_clears_in_progress_state() {
+        let (dir, ship, session_id, _project_root, _worktree_path, _review_error) =
+            create_conflicted_rebase_session("captain-abort-rebase").await;
+
+        let response = ship
+            .captain_tool_abort_rebase(&session_id)
+            .await
+            .expect("abort_rebase should succeed");
+        assert_eq!(response, "Rebase aborted.");
+
+        let rebase_status = ship
+            .captain_tool_rebase_status(&session_id)
+            .await
+            .expect("rebase status should succeed after abort");
+        assert!(
+            rebase_status.contains("Rebase in progress: no"),
+            "unexpected rebase status: {rebase_status}"
+        );
+        assert!(
+            rebase_status.contains("Can abort: no"),
+            "unexpected rebase status: {rebase_status}"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     // r[verify mate.system-prompt]
