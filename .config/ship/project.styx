@@ -17,6 +17,12 @@ hooks {
             glob ("**/*.ts" "**/*.tsx")
         }
 
+        vitest {
+            command "pnpm vitest run"
+            cwd frontend
+            glob ("**/*.ts" "**/*.tsx")
+        }
+
         tracey {
             command "tracey query validate"
             glob ("**/*.rs" "**/*.md")
