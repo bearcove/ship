@@ -431,7 +431,21 @@ export function NewSessionDialog({
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Content key={String(open)} maxWidth="480px" style={{ overflow: "visible" }}>
+      <Dialog.Content
+        key={String(open)}
+        maxWidth="480px"
+        style={{ overflow: "visible" }}
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        onKeyDown={(e) => {
+          if (e.key !== "Enter") return;
+          const tag = (e.target as HTMLElement).tagName;
+          if (tag === "BUTTON" || tag === "INPUT" || tag === "TEXTAREA") return;
+          if ((e.target as HTMLElement).closest('[role="listbox"], [role="option"], [role="combobox"]')) return;
+          if (createDisabled) return;
+          e.preventDefault();
+          void handleCreate();
+        }}
+      >
         <Dialog.Title>New Session</Dialog.Title>
         <Dialog.Description size="2" color="gray">
           Configure a new agent session with a project and branch.
