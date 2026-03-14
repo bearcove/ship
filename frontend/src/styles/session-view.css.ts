@@ -1287,11 +1287,6 @@ export const feedMessageCardUser = style({
   borderColor: "color-mix(in srgb, var(--accent-9) 28%, var(--gray-a4))",
 });
 
-export const feedTimestamp = style({
-  fontSize: "var(--font-size-1)",
-  color: "var(--gray-9)",
-});
-
 export const feedTimeGap = style({
   textAlign: "center",
   fontSize: "var(--font-size-1)",

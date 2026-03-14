@@ -432,7 +432,6 @@ function SingleBlock({
   sessionId,
   lastUnresolvedPermBlockId,
   agentForBlock,
-  isLast,
   userAvatarUrl,
   taskCompletedDuration,
   debugMode = false,
@@ -441,7 +440,6 @@ function SingleBlock({
   sessionId: string;
   lastUnresolvedPermBlockId: string | undefined;
   agentForBlock: AgentSnapshot | null;
-  isLast: boolean;
   userAvatarUrl: string | null;
   taskCompletedDuration: number | null;
   debugMode?: boolean;
@@ -476,8 +474,6 @@ function SingleBlock({
               <BubbleActions
                 block={summaryBlock as TextBlockType}
                 speakable={false}
-                isLast={isLast}
-
               />
             </Box>
           </Box>
@@ -512,8 +508,6 @@ function SingleBlock({
               <BubbleActions
                 block={block as TextBlockType}
                 speakable
-                isLast={isLast}
-
               />
             </Box>
           </Box>
@@ -533,8 +527,6 @@ function SingleBlock({
               <BubbleActions
                 block={block as TextBlockType}
                 speakable
-                isLast={isLast}
-
               />
             </Box>
           </Box>
@@ -560,7 +552,6 @@ function SingleBlock({
             <BubbleActions
               block={block as TextBlockType}
               speakable
-              isLast={isLast}
             />
           </Box>
         </Box>
@@ -988,7 +979,6 @@ export function UnifiedFeed({
                   sessionId={sessionId}
                   lastUnresolvedPermBlockId={lastUnresolvedPermBlockId}
                   agentForBlock={agentForBlock}
-                  isLast={idx === segments.length - 1}
                   userAvatarUrl={userAvatarUrl}
                   taskCompletedDuration={taskCompletedDuration}
                   debugMode={debugMode}
@@ -1000,7 +990,6 @@ export function UnifiedFeed({
                 sessionId={sessionId}
                 lastUnresolvedPermBlockId={lastUnresolvedPermBlockId}
                 agentForBlock={agentForBlock}
-                isLast={idx === segments.length - 1}
                 userAvatarUrl={userAvatarUrl}
                 taskCompletedDuration={taskCompletedDuration}
                 debugMode={debugMode}

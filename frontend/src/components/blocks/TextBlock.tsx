@@ -22,7 +22,6 @@ type TextBlockType = Extract<ContentBlock, { tag: "Text" }>;
 interface BubbleActionsProps {
   block: TextBlockType;
   speakable?: boolean;
-  isLast?: boolean;
 }
 
 
@@ -88,7 +87,7 @@ export function MarkdownCodeBlock({ className, code }: { className?: string; cod
   );
 }
 
-export function BubbleActions({ block, speakable, isLast }: BubbleActionsProps) {
+export function BubbleActions({ block, speakable }: BubbleActionsProps) {
   const [copied, setCopied] = useState(false);
   const playback = usePlayback();
 
