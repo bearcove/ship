@@ -2,10 +2,10 @@ use roam::{Rx, Tx};
 use ship_types::{
     AgentDiscovery, AgentPreset, AgentPresetId, ArchiveSessionRequest, ArchiveSessionResponse,
     CaptainAssignExtras, CloseSessionRequest, CloseSessionResponse, CreateSessionRequest,
-    CreateSessionResponse, GlobalEvent, McpToolCallResponse, PlanStepInput, ProjectInfo,
-    ProjectName, PromptContentPart, Role, ServerInfo, SessionDetail, SessionId, SessionSummary,
-    SetAgentEffortResponse, SetAgentModelResponse, SetAgentPresetResponse, SubscribeMessage,
-    TranscribeMessage, WorktreeDiffStats,
+    CreateSessionResponse, GlobalEvent, McpToolCallResponse, NewSessionDefaults, PlanStepInput,
+    ProjectInfo, ProjectName, PromptContentPart, Role, ServerInfo, SessionDetail, SessionId,
+    SessionSummary, SetAgentEffortResponse, SetAgentModelResponse, SetAgentPresetResponse,
+    SubscribeMessage, TranscribeMessage, WorktreeDiffStats,
 };
 
 // r[backend.rpc]
@@ -29,6 +29,8 @@ pub trait Ship {
     async fn list_agent_presets(&self) -> Vec<AgentPreset>;
 
     async fn get_server_info(&self) -> ServerInfo;
+
+    async fn get_new_session_defaults(&self) -> Option<NewSessionDefaults>;
 
     // r[proto.get-session]
     async fn get_session(&self, id: SessionId) -> SessionDetail;
