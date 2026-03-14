@@ -1,12 +1,3 @@
-#![allow(dead_code)]
-#![allow(clippy::collapsible_if)]
-#![allow(clippy::await_holding_lock)]
-#![allow(clippy::type_complexity)]
-#![allow(clippy::too_many_arguments)]
-#![allow(clippy::manual_is_multiple_of)]
-#![allow(clippy::redundant_guards)]
-#![allow(clippy::question_mark)]
-
 use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -163,6 +154,24 @@ enum RustfmtOutcome {
     Failure(String),
 }
 
+struct StartupTargetModels<'a> {
+    session_id: &'a SessionId,
+    captain_failure_stage: SessionStartupStage,
+    captain_handle: &'a ship_core::AgentHandle,
+    captain_spawn_model_id: Option<String>,
+    captain_target_model_id: Option<String>,
+    mate_handle: &'a ship_core::AgentHandle,
+    mate_spawn_model_id: Option<String>,
+    mate_target_model_id: Option<String>,
+}
+
+type ResolvedCreateSessionAgent = (
+    AgentKind,
+    Option<AgentPresetId>,
+    Option<ship_types::AgentProviderId>,
+    Option<String>,
+);
+
 #[cfg(test)]
 static TEST_RUSTFMT_PROGRAM: Mutex<Option<std::ffi::OsString>> = Mutex::new(None);
 #[cfg(test)]
@@ -174,6 +183,11 @@ pub enum MateReviewOutcome {
     Cancelled { reason: Option<String> },
 }
 
+type PlanChangeReply = (
+    Vec<PlanStep>,
+    tokio::sync::oneshot::Sender<Result<(), String>>,
+);
+
 struct PendingMcpOps {
     /// Sender to unblock `captain_notify_human` when the human responds.
     human_reply: Option<tokio::sync::oneshot::Sender<String>>,
@@ -183,10 +197,7 @@ struct PendingMcpOps {
     mate_review: Option<tokio::sync::oneshot::Sender<MateReviewOutcome>>,
     /// Sender to unblock a mid-task `set_plan` call when the captain approves or rejects.
     /// Carries the old plan so it can be restored on rejection.
-    plan_change_reply: Option<(
-        Vec<PlanStep>,
-        tokio::sync::oneshot::Sender<Result<(), String>>,
-    )>,
+    plan_change_reply: Option<PlanChangeReply>,
 }
 
 impl PendingMcpOps {
@@ -280,12 +291,9 @@ impl ActivityLog {
 const ADMIRAL_SESSION_ID: &str = "admiral";
 
 /// State for the singleton Admiral agent.
-#[allow(dead_code)]
 struct AdmiralSession {
     /// ACP agent handle for prompting the admiral.
     handle: ship_core::AgentHandle,
-    /// ACP session ID for resume across restarts.
-    acp_session_id: Option<String>,
 }
 
 // r[server.multi-repo]
@@ -454,7 +462,6 @@ impl ShipImpl {
             .expect("whisper mutex poisoned") = path;
     }
 
-    #[allow(dead_code)]
     pub async fn fetch_github_user_avatar(&self) {
         let output = TokioCommand::new("gh")
             .args(["api", "/user"])
@@ -501,7 +508,6 @@ impl ShipImpl {
     }
 
     // r[resilience.server-restart]
-    #[allow(dead_code)]
     pub async fn load_persisted_sessions(&self) {
         let sessions_list = match self.store.list_sessions().await {
             Ok(list) => list,
@@ -1820,7 +1826,6 @@ Continue where you left off — wait for the human to give you direction."
                 .expect("admiral_session mutex poisoned");
             *admiral = Some(AdmiralSession {
                 handle: spawn.handle,
-                acp_session_id: Some(spawn.acp_session_id),
             });
         }
 
@@ -4510,14 +4515,10 @@ Here is your task:
                 continue;
             }
             let mut path = String::new();
-            loop {
-                match chars.peek() {
-                    Some((_, ch)) if matches!(ch, 'a'..='z' | 'A'..='Z' | '0'..='9' | '/' | '.' | '_' | '-') =>
-                    {
-                        path.push(chars.next().unwrap().1);
-                    }
-                    _ => break,
-                }
+            while let Some((_, 'a'..='z' | 'A'..='Z' | '0'..='9' | '/' | '.' | '_' | '-')) =
+                chars.peek()
+            {
+                path.push(chars.next().unwrap().1);
             }
             if path.is_empty() {
                 result.push('@');
@@ -6017,15 +6018,19 @@ Here is your task:
 
     async fn apply_startup_target_models(
         &self,
-        session_id: &SessionId,
-        captain_failure_stage: SessionStartupStage,
-        captain_handle: &ship_core::AgentHandle,
-        captain_spawn_model_id: Option<String>,
-        captain_target_model_id: Option<String>,
-        mate_handle: &ship_core::AgentHandle,
-        mate_spawn_model_id: Option<String>,
-        mate_target_model_id: Option<String>,
+        startup: StartupTargetModels<'_>,
     ) -> Result<(Option<String>, Option<String>), ()> {
+        let StartupTargetModels {
+            session_id,
+            captain_failure_stage,
+            captain_handle,
+            captain_spawn_model_id,
+            captain_target_model_id,
+            mate_handle,
+            mate_spawn_model_id,
+            mate_target_model_id,
+        } = startup;
+
         if let Some(target_model_id) = captain_target_model_id.as_deref()
             && captain_spawn_model_id.as_deref() != Some(target_model_id)
             && let Err(error) = self.agent_set_model(captain_handle, target_model_id).await
@@ -6215,16 +6220,16 @@ Here is your task:
         };
 
         let (captain_model_id, mate_model_id) = match self
-            .apply_startup_target_models(
-                &session_id,
-                stage,
-                &captain_spawn.handle,
-                captain_spawn.model_id.clone(),
+            .apply_startup_target_models(StartupTargetModels {
+                session_id: &session_id,
+                captain_failure_stage: stage,
+                captain_handle: &captain_spawn.handle,
+                captain_spawn_model_id: captain_spawn.model_id.clone(),
                 captain_target_model_id,
-                &mate_spawn.handle,
-                mate_spawn.model_id.clone(),
+                mate_handle: &mate_spawn.handle,
+                mate_spawn_model_id: mate_spawn.model_id.clone(),
                 mate_target_model_id,
-            )
+            })
             .await
         {
             Ok(model_ids) => model_ids,
@@ -6497,9 +6502,7 @@ Here is your task:
     fn is_dangerous_command(command: &str) -> Option<&'static str> {
         let normalized = command.trim().to_ascii_lowercase();
         let mut parts = normalized.split_whitespace();
-        let Some(program) = parts.next() else {
-            return None;
-        };
+        let program = parts.next()?;
 
         if program == "git" {
             return Some(
@@ -8049,15 +8052,7 @@ impl Ship for ShipImpl {
         let resolve_create_session_agent = |role_name: &str,
                                             kind: AgentKind,
                                             preset_id: Option<AgentPresetId>|
-         -> Result<
-            (
-                AgentKind,
-                Option<AgentPresetId>,
-                Option<ship_types::AgentProviderId>,
-                Option<String>,
-            ),
-            String,
-        > {
+         -> Result<ResolvedCreateSessionAgent, String> {
             if let Some(preset_id) = preset_id {
                 let Some(preset) = configured_presets
                     .iter()
@@ -9792,7 +9787,6 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
     use std::path::PathBuf;
     use std::process::Command;
-    use std::sync::{Mutex, MutexGuard};
     use std::time::Duration;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -9812,24 +9806,20 @@ mod tests {
         SessionId, SessionStartupStage, SessionStartupState, SetAgentPresetResponse,
         SubscribeMessage, TaskId, TaskRecord, TaskStatus, TextSource, WorkflowMilestoneKind,
     };
-    use tokio::sync::{broadcast, mpsc};
+    use tokio::sync::{Mutex as AsyncMutex, broadcast, mpsc};
     use tokio::time::timeout;
 
-    use super::ShipImpl;
+    use super::{ShipImpl, StartupTargetModels};
 
-    static MATE_TOOL_TEST_LOCK: Mutex<()> = Mutex::new(());
-    static FAKE_AGENT_DRIVER_TEST_LOCK: Mutex<()> = Mutex::new(());
+    static MATE_TOOL_TEST_LOCK: AsyncMutex<()> = AsyncMutex::const_new(());
+    static FAKE_AGENT_DRIVER_TEST_LOCK: AsyncMutex<()> = AsyncMutex::const_new(());
 
-    fn lock_mate_tool_tests() -> MutexGuard<'static, ()> {
-        MATE_TOOL_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
+    async fn lock_mate_tool_tests() -> tokio::sync::MutexGuard<'static, ()> {
+        MATE_TOOL_TEST_LOCK.lock().await
     }
 
-    fn lock_fake_agent_driver_tests() -> MutexGuard<'static, ()> {
-        FAKE_AGENT_DRIVER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
+    async fn lock_fake_agent_driver_tests() -> tokio::sync::MutexGuard<'static, ()> {
+        FAKE_AGENT_DRIVER_TEST_LOCK.lock().await
     }
 
     fn sandbox_exec_denied(output: &str) -> bool {
@@ -11169,7 +11159,7 @@ agent_presets {
 
     #[tokio::test]
     async fn create_session_startup_applies_configured_preset_models() {
-        let _guard = lock_fake_agent_driver_tests();
+        let _guard = lock_fake_agent_driver_tests().await;
         let fake_driver = FakeAgentDriver::default();
         let _driver_guard = TestAgentDriverGuard::set(fake_driver.clone());
 
@@ -11278,16 +11268,16 @@ agent_presets {
         .await;
 
         let apply_result = ship
-            .apply_startup_target_models(
-                &session_id,
-                SessionStartupStage::StartingCaptain,
-                &captain_handle,
-                None,
+            .apply_startup_target_models(StartupTargetModels {
+                session_id: &session_id,
+                captain_failure_stage: SessionStartupStage::StartingCaptain,
+                captain_handle: &captain_handle,
+                captain_spawn_model_id: None,
                 captain_target_model_id,
-                &mate_handle,
-                None,
+                mate_handle: &mate_handle,
+                mate_spawn_model_id: None,
                 mate_target_model_id,
-            )
+            })
             .await;
         assert_eq!(
             apply_result,
@@ -11309,11 +11299,9 @@ agent_presets {
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    // TODO: fix test - fails due to parallel test state leakage despite lock
     #[tokio::test]
-    #[ignore]
     async fn apply_startup_target_models_applies_targets_and_keeps_spawn_defaults() {
-        let _guard = lock_fake_agent_driver_tests();
+        let _guard = lock_fake_agent_driver_tests().await;
         let fake_driver = FakeAgentDriver::default();
         let _driver_guard = TestAgentDriverGuard::set(fake_driver.clone());
 
@@ -11341,16 +11329,16 @@ agent_presets {
         .await;
 
         let result = ship
-            .apply_startup_target_models(
-                &session_id,
-                SessionStartupStage::StartingCaptain,
-                &captain_handle,
-                Some("captain-spawn".to_owned()),
-                Some("captain-target".to_owned()),
-                &mate_handle,
-                Some("mate-spawn".to_owned()),
-                None,
-            )
+            .apply_startup_target_models(StartupTargetModels {
+                session_id: &session_id,
+                captain_failure_stage: SessionStartupStage::StartingCaptain,
+                captain_handle: &captain_handle,
+                captain_spawn_model_id: Some("captain-spawn".to_owned()),
+                captain_target_model_id: Some("captain-target".to_owned()),
+                mate_handle: &mate_handle,
+                mate_spawn_model_id: Some("mate-spawn".to_owned()),
+                mate_target_model_id: None,
+            })
             .await;
 
         assert_eq!(
@@ -11370,13 +11358,17 @@ agent_presets {
 
     #[tokio::test]
     async fn apply_startup_target_models_failure_marks_startup_failed() {
+        let _guard = lock_fake_agent_driver_tests();
+        let fake_driver = FakeAgentDriver::default();
+        let _driver_guard = TestAgentDriverGuard::set(fake_driver.clone());
+        fake_driver.push_set_model_error(AgentError {
+            message: "set-model failed".to_owned(),
+        });
         let (dir, ship, session_id) = create_ready_session_for_assign_test(
             "startup-target-model-helper-failure",
             "helper-failure",
         )
         .await;
-
-        let fake_driver = FakeAgentDriver::default();
         let captain_handle = attach_fake_agent_handle(
             &ship,
             &session_id,
@@ -11395,16 +11387,16 @@ agent_presets {
         .await;
 
         let result = ship
-            .apply_startup_target_models(
-                &session_id,
-                SessionStartupStage::StartingCaptain,
-                &captain_handle,
-                None,
-                Some("captain-target".to_owned()),
-                &mate_handle,
-                None,
-                Some("mate-target".to_owned()),
-            )
+            .apply_startup_target_models(StartupTargetModels {
+                session_id: &session_id,
+                captain_failure_stage: SessionStartupStage::StartingCaptain,
+                captain_handle: &captain_handle,
+                captain_spawn_model_id: None,
+                captain_target_model_id: Some("captain-target".to_owned()),
+                mate_handle: &mate_handle,
+                mate_spawn_model_id: None,
+                mate_target_model_id: Some("mate-target".to_owned()),
+            })
             .await;
 
         assert_eq!(result, Err(()));
@@ -11847,7 +11839,7 @@ agent_presets {
 
     #[tokio::test]
     async fn set_agent_preset_same_provider_updates_model_and_reprompts() {
-        let _guard = lock_fake_agent_driver_tests();
+        let _guard = lock_fake_agent_driver_tests().await;
         let fake_driver = FakeAgentDriver::default();
         fake_driver.push_response(StopReason::EndTurn);
         let _driver_guard = TestAgentDriverGuard::set(fake_driver.clone());
@@ -11932,7 +11924,7 @@ agent_presets {
 
     #[tokio::test]
     async fn set_agent_preset_allows_opencode_openrouter_same_provider() {
-        let _guard = lock_fake_agent_driver_tests();
+        let _guard = lock_fake_agent_driver_tests().await;
         let fake_driver = FakeAgentDriver::default();
         fake_driver.push_response(StopReason::EndTurn);
         let _driver_guard = TestAgentDriverGuard::set(fake_driver.clone());
@@ -12006,7 +11998,7 @@ agent_presets {
 
     #[tokio::test]
     async fn set_agent_preset_does_not_persist_when_continuation_prompt_fails() {
-        let _guard = lock_fake_agent_driver_tests();
+        let _guard = lock_fake_agent_driver_tests().await;
         let fake_driver = FakeAgentDriver::default();
         let _driver_guard = TestAgentDriverGuard::set(fake_driver.clone());
         let (dir, ship, session_id) = create_ready_session_for_assign_test(
@@ -12096,7 +12088,7 @@ agent_presets {
 
     #[tokio::test]
     async fn set_agent_preset_provider_switch_spawns_fresh_session_and_cuts_over() {
-        let _guard = lock_fake_agent_driver_tests();
+        let _guard = lock_fake_agent_driver_tests().await;
         let fake_driver = FakeAgentDriver::default();
         fake_driver.push_response(StopReason::EndTurn);
         fake_driver.push_response(StopReason::EndTurn);
@@ -12241,12 +12233,11 @@ agent_presets {
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    // TODO: fix pre-existing test bug
     #[tokio::test]
-    #[ignore]
     async fn set_agent_preset_provider_switch_failure_before_cutover_keeps_old_handle() {
-        let _guard = lock_fake_agent_driver_tests();
+        let _guard = lock_fake_agent_driver_tests().await;
         let fake_driver = FakeAgentDriver::default();
+        let _driver_guard = TestAgentDriverGuard::set(fake_driver.clone());
         fake_driver.push_response(StopReason::EndTurn);
         fake_driver.push_script(FakePromptScript {
             expected_handle: None,
@@ -12255,7 +12246,6 @@ agent_presets {
             }),
             events: Vec::new(),
         });
-        let _driver_guard = TestAgentDriverGuard::set(fake_driver.clone());
         let (dir, ship, session_id) = create_ready_session_for_assign_test(
             "set-agent-preset-provider-switch-failure",
             "preset-switch-provider-failure",
@@ -12369,7 +12359,7 @@ agent_presets {
 
     #[tokio::test]
     async fn set_agent_preset_provider_switch_persist_failure_rolls_back_cutover() {
-        let _guard = lock_fake_agent_driver_tests();
+        let _guard = lock_fake_agent_driver_tests().await;
         let fake_driver = FakeAgentDriver::default();
         fake_driver.push_response(StopReason::EndTurn);
         fake_driver.push_response(StopReason::EndTurn);
@@ -12513,12 +12503,11 @@ agent_presets {
     }
 
     // r[verify captain.tool.steer]
-    // TODO: fix pre-existing test bug
     #[tokio::test]
-    #[ignore]
     async fn captain_tool_steer_restarts_missing_resumed_mate() {
-        let _guard = lock_fake_agent_driver_tests();
+        let _guard = lock_fake_agent_driver_tests().await;
         let fake_driver = FakeAgentDriver::default();
+        let _driver_guard = TestAgentDriverGuard::set(fake_driver.clone());
         fake_driver.push_script(FakePromptScript {
             expected_handle: None,
             response: Ok(PromptResponse {
@@ -12533,7 +12522,6 @@ agent_presets {
             }),
             events: Vec::new(),
         });
-        let _driver_guard = TestAgentDriverGuard::set(fake_driver.clone());
 
         let (dir, ship, session_id) =
             create_session_for_workflow_test("captain-tool-steer-restart-mate").await;
@@ -12657,7 +12645,7 @@ agent_presets {
     // r[verify mate.tool.plan-create]
     #[tokio::test]
     async fn mate_tools_require_plan_before_substantive_work() {
-        let _guard = lock_mate_tool_tests();
+        let _guard = lock_mate_tool_tests().await;
         let (dir, ship, session_id) = create_session_for_workflow_test("mate-plan-gate").await;
         let project_root = dir.join("project");
 
@@ -12721,7 +12709,7 @@ agent_presets {
 
     #[tokio::test]
     async fn rebuild_materialized_state_restores_mate_plan_for_edit_gates() {
-        let _guard = lock_mate_tool_tests();
+        let _guard = lock_mate_tool_tests().await;
         let (dir, ship, session_id) =
             create_session_for_workflow_test("rebuild-restores-plan").await;
         let project_root = dir.join("project");
@@ -12799,7 +12787,7 @@ agent_presets {
 
     #[tokio::test]
     async fn mate_edit_tools_allow_rebase_conflict_resolution_without_plan() {
-        let _guard = lock_mate_tool_tests();
+        let _guard = lock_mate_tool_tests().await;
         let (dir, ship, session_id, _project_root, worktree_path, _review_error) =
             create_conflicted_rebase_session("mate-edit-tools-rebase-no-plan").await;
 
@@ -13191,7 +13179,7 @@ agent_presets {
     // r[verify mate.tool.run-command]
     #[tokio::test]
     async fn mate_run_command_blocks_git_status_before_launching_shell() {
-        let _guard = lock_mate_tool_tests();
+        let _guard = lock_mate_tool_tests().await;
         let (dir, ship, session_id) =
             create_session_for_workflow_test("mate-run-command-git-guard").await;
 
@@ -13210,7 +13198,7 @@ agent_presets {
     // r[verify mate.tool.run-command]
     #[tokio::test]
     async fn mate_run_command_executes_reports_failures_guards_cwd_and_truncates() {
-        let _guard = lock_mate_tool_tests();
+        let _guard = lock_mate_tool_tests().await;
         let (dir, ship, session_id) = create_session_for_workflow_test("mate-run-command").await;
         let project_root = dir.join("project");
         std::fs::create_dir_all(project_root.join("nested"))
@@ -13303,7 +13291,7 @@ agent_presets {
     // r[verify mate.tool.guardrail.rg-alternation]
     #[tokio::test]
     async fn mate_run_command_autocorrects_obvious_rg_mistakes_and_warns() {
-        let _guard = lock_mate_tool_tests();
+        let _guard = lock_mate_tool_tests().await;
         let (dir, ship, session_id) =
             create_session_for_workflow_test("mate-run-command-rg-autocorrect").await;
         let project_root = dir.join("project");
@@ -14090,7 +14078,7 @@ hooks {
 
     #[tokio::test]
     async fn flush_mate_activity_skips_archived_task_summaries() {
-        let _guard = lock_fake_agent_driver_tests();
+        let _guard = lock_fake_agent_driver_tests().await;
         let fake_driver = FakeAgentDriver::default();
         let _driver_guard = TestAgentDriverGuard::set(fake_driver.clone());
         let (dir, ship, session_id) =
@@ -14230,7 +14218,7 @@ hooks {
     // r[verify mate.tool.write-file]
     #[tokio::test]
     async fn mate_write_file_writes_formats_and_creates_missing_parents() {
-        let _guard = lock_mate_tool_tests();
+        let _guard = lock_mate_tool_tests().await;
         let (dir, ship, session_id) =
             create_session_for_workflow_test("mate-write-file-valid").await;
         let project_root = dir.join("project");
@@ -14288,7 +14276,7 @@ hooks {
     // r[verify mate.tool.write-file]
     #[tokio::test]
     async fn mate_write_file_rejects_bad_paths_and_rolls_back_invalid_rust() {
-        let _guard = lock_mate_tool_tests();
+        let _guard = lock_mate_tool_tests().await;
         let (dir, ship, session_id) =
             create_session_for_workflow_test("mate-write-file-invalid").await;
         let project_root = dir.join("project");
@@ -14343,7 +14331,7 @@ hooks {
     // r[verify mate.tool.write-file]
     #[tokio::test]
     async fn mate_write_file_falls_back_when_rustfmt_is_unavailable() {
-        let _guard = lock_mate_tool_tests();
+        let _guard = lock_mate_tool_tests().await;
         let _rustfmt_guard = TestRustfmtProgramGuard::set("rustfmt-does-not-exist-for-ship-tests");
         let (dir, ship, session_id) =
             create_session_for_workflow_test("mate-write-file-no-rustfmt").await;
@@ -14381,7 +14369,7 @@ hooks {
     // r[verify mate.tool.edit-confirm]
     #[tokio::test]
     async fn mate_edit_prepare_and_confirm_apply_valid_rust_edit() {
-        let _guard = lock_mate_tool_tests();
+        let _guard = lock_mate_tool_tests().await;
         let (dir, ship, session_id) = create_session_for_workflow_test("mate-edit-confirm").await;
         let project_root = dir.join("project");
         std::fs::create_dir_all(project_root.join("src")).expect("src directory should be created");
@@ -14460,7 +14448,7 @@ hooks {
     // r[verify mate.tool.edit-prepare]
     #[tokio::test]
     async fn mate_edit_prepare_rejects_missing_and_ambiguous_matches() {
-        let _guard = lock_mate_tool_tests();
+        let _guard = lock_mate_tool_tests().await;
         let (dir, ship, session_id) =
             create_session_for_workflow_test("mate-edit-prepare-errors").await;
         let project_root = dir.join("project");
@@ -14507,7 +14495,7 @@ hooks {
     // r[verify mate.tool.edit-confirm]
     #[tokio::test]
     async fn mate_edit_multiple_edits_same_file_confirmed_in_sequence() {
-        let _guard = lock_mate_tool_tests();
+        let _guard = lock_mate_tool_tests().await;
         let (dir, ship, session_id) =
             create_session_for_workflow_test("mate-edit-prepare-replace-all").await;
         let project_root = dir.join("project");
@@ -14593,7 +14581,7 @@ hooks {
     // r[verify mate.tool.edit-confirm]
     #[tokio::test]
     async fn mate_edit_confirm_rejects_stale_and_unknown_edits() {
-        let _guard = lock_mate_tool_tests();
+        let _guard = lock_mate_tool_tests().await;
         let (dir, ship, session_id) =
             create_session_for_workflow_test("mate-edit-confirm-stale").await;
         let project_root = dir.join("project");
@@ -14653,7 +14641,7 @@ hooks {
     // r[verify mate.tool.edit-prepare]
     #[tokio::test]
     async fn mate_edit_prepare_rejects_invalid_rust_and_leaves_file_intact() {
-        let _guard = lock_mate_tool_tests();
+        let _guard = lock_mate_tool_tests().await;
         let (dir, ship, session_id) =
             create_session_for_workflow_test("mate-edit-prepare-invalid-rust").await;
         let project_root = dir.join("project");

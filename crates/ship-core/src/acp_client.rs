@@ -229,27 +229,26 @@ impl ShipAcpClient {
             map_tool_call_contents(&self.worktree_path, &self.terminals, &tool_call.content);
 
         // Extract diffs from raw_output (injected by mate MCP server via structured_content)
-        #[allow(clippy::collapsible_if)]
-        if let Some(raw) = &tool_call.raw_output {
-            if let Some(diffs) = raw.get("diffs").and_then(|v| v.as_array()) {
-                for diff in diffs {
-                    if diff.get("type").and_then(|t| t.as_str()) != Some("diff") {
-                        continue;
-                    }
-                    let Some(path) = diff.get("path").and_then(|p| p.as_str()) else {
-                        continue;
-                    };
-                    let unified_diff = diff
-                        .get("unified_diff")
-                        .and_then(|t| t.as_str())
-                        .unwrap_or("")
-                        .to_owned();
-                    content.push(ShipToolCallContent::Diff {
-                        path: path.to_owned(),
-                        display_path: display_path_for_string(&self.worktree_path, path),
-                        unified_diff,
-                    });
+        if let Some(raw) = &tool_call.raw_output
+            && let Some(diffs) = raw.get("diffs").and_then(|v| v.as_array())
+        {
+            for diff in diffs {
+                if diff.get("type").and_then(|t| t.as_str()) != Some("diff") {
+                    continue;
                 }
+                let Some(path) = diff.get("path").and_then(|p| p.as_str()) else {
+                    continue;
+                };
+                let unified_diff = diff
+                    .get("unified_diff")
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("")
+                    .to_owned();
+                content.push(ShipToolCallContent::Diff {
+                    path: path.to_owned(),
+                    display_path: display_path_for_string(&self.worktree_path, path),
+                    unified_diff,
+                });
             }
         }
 

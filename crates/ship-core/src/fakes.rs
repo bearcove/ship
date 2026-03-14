@@ -37,6 +37,7 @@ struct FakeAgentDriverInner {
     killed: Vec<AgentHandle>,
     model_sets: Vec<(AgentHandle, String)>,
     current_models: HashMap<AgentHandle, String>,
+    set_model_errors: VecDeque<AgentError>,
 }
 
 // r[testability.no-subprocess-in-tests]
@@ -129,6 +130,14 @@ impl FakeAgentDriver {
             .insert(handle.clone(), model_id.into());
     }
 
+    pub fn push_set_model_error(&self, error: AgentError) {
+        self.inner
+            .lock()
+            .expect("fake agent driver mutex poisoned")
+            .set_model_errors
+            .push_back(error);
+    }
+
     pub fn reset(&self) {
         let mut inner = self.inner.lock().expect("fake agent driver mutex poisoned");
         inner.scripts.clear();
@@ -139,6 +148,7 @@ impl FakeAgentDriver {
         inner.killed.clear();
         inner.model_sets.clear();
         inner.current_models.clear();
+        inner.set_model_errors.clear();
     }
 }
 
@@ -259,6 +269,9 @@ impl AgentDriver for FakeAgentDriver {
 
     async fn set_model(&self, handle: &AgentHandle, model_id: &str) -> Result<(), AgentError> {
         let mut inner = self.inner.lock().expect("fake agent driver mutex poisoned");
+        if let Some(error) = inner.set_model_errors.pop_front() {
+            return Err(error);
+        }
         inner.model_sets.push((handle.clone(), model_id.to_owned()));
         inner
             .current_models
@@ -649,11 +662,10 @@ impl WorktreeOps for FakeWorktreeOps {
 
     async fn rebase_continue(&self, worktree_path: &Path) -> Result<RebaseOutcome, WorktreeError> {
         let mut inner = self.inner.lock().expect("fake worktree ops mutex poisoned");
-        #[allow(clippy::collapsible_if)]
-        if let Some(files) = inner.unmerged_paths.get(worktree_path).cloned() {
-            if !files.is_empty() {
-                return Ok(RebaseOutcome::Conflict { files });
-            }
+        if let Some(files) = inner.unmerged_paths.get(worktree_path).cloned()
+            && !files.is_empty()
+        {
+            return Ok(RebaseOutcome::Conflict { files });
         }
         inner
             .rebase_in_progress

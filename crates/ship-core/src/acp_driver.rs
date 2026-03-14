@@ -749,34 +749,32 @@ fn parse_effort_from_config_options(
         SessionConfigKind, SessionConfigOptionCategory, SessionConfigSelectOptions,
     };
     for option in config_options {
-        #[allow(clippy::collapsible_if)]
         if matches!(
             option.category,
             Some(SessionConfigOptionCategory::ThoughtLevel)
-        ) {
-            if let SessionConfigKind::Select(select) = &option.kind {
-                let config_id = option.id.0.as_ref().to_owned();
-                let value_id = select.current_value.0.as_ref().to_owned();
-                let available = match &select.options {
-                    SessionConfigSelectOptions::Ungrouped(options) => options
-                        .iter()
-                        .map(|opt| EffortValue {
-                            id: opt.value.0.as_ref().to_owned(),
-                            name: opt.name.clone(),
-                        })
-                        .collect(),
-                    SessionConfigSelectOptions::Grouped(groups) => groups
-                        .iter()
-                        .flat_map(|group| group.options.iter())
-                        .map(|opt| EffortValue {
-                            id: opt.value.0.as_ref().to_owned(),
-                            name: opt.name.clone(),
-                        })
-                        .collect(),
-                    _ => Vec::new(),
-                };
-                return (Some(config_id), Some(value_id), available);
-            }
+        ) && let SessionConfigKind::Select(select) = &option.kind
+        {
+            let config_id = option.id.0.as_ref().to_owned();
+            let value_id = select.current_value.0.as_ref().to_owned();
+            let available = match &select.options {
+                SessionConfigSelectOptions::Ungrouped(options) => options
+                    .iter()
+                    .map(|opt| EffortValue {
+                        id: opt.value.0.as_ref().to_owned(),
+                        name: opt.name.clone(),
+                    })
+                    .collect(),
+                SessionConfigSelectOptions::Grouped(groups) => groups
+                    .iter()
+                    .flat_map(|group| group.options.iter())
+                    .map(|opt| EffortValue {
+                        id: opt.value.0.as_ref().to_owned(),
+                        name: opt.name.clone(),
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            };
+            return (Some(config_id), Some(value_id), available);
         }
     }
     (None, None, Vec::new())
