@@ -503,6 +503,227 @@ describe("sessionReducer event handling", () => {
     ]);
   });
 
+  it("ChecksStarted sets checksState to running", () => {
+    const state = sessionReducer(freshState(), {
+      type: "event",
+      envelope: {
+        seq: 1n,
+        timestamp: "2026-01-01T00:00:00Z",
+        event: {
+          tag: "ChecksStarted",
+          context: "post-commit",
+          hooks: ["lint", "test"],
+        },
+      },
+    });
+    expect(state.checksState).toEqual({
+      context: "post-commit",
+      hooks: ["lint", "test"],
+      status: "running",
+      results: [],
+      startedAt: "2026-01-01T00:00:00Z",
+    });
+  });
+
+  it("ChecksFinished with all_passed sets status to passed", () => {
+    let state = sessionReducer(freshState(), {
+      type: "event",
+      envelope: {
+        seq: 1n,
+        timestamp: "2026-01-01T00:00:00Z",
+        event: {
+          tag: "ChecksStarted",
+          context: "pre-merge",
+          hooks: ["lint", "test"],
+        },
+      },
+    });
+    state = sessionReducer(state, {
+      type: "event",
+      envelope: {
+        seq: 2n,
+        timestamp: "2026-01-01T00:00:01Z",
+        event: {
+          tag: "ChecksFinished",
+          context: "pre-merge",
+          all_passed: true,
+          results: [
+            { name: "lint", passed: true, output: "" },
+            { name: "test", passed: true, output: "" },
+          ],
+        },
+      },
+    });
+    expect(state.checksState?.status).toBe("passed");
+    expect(state.checksState?.results).toHaveLength(2);
+    expect(state.checksState?.results.every((r) => r.passed)).toBe(true);
+  });
+
+  it("ChecksFinished with failures sets status to failed and includes output", () => {
+    let state = sessionReducer(freshState(), {
+      type: "event",
+      envelope: {
+        seq: 1n,
+        timestamp: "2026-01-01T00:00:00Z",
+        event: {
+          tag: "ChecksStarted",
+          context: "pre-merge",
+          hooks: ["lint", "test"],
+        },
+      },
+    });
+    state = sessionReducer(state, {
+      type: "event",
+      envelope: {
+        seq: 2n,
+        timestamp: "2026-01-01T00:00:01Z",
+        event: {
+          tag: "ChecksFinished",
+          context: "pre-merge",
+          all_passed: false,
+          results: [
+            { name: "lint", passed: true, output: "" },
+            { name: "test", passed: false, output: "FAIL src/foo.test.ts\nExpected 1 to be 2" },
+          ],
+        },
+      },
+    });
+    expect(state.checksState?.status).toBe("failed");
+    expect(state.checksState?.results[1].passed).toBe(false);
+    expect(state.checksState?.results[1].output).toContain("FAIL");
+  });
+
+  it("ChecksFinished is a no-op when context does not match", () => {
+    let state = sessionReducer(freshState(), {
+      type: "event",
+      envelope: {
+        seq: 1n,
+        timestamp: "2026-01-01T00:00:00Z",
+        event: {
+          tag: "ChecksStarted",
+          context: "post-commit",
+          hooks: ["lint"],
+        },
+      },
+    });
+    state = sessionReducer(state, {
+      type: "event",
+      envelope: {
+        seq: 2n,
+        timestamp: "2026-01-01T00:00:01Z",
+        event: {
+          tag: "ChecksFinished",
+          context: "pre-merge",
+          all_passed: true,
+          results: [{ name: "lint", passed: true, output: "" }],
+        },
+      },
+    });
+    // Still running because contexts didn't match
+    expect(state.checksState?.status).toBe("running");
+    expect(state.checksState?.context).toBe("post-commit");
+    expect(state.checksState?.results).toHaveLength(0);
+  });
+
+  it("dismiss-checks clears checksState", () => {
+    let state = sessionReducer(freshState(), {
+      type: "event",
+      envelope: {
+        seq: 1n,
+        timestamp: "2026-01-01T00:00:00Z",
+        event: {
+          tag: "ChecksStarted",
+          context: "post-commit",
+          hooks: ["lint"],
+        },
+      },
+    });
+    expect(state.checksState).not.toBeNull();
+    state = sessionReducer(state, { type: "dismiss-checks" });
+    expect(state.checksState).toBeNull();
+  });
+
+  it("a new ChecksStarted replaces a previous finished checksState", () => {
+    let state = sessionReducer(freshState(), {
+      type: "event",
+      envelope: {
+        seq: 1n,
+        timestamp: "2026-01-01T00:00:00Z",
+        event: {
+          tag: "ChecksStarted",
+          context: "post-commit",
+          hooks: ["lint"],
+        },
+      },
+    });
+    state = sessionReducer(state, {
+      type: "event",
+      envelope: {
+        seq: 2n,
+        timestamp: "2026-01-01T00:00:01Z",
+        event: {
+          tag: "ChecksFinished",
+          context: "post-commit",
+          all_passed: true,
+          results: [{ name: "lint", passed: true, output: "" }],
+        },
+      },
+    });
+    expect(state.checksState?.status).toBe("passed");
+
+    // New check run starts
+    state = sessionReducer(state, {
+      type: "event",
+      envelope: {
+        seq: 3n,
+        timestamp: "2026-01-01T00:01:00Z",
+        event: {
+          tag: "ChecksStarted",
+          context: "pre-merge",
+          hooks: ["lint", "typecheck"],
+        },
+      },
+    });
+    expect(state.checksState?.status).toBe("running");
+    expect(state.checksState?.context).toBe("pre-merge");
+    expect(state.checksState?.hooks).toEqual(["lint", "typecheck"]);
+    expect(state.checksState?.results).toHaveLength(0);
+  });
+
+  it("handles ChecksStarted and ChecksFinished in replay-batch", () => {
+    const state = sessionReducer(freshState(), {
+      type: "replay-batch",
+      envelopes: [
+        {
+          seq: 1n,
+          timestamp: "2026-01-01T00:00:00Z",
+          event: {
+            tag: "ChecksStarted",
+            context: "post-commit",
+            hooks: ["lint", "test"],
+          },
+        },
+        {
+          seq: 2n,
+          timestamp: "2026-01-01T00:00:05Z",
+          event: {
+            tag: "ChecksFinished",
+            context: "post-commit",
+            all_passed: false,
+            results: [
+              { name: "lint", passed: true, output: "" },
+              { name: "test", passed: false, output: "error" },
+            ],
+          },
+        },
+      ],
+    });
+    expect(state.checksState?.status).toBe("failed");
+    expect(state.checksState?.context).toBe("post-commit");
+    expect(state.checksState?.startedAt).toBe("2026-01-01T00:00:00Z");
+    expect(state.checksState?.results).toHaveLength(2);
+  });
+
   it("tracks lastSeq from event envelopes", () => {
     const state = sessionReducer(freshState(), {
       type: "event",

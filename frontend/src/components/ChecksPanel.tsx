@@ -91,9 +91,7 @@ function HookRow({
 export function ChecksPanel({ checks, onDismiss }: Props) {
   const { context, hooks, status, results } = checks;
 
-  // Determine card accent color
-  const cardColor =
-    status === "passed" ? "green" : status === "failed" ? "red" : undefined;
+
 
   // Build rows: if finished, use results; otherwise use hook names as placeholders
   const rows: Array<HookCheckResult | { name: string }> =
@@ -138,7 +136,7 @@ export function ChecksPanel({ checks, onDismiss }: Props) {
         {/* Header row */}
         <Flex align="center" justify="between" gap="2">
           <Flex align="center" gap="2">
-            <Text size="2" weight="medium" color={cardColor ?? "gray"}>
+            <Text size="2" weight="medium" color={statusColor}>
               {statusLabel}
             </Text>
             <Badge size="1" variant="soft" color="gray">
