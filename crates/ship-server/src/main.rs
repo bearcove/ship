@@ -1343,6 +1343,30 @@ fn resolve_list_models_kinds(
     }
 }
 
+fn agent_kind_name(kind: AgentKind) -> &'static str {
+    match kind {
+        AgentKind::Claude => "claude",
+        AgentKind::Codex => "codex",
+        AgentKind::OpenCode => "opencode",
+    }
+}
+
+fn format_model_listings(listings: &[ModelListing]) -> String {
+    let mut sections = Vec::with_capacity(listings.len());
+    for listing in listings {
+        let mut lines = vec![format!("{}:", agent_kind_name(listing.kind))];
+        if listing.models.is_empty() {
+            lines.push("  (no models reported)".to_owned());
+        } else {
+            for model in &listing.models {
+                lines.push(format!("  {model}"));
+            }
+        }
+        sections.push(lines.join("\n"));
+    }
+    sections.join("\n\n")
+}
+
 async fn collect_model_listing(
     driver: &impl AgentDriver,
     kind: AgentKind,
@@ -1401,12 +1425,7 @@ async fn run_list_models(args: ListModelsArgs) -> Result<(), Box<dyn std::error:
     let driver = AcpAgentDriver::new();
     let listings = collect_model_listings(&driver, &kinds, &worktree_path).await?;
 
-    for listing in listings {
-        println!("{:?}", listing.kind);
-        for model in listing.models {
-            println!("  {model}");
-        }
-    }
+    println!("{}", format_model_listings(&listings));
 
     Ok(())
 }
