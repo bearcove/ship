@@ -9911,6 +9911,80 @@ agent_presets {
     }
 
     #[tokio::test]
+    async fn set_agent_preset_allows_opencode_openrouter_same_provider() {
+        let _guard = lock_fake_agent_driver_tests();
+        let fake_driver = FakeAgentDriver::default();
+        fake_driver.push_response(StopReason::EndTurn);
+        let _driver_guard = TestAgentDriverGuard::set(fake_driver.clone());
+        let (dir, ship, session_id) = create_ready_session_for_assign_test(
+            "set-agent-preset-opencode-openrouter",
+            "preset-switch-opencode-openrouter",
+        )
+        .await;
+        write_agent_preset_config(
+            &dir,
+            r#"
+agent_presets {
+    presets (
+        {id opencode::gpt-5, label "OpenRouter GPT-5", kind @OpenCode, provider openrouter, model_id opencode/openai/gpt-5}
+    )
+}
+"#,
+        );
+
+        let captain_handle = attach_fake_agent_handle(
+            &ship,
+            &session_id,
+            Role::Captain,
+            AgentKind::OpenCode,
+            &fake_driver,
+        )
+        .await;
+        fake_driver.set_current_model_for_test(&captain_handle, "opencode/openai/gpt-4.1");
+        {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(&session_id).expect("session should exist");
+            session.captain.kind = AgentKind::OpenCode;
+            session.captain.provider = Some(AgentKind::OpenCode.default_provider_id());
+            session.captain.model_id = Some("opencode/openai/gpt-4.1".to_owned());
+            session.captain.available_models = vec![
+                "opencode/openai/gpt-4.1".to_owned(),
+                "opencode/openai/gpt-5".to_owned(),
+            ];
+        }
+
+        let result = Ship::set_agent_preset(
+            &ship,
+            session_id.clone(),
+            Role::Captain,
+            AgentPresetId("opencode::gpt-5".to_owned()),
+        )
+        .await;
+        assert_eq!(result, SetAgentPresetResponse::Ok);
+        assert_eq!(
+            fake_driver.current_model(&captain_handle).as_deref(),
+            Some("opencode/openai/gpt-5")
+        );
+
+        let detail = Ship::get_session(&ship, session_id.clone()).await;
+        assert_eq!(detail.captain.kind, AgentKind::OpenCode);
+        assert_eq!(
+            detail.captain.provider,
+            Some(AgentKind::OpenCode.default_provider_id())
+        );
+        assert_eq!(
+            detail.captain.preset_id,
+            Some(AgentPresetId("opencode::gpt-5".to_owned()))
+        );
+        assert_eq!(
+            detail.captain.model_id.as_deref(),
+            Some("opencode/openai/gpt-5")
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
     async fn set_agent_preset_does_not_persist_when_continuation_prompt_fails() {
         let _guard = lock_fake_agent_driver_tests();
         let fake_driver = FakeAgentDriver::default();

@@ -78,7 +78,7 @@ pub mod agent {
             match self {
                 Self::Claude => AgentProviderId("anthropic".to_owned()),
                 Self::Codex => AgentProviderId("openai".to_owned()),
-                Self::OpenCode => AgentProviderId("opencode".to_owned()),
+                Self::OpenCode => AgentProviderId("openrouter".to_owned()),
             }
         }
     }
