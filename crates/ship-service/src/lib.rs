@@ -110,6 +110,9 @@ pub trait Ship {
 
     async fn open_in_terminal(&self, session: SessionId);
 
+    // r[proto.mark-session-read]
+    async fn mark_session_read(&self, session: SessionId);
+
     // r[event.subscribe.roam-channel]
     async fn subscribe_events(&self, session: SessionId, output: Tx<SubscribeMessage>);
 
