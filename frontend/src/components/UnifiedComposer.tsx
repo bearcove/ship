@@ -39,7 +39,7 @@ import {
   transcriptPreview,
 } from "../styles/session-view.css";
 import { Waveform } from "./Waveform";
-import { useTranscription } from "../hooks/useTranscription";
+import { useTranscription } from "../context/TranscriptionContext";
 import { usePlayback } from "../context/PlaybackContext";
 
 const SUBMIT_TIMEOUT_MS = 15_000;
@@ -131,10 +131,6 @@ export interface UnifiedComposerHandle {
   addImageFiles(files: FileList | File[]): void;
   setDragOver(isDragOver: boolean): void;
   insertQuote(text: string): void;
-  startRecording(): void;
-  stopRecording(): void;
-  stopAndSend(): void;
-  isRecording(): boolean;
 }
 
 function parseTarget(text: string): { target: "captain" | "mate"; content: string } {
@@ -211,7 +207,6 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
-  const [sendAfterTranscription, setSendAfterTranscription] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const transcriptPreviewRef = useRef<HTMLDivElement>(null);
@@ -230,14 +225,17 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
   // prepend it to the final transcription result.
   const preTranscriptionTextRef = useRef<string | null>(null);
 
-  // Capture pre-transcription text when recording starts
-  if (transcription.state.tag === "recording" && preTranscriptionTextRef.current === null) {
+  const isTargetSession = transcription.targetSessionId === sessionId;
+
+  // Capture pre-transcription text when recording starts for this session
+  if (isTargetSession && transcription.state.tag === "recording" && preTranscriptionTextRef.current === null) {
     preTranscriptionTextRef.current = text;
   }
 
   // When transcription returns to idle, commit the final text and optionally auto-submit
   const prevTranscriptionTag = useRef(transcription.state.tag);
   useEffect(() => {
+    if (!isTargetSession) return;
     const wasProcessing = prevTranscriptionTag.current !== "idle";
     prevTranscriptionTag.current = transcription.state.tag;
     if (!wasProcessing || transcription.state.tag !== "idle") return;
@@ -251,8 +249,8 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
         : transcription.result.text
       : prefix;
 
-    if (sendAfterTranscription) {
-      setSendAfterTranscription(false);
+    if (transcription.sendAfterTranscription) {
+      transcription.clearResult();
       const trimmed = finalText.trim();
       if (trimmed || attachedImages.length > 0) {
         const { target: to, content } = parseTarget(trimmed);
@@ -264,9 +262,10 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
         });
       }
     } else {
+      transcription.clearResult();
       setText(finalText);
     }
-  }, [transcription.state.tag]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [transcription.state.tag, isTargetSession]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const { target } = parseTarget(text);
   const activeAgent = target === "captain" ? captain : mate;
@@ -453,15 +452,8 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
       addImageFiles,
       setDragOver: setIsDragOver,
       insertQuote,
-      startRecording: () => void transcription.startRecording(),
-      stopRecording: () => void transcription.stopRecording(),
-      stopAndSend: () => {
-        setSendAfterTranscription(true);
-        void transcription.stopRecording();
-      },
-      isRecording: () => transcription.state.tag === "recording",
     }),
-    [transcription],
+    [],
   );
 
   function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
@@ -523,8 +515,8 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
   }
 
   const hasContent = text.trim().length > 0 || attachedImages.length > 0;
-  const isRecording = transcription.state.tag === "recording";
-  const isProcessing = transcription.state.tag === "processing";
+  const isRecording = isTargetSession && transcription.state.tag === "recording";
+  const isProcessing = isTargetSession && transcription.state.tag === "processing";
   const isWorking = captainStateTag === "Working" || mateStateTag === "Working";
   const hasAgentStateChips = [captain, mate].some((agent) => {
     if (!agent) return false;
@@ -605,7 +597,7 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
         </div>
       )}
 
-      {isRecording && transcription.result && (
+      {isRecording && isTargetSession && transcription.result && (
         <div ref={transcriptPreviewRef} className={transcriptPreview}>
           {transcription.result.text}
         </div>
@@ -700,7 +692,7 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
           <div className={composerOverlay}>
             <Spinner size={16} />
             <Text size="2" color="gray">
-              {sendAfterTranscription ? "Sending…" : "Transcribing…"}
+              {transcription.sendAfterTranscription ? "Sending…" : "Transcribing…"}
             </Text>
           </div>
         )}
@@ -712,7 +704,7 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
               type="button"
               className={composerInlineBtn}
               data-pos="right-2"
-              onClick={() => void transcription.stopRecording()}
+              onClick={() => transcription.stopRecording()}
               title="Stop recording"
             >
               <Stop size={18} weight="fill" />
@@ -722,10 +714,7 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
               className={composerInlineBtn}
               data-pos="right"
               data-variant="solid"
-              onClick={() => {
-                setSendAfterTranscription(true);
-                void transcription.stopRecording();
-              }}
+              onClick={() => transcription.stopAndSend()}
               disabled={disableSubmit}
               title="Stop and send"
             >
@@ -737,7 +726,7 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
             type="button"
             className={composerInlineBtn}
             data-pos="right"
-            onClick={() => void transcription.cancelRecording()}
+            onClick={() => transcription.cancelRecording()}
             title="Cancel"
           >
             <X size={18} />
@@ -748,7 +737,7 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
               type="button"
               className={composerInlineBtn}
               data-pos="right-2"
-              onClick={() => void transcription.startRecording()}
+              onClick={() => transcription.startRecording(sessionId)}
               disabled={loading}
               title="Voice input"
             >
@@ -771,7 +760,7 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
             type="button"
             className={composerInlineBtn}
             data-pos="right"
-            onClick={() => void transcription.startRecording()}
+            onClick={() => transcription.startRecording(sessionId)}
             disabled={loading}
             title="Voice input"
           >
