@@ -880,7 +880,6 @@ export const sessionHeaderAgentsRow = style({
 export const sessionHeaderCaret = style({
   color: "var(--gray-10)",
   flexShrink: 0,
-  marginLeft: "auto",
 });
 
 export const sessionHeaderProgressFlex = style({
