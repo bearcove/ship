@@ -29,6 +29,7 @@ import {
 } from "../styles/session-list.css";
 import type { AgentKind, SessionSummary, TaskStatus } from "../generated/ship";
 import { getShipClient } from "../api/client";
+import { SessionRecordingBadge } from "../components/SessionRecordingBadge";
 import { agentKindTooltip, sortSessions } from "./session-list-utils";
 import { useWorktreeDiffStats } from "../hooks/useWorktreeDiffStats";
 
@@ -638,11 +639,14 @@ function SessionCard({
               Untitled
             </Text>
           )}
-          {session.task_status && (
-            <Badge color={STATUS_COLOR[session.task_status.tag]} size="1" ml="auto">
-              {session.task_status.tag}
-            </Badge>
-          )}
+          <Flex align="center" gap="2" ml="auto">
+            <SessionRecordingBadge sessionId={session.id} />
+            {session.task_status && (
+              <Badge color={STATUS_COLOR[session.task_status.tag]} size="1">
+                {session.task_status.tag}
+              </Badge>
+            )}
+          </Flex>
         </Flex>
 
         {/* Row 2: current task title */}

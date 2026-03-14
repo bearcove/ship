@@ -14,6 +14,7 @@ import { AddProjectDialog, NewSessionDialog } from "../pages/SessionListPage";
 import { sortSessions } from "../pages/session-list-utils";
 import { useClientLogs } from "../api/client";
 import { QrCodeButton } from "./QrCodeButton";
+import { SessionRecordingBadge } from "./SessionRecordingBadge";
 import {
   sessionRow,
   sessionRowEmpty,
@@ -77,9 +78,12 @@ function SessionRow({
       onClick={() => onClose?.()}
     >
       <Flex direction="column" gap="1" style={{ minWidth: 0, flex: 1 }}>
-        <Text size="2" className={sessionRowTitle} color={hasTitle ? undefined : "gray"}>
-          {title}
-        </Text>
+        <Flex align="center" gap="2" style={{ minWidth: 0 }}>
+          <Text size="2" className={sessionRowTitle} color={hasTitle ? undefined : "gray"}>
+            {title}
+          </Text>
+          <SessionRecordingBadge sessionId={session.id} compact />
+        </Flex>
         <Text
           size="1"
           color="gray"

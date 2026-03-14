@@ -31,6 +31,19 @@ const mocks = vi.hoisted(() => ({
   },
   promptCaptain: vi.fn(),
   steer: vi.fn(),
+  transcription: {
+    state: { tag: "idle" as const },
+    result: null,
+    analyser: null,
+    targetSessionId: null as string | null,
+    sendAfterTranscription: false,
+    startRecording: vi.fn(),
+    stopRecording: vi.fn(),
+    stopAndSend: vi.fn(),
+    cancelRecording: vi.fn(),
+    clearResult: vi.fn(),
+    isRecording: vi.fn(() => false),
+  },
 }));
 
 vi.mock("../hooks/useSession", () => ({
@@ -58,6 +71,10 @@ vi.mock("../api/client", () => ({
 
 vi.mock("../components/ConnectionBanner", () => ({
   ConnectionBanner: () => null,
+}));
+
+vi.mock("../context/TranscriptionContext", () => ({
+  useTranscription: () => mocks.transcription,
 }));
 
 function makeSession(): SessionDetail {
@@ -153,6 +170,19 @@ beforeEach(() => {
   };
   mocks.promptCaptain.mockReset();
   mocks.steer.mockReset();
+  mocks.transcription = {
+    state: { tag: "idle" },
+    result: null,
+    analyser: null,
+    targetSessionId: null,
+    sendAfterTranscription: false,
+    startRecording: vi.fn(),
+    stopRecording: vi.fn(),
+    stopAndSend: vi.fn(),
+    cancelRecording: vi.fn(),
+    clearResult: vi.fn(),
+    isRecording: vi.fn(() => false),
+  };
   URL.createObjectURL = vi.fn(() => "blob:session-view-test");
   URL.revokeObjectURL = vi.fn();
 });

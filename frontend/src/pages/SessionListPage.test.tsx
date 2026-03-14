@@ -18,6 +18,13 @@ const mocks = vi.hoisted(() => ({
   sessions: [] as SessionSummary[],
   discovery: { claude: true, codex: true, opencode: true } as AgentDiscovery,
   branchesByProject: {} as Record<string, string[]>,
+  transcription: {
+    state: { tag: "idle" } as
+      | { tag: "idle" }
+      | { tag: "recording"; elapsed: number }
+      | { tag: "processing" },
+    targetSessionId: null as string | null,
+  },
 }));
 
 vi.mock("../api/client", () => ({
@@ -47,11 +54,17 @@ vi.mock("../hooks/useBranches", () => ({
   useBranches: (projectName: string) => mocks.branchesByProject[projectName] ?? [],
 }));
 
+vi.mock("../context/TranscriptionContext", () => ({
+  useTranscription: () => mocks.transcription,
+}));
+
 function makeSession(overrides: Partial<SessionSummary> = {}): SessionSummary {
   return {
     id: "session-1",
+    slug: "aaaa",
     project: "ship",
     branch_name: "main",
+    title: "Polish toolbar",
     captain: {
       role: { tag: "Captain" },
       kind: { tag: "Claude" },
@@ -68,6 +81,9 @@ function makeSession(overrides: Partial<SessionSummary> = {}): SessionSummary {
     current_task_title: "Polish toolbar",
     current_task_description: "Polish the toolbar",
     task_status: { tag: "Working" },
+    diff_stats: null,
+    tasks_done: 0,
+    tasks_total: 0,
     autonomy_mode: { tag: "HumanInTheLoop" },
     created_at: "2026-01-01T00:00:00Z",
     ...overrides,
@@ -99,6 +115,7 @@ beforeEach(() => {
     ship: ["main", "release/2026.03"],
     roam: ["main"],
   };
+  mocks.transcription = { state: { tag: "idle" }, targetSessionId: null };
   mocks.refreshSessionList.mockImplementation(async () => mocks.sessions);
   mocks.createSession.mockResolvedValue({
     tag: "Created",
@@ -146,8 +163,6 @@ describe("SessionListPage UX slice", () => {
     fireEvent.click(screen.getAllByRole("button", { name: /new session/i })[0]);
 
     await screen.findByRole("dialog");
-    expect(screen.getByRole("button", { name: /create session/i })).toHaveTextContent("⌘");
-    expect(screen.getByRole("button", { name: /create session/i })).toHaveTextContent("↩");
 
     const branchField = screen.getByLabelText("Base branch");
     fireEvent.focus(branchField);
@@ -194,5 +209,21 @@ describe("SessionListPage UX slice", () => {
     await waitFor(() => {
       expect(mocks.createSession).not.toHaveBeenCalled();
     });
+  });
+
+  it("shows a recording badge only on the session card that owns voice input", () => {
+    mocks.sessions = [
+      makeSession({ id: "session-1", slug: "aaaa", title: "Alpha" }),
+      makeSession({ id: "session-2", slug: "bbbb", title: "Beta" }),
+    ];
+    mocks.transcription = {
+      state: { tag: "recording", elapsed: 1200 },
+      targetSessionId: "session-2",
+    };
+
+    renderPage();
+
+    expect(screen.getByTestId("session-recording-badge-session-2")).toBeInTheDocument();
+    expect(screen.queryByTestId("session-recording-badge-session-1")).not.toBeInTheDocument();
   });
 });

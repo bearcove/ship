@@ -10,10 +10,14 @@ const mocks = vi.hoisted(() => ({
     state: { tag: "idle" as const },
     result: null,
     analyser: null,
+    targetSessionId: null as string | null,
+    sendAfterTranscription: false,
     startRecording: vi.fn(),
     stopRecording: vi.fn(),
+    stopAndSend: vi.fn(),
     cancelRecording: vi.fn(),
     clearResult: vi.fn(),
+    isRecording: vi.fn(() => false),
   },
   promptCaptain: vi.fn(async () => undefined),
   steer: vi.fn(async () => undefined),
@@ -33,7 +37,7 @@ vi.mock("../hooks/useDocumentDrop", () => ({
   useDocumentDrop: () => false,
 }));
 
-vi.mock("../hooks/useTranscription", () => ({
+vi.mock("../context/TranscriptionContext", () => ({
   useTranscription: () => mocks.transcription,
 }));
 
@@ -72,8 +76,13 @@ beforeEach(() => {
   mocks.steer.mockResolvedValue(undefined);
   mocks.transcription.startRecording.mockReset();
   mocks.transcription.stopRecording.mockReset();
+  mocks.transcription.stopAndSend.mockReset();
   mocks.transcription.cancelRecording.mockReset();
   mocks.transcription.clearResult.mockReset();
+  mocks.transcription.isRecording.mockReset();
+  mocks.transcription.isRecording.mockReturnValue(false);
+  mocks.transcription.targetSessionId = null;
+  mocks.transcription.sendAfterTranscription = false;
 });
 
 // r[verify frontend.test.vitest]
