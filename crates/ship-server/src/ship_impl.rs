@@ -30,8 +30,8 @@ use ship_types::{
     CaptainReviewDiffState, CloseSessionRequest, CloseSessionResponse, CommitSummary, ContentBlock,
     CreateSessionRequest, CreateSessionResponse, CurrentTask, DirtySessionStrategy, GlobalEvent,
     HumanReviewRequest, McpDiffContent, McpServerConfig, McpStdioServerConfig, McpToolCallResponse,
-    PersistedSession, PlanStep, PlanStepInput, PlanStepStatus, ProjectInfo, ProjectName,
-    PromptContentPart, Role, ServerInfo, SessionConfig, SessionDetail, SessionEvent,
+    NewSessionDefaults, PersistedSession, PlanStep, PlanStepInput, PlanStepStatus, ProjectInfo,
+    ProjectName, PromptContentPart, Role, ServerInfo, SessionConfig, SessionDetail, SessionEvent,
     SessionEventEnvelope, SessionId, SessionStartupStage, SessionStartupState, SessionSummary,
     SetAgentEffortResponse, SetAgentModelResponse, SetAgentPresetResponse, SubscribeMessage,
     TaskId, TaskRecapStats, TaskRecord, TaskStatus, TextSource, ToolCallKind, ToolTarget,
@@ -359,6 +359,11 @@ impl ShipImpl {
             activity_log: Arc::new(Mutex::new(activity_log)),
             admiral_session: Arc::new(Mutex::new(None)),
         }
+    }
+
+    async fn new_session_defaults_path(&self) -> PathBuf {
+        let config_dir = self.registry.lock().await.config_dir().to_owned();
+        config_dir.join("new_session_defaults.json")
     }
 
     #[cfg(test)]
@@ -8201,6 +8206,12 @@ impl Ship for ShipImpl {
         }
     }
 
+    async fn get_new_session_defaults(&self) -> Option<NewSessionDefaults> {
+        let path = self.new_session_defaults_path().await;
+        let bytes = tokio::fs::read(&path).await.ok()?;
+        facet_json::from_slice::<NewSessionDefaults>(&bytes).ok()
+    }
+
     async fn add_project(&self, path: String) -> ProjectInfo {
         let result = {
             let mut registry = self.registry.lock().await;
@@ -8373,6 +8384,12 @@ impl Ship for ShipImpl {
                 Err(message) => return CreateSessionResponse::Failed { message },
             };
 
+        let new_session_defaults = NewSessionDefaults {
+            project: req.project.clone(),
+            captain_preset_id: captain_preset_id.clone(),
+            mate_preset_id: mate_preset_id.clone(),
+        };
+
         let session_id = SessionId::new();
         let session_git_names = SessionGitNames::from_session_id(&session_id);
         let (events_tx, _) = broadcast::channel(256);
@@ -8475,6 +8492,12 @@ impl Ship for ShipImpl {
             .lock()
             .expect("startup timer mutex poisoned")
             .insert(session_id.clone(), Instant::now());
+
+        // Save new session defaults for next time
+        if let Ok(bytes) = facet_json::to_vec_pretty(&new_session_defaults) {
+            let path = self.new_session_defaults_path().await;
+            let _ = tokio::fs::write(&path, bytes).await;
+        }
 
         let this = self.clone();
         let startup_session_id = session_id.clone();
