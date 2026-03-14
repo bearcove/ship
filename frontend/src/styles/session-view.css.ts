@@ -150,6 +150,11 @@ export const feedBubbleRelay = style({
   opacity: 0.85,
 });
 
+export const feedBubbleActivitySummary = style({
+  background: "color-mix(in srgb, var(--yellow-a3) 60%, var(--gray-a2))",
+  borderColor: "var(--yellow-a5)",
+});
+
 export const feedBubbleCaptain = style({
   background: "transparent",
   border: "none",

@@ -30,6 +30,7 @@ import {
   feedBubbleMate,
   feedBubbleRelay,
   feedBubbleUser,
+  feedBubbleActivitySummary,
   feedTimestamp,
   feedRowAgent,
   feedRowUser,
@@ -83,11 +84,21 @@ function formatTime(iso: string): string {
 // Human blocks injected by the server (task assignments, system prompts) are
 // very long and contain instructions. We collapse them to a short label.
 
-function isSystemInjection(block: Extract<ContentBlock, { tag: "Text" }>): boolean {
+function isMateActivitySummary(block: Extract<ContentBlock, { tag: "Text" }>): boolean {
   if (block.source.tag !== "Human") return false;
-  return block.text.includes("<system-notification>");
+  return block.text.includes("<mate-activity-summary>");
 }
 
+function extractMateActivitySummary(text: string): string {
+  const match = text.match(/<mate-activity-summary>\n?([\s\S]*?)\n?<\/mate-activity-summary>/);
+  return match ? match[1].trim() : text;
+}
+
+function isSystemInjection(block: Extract<ContentBlock, { tag: "Text" }>): boolean {
+  if (block.source.tag !== "Human") return false;
+  if (isMateActivitySummary(block)) return false;
+  return block.text.includes("<system-notification>");
+}
 function formatDuration(totalSeconds: number): string {
   if (totalSeconds < 60) return `${totalSeconds}s`;
   const mins = Math.floor(totalSeconds / 60);
@@ -422,6 +433,29 @@ function SingleBlock({
       // Server-injected system message — hide
       if (isHuman && isSystemInjection(block)) {
         return null;
+      }
+
+      // Mate activity summary injected by Haiku — yellow bubble
+      if (isHuman && isMateActivitySummary(block)) {
+        const summary = extractMateActivitySummary(block.text);
+        const summaryBlock = { ...block, text: summary };
+        return (
+          <Box className={feedRowAgent}>
+            <Box className={feedBubbleWithActions}>
+              <Box className={feedBubbleCol}>
+                <Box className={`${feedBubble} ${feedBubbleActivitySummary}`}>
+                  <TextBlock block={summaryBlock as TextBlockType} />
+                </Box>
+              </Box>
+              <BubbleActions
+                block={summaryBlock as TextBlockType}
+                speakable={false}
+                isLast={isLast}
+                timestamp={entry.timestamp ?? undefined}
+              />
+            </Box>
+          </Box>
+        );
       }
 
       // Real user message — right side
