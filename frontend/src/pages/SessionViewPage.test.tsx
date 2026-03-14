@@ -326,6 +326,53 @@ describe("SessionViewPage UX slice", () => {
     expect(screen.getByRole("button", { name: "Archive session" })).toBeInTheDocument();
   });
 
+  it("pressing R with a text selection inserts a blockquote into the composer", () => {
+    renderPage();
+
+    // Mock window.getSelection to return a selection with HTML content
+    const fragment = document.createDocumentFragment();
+    const bold = document.createElement("strong");
+    bold.textContent = "important";
+    fragment.appendChild(bold);
+
+    const mockRange = {
+      cloneContents: () => fragment,
+    };
+    const mockSelection = {
+      isCollapsed: false,
+      rangeCount: 1,
+      getRangeAt: () => mockRange,
+      removeAllRanges: vi.fn(),
+      toString: () => "important",
+    };
+    vi.spyOn(window, "getSelection").mockReturnValue(mockSelection as unknown as Selection);
+
+    fireEvent.keyDown(window, { key: "r" });
+
+    const textarea = screen.getByLabelText("Steer input");
+    // turndown converts <strong>important</strong> to **important**
+    expect(textarea).toHaveValue("> **important**\n\n");
+    expect(mockSelection.removeAllRanges).toHaveBeenCalled();
+
+    vi.restoreAllMocks();
+  });
+
+  it("pressing R without a text selection does nothing", () => {
+    renderPage();
+
+    vi.spyOn(window, "getSelection").mockReturnValue({
+      isCollapsed: true,
+      rangeCount: 0,
+      toString: () => "",
+    } as unknown as Selection);
+
+    const textarea = screen.getByLabelText("Steer input");
+    fireEvent.keyDown(window, { key: "r" });
+    expect(textarea).toHaveValue("");
+
+    vi.restoreAllMocks();
+  });
+
   // r[verify view.session]
   it("renders startup progress in the captain feed instead of a page banner", () => {
     mocks.session = {

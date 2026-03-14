@@ -1,8 +1,9 @@
 import { act, fireEvent, screen } from "@testing-library/react";
+import { createRef } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentSnapshot } from "../generated/ship";
 import { renderWithTheme } from "../test/render";
-import { UnifiedComposer } from "./UnifiedComposer";
+import { UnifiedComposer, type UnifiedComposerHandle } from "./UnifiedComposer";
 
 const mocks = vi.hoisted(() => ({
   transcription: {
@@ -94,6 +95,46 @@ describe("UnifiedComposer", () => {
     await act(async () => {});
     expect(localStorage.getItem("ship.composer.draft.session-1")).toBeNull();
     expect(textarea).toHaveValue("");
+  });
+
+  it("insertQuote via ref inserts blockquoted text into the textarea", () => {
+    const ref = createRef<UnifiedComposerHandle>();
+    renderWithTheme(
+      <UnifiedComposer
+        ref={ref}
+        sessionId="session-1"
+        captain={makeAgent("Captain", { tag: "Idle" })}
+        mate={makeAgent("Mate", { tag: "Idle" })}
+        startupState={null}
+        taskStatus={null}
+      />,
+    );
+
+    act(() => ref.current!.insertQuote("hello\nworld"));
+
+    const textarea = screen.getByRole("textbox", { name: /steer input/i });
+    expect(textarea).toHaveValue("> hello\n> world\n\n");
+  });
+
+  it("insertQuote prepends quote before existing text", () => {
+    const ref = createRef<UnifiedComposerHandle>();
+    renderWithTheme(
+      <UnifiedComposer
+        ref={ref}
+        sessionId="session-1"
+        captain={makeAgent("Captain", { tag: "Idle" })}
+        mate={makeAgent("Mate", { tag: "Idle" })}
+        startupState={null}
+        taskStatus={null}
+      />,
+    );
+
+    const textarea = screen.getByRole("textbox", { name: /steer input/i });
+    fireEvent.change(textarea, { target: { value: "existing reply" } });
+
+    act(() => ref.current!.insertQuote("quoted text"));
+
+    expect(textarea).toHaveValue("> quoted text\n\nexisting reply");
   });
 
   // r[verify ui.keys.steer-send]
