@@ -194,7 +194,7 @@ describe("SessionViewPage UX slice", () => {
     renderPage();
 
     expect(screen.getByLabelText("Steer input")).toBeInTheDocument();
-    expect(screen.getByAltText("Captain")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Switch session" })).toBeInTheDocument();
   });
 
   it("shows the composer drop indicator and attaches dropped images from the feed", async () => {

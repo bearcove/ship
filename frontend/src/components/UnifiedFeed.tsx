@@ -33,8 +33,6 @@ function stringifyTokenPayload(value: unknown): string | null {
 
 function toolCallTokenTexts(block: Extract<ContentBlock, { tag: "ToolCall" }>): string[] {
   const texts = [block.arguments];
-  const rawInput = stringifyTokenPayload(block.raw_input);
-  if (rawInput) texts.push(rawInput);
   const rawOutput = stringifyTokenPayload(block.raw_output);
   if (rawOutput) texts.push(rawOutput);
   for (const content of block.content) {

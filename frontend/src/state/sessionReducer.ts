@@ -99,7 +99,7 @@ function nextTurnStartedAt(
   if (nextState.tag !== "Working") {
     return null;
   }
-  return previousState?.tag === "Working" ? currentTurnStartedAt : timestamp;
+  return previousState?.tag === "Working" ? (currentTurnStartedAt ?? timestamp) : timestamp;
 }
 
 // r[event.client.reducer]
@@ -120,8 +120,9 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         currentTaskStatus: action.session.current_task?.status ?? null,
         currentTaskStartedAt: action.session.current_task?.assigned_at ?? null,
         currentTaskCompletedAt: action.session.current_task?.completed_at ?? null,
-        captainTurnStartedAt: null,
-        mateTurnStartedAt: null,
+        captainTurnStartedAt:
+          action.session.captain.state.tag === "Working" ? state.captainTurnStartedAt : null,
+        mateTurnStartedAt: action.session.mate.state.tag === "Working" ? state.mateTurnStartedAt : null,
         currentTaskSteps:
           (action.session.current_task as unknown as { steps?: PlanStep[] })?.steps ?? [],
         title: action.session.title ?? null,

@@ -300,14 +300,13 @@ describe("UnifiedFeed", () => {
       "visible reply",
       "internal thought",
       "{\"cmd\":\"echo hi\"}",
-      JSON.stringify({ cmd: "echo hi" }),
       JSON.stringify({ stdout: "done" }),
       "tool log",
       "terminal output",
     ].reduce((sum, text) => sum + encode(text).length, 0);
 
     expect(screen.getByText(`${expectedTokens} tokens`)).toBeInTheDocument();
-    expect(screen.getByText("internal thought")).toBeInTheDocument();
+    expect(screen.getByText("1✓")).toBeInTheDocument();
   });
 
   it("counts the entire current turn even when it extends past the 80-block render window", () => {
