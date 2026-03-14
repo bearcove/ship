@@ -207,22 +207,6 @@ struct MateActivityFlushData {
     task_context: Option<String>,
 }
 
-/// Returns whether `/usr/bin/sandbox-exec` is functional on this system.
-/// Probes once and caches the result. On macOS 26+, sandbox-exec may be
-/// restricted and fail with "Operation not permitted" even for simple profiles.
-#[cfg(target_os = "macos")]
-fn is_sandbox_exec_available() -> bool {
-    static AVAILABLE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *AVAILABLE.get_or_init(|| {
-        let result = std::process::Command::new("/usr/bin/sandbox-exec")
-            .arg("-p")
-            .arg("(version 1)(allow default)")
-            .arg("/bin/true")
-            .output();
-        matches!(result, Ok(output) if output.status.success())
-    })
-}
-
 impl ShipImpl {
     pub fn new(
         registry: ProjectRegistry,
@@ -2817,22 +2801,6 @@ Here is your task:
         cwd: &Path,
         shell_command: &str,
     ) -> Result<tokio::process::Child, String> {
-        #[cfg(target_os = "macos")]
-        if !is_sandbox_exec_available() {
-            tracing::warn!(
-                "sandbox-exec not available on this system, running command unsandboxed"
-            );
-            let mut cmd = TokioCommand::new("/bin/sh");
-            cmd.arg("-c")
-                .arg(shell_command)
-                .current_dir(cwd)
-                .kill_on_drop(true)
-                .stdout(std::process::Stdio::piped());
-            return cmd
-                .spawn()
-                .map_err(|error| format!("Failed to start command: {error}"));
-        }
-
         #[cfg(target_os = "macos")]
         {
             let system_tmpdir = std::env::var("TMPDIR").unwrap_or_else(|_| "/tmp".to_owned());
