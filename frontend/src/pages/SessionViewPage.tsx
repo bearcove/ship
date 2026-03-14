@@ -1,4 +1,3 @@
-import type React from "react";
 import TurndownService from "turndown";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSwipeable } from "react-swipeable";
@@ -42,18 +41,15 @@ export function SessionViewPage({
   debugMode,
   allSessions = [],
   onArchived,
-  composerRef: externalComposerRef,
 }: {
   sessionId: string;
   isActive: boolean;
   debugMode: boolean;
   allSessions?: SessionSummary[];
   onArchived?: () => void;
-  composerRef?: React.RefObject<UnifiedComposerHandle | null>;
 }) {
   const navigate = useNavigate();
-  const localComposerRef = useRef<UnifiedComposerHandle>(null);
-  const composerRef = externalComposerRef ?? localComposerRef;
+  const composerRef = useRef<UnifiedComposerHandle>(null);
   const [archiving, setArchiving] = useState(false);
   const [archiveConfirm, setArchiveConfirm] = useState<string[] | null>(null);
   const [duplicateOpen, setDuplicateOpen] = useState(false);

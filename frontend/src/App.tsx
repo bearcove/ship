@@ -4,7 +4,6 @@ import { Flex, Box, IconButton } from "@radix-ui/themes";
 import { List } from "@phosphor-icons/react";
 import { SessionListPage } from "./pages/SessionListPage";
 import { SessionViewPage } from "./pages/SessionViewPage";
-import type { UnifiedComposerHandle } from "./components/UnifiedComposer";
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { ConnectingSplash } from "./components/ConnectingSplash";
 import { ReconnectingIndicator } from "./components/ReconnectingIndicator";
@@ -49,22 +48,6 @@ export function App() {
   const [connState, setConnState] = useState(() => getConnectionState());
   const hasEverConnected = useRef(connState === "connected");
   const [visitedSessions, setVisitedSessions] = useState<Set<string>>(() => new Set());
-  const composerRefs = useRef(new Map<string, React.RefObject<UnifiedComposerHandle | null>>());
-  const activeComposerRef = useRef<UnifiedComposerHandle | null>(null);
-
-  function getComposerRef(slug: string): React.RefObject<UnifiedComposerHandle | null> {
-    let ref = composerRefs.current.get(slug);
-    if (!ref) {
-      ref = { current: null };
-      composerRefs.current.set(slug, ref);
-    }
-    return ref;
-  }
-
-  // Keep activeComposerRef pointing at the current session's composer
-  activeComposerRef.current = currentSessionId
-    ? (composerRefs.current.get(currentSessionId)?.current ?? null)
-    : null;
 
   const removeVisitedSession = useCallback((slug: string) => {
     setVisitedSessions((prev) => {
@@ -84,7 +67,7 @@ export function App() {
     }
   }, [currentSessionId]);
 
-  useGlobalKeyboard(allSessions, removeVisitedSession, activeComposerRef);
+  useGlobalKeyboard(allSessions, removeVisitedSession);
 
   useEffect(() => {
     writeDebugPreference(debugMode);
@@ -164,7 +147,6 @@ export function App() {
                 debugMode={debugMode}
                 allSessions={allSessions}
                 onArchived={() => removeVisitedSession(slug)}
-                composerRef={getComposerRef(slug)}
               />
             </div>
           ))}
