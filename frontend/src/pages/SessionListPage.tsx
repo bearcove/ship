@@ -35,6 +35,8 @@ import { useWorktreeDiffStats } from "../hooks/useWorktreeDiffStats";
 import { relativeTime } from "../utils/time";
 import { useActivityEntries } from "../hooks/useActivityEntries";
 import { Anchor } from "@phosphor-icons/react";
+import { useAgentPresets } from "../hooks/useAgentPresets";
+import { CreateSessionPresetPicker } from "../components/CreateSessionPresetPicker";
 
 // r[ui.session-list.status-colors]
 const STATUS_COLOR: Record<
@@ -381,6 +383,7 @@ export function NewSessionDialog({
   const navigate = useNavigate();
   const projects = useProjects().filter((p) => p.valid);
   const discovery = useAgentDiscovery();
+  const { presets, loading: presetsLoading } = useAgentPresets();
 
   const defaultProject = preselectedProject ?? (projects.length === 1 ? projects[0].name : "");
   const [projectName, setProjectName] = useState(defaultProject);
@@ -388,6 +391,8 @@ export function NewSessionDialog({
     preselectedCaptainKind ?? { tag: "Claude" },
   );
   const [mateKind, setMateKind] = useState<AgentKind>(preselectedMateKind ?? { tag: "Claude" });
+  const [captainPresetId, setCaptainPresetId] = useState<string | null>(null);
+  const [matePresetId, setMatePresetId] = useState<string | null>(null);
   const [branch, setBranch] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -400,6 +405,8 @@ export function NewSessionDialog({
     setProjectName(defaultProject);
     setBranch("");
     setCreateError(null);
+    setCaptainPresetId(null);
+    setMatePresetId(null);
     if (preselectedCaptainKind) setCaptainKind(preselectedCaptainKind);
     if (preselectedMateKind) setMateKind(preselectedMateKind);
   }, [defaultProject, open]);
@@ -418,6 +425,16 @@ export function NewSessionDialog({
     }
   }, [captainKind, mateKind, discovery]);
 
+  const hasConfiguredPresets = presets.length > 0;
+  const selectedCaptainPreset = captainPresetId
+    ? presets.find((preset) => preset.id === captainPresetId) ?? null
+    : null;
+  const selectedMatePreset = matePresetId
+    ? presets.find((preset) => preset.id === matePresetId) ?? null
+    : null;
+  const effectiveCaptainKind = selectedCaptainPreset?.kind ?? captainKind;
+  const effectiveMateKind = selectedMatePreset?.kind ?? mateKind;
+
   async function handleCreate() {
     if (!projectName || !branch) return;
     setCreateError(null);
@@ -428,6 +445,8 @@ export function NewSessionDialog({
         project: projectName,
         captain_kind: captainKind,
         mate_kind: mateKind,
+        captain_preset_id: captainPresetId,
+        mate_preset_id: matePresetId,
         base_branch: branch,
         mcp_servers: null,
       });
@@ -447,8 +466,8 @@ export function NewSessionDialog({
     !projectName ||
     !branch ||
     submitting ||
-    !isAgentKindAvailable(captainKind, discovery) ||
-    !isAgentKindAvailable(mateKind, discovery);
+    !isAgentKindAvailable(effectiveCaptainKind, discovery) ||
+    !isAgentKindAvailable(effectiveMateKind, discovery);
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -479,23 +498,65 @@ export function NewSessionDialog({
             </Select.Root>
           </Flex>
 
-          <AgentKindControl
-            label="Captain"
-            value={captainKind}
-            onChange={setCaptainKind}
-            claudeAvailable={discovery.claude}
-            codexAvailable={discovery.codex}
-            opencodeAvailable={discovery.opencode}
-          />
+          {hasConfiguredPresets && !presetsLoading ? (
+            <>
+              <Flex direction="column" gap="1">
+                <Text size="2" weight="medium">
+                  Captain
+                </Text>
+                <CreateSessionPresetPicker
+                  selectedPresetId={captainPresetId}
+                  selectedKind={captainKind}
+                  selectedModelId={selectedCaptainPreset?.model_id ?? null}
+                  onSelectPreset={(preset) => {
+                    setCaptainPresetId(preset.id);
+                    setCaptainKind(preset.kind);
+                  }}
+                />
+              </Flex>
 
-          <AgentKindControl
-            label="Mate"
-            value={mateKind}
-            onChange={setMateKind}
-            claudeAvailable={discovery.claude}
-            codexAvailable={discovery.codex}
-            opencodeAvailable={discovery.opencode}
-          />
+              <Flex direction="column" gap="1">
+                <Text size="2" weight="medium">
+                  Mate
+                </Text>
+                <CreateSessionPresetPicker
+                  selectedPresetId={matePresetId}
+                  selectedKind={mateKind}
+                  selectedModelId={selectedMatePreset?.model_id ?? null}
+                  onSelectPreset={(preset) => {
+                    setMatePresetId(preset.id);
+                    setMateKind(preset.kind);
+                  }}
+                />
+              </Flex>
+            </>
+          ) : (
+            <>
+              <AgentKindControl
+                label="Captain"
+                value={captainKind}
+                onChange={(kind) => {
+                  setCaptainPresetId(null);
+                  setCaptainKind(kind);
+                }}
+                claudeAvailable={discovery.claude}
+                codexAvailable={discovery.codex}
+                opencodeAvailable={discovery.opencode}
+              />
+
+              <AgentKindControl
+                label="Mate"
+                value={mateKind}
+                onChange={(kind) => {
+                  setMatePresetId(null);
+                  setMateKind(kind);
+                }}
+                claudeAvailable={discovery.claude}
+                codexAvailable={discovery.codex}
+                opencodeAvailable={discovery.opencode}
+              />
+            </>
+          )}
 
           <BranchCombobox projectName={projectName} value={branch} onChange={setBranch} />
 

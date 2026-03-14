@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   createSession: vi.fn<() => Promise<CreateSessionResponse>>(),
   refreshSessionList: vi.fn<() => Promise<SessionSummary[]>>(),
   addProject: vi.fn(),
+  listAgentPresets: vi.fn<() => Promise<Array<{ id: string; label: string; kind: { tag: string }; provider: string; model_id: string }>>>(),
   projects: [] as ProjectInfo[],
   sessions: [] as SessionSummary[],
   discovery: { claude: true, codex: true, opencode: true } as AgentDiscovery,
@@ -31,7 +32,9 @@ vi.mock("../api/client", () => ({
   getShipClient: async () => ({
     createSession: mocks.createSession,
     addProject: mocks.addProject,
+    listAgentPresets: mocks.listAgentPresets,
   }),
+  onClientReady: () => () => {},
 }));
 
 vi.mock("../hooks/useProjects", () => ({
@@ -105,6 +108,7 @@ beforeEach(() => {
   mocks.createSession.mockReset();
   mocks.refreshSessionList.mockReset();
   mocks.addProject.mockReset();
+  mocks.listAgentPresets.mockReset();
   mocks.projects = [
     { name: "ship", path: "/tmp/ship", valid: true, invalid_reason: null },
     { name: "roam", path: "/tmp/roam", valid: true, invalid_reason: null },
@@ -117,6 +121,7 @@ beforeEach(() => {
   };
   mocks.transcription = { state: { tag: "idle" }, targetSessionId: null };
   mocks.refreshSessionList.mockImplementation(async () => mocks.sessions);
+  mocks.listAgentPresets.mockResolvedValue([]);
   mocks.createSession.mockResolvedValue({
     tag: "Created",
     session_id: "session-created",
@@ -176,6 +181,8 @@ describe("SessionListPage UX slice", () => {
         project: "ship",
         captain_kind: { tag: "Claude" },
         mate_kind: { tag: "Claude" },
+        captain_preset_id: null,
+        mate_preset_id: null,
         base_branch: "release/2026.03",
         mcp_servers: null,
       });

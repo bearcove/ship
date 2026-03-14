@@ -291,6 +291,8 @@ export interface CreateSessionRequest {
   project: ProjectName;
   captain_kind: AgentKind;
   mate_kind: AgentKind;
+  captain_preset_id: AgentPresetId | null;
+  mate_preset_id: AgentPresetId | null;
   base_branch: string;
   mcp_servers: McpServerConfig[] | null;
 }
@@ -1487,7 +1489,7 @@ const ship_schema_registry: SchemaRegistry = new Map<string, Schema>([
   ["McpEnvVar", { kind: 'struct', fields: { 'name': { kind: 'string' }, 'value': { kind: 'string' } } }],
   ["McpStdioServerConfig", { kind: 'struct', fields: { 'name': { kind: 'string' }, 'command': { kind: 'string' }, 'args': { kind: 'vec', element: { kind: 'string' } }, 'env': { kind: 'vec', element: { kind: 'ref', name: 'McpEnvVar' } } } }],
   ["McpServerConfig", { kind: 'enum', variants: [{ name: 'Http', fields: { kind: 'ref', name: 'McpHttpServerConfig' } }, { name: 'Sse', fields: { kind: 'ref', name: 'McpSseServerConfig' } }, { name: 'Stdio', fields: { kind: 'ref', name: 'McpStdioServerConfig' } }] }],
-  ["CreateSessionRequest", { kind: 'struct', fields: { 'project': { kind: 'string' }, 'captain_kind': { kind: 'ref', name: 'AgentKind' }, 'mate_kind': { kind: 'ref', name: 'AgentKind' }, 'base_branch': { kind: 'string' }, 'mcp_servers': { kind: 'option', inner: { kind: 'vec', element: { kind: 'ref', name: 'McpServerConfig' } } } } }],
+  ["CreateSessionRequest", { kind: 'struct', fields: { 'project': { kind: 'string' }, 'captain_kind': { kind: 'ref', name: 'AgentKind' }, 'mate_kind': { kind: 'ref', name: 'AgentKind' }, 'captain_preset_id': { kind: 'option', inner: { kind: 'string' } }, 'mate_preset_id': { kind: 'option', inner: { kind: 'string' } }, 'base_branch': { kind: 'string' }, 'mcp_servers': { kind: 'option', inner: { kind: 'vec', element: { kind: 'ref', name: 'McpServerConfig' } } } } }],
   ["CreateSessionResponse", { kind: 'enum', variants: [{ name: 'Created', fields: { 'session_id': { kind: 'string' }, 'slug': { kind: 'string' } } }, { name: 'Failed', fields: { 'message': { kind: 'string' } } }] }],
   ["PromptContentPart", { kind: 'enum', variants: [{ name: 'Text', fields: { 'text': { kind: 'string' } } }, { name: 'Image', fields: { 'mime_type': { kind: 'string' }, 'data': { kind: 'bytes' } } }] }],
   ["SetAgentModelResponse", { kind: 'enum', variants: [{ name: 'Ok', fields: null }, { name: 'SessionNotFound', fields: null }, { name: 'AgentNotSpawned', fields: null }, { name: 'Failed', fields: { 'message': { kind: 'string' } } }] }],
