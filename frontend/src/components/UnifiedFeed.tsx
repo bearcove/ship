@@ -726,6 +726,7 @@ interface Props {
   debugMode?: boolean;
   onImageDrop?: (files: File[]) => void;
   onImageDragStateChange?: (isDragOver: boolean) => void;
+  onReplyRequest?: () => void;
 }
 
 type SessionFeedAnimationBaseline = {
@@ -763,10 +764,12 @@ export function UnifiedFeed({
   debugMode = false,
   onImageDrop,
   onImageDragStateChange,
+  onReplyRequest,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickyScroll = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
+  const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<HTMLDivElement | null>(null);
   const isImageDragOver = useDocumentDrop(dropTarget, onImageDrop ?? (() => undefined));
   const [tick, setTick] = useState(() => Date.now());
@@ -910,7 +913,7 @@ export function UnifiedFeed({
         </Flex>
       )}
 
-      <Box ref={scrollRef} className={unifiedFeedScroll} onScroll={handleScroll}>
+      <Box ref={scrollRef} className={unifiedFeedScroll} onScroll={handleScroll} onClick={() => setSelectedBlockId(null)}>
         {!atBottom && (
           <button
             type="button"
@@ -981,6 +984,9 @@ export function UnifiedFeed({
                   userAvatarUrl={userAvatarUrl}
                   taskCompletedDuration={taskCompletedDuration}
                   debugMode={debugMode}
+                  selectedBlockId={selectedBlockId}
+                  onSelectBlock={setSelectedBlockId}
+                  onReplyRequest={onReplyRequest}
                 />
               </div>
             ) : (
@@ -992,6 +998,9 @@ export function UnifiedFeed({
                 userAvatarUrl={userAvatarUrl}
                 taskCompletedDuration={taskCompletedDuration}
                 debugMode={debugMode}
+                selectedBlockId={selectedBlockId}
+                onSelectBlock={setSelectedBlockId}
+                onReplyRequest={onReplyRequest}
               />
             );
             return (
