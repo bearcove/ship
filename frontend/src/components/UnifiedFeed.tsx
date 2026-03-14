@@ -39,6 +39,7 @@ import {
   feedRowUser,
   feedSystemMessage,
   liveBubbleDot,
+  liveBubbleSlot,
   liveBubblesRow,
   thinkingBubble,
   shimmerText,
@@ -975,30 +976,46 @@ export function UnifiedFeed({
 
         <Box className={feedContentColumn}>
           <Box className={liveBubblesRow}>
-            {captainTurn && captain && (
-              <ThinkingBubble
-                sessionId={sessionId}
-                avatarSrc={captainAvatar}
-                agentName="Captain"
-                agent={captain}
-                lastUtterance={captainTurn.lastUtterance}
-                thinkingTokens={captainTurn.tokens}
-                toolsOk={captainTurn.ok}
-                toolsFailed={captainTurn.failed}
-              />
-            )}
-            {mateTurn && mate && (
-              <ThinkingBubble
-                sessionId={sessionId}
-                avatarSrc={mateAvatar}
-                agentName="Mate"
-                agent={mate}
-                lastUtterance={mateTurn.lastUtterance}
-                thinkingTokens={mateTurn.tokens}
-                toolsOk={mateTurn.ok}
-                toolsFailed={mateTurn.failed}
-              />
-            )}
+            <div
+              className={liveBubbleSlot}
+              style={{
+                opacity: captainTurn && captain ? 1 : 0,
+                pointerEvents: captainTurn && captain ? "auto" : "none",
+              }}
+            >
+              {captainTurn && captain && (
+                <ThinkingBubble
+                  sessionId={sessionId}
+                  avatarSrc={captainAvatar}
+                  agentName="Captain"
+                  agent={captain}
+                  lastUtterance={captainTurn.lastUtterance}
+                  thinkingTokens={captainTurn.tokens}
+                  toolsOk={captainTurn.ok}
+                  toolsFailed={captainTurn.failed}
+                />
+              )}
+            </div>
+            <div
+              className={liveBubbleSlot}
+              style={{
+                opacity: mateTurn && mate ? 1 : 0,
+                pointerEvents: mateTurn && mate ? "auto" : "none",
+              }}
+            >
+              {mateTurn && mate && (
+                <ThinkingBubble
+                  sessionId={sessionId}
+                  avatarSrc={mateAvatar}
+                  agentName="Mate"
+                  agent={mate}
+                  lastUtterance={mateTurn.lastUtterance}
+                  thinkingTokens={mateTurn.tokens}
+                  toolsOk={mateTurn.ok}
+                  toolsFailed={mateTurn.failed}
+                />
+              )}
+            </div>
           </Box>
         </Box>
       </Box>
