@@ -428,13 +428,23 @@ impl WorktreeOps for GitWorktreeOps {
         ensure_success(output)
     }
 
-    async fn merge_ff_only(&self, repo_root: &Path, branch: &str) -> Result<(), WorktreeError> {
+    async fn merge_ff_only(
+        &self,
+        repo_root: &Path,
+        branch: &str,
+        into_branch: &str,
+    ) -> Result<(), WorktreeError> {
+        // `git fetch . <branch>:<into_branch>` updates the into_branch ref to
+        // point at branch, enforcing fast-forward (rejects non-FF updates).
+        // Unlike `git merge --ff-only`, this works even when into_branch is not
+        // the currently checked-out branch.
+        let refspec = format!("{branch}:{into_branch}");
         let output = Command::new("git")
             .arg("-C")
             .arg(repo_root)
-            .arg("merge")
-            .arg("--ff-only")
-            .arg(branch)
+            .arg("fetch")
+            .arg(".")
+            .arg(&refspec)
             .output()
             .await
             .map_err(|error| WorktreeError {
