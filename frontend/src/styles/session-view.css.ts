@@ -184,11 +184,11 @@ export const feedBubbleSelected = style({
   transition: "padding 0.12s ease, border-color 0.12s ease, outline 0.12s ease",
 });
 
-// Captain bubbles have border:none, so use outline for selected state
+// Captain bubbles have border:none, so use outline + padding for selected state
 globalStyle(`${feedBubbleCaptain}${feedBubbleSelected}`, {
   outline: "1px solid var(--gray-a5)",
   outlineOffset: "4px",
-  borderRadius: "12px",
+  padding: "var(--space-2) var(--space-3)",
 });
 
 const actionBarEntrance = keyframes({
