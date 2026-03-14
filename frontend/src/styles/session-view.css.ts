@@ -377,7 +377,8 @@ const transcriptFadeIn = keyframes({
 
 export const liveBubblesRow = style({
   display: "flex",
-  flexDirection: "column",
+  flexDirection: "row",
+  justifyContent: "center",
   alignItems: "center",
   paddingBottom: "var(--space-2)",
   gap: "var(--space-2)",
