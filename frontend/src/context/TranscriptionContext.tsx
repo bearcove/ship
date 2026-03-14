@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 import { channel, type Tx } from "@bearcove/roam-core";
 import { getShipClient } from "../api/client";
 import type { TranscribeMessage, TranscribeSegment } from "../generated/ship";
@@ -255,25 +255,36 @@ export function TranscriptionProvider({ children }: { children: React.ReactNode 
     return activeRef.current !== null;
   }, []);
 
-  return (
-    <TranscriptionContext.Provider
-      value={{
-        state,
-        result,
-        analyser,
-        targetSessionId,
-        sendAfterTranscription,
-        startRecording,
-        stopRecording,
-        stopAndSend,
-        cancelRecording,
-        clearResult,
-        isRecording,
-      }}
-    >
-      {children}
-    </TranscriptionContext.Provider>
+  const value = useMemo(
+    () => ({
+      state,
+      result,
+      analyser,
+      targetSessionId,
+      sendAfterTranscription,
+      startRecording,
+      stopRecording,
+      stopAndSend,
+      cancelRecording,
+      clearResult,
+      isRecording,
+    }),
+    [
+      state,
+      result,
+      analyser,
+      targetSessionId,
+      sendAfterTranscription,
+      startRecording,
+      stopRecording,
+      stopAndSend,
+      cancelRecording,
+      clearResult,
+      isRecording,
+    ],
   );
+
+  return <TranscriptionContext.Provider value={value}>{children}</TranscriptionContext.Provider>;
 }
 
 export function useTranscription() {

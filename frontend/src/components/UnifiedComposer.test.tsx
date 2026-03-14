@@ -1,5 +1,5 @@
 import { act, fireEvent, screen } from "@testing-library/react";
-import { createRef } from "react";
+import { createRef, type Ref } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentSnapshot } from "../generated/ship";
 import { renderWithTheme } from "../test/render";
@@ -19,6 +19,11 @@ const mocks = vi.hoisted(() => ({
     clearResult: vi.fn(),
     isRecording: vi.fn(() => false),
   },
+  playback: null as {
+    state: "idle" | "loading" | "playing";
+    analyser: AnalyserNode | null;
+    stop: () => void;
+  } | null,
   promptCaptain: vi.fn(async () => undefined),
   steer: vi.fn(async () => undefined),
 }));
@@ -33,12 +38,12 @@ vi.mock("../api/client", () => ({
   }),
 }));
 
-vi.mock("../hooks/useDocumentDrop", () => ({
-  useDocumentDrop: () => false,
-}));
-
 vi.mock("../context/TranscriptionContext", () => ({
   useTranscription: () => mocks.transcription,
+}));
+
+vi.mock("../context/PlaybackContext", () => {
+  usePlayback: () => mocks.playback,
 }));
 
 function makeAgent(role: "Captain" | "Mate", state: AgentSnapshot["state"]): AgentSnapshot {
@@ -57,10 +62,11 @@ function makeAgent(role: "Captain" | "Mate", state: AgentSnapshot["state"]): Age
   };
 }
 
-function idleComposer() {
+function renderComposer(sessionId = "session-1", ref?: Ref<UnifiedComposerHandle>) {
   return renderWithTheme(
     <UnifiedComposer
-      sessionId="session-1"
+      ref={ref}
+      sessionId={sessionId}
       captain={makeAgent("Captain", { tag: "Idle" })}
       mate={makeAgent("Mate", { tag: "Idle" })}
       startupState={null}
@@ -70,6 +76,13 @@ function idleComposer() {
 }
 
 beforeEach(() => {
+  localStorage.clear();
+  mocks.transcription.state = { tag: "idle" };
+  mocks.transcription.result = null;
+  mocks.transcription.analyser = null;
+  mocks.transcription.targetSessionId = null;
+  mocks.transcription.sendAfterTranscription = false;
+  mocks.playback = null;
   mocks.promptCaptain.mockReset();
   mocks.promptCaptain.mockResolvedValue(undefined);
   mocks.steer.mockReset();
@@ -90,36 +103,29 @@ beforeEach(() => {
 describe("UnifiedComposer", () => {
   it("restores saved draft from localStorage on mount", () => {
     localStorage.setItem("ship.composer.draft.session-1", "my saved draft");
-    idleComposer();
+    renderComposer();
     const textarea = screen.getByRole("textbox", { name: /steer input/i });
     expect(textarea).toHaveValue("my saved draft");
   });
 
   it("clears draft from localStorage on successful submit", async () => {
-    idleComposer();
+    renderComposer();
     const textarea = screen.getByRole("textbox", { name: /steer input/i });
     fireEvent.change(textarea, { target: { value: "hello world" } });
     expect(localStorage.getItem("ship.composer.draft.session-1")).toBe("hello world");
+
     await act(async () => {
       fireEvent.keyDown(textarea, { key: "Enter" });
     });
     await act(async () => {});
+
     expect(localStorage.getItem("ship.composer.draft.session-1")).toBeNull();
     expect(textarea).toHaveValue("");
   });
 
   it("insertQuote via ref inserts blockquoted text into the textarea", () => {
     const ref = createRef<UnifiedComposerHandle>();
-    renderWithTheme(
-      <UnifiedComposer
-        ref={ref}
-        sessionId="session-1"
-        captain={makeAgent("Captain", { tag: "Idle" })}
-        mate={makeAgent("Mate", { tag: "Idle" })}
-        startupState={null}
-        taskStatus={null}
-      />,
-    );
+    renderComposer("session-1", ref);
 
     act(() => ref.current!.insertQuote("hello\nworld"));
 
@@ -127,18 +133,38 @@ describe("UnifiedComposer", () => {
     expect(textarea).toHaveValue("> hello\n> world\n\n");
   });
 
-  it("insertQuote prepends quote before existing text", () => {
+  it("keeps the imperative handle wired to the current composer after rerenders", () => {
     const ref = createRef<UnifiedComposerHandle>();
-    renderWithTheme(
+    const view = renderComposer("session-1", ref);
+
+    act(() => ref.current!.setDragOver(true));
+    expect(screen.getByTestId("composer-drop-indicator")).toBeInTheDocument();
+
+    view.rerender(
       <UnifiedComposer
         ref={ref}
-        sessionId="session-1"
+        sessionId="session-2"
         captain={makeAgent("Captain", { tag: "Idle" })}
         mate={makeAgent("Mate", { tag: "Idle" })}
         startupState={null}
         taskStatus={null}
       />,
     );
+
+    const textarea = screen.getByRole("textbox", { name: /steer input/i });
+    act(() => ref.current!.setDragOver(false));
+    expect(screen.queryByTestId("composer-drop-indicator")).toBeNull();
+
+    act(() => ref.current!.focusComposer());
+    expect(textarea).toHaveFocus();
+
+    act(() => ref.current!.insertQuote("fresh quote"));
+    expect(textarea).toHaveValue("> fresh quote\n\n");
+  });
+
+  it("insertQuote prepends quote before existing text", () => {
+    const ref = createRef<UnifiedComposerHandle>();
+    renderComposer("session-1", ref);
 
     const textarea = screen.getByRole("textbox", { name: /steer input/i });
     fireEvent.change(textarea, { target: { value: "existing reply" } });
@@ -148,12 +174,72 @@ describe("UnifiedComposer", () => {
     expect(textarea).toHaveValue("> quoted text\n\nexisting reply");
   });
 
+  it("drops a cancelled recording prefix before applying the next transcription result", () => {
+    const view = renderComposer();
+    const textarea = screen.getByRole("textbox", { name: /steer input/i });
+
+    fireEvent.change(textarea, { target: { value: "first draft" } });
+
+    mocks.transcription.targetSessionId = "session-1";
+    mocks.transcription.state = { tag: "recording", elapsed: 0 };
+    view.rerender(
+      <UnifiedComposer
+        sessionId="session-1"
+        captain={makeAgent("Captain", { tag: "Idle" })}
+        mate={makeAgent("Mate", { tag: "Idle" })}
+        startupState={null}
+        taskStatus={null}
+      />,
+    );
+
+    mocks.transcription.targetSessionId = null;
+    mocks.transcription.state = { tag: "idle" };
+    view.rerender(
+      <UnifiedComposer
+        sessionId="session-1"
+        captain={makeAgent("Captain", { tag: "Idle" })}
+        mate={makeAgent("Mate", { tag: "Idle" })}
+        startupState={null}
+        taskStatus={null}
+      />,
+    );
+
+    fireEvent.change(textarea, { target: { value: "second draft" } });
+
+    mocks.transcription.targetSessionId = "session-1";
+    mocks.transcription.state = { tag: "recording", elapsed: 0 };
+    view.rerender(
+      <UnifiedComposer
+        sessionId="session-1"
+        captain={makeAgent("Captain", { tag: "Idle" })}
+        mate={makeAgent("Mate", { tag: "Idle" })}
+        startupState={null}
+        taskStatus={null}
+      />,
+    );
+
+    mocks.transcription.result = { text: "spoken words", segments: [] };
+    mocks.transcription.state = { tag: "idle" };
+    view.rerender(
+      <UnifiedComposer
+        sessionId="session-1"
+        captain={makeAgent("Captain", { tag: "Idle" })}
+        mate={makeAgent("Mate", { tag: "Idle" })}
+        startupState={null}
+        taskStatus={null}
+      />,
+    );
+
+    expect(textarea).toHaveValue("second draft spoken words");
+    expect(mocks.transcription.clearResult).toHaveBeenCalledTimes(1);
+  });
+
   // r[verify ui.keys.steer-send]
   it("preserves text and shows error when submit times out", async () => {
     vi.useFakeTimers();
     mocks.promptCaptain.mockReturnValue(new Promise<undefined>(() => {}));
 
-    idleComposer();
+    renderComposer();
     const textarea = screen.getByRole("textbox", { name: /steer input/i });
     fireEvent.change(textarea, { target: { value: "will timeout" } });
 

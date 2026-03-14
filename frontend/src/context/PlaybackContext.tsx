@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 import { channel } from "@bearcove/roam-core";
 import { getShipClient } from "../api/client";
 
@@ -124,11 +124,12 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
     [state, cleanup],
   );
 
-  return (
-    <PlaybackContext.Provider value={{ state, activeText, analyser, speak, stop }}>
-      {children}
-    </PlaybackContext.Provider>
+  const value = useMemo(
+    () => ({ state, activeText, analyser, speak, stop }),
+    [state, activeText, analyser, speak, stop],
   );
+
+  return <PlaybackContext.Provider value={value}>{children}</PlaybackContext.Provider>;
 }
 
 export function usePlayback() {

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useMemo, useState } from "react";
 
 interface SoundContextValue {
   soundEnabled: boolean;
@@ -9,11 +9,9 @@ const SoundContext = createContext<SoundContextValue>(null!);
 
 export function SoundProvider({ children }: { children: React.ReactNode }) {
   const [soundEnabled, setSoundEnabled] = useState(true);
-  return (
-    <SoundContext.Provider value={{ soundEnabled, setSoundEnabled }}>
-      {children}
-    </SoundContext.Provider>
-  );
+  const value = useMemo(() => ({ soundEnabled, setSoundEnabled }), [soundEnabled]);
+
+  return <SoundContext.Provider value={value}>{children}</SoundContext.Provider>;
 }
 
 // r[ui.notify.sound-toggle]

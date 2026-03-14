@@ -3,6 +3,8 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, beforeEach, vi } from "vitest";
 import type { SessionDetail } from "../generated/ship";
 import { SoundProvider } from "../context/SoundContext";
+import { PlaybackProvider } from "../context/PlaybackContext";
+import { TranscriptionProvider } from "../context/TranscriptionContext";
 import { initialSessionViewState } from "../state/sessionReducer";
 import { renderWithTheme } from "../test/render";
 import { SessionViewPage } from "./SessionViewPage";
@@ -145,11 +147,15 @@ function renderPage(initialEntries: string[] = ["/sessions/session-1"]) {
   return renderWithTheme(
     <MemoryRouter initialEntries={initialEntries}>
       <SoundProvider>
-        <Routes>
-          <Route path="/" element={<div>home</div>} />
-          <Route path="/sessions/:sessionId" element={null} />
-        </Routes>
-        <SessionViewPage sessionId="session-1" isActive={true} debugMode={false} />
+        <PlaybackProvider>
+          <TranscriptionProvider>
+            <Routes>
+              <Route path="/" element={<div>home</div>} />
+              <Route path="/sessions/:sessionId" element={null} />
+            </Routes>
+            <SessionViewPage sessionId="session-1" isActive={true} debugMode={false} />
+          </TranscriptionProvider>
+        </PlaybackProvider>
       </SoundProvider>
     </MemoryRouter>,
   );
@@ -217,7 +223,6 @@ describe("SessionViewPage UX slice", () => {
     });
     expect(screen.queryByTestId("composer-drop-indicator")).not.toBeInTheDocument();
   });
-
 
   it("focuses the composer with c but ignores modifier shortcuts and active inputs", () => {
     renderPage();
@@ -334,7 +339,6 @@ describe("SessionViewPage UX slice", () => {
   it("pressing R with a text selection inserts a blockquote into the composer", () => {
     renderPage();
 
-    // Mock window.getSelection to return a selection with HTML content
     const fragment = document.createDocumentFragment();
     const bold = document.createElement("strong");
     bold.textContent = "important";
@@ -355,7 +359,6 @@ describe("SessionViewPage UX slice", () => {
     fireEvent.keyDown(window, { key: "r" });
 
     const textarea = screen.getByLabelText("Steer input");
-    // turndown converts <strong>important</strong> to **important**
     expect(textarea).toHaveValue("> **important**\n\n");
     expect(mockSelection.removeAllRanges).toHaveBeenCalled();
 

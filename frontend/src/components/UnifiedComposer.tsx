@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { Flex, Text, TextArea } from "@radix-ui/themes";
 import {
   ArrowUp,
@@ -221,24 +221,67 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
     if (saved) setText(saved);
   }, [sessionId]);
 
+  const buildParts = useCallback(
+    (value: string): PromptContentPart[] => {
+      const parts: PromptContentPart[] = [];
+      if (value) parts.push({ tag: "Text", text: value });
+      for (const img of attachedImages) {
+        parts.push({ tag: "Image", mime_type: img.mimeType, data: img.data });
+      }
+      return parts;
+    },
+    [attachedImages],
+  );
+
+  const sendNow = useCallback(
+    async (value: string, to: "captain" | "mate") => {
+      setLoading(true);
+      setError(null);
+      try {
+        const client = await getShipClient();
+        const parts = buildParts(value);
+        if (to === "captain") {
+          await withTimeout(client.promptCaptain(sessionId, parts), SUBMIT_TIMEOUT_MS);
+        } else {
+          await withTimeout(client.steer(sessionId, parts), SUBMIT_TIMEOUT_MS);
+        }
+        setAttachedImages((prev) => {
+          for (const img of prev) URL.revokeObjectURL(img.objectUrl);
+          return [];
+        });
+        return true;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+        return false;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [buildParts, sessionId],
+  );
+
   // Track the text that existed before transcription started, so we can
   // prepend it to the final transcription result.
   const preTranscriptionTextRef = useRef<string | null>(null);
-
+  const prevTranscriptionTag = useRef(transcription.state.tag);
   const isTargetSession = transcription.targetSessionId === sessionId;
+  const isRecordingTargetSession = isTargetSession && transcription.state.tag === "recording";
+  const wasRecordingTargetSessionRef = useRef(false);
 
-  // Capture pre-transcription text when recording starts for this session
-  if (isTargetSession && transcription.state.tag === "recording" && preTranscriptionTextRef.current === null) {
-    preTranscriptionTextRef.current = text;
-  }
+  useEffect(() => {
+    if (isRecordingTargetSession && !wasRecordingTargetSessionRef.current) {
+      preTranscriptionTextRef.current = text;
+    } else if (wasRecordingTargetSessionRef.current && !isRecordingTargetSession && !isTargetSession) {
+      preTranscriptionTextRef.current = null;
+    }
+    wasRecordingTargetSessionRef.current = isRecordingTargetSession;
+  }, [isRecordingTargetSession, isTargetSession, text]);
 
   // When transcription returns to idle, commit the final text and optionally auto-submit
-  const prevTranscriptionTag = useRef(transcription.state.tag);
   useEffect(() => {
-    if (!isTargetSession) return;
-    const wasProcessing = prevTranscriptionTag.current !== "idle";
+    const previousTag = prevTranscriptionTag.current;
     prevTranscriptionTag.current = transcription.state.tag;
-    if (!wasProcessing || transcription.state.tag !== "idle") return;
+    if (!isTargetSession || previousTag === "idle" || transcription.state.tag !== "idle") return;
 
     const prefix = preTranscriptionTextRef.current ?? "";
     preTranscriptionTextRef.current = null;
@@ -265,10 +308,18 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
       transcription.clearResult();
       setText(finalText);
     }
-  }, [transcription.state.tag, isTargetSession]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [
+    attachedImages.length,
+    isTargetSession,
+    sendNow,
+    sessionId,
+    transcription.clearResult,
+    transcription.result,
+    transcription.sendAfterTranscription,
+    transcription.state.tag,
+  ]);
 
   const { target } = parseTarget(text);
-  const activeAgent = target === "captain" ? captain : mate;
   const captainStateTag = captain?.state.tag ?? "Idle";
   const mateStateTag = mate?.state.tag ?? "Idle";
   const activeStateTag = target === "captain" ? captainStateTag : mateStateTag;
@@ -308,39 +359,6 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
     const match = textBefore.match(/@([a-zA-Z0-9/._-]*)$/);
     if (match) return match[1];
     return null;
-  }
-
-  function buildParts(value: string): PromptContentPart[] {
-    const parts: PromptContentPart[] = [];
-    if (value) parts.push({ tag: "Text", text: value });
-    for (const img of attachedImages) {
-      parts.push({ tag: "Image", mime_type: img.mimeType, data: img.data });
-    }
-    return parts;
-  }
-
-  async function sendNow(value: string, to: "captain" | "mate") {
-    setLoading(true);
-    setError(null);
-    try {
-      const client = await getShipClient();
-      const parts = buildParts(value);
-      if (to === "captain") {
-        await withTimeout(client.promptCaptain(sessionId, parts), SUBMIT_TIMEOUT_MS);
-      } else {
-        await withTimeout(client.steer(sessionId, parts), SUBMIT_TIMEOUT_MS);
-      }
-      setAttachedImages((prev) => {
-        for (const img of prev) URL.revokeObjectURL(img.objectUrl);
-        return [];
-      });
-      return true;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-      return false;
-    } finally {
-      setLoading(false);
-    }
   }
 
   async function handleSubmit() {
@@ -409,7 +427,7 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
     });
   }
 
-  function addImageFiles(files: FileList | File[]) {
+  const addImageFiles = useCallback((files: FileList | File[]) => {
     setIsDragOver(false);
     for (const file of Array.from(files)) {
       if (!file.type.startsWith("image/")) continue;
@@ -430,30 +448,34 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
           console.warn(`Skipping image "${file.name}": could not decode`, err);
         });
     }
-  }
+  }, []);
 
-  function focusComposer() {
+  const focusComposer = useCallback(() => {
     textareaRef.current?.focus();
-  }
+  }, []);
 
-  function insertQuote(rawText: string) {
+  const insertQuote = useCallback((rawText: string) => {
     const quoted = rawText
       .split("\n")
       .map((line) => `> ${line}`)
       .join("\n") + "\n\n";
     setText((prev) => (prev.trim() ? quoted + prev : quoted));
     requestAnimationFrame(() => textareaRef.current?.focus());
-  }
+  }, []);
+
+  const setComposerDragOver = useCallback((nextIsDragOver: boolean) => {
+    setIsDragOver(nextIsDragOver);
+  }, []);
 
   useImperativeHandle(
     ref,
     () => ({
       focusComposer,
       addImageFiles,
-      setDragOver: setIsDragOver,
+      setDragOver: setComposerDragOver,
       insertQuote,
     }),
-    [],
+    [addImageFiles, focusComposer, insertQuote, setComposerDragOver],
   );
 
   function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
@@ -514,7 +536,6 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
     }
   }
 
-  const hasContent = text.trim().length > 0 || attachedImages.length > 0;
   const isRecording = isTargetSession && transcription.state.tag === "recording";
   const isProcessing = isTargetSession && transcription.state.tag === "processing";
   const isWorking = captainStateTag === "Working" || mateStateTag === "Working";
@@ -597,7 +618,7 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
         </div>
       )}
 
-      {isRecording && isTargetSession && transcription.result && (
+      {isRecording && transcription.result && (
         <div ref={transcriptPreviewRef} className={transcriptPreview}>
           {transcription.result.text}
         </div>
@@ -641,7 +662,6 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
           </div>
         )}
 
-        {/* Left slot */}
         <button
           type="button"
           className={composerInlineBtn}
@@ -653,7 +673,6 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
           <PaperclipIcon size={18} />
         </button>
 
-        {/* Textarea — always present, hidden behind overlay when recording/processing */}
         <TextArea
           ref={textareaRef}
           className={`${composerInput}${isRecording ? ` ${composerInputWideRight}` : ""}`}
@@ -668,7 +687,6 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
           style={{ visibility: isRecording || isProcessing ? "hidden" : undefined }}
         />
 
-        {/* Overlay: waveform during recording, spinner during processing */}
         {isRecording && transcription.analyser && (
           <div className={composerOverlay}>
             <Text
@@ -697,7 +715,6 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
           </div>
         )}
 
-        {/* Right slot */}
         {isRecording ? (
           <>
             <button
