@@ -6,6 +6,7 @@ import { bundledLanguages, codeToHtml } from "shiki";
 import type { BundledLanguage } from "shiki";
 import { Check, CircleNotch, CopySimple, SpeakerHigh } from "@phosphor-icons/react";
 import type { ContentBlock } from "../../generated/ship";
+import { fixMarkdownBackticks } from "../../utils/fixMarkdownBackticks";
 import {
   bubbleActions,
   bubbleContent,
@@ -160,7 +161,7 @@ export function TextBlock({ block }: { block: TextBlockType }) {
     <Box className={textBlockRoot}>
       <div className={bubbleContent}>
         <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-          {block.text}
+          {fixMarkdownBackticks(block.text)}
         </ReactMarkdown>
       </div>
     </Box>
