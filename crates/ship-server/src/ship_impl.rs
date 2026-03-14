@@ -13210,12 +13210,18 @@ hooks {
             error.contains("checks failed:"),
             "unexpected merge error: {error}"
         );
-        assert!(error.contains("hook: explode"), "unexpected merge error: {error}");
+        assert!(
+            error.contains("hook: explode"),
+            "unexpected merge error: {error}"
+        );
         assert!(
             error.contains("command: printf 'boom output"),
             "unexpected merge error: {error}"
         );
-        assert!(error.contains("exit code: 7"), "unexpected merge error: {error}");
+        assert!(
+            error.contains("exit code: 7"),
+            "unexpected merge error: {error}"
+        );
         assert!(
             error.contains("stdout:\n  boom output"),
             "unexpected merge error: {error}"

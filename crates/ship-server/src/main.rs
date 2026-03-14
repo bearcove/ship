@@ -65,6 +65,9 @@ enum Command {
     /// Run the mate MCP stdio server.
     MateMcpServer(McpServerArgs),
 
+    /// Run the admiral MCP stdio server.
+    AdmiralMcpServer(McpServerArgs),
+
     /// Manage projects.
     Project {
         /// Project command.
@@ -219,6 +222,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Command::MateMcpServer(args) => {
             captain_mcp::run_mate_stdio_server(captain_mcp::MateMcpServerArgs {
+                session_id: SessionId(args.session),
+                server_ws_url: args.server_ws_url,
+            })
+            .await?;
+            Ok(())
+        }
+        Command::AdmiralMcpServer(args) => {
+            captain_mcp::run_admiral_stdio_server(captain_mcp::AdmiralMcpServerArgs {
                 session_id: SessionId(args.session),
                 server_ws_url: args.server_ws_url,
             })
