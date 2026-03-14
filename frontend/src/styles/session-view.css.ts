@@ -1200,6 +1200,29 @@ export const agentHeaderPickerStatic = style({
   whiteSpace: "nowrap",
 });
 
+export const agentHeaderPickerSummary = style({
+  display: "flex",
+  flexDirection: "column",
+  minWidth: 0,
+});
+
+export const agentHeaderPickerPrimary = style({
+  display: "block",
+  minWidth: 0,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+});
+
+export const agentHeaderPickerSecondary = style({
+  display: "block",
+  minWidth: 0,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+  fontFamily: monoFontStack,
+});
+
 export const agentHeaderModelPickerContent = style({
   width: "min(28rem, calc(100vw - 2rem))",
   maxWidth: "calc(100vw - 2rem)",
@@ -1233,6 +1256,13 @@ export const agentHeaderModelPickerOptionText = style({
   fontFamily: monoFontStack,
   whiteSpace: "normal",
   overflowWrap: "anywhere",
+});
+
+export const agentHeaderPresetOptionSummary = style({
+  display: "flex",
+  flexDirection: "column",
+  gap: "2px",
+  minWidth: 0,
 });
 
 export const agentHeaderSlash = style({
