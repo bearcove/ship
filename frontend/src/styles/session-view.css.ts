@@ -1298,7 +1298,6 @@ export const agentHeaderModelPickerList = style({
   maxHeight: "14rem",
   overflowX: "hidden",
   overflowY: "auto",
-  border: "1px solid var(--gray-a6)",
   borderRadius: "var(--radius-3)",
 });
 
