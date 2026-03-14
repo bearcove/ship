@@ -711,7 +711,6 @@ export function SessionListPage() {
       const result = await client.archiveSession({ id: session.id, force });
       if (result.tag === "Archived") {
         setArchiveConfirm(null);
-        await refreshSessionList();
       } else if (result.tag === "RequiresConfirmation") {
         setArchiveConfirm({ session, unmergedCommits: result.unmerged_commits });
       } else if (result.tag === "Failed") {
