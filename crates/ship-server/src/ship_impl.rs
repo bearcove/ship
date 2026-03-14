@@ -3675,7 +3675,6 @@ Here is your task:
                         in_double = true;
                     }
                     '\\' => {
-                        token_end = idx + ch.len_utf8();
                         chars.next();
                         let (escaped_idx, escaped) = chars.next()?;
                         token_end = escaped_idx + escaped.len_utf8();
@@ -12486,6 +12485,7 @@ agent_presets {
         let _ = std::fs::remove_dir_all(dir);
     }
 
+    #[tokio::test]
     async fn mate_send_update_keeps_tagged_feed_text_in_task_history() {
         let (dir, ship, session_id) = create_session_for_workflow_test("mate-send-update").await;
         let message = "Parser fallback needs review".to_owned();
