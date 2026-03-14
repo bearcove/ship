@@ -2380,17 +2380,7 @@ You are now active. Wait for messages from captains or the human.\n",
 
             // r[task.recap]
             // r[task.accepted]
-            if recap_commits.is_empty() {
-                Self::append_workflow_milestone(
-                    active,
-                    WorkflowMilestoneKind::TaskAccepted,
-                    "Task accepted",
-                    "Work merged to base branch",
-                    Vec::new(),
-                    Vec::new(),
-                    None,
-                );
-            } else {
+            if !recap_commits.is_empty() {
                 apply_event(
                     active,
                     SessionEvent::BlockAppend {
