@@ -1071,8 +1071,6 @@ interface Props {
   loading?: boolean;
   loadingLabel?: string;
   debugMode?: boolean;
-  onImageDrop?: (files: File[]) => void;
-  onImageDragStateChange?: (isDragOver: boolean) => void;
   onReplyRequest?: () => void;
 }
 
@@ -1110,32 +1108,18 @@ export function UnifiedFeed({
   loading,
   loadingLabel,
   debugMode = false,
-  onImageDrop,
-  onImageDragStateChange,
   onReplyRequest,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickyScroll = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
-  const [dropTarget, setDropTarget] = useState<HTMLDivElement | null>(null);
-  const isImageDragOver = useDocumentDrop(dropTarget, onImageDrop ?? NOOP_IMAGE_DROP);
   const [tick, setTick] = useState(() => Date.now());
 
   useEffect(() => {
     const id = setInterval(() => setTick(Date.now()), 30_000);
     return () => clearInterval(id);
   }, []);
-
-  useEffect(() => {
-    onImageDragStateChange?.(isImageDragOver);
-  }, [isImageDragOver, onImageDragStateChange]);
-
-  useEffect(() => {
-    return () => {
-      onImageDragStateChange?.(false);
-    };
-  }, [onImageDragStateChange]);
 
   const sessionAnimationBaseline = getSessionFeedAnimationBaseline(sessionId);
   if (loading || !sessionAnimationBaseline.established) {
