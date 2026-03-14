@@ -572,6 +572,11 @@ base branch (short hash and subject line for each) and aggregate diff statistics
 (files changed, insertions, deletions). The frontend MUST render this as a
 system notice in the feed.
 
+r[task.accepted]
+When a task is accepted (merged), the backend MUST emit a `WorkflowMilestone` content block
+with kind `TaskAccepted` into the session feed, regardless of whether there are commits to
+recap. This ensures a phase-break notification always appears in the feed when work is merged.
+
 r[task.cancel]
 Tasks MUST be cancellable at any point in their lifecycle.
 
