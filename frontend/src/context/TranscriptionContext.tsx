@@ -69,6 +69,7 @@ export function TranscriptionProvider({ children }: { children: React.ReactNode 
     flushAudio: () => void;
   } | null>(null);
   const teardownRef = useRef<() => Promise<void>>(() => Promise.resolve());
+  const voiceModeRef = useRef(false);
 
   const startRecording = useCallback((sessionId: string) => {
     if (activeRef.current) return;
@@ -166,6 +167,7 @@ export function TranscriptionProvider({ children }: { children: React.ReactNode 
         void (async () => {
           const allSegments: TranscribeSegment[] = [];
           let gotError = false;
+          let isFirstSegment = true;
           while (true) {
             const msg = await segRx.recv();
             if (msg === null) break;
@@ -178,10 +180,29 @@ export function TranscriptionProvider({ children }: { children: React.ReactNode 
             const segment = msg.value;
             const trimmed = segment.text.trim();
             const lower = trimmed.toLowerCase();
-            // Detect whole-word "over" at the end (not "moreover", "crossover", etc.)
-            const endsWithOver = lower === "over" || lower.endsWith(" over");
 
-            if (endsWithOver) {
+            // Detect "come alive" on the first segment to activate voice mode
+            if (isFirstSegment) {
+              isFirstSegment = false;
+              if (lower === "come alive") {
+                voiceModeRef.current = true;
+                setVoiceMode(true);
+                continue;
+              }
+            }
+
+            // Detect "over and out" BEFORE "over" (since "over and out" ends with "over" too)
+            const endsWithOverAndOut =
+              lower === "over and out" || lower.endsWith(" over and out");
+            // Detect whole-word "over" at the end (not "moreover", "crossover", etc.)
+            const endsWithOver =
+              !endsWithOverAndOut && (lower === "over" || lower.endsWith(" over"));
+
+            if (endsWithOverAndOut) {
+              // Strip "over and out" from the segment text
+              const stripped = trimmed.slice(0, trimmed.length - 12).trimEnd();
+              segment.text = stripped;
+            } else if (endsWithOver) {
               // Strip "over" from the segment text
               const stripped = trimmed.slice(0, trimmed.length - 4).trimEnd();
               segment.text = stripped;
@@ -194,11 +215,31 @@ export function TranscriptionProvider({ children }: { children: React.ReactNode 
             const fullText = allSegments.map((s) => s.text.trim()).join(" ");
             setResult({ text: fullText, segments: [...allSegments] });
 
-            if (endsWithOver) {
-              // Trigger the same flow as stopAndSend
-              setSendAfterTranscription(true);
+            if (endsWithOverAndOut) {
+              // Submit accumulated text then tear down and exit voice mode
+              if (fullText.trim()) {
+                setVoiceSubmitText(fullText.trim());
+              }
+              voiceModeRef.current = false;
+              setVoiceMode(false);
               void teardownRef.current();
               break;
+            }
+
+            if (endsWithOver) {
+              if (voiceModeRef.current) {
+                // In voice mode: submit accumulated text, clear segments, keep recording
+                if (fullText.trim()) {
+                  setVoiceSubmitText(fullText.trim());
+                }
+                allSegments.length = 0;
+                setResult(null);
+              } else {
+                // Not in voice mode: existing behavior — teardown + submit
+                setSendAfterTranscription(true);
+                void teardownRef.current();
+                break;
+              }
             }
           }
           await callPromise;
