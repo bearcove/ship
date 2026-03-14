@@ -5615,6 +5615,12 @@ Here is your task:
 on tasks assigned by its supervisor (\"the captain\"). The captain cannot watch the mate's \
 every action, so your job is to produce concise summaries that help the captain ensure the \
 mate stays on track.\n\n\
+Activity entries are prefixed with tags:\n\
+- [speech]: the mate's visible messages\n\
+- [thought]: the mate's internal reasoning\n\
+- [tool]: tool calls the mate made\n\
+- [steer]: the captain redirected the mate — activity after a steer should be \
+evaluated against the new direction, not the original plan\n\n\
 Focus on:\n\
 - Progress: what did the mate accomplish relative to the plan?\n\
 - Decisions: did the mate make any choices the captain should know about?\n\
