@@ -835,6 +835,7 @@ const SingleBlock = memo(function SingleBlock({
   isSelected,
   onSelectBlock,
   onReplyRequest,
+  onArchive,
 }: {
   entry: BlockEntry;
   sessionId: string;
@@ -845,6 +846,7 @@ const SingleBlock = memo(function SingleBlock({
   isSelected: boolean;
   onSelectBlock: (id: string | null) => void;
   onReplyRequest?: () => void;
+  onArchive?: () => void;
 }) {
   const { block, blockId, role } = entry;
   const isCaptain = role.tag === "Captain";
@@ -994,7 +996,7 @@ const SingleBlock = memo(function SingleBlock({
       return <WorkflowMilestoneBlock block={block} />;
 
     case "TaskRecap":
-      return <TaskRecapBlock block={block} duration={taskCompletedDuration} />;
+      return <TaskRecapBlock block={block} duration={taskCompletedDuration} onArchive={onArchive} />;
   }
 });
 
