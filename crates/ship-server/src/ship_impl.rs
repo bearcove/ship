@@ -10412,8 +10412,8 @@ mod tests {
     fn captain_bootstrap_prompt_makes_git_captain_owned() {
         let prompt = ShipImpl::captain_bootstrap_prompt();
 
-        assert!(prompt.contains("Git is not your workflow control surface"));
-        assert!(prompt.contains("Ship manages workflow state internally"));
+        assert!(prompt.contains("You have no raw git access"));
+        assert!(prompt.contains("All git operations flow through Ship"));
     }
 
     // r[verify mate.system-prompt]
@@ -13415,21 +13415,19 @@ agent_presets {
     fn captain_bootstrap_prompt_describes_backend_managed_workflow() {
         let prompt = ShipImpl::captain_bootstrap_prompt();
         assert!(
-            prompt.contains("Git is not your workflow control surface"),
+            prompt.contains("You have no raw git access"),
             "unexpected prompt: {prompt}"
         );
         assert!(
-            prompt.contains("`captain_review_diff` to force a fresh rebase"),
+            prompt.contains("captain_review_diff"),
             "unexpected prompt: {prompt}"
         );
         assert!(
-            prompt.contains(
-                "`captain_merge` only succeeds once the session branch is actually mergeable"
-            ),
+            prompt.contains("captain_merge, all checks must pass"),
             "unexpected prompt: {prompt}"
         );
         assert!(
-            prompt.contains("repo-root paths, `-C` flags, absolute paths, or `.ship/...` prefixes"),
+            prompt.contains("omit cwd unless targeting a subdirectory"),
             "unexpected prompt: {prompt}"
         );
     }
