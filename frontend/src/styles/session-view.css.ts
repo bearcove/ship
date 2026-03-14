@@ -424,22 +424,43 @@ export const shimmerText = style({
   animation: `${shimmerMove} 3s linear infinite`,
 });
 
-export const thinkingStopBtn = style({
+export const thinkingAvatarBtn = style({
+  position: "relative",
+  width: 36,
+  height: 36,
+  borderRadius: "50%",
+  border: "none",
+  padding: 0,
+  cursor: "pointer",
+  flexShrink: 0,
+  overflow: "hidden",
+  background: "var(--gray-12)",
+});
+
+export const thinkingAvatarImg = style({
+  display: "block",
+  width: 36,
+  height: 36,
+  borderRadius: "50%",
+  transition: "opacity 0.15s ease",
+});
+
+export const thinkingAvatarStop = style({
+  position: "absolute",
+  top: 0,
+  left: 0,
+  width: "100%",
+  height: "100%",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  width: 28,
-  height: 28,
-  borderRadius: "50%",
-  background: "var(--gray-12)",
+  opacity: 0,
+  transition: "opacity 0.15s ease",
   color: "var(--gray-1)",
-  border: "none",
-  cursor: "pointer",
-  flexShrink: 0,
-  selectors: {
-    "&:hover": { background: "var(--gray-11)" },
-  },
 });
+
+globalStyle(`${thinkingAvatarBtn}:hover ${thinkingAvatarImg}`, { opacity: 0 });
+globalStyle(`${thinkingAvatarBtn}:hover ${thinkingAvatarStop}`, { opacity: 1 });
 
 export const liveBubbleDot = style({
   width: 4,
