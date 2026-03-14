@@ -54,11 +54,20 @@ function findCurrentPreset(
   );
 }
 
+const LOGO_ASSETS: Record<string, string> = {
+  anthropic: "/logos/anthropic.svg",
+  google: "/logos/google.svg",
+  minimax: "/logos/minimax.png",
+  moonshot: "/logos/moonshot.svg",
+  "z-ai": "/logos/z-ai.svg",
+};
+
 function PresetIcon({ preset }: { preset: AgentPreset }) {
-  if (preset.logo) {
+  const logoSrc = preset.logo ? (LOGO_ASSETS[preset.logo] ?? null) : null;
+  if (logoSrc) {
     return (
       <img
-        src={`/logos/${preset.logo}`}
+        src={logoSrc}
         style={{ width: 16, height: 16, objectFit: "contain", flexShrink: 0 }}
         alt=""
       />
