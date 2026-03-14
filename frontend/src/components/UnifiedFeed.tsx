@@ -81,6 +81,23 @@ import {
 
 type TextBlockType = Extract<ContentBlock, { tag: "Text" }>;
 
+function formatRelativeTime(iso: string, now: number): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const diffMs = now - d.getTime();
+  const seconds = Math.floor(diffMs / 1000);
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes === 1) return "1 minute ago";
+  if (minutes < 60) return `${minutes} minutes ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours === 1) return "1 hour ago";
+  if (hours < 24) return `${hours} hours ago`;
+  if (hours < 48) return "yesterday";
+  const days = Math.floor(hours / 24);
+  return `${days} days ago`;
+}
+
 // ─── System message detection ─────────────────────────────────────────────────
 // Human blocks injected by the server (task assignments, system prompts) are
 // very long and contain instructions. We collapse them to a short label.
