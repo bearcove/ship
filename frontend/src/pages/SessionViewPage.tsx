@@ -7,6 +7,7 @@ import { Warning } from "@phosphor-icons/react";
 import { useSession } from "../hooks/useSession";
 import { useSessionState } from "../hooks/useSessionState";
 import { refreshSessionList } from "../hooks/useSessionList";
+import { useDocumentDrop } from "../hooks/useDocumentDrop";
 import { UnifiedFeed } from "../components/UnifiedFeed";
 import { UnifiedComposer, type UnifiedComposerHandle } from "../components/UnifiedComposer";
 import { SessionHeader } from "../components/SessionHeader";
@@ -51,6 +52,7 @@ export function SessionViewPage({
 }) {
   const navigate = useNavigate();
   const composerRef = useRef<UnifiedComposerHandle>(null);
+  const feedColumnRef = useRef<HTMLDivElement>(null);
   const [archiving, setArchiving] = useState(false);
   const [archiveConfirm, setArchiveConfirm] = useState<string[] | null>(null);
   const [duplicateOpen, setDuplicateOpen] = useState(false);
@@ -102,9 +104,11 @@ export function SessionViewPage({
     composerRef.current?.focusComposer();
   }, []);
 
-  const handleFeedDragStateChange = useCallback((isDragOver: boolean) => {
-    composerRef.current?.setDragOver(isDragOver);
-  }, []);
+  const isImageDragOver = useDocumentDrop(feedColumnRef.current, handleFeedImageDrop);
+
+  useEffect(() => {
+    composerRef.current?.setDragOver(isImageDragOver);
+  }, [isImageDragOver]);
 
   function isEditableTarget(target: EventTarget | null): boolean {
     return (
@@ -319,7 +323,7 @@ export function SessionViewPage({
         }}
       >
         <Flex style={{ flex: 1, overflow: "hidden", minHeight: 0 }}>
-          <Box className={sessionFeedColumn}>
+          <Box className={sessionFeedColumn} ref={feedColumnRef}>
             <SessionHeader
               sessionId={session.id}
               project={session.project}
@@ -349,8 +353,6 @@ export function SessionViewPage({
               loading={isReplaying}
               loadingLabel={replayLabel}
               debugMode={debugMode}
-              onImageDrop={handleFeedImageDrop}
-              onImageDragStateChange={handleFeedDragStateChange}
             />
             {debugMode && (
               <SessionDebugPanel
