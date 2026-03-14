@@ -365,12 +365,6 @@ impl ShipImpl {
 
         let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
         for persisted in sessions_list {
-            let needs_respawn = persisted
-                .current_task
-                .as_ref()
-                .map(|t| !t.record.status.is_terminal())
-                .unwrap_or(false);
-
             const RESPAWN_MSG: &str = "Server restarted — agents need respawn.";
 
             let next_event_seq = persisted
@@ -425,6 +419,12 @@ impl ShipImpl {
                 mate_activity_first_at: None,
             };
             rebuild_materialized_from_event_log(&mut session);
+
+            let needs_respawn = session
+                .current_task
+                .as_ref()
+                .map(|task| !task.record.status.is_terminal())
+                .unwrap_or(false);
 
             if needs_respawn {
                 let restart_state = AgentState::Error {
@@ -9266,7 +9266,7 @@ mod tests {
                     id: active_task_id.clone(),
                     title: "Investigate active restore".to_owned(),
                     description: "Investigate active restore".to_owned(),
-                    status: TaskStatus::Working,
+                    status: TaskStatus::Accepted,
                     steps: Vec::new(),
                     assigned_at: Some("2026-01-01T00:01:00Z".to_owned()),
                     completed_at: None,
