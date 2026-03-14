@@ -1525,6 +1525,7 @@ Continue where you left off — wait for the human to give you direction."
             }
 
             transition_task(active, TaskStatus::Accepted).map_err(|error| error.to_string())?;
+            Self::invalidate_mate_activity_summary_state(active);
             archive_terminal_task(active);
         }
 
@@ -1577,6 +1578,7 @@ Continue where you left off — wait for the human to give you direction."
                 );
             }
             transition_task(active, TaskStatus::Cancelled).map_err(|error| error.to_string())?;
+            Self::invalidate_mate_activity_summary_state(active);
             archive_terminal_task(active);
         }
 
@@ -2484,6 +2486,7 @@ Here is your task:
                 } else {
                     transition_task(session, TaskStatus::ReviewPending)
                         .map_err(|error| error.to_string())?;
+                    Self::invalidate_mate_activity_summary_state(session);
                     true
                 }
             }
@@ -4885,6 +4888,7 @@ Here is your task:
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             if let Some(active) = sessions.get_mut(session_id) {
                 let _ = transition_task(active, TaskStatus::ReviewPending);
+                Self::invalidate_mate_activity_summary_state(active);
             }
         }
         self.persist_session(session_id).await?;
@@ -5503,6 +5507,30 @@ Here is your task:
         }
     }
 
+    fn clear_mate_activity_buffer(session: &mut ActiveSession) {
+        session.mate_activity_buffer.clear();
+        session.mate_activity_first_at = None;
+    }
+
+    fn invalidate_mate_activity_summary_state(session: &mut ActiveSession) {
+        Self::clear_mate_activity_buffer(session);
+        session.utility_last_task_id = None;
+    }
+
+    fn should_emit_mate_activity_summary(
+        session: &ActiveSession,
+        task_id: Option<&TaskId>,
+    ) -> bool {
+        let Some(task_id) = task_id else {
+            return false;
+        };
+        let Some(task) = session.current_task.as_ref() else {
+            return false;
+        };
+
+        task.record.status == TaskStatus::Working && &task.record.id == task_id
+    }
+
     fn maybe_take_flush_data(session: &mut ActiveSession) -> Option<MateActivityFlushData> {
         let buffer_size: usize = session.mate_activity_buffer.iter().map(|s| s.len()).sum();
         if buffer_size == 0 {
@@ -5517,8 +5545,7 @@ Here is your task:
         }
 
         let buffer = session.mate_activity_buffer.join("\n");
-        session.mate_activity_buffer.clear();
-        session.mate_activity_first_at = None;
+        Self::clear_mate_activity_buffer(session);
 
         let task_id = session.current_task.as_ref().map(|t| t.record.id.clone());
         let needs_task_context = task_id.as_ref() != session.utility_last_task_id.as_ref();
@@ -5649,6 +5676,16 @@ Reply with \"Ready.\" to confirm.";
     }
 
     async fn flush_mate_activity(&self, session_id: SessionId, data: MateActivityFlushData) {
+        {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let Some(session) = sessions.get(&session_id) else {
+                return;
+            };
+            if !Self::should_emit_mate_activity_summary(session, data.task_id.as_ref()) {
+                return;
+            }
+        }
+
         let Some(utility_handle) = self.ensure_utility_agent(&session_id).await else {
             return;
         };
@@ -5682,12 +5719,16 @@ Reply with \"Ready.\" to confirm.";
             return;
         }
 
-        // Update utility_last_task_id
+        // Drop stale summaries once the originating task is no longer the current working task.
         {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
-            if let Some(session) = sessions.get_mut(&session_id) {
-                session.utility_last_task_id = data.task_id;
+            let Some(session) = sessions.get_mut(&session_id) else {
+                return;
+            };
+            if !Self::should_emit_mate_activity_summary(session, data.task_id.as_ref()) {
+                return;
             }
+            session.utility_last_task_id = data.task_id.clone();
         }
 
         let message = format!(
@@ -6153,6 +6194,7 @@ use captain_steer. Otherwise continue your current work."
                     transition_task(session, TaskStatus::ReviewPending)
                         .map_err(|error| error.to_string())?;
                 }
+                Self::invalidate_mate_activity_summary_state(session);
             }
             ship_core::StopReason::Cancelled => {
                 let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
@@ -6162,6 +6204,7 @@ use captain_steer. Otherwise continue your current work."
                 if matches!(current_task_status(session), Ok(TaskStatus::Working)) {
                     transition_task(session, TaskStatus::Assigned)
                         .map_err(|error| error.to_string())?;
+                    Self::invalidate_mate_activity_summary_state(session);
                 }
             }
             ship_core::StopReason::ContextExhausted => {
@@ -6199,6 +6242,7 @@ use captain_steer. Otherwise continue your current work."
                 return Err("session already has an active non-terminal task".to_owned());
             }
 
+            Self::invalidate_mate_activity_summary_state(session);
             session.current_task = Some(CurrentTask {
                 record: TaskRecord {
                     id: task_id.clone(),
@@ -6300,6 +6344,7 @@ use captain_steer. Otherwise continue your current work."
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             if let Some(active) = sessions.get_mut(session_id) {
                 let _ = transition_task(active, TaskStatus::ReviewPending);
+                Self::invalidate_mate_activity_summary_state(active);
             }
         }
         self.persist_session(session_id).await?;
