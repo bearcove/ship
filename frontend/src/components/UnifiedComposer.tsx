@@ -319,6 +319,20 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
     transcription.state.tag,
   ]);
 
+  // Voice mode: auto-submit when voiceSubmitText is set
+  useEffect(() => {
+    if (!isTargetSession || transcription.voiceSubmitText === null) return;
+    const text = transcription.voiceSubmitText;
+    transcription.clearVoiceSubmit();
+    const { target: to, content } = parseTarget(text);
+    void sendNow(content, to).then((success) => {
+      if (success) {
+        localStorage.removeItem(draftKey(sessionId));
+        setText("");
+      }
+    });
+  }, [isTargetSession, transcription.voiceSubmitText, transcription.clearVoiceSubmit, sendNow, sessionId]);
+
   const { target } = parseTarget(text);
   const captainStateTag = captain?.state.tag ?? "Idle";
   const mateStateTag = mate?.state.tag ?? "Idle";
