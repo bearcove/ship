@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Box, Code, IconButton, Text } from "@radix-ui/themes";
+import { Box, Code, IconButton } from "@radix-ui/themes";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { bundledLanguages, codeToHtml } from "shiki";
@@ -10,7 +10,6 @@ import { fixMarkdownBackticks } from "../../utils/fixMarkdownBackticks";
 import {
   bubbleActions,
   bubbleContent,
-  feedTimestamp,
   textBlockCodeBlock,
   textBlockCodeFallback,
   textBlockRoot,
@@ -24,7 +23,6 @@ interface BubbleActionsProps {
   block: TextBlockType;
   speakable?: boolean;
   isLast?: boolean;
-  timestamp?: string;
 }
 
 
@@ -90,13 +88,7 @@ export function MarkdownCodeBlock({ className, code }: { className?: string; cod
   );
 }
 
-function formatTime(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-}
-
-export function BubbleActions({ block, speakable, isLast, timestamp }: BubbleActionsProps) {
+export function BubbleActions({ block, speakable, isLast }: BubbleActionsProps) {
   const [copied, setCopied] = useState(false);
   const playback = usePlayback();
 
@@ -130,9 +122,6 @@ export function BubbleActions({ block, speakable, isLast, timestamp }: BubbleAct
       <IconButton size="2" variant="ghost" onClick={handleCopy} aria-label="Copy">
         {copied ? <Check size={16} /> : <CopySimple size={16} />}
       </IconButton>
-      {timestamp && (
-        <Text className={feedTimestamp}>{formatTime(timestamp)}</Text>
-      )}
     </div>
   );
 }
