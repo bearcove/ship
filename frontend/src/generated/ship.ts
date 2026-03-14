@@ -194,6 +194,7 @@ export interface AgentPreset {
   kind: AgentKind;
   provider: AgentProviderId;
   model_id: string;
+  logo: string | null;
 }
 
 export interface ServerInfo {
@@ -1279,7 +1280,7 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0x6c9c7b7633a5e604n) {
+    } else if (method.id === 0x158d9e1c9d7dff9en) {
       try {
         const result = await this.handler.listAgentPresets();
         call.reply(result);
@@ -1511,7 +1512,7 @@ const ship_schema_registry: SchemaRegistry = new Map<string, Schema>([
   ["AutonomyMode", { kind: 'enum', variants: [{ name: 'HumanInTheLoop', fields: null }, { name: 'Autonomous', fields: null }] }],
   ["SessionSummary", { kind: 'struct', fields: { 'id': { kind: 'string' }, 'slug': { kind: 'string' }, 'project': { kind: 'string' }, 'branch_name': { kind: 'string' }, 'title': { kind: 'option', inner: { kind: 'string' } }, 'captain': { kind: 'ref', name: 'AgentSnapshot' }, 'mate': { kind: 'ref', name: 'AgentSnapshot' }, 'startup_state': { kind: 'ref', name: 'SessionStartupState' }, 'current_task_title': { kind: 'option', inner: { kind: 'string' } }, 'current_task_description': { kind: 'option', inner: { kind: 'string' } }, 'task_status': { kind: 'option', inner: { kind: 'ref', name: 'TaskStatus' } }, 'diff_stats': { kind: 'option', inner: { kind: 'ref', name: 'WorktreeDiffStats' } }, 'tasks_done': { kind: 'u32' }, 'tasks_total': { kind: 'u32' }, 'autonomy_mode': { kind: 'ref', name: 'AutonomyMode' }, 'created_at': { kind: 'string' }, 'is_admiral': { kind: 'bool' } } }],
   ["AgentDiscovery", { kind: 'struct', fields: { 'claude': { kind: 'bool' }, 'codex': { kind: 'bool' }, 'opencode': { kind: 'bool' } } }],
-  ["AgentPreset", { kind: 'struct', fields: { 'id': { kind: 'string' }, 'label': { kind: 'string' }, 'kind': { kind: 'ref', name: 'AgentKind' }, 'provider': { kind: 'string' }, 'model_id': { kind: 'string' } } }],
+  ["AgentPreset", { kind: 'struct', fields: { 'id': { kind: 'string' }, 'label': { kind: 'string' }, 'kind': { kind: 'ref', name: 'AgentKind' }, 'provider': { kind: 'string' }, 'model_id': { kind: 'string' }, 'logo': { kind: 'option', inner: { kind: 'string' } } } }],
   ["ServerInfo", { kind: 'struct', fields: { 'http_urls': { kind: 'vec', element: { kind: 'string' } } } }],
   ["NewSessionDefaults", { kind: 'struct', fields: { 'project': { kind: 'string' }, 'captain_preset_id': { kind: 'option', inner: { kind: 'string' } }, 'mate_preset_id': { kind: 'option', inner: { kind: 'string' } } } }],
   ["TaskId", { kind: 'string' }],
@@ -1597,7 +1598,7 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: 'listAgentPresets',
-      id: 0x6c9c7b7633a5e604n,
+      id: 0x158d9e1c9d7dff9en,
       args: { kind: 'tuple', elements: [] },
       result: { kind: 'enum', variants: [{ name: 'Ok', fields: { kind: 'vec', element: { kind: 'ref', name: 'AgentPreset' } } }, { name: 'Err', fields: { kind: 'enum', variants: [{ name: 'User', fields: null }, { name: 'UnknownMethod', fields: null }, { name: 'InvalidPayload', fields: null }, { name: 'Cancelled', fields: null }] } }] },
     },
