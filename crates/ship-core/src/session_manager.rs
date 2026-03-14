@@ -1592,6 +1592,7 @@ pub fn is_valid_transition(from: TaskStatus, to: TaskStatus) -> bool {
             | (TaskStatus::Assigned, TaskStatus::RebaseConflict)
             | (TaskStatus::ReviewPending, TaskStatus::RebaseConflict)
             | (TaskStatus::SteerPending, TaskStatus::RebaseConflict)
+            | (TaskStatus::RebaseConflict, TaskStatus::ReviewPending)
             | (TaskStatus::RebaseConflict, TaskStatus::Accepted)
     )
 }

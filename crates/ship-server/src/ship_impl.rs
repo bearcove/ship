@@ -2364,6 +2364,7 @@ Here is your task:
             .rebase_abort(&worktree_path)
             .await
             .map_err(|error| format!("rebase abort failed: {}", error.message))?;
+        self.clear_rebase_conflict(session_id).await?;
         Ok("Rebase aborted.".to_owned())
     }
 
@@ -2390,17 +2391,34 @@ Here is your task:
         Ok(())
     }
 
+    async fn clear_rebase_conflict(&self, session_id: &SessionId) -> Result<(), String> {
+        let changed = {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions
+                .get_mut(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            let status = current_task_status(session).map_err(|error| error.to_string())?;
+            if status != TaskStatus::RebaseConflict {
+                false
+            } else {
+                transition_task(session, TaskStatus::ReviewPending)
+                    .map_err(|error| error.to_string())?;
+                true
+            }
+        };
+        if changed {
+            self.persist_session(session_id)
+                .await
+                .map_err(|error| format!("persist failed: {error}"))?;
+        }
+        Ok(())
+    }
+
     async fn collect_captain_review_diff(
         &self,
         session_id: &SessionId,
     ) -> Result<CaptainReviewDiff, String> {
         let status = self.collect_captain_git_status(session_id).await?;
-        if status.is_dirty {
-            return Err(
-                "Review diff requires a clean worktree; commit or discard local changes first."
-                    .to_owned(),
-            );
-        }
         if status.rebase_in_progress {
             let conflicted_files = if status.unmerged_paths.is_empty() {
                 status.conflict_marker_paths.clone()
@@ -2414,6 +2432,12 @@ Here is your task:
                 diff: String::new(),
                 conflicted_files,
             });
+        }
+        if status.is_dirty {
+            return Err(
+                "Review diff requires a clean worktree; commit or discard local changes first."
+                    .to_owned(),
+            );
         }
 
         let (worktree_path, base_branch) = {
@@ -9675,6 +9699,32 @@ mod tests {
             TaskStatus::RebaseConflict
         );
 
+        let repeated_review_error = ship
+            .captain_tool_review_diff(&session_id)
+            .await
+            .expect_err("repeated review diff should stay in rebase-conflict flow");
+        assert!(
+            repeated_review_error.contains("tracked.txt"),
+            "unexpected repeated review error: {repeated_review_error}"
+        );
+        assert!(
+            !repeated_review_error.contains("clean worktree"),
+            "unexpected repeated review error: {repeated_review_error}"
+        );
+
+        let notify_error = ship
+            .captain_tool_notify_human(&session_id, "Need a human review.".to_owned())
+            .await
+            .expect_err("notify_human should also stay in rebase-conflict flow");
+        assert!(
+            notify_error.contains("tracked.txt"),
+            "unexpected notify error: {notify_error}"
+        );
+        assert!(
+            !notify_error.contains("clean worktree"),
+            "unexpected notify error: {notify_error}"
+        );
+
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -9908,6 +9958,25 @@ mod tests {
         assert!(
             rebase_status.contains("Can abort: no"),
             "unexpected rebase status: {rebase_status}"
+        );
+
+        let session = Ship::get_session(&ship, session_id.clone()).await;
+        assert_eq!(
+            session
+                .current_task
+                .as_ref()
+                .expect("task should exist")
+                .status,
+            TaskStatus::ReviewPending
+        );
+
+        let continue_error = ship
+            .captain_tool_continue_rebase(&session_id)
+            .await
+            .expect_err("continue_rebase should be rejected after abort resets task state");
+        assert!(
+            continue_error.contains("current: ReviewPending"),
+            "unexpected continue error: {continue_error}"
         );
 
         let _ = std::fs::remove_dir_all(dir);
