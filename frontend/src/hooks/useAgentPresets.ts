@@ -81,3 +81,14 @@ export function useAgentPresets() {
 
   return state;
 }
+
+export function resetAgentPresetsForTest() {
+  snapshot = {
+    presets: [],
+    error: null,
+    loading: false,
+  };
+  hasLoaded = false;
+  inflight = null;
+  listeners.clear();
+}
