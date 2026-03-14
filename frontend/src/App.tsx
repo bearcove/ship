@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Routes, Route, useMatch, useNavigate } from "react-router-dom";
+import { Routes, Route, useMatch } from "react-router-dom";
 import { Flex, Box, IconButton } from "@radix-ui/themes";
 import { List } from "@phosphor-icons/react";
 import { SessionListPage } from "./pages/SessionListPage";
@@ -60,32 +60,7 @@ export function App() {
     });
   }, []);
 
-  const navigate = useNavigate();
   const toggleDebug = useCallback(() => setDebugMode((v) => !v), []);
-
-  useEffect(() => {
-    let startX = 0;
-    let startY = 0;
-    function onTouchStart(e: TouchEvent) {
-      startX = e.touches[0].clientX;
-      startY = e.touches[0].clientY;
-    }
-    function onTouchEnd(e: TouchEvent) {
-      const dx = e.changedTouches[0].clientX - startX;
-      const dy = e.changedTouches[0].clientY - startY;
-      if (!inSessionView) return;
-      // Swipe left anywhere in session view → go back to session list
-      if (dx < -60 && Math.abs(dy) < 80) {
-        navigate("/");
-      }
-    }
-    window.addEventListener("touchstart", onTouchStart, { passive: true });
-    window.addEventListener("touchend", onTouchEnd, { passive: true });
-    return () => {
-      window.removeEventListener("touchstart", onTouchStart);
-      window.removeEventListener("touchend", onTouchEnd);
-    };
-  }, [inSessionView, navigate]);
 
   if (connState === "wrong-port") {
     return <WrongPortMessage />;
