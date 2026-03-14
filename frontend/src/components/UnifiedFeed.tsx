@@ -1324,6 +1324,10 @@ export function UnifiedFeed({
     if (lastTimestampMs == null || tick - lastTimestampMs <= GAP_MS) return null;
     return formatRelativeTime(lastTimestampMs, tick);
   }, [renderedSegments, tick]);
+  const lastRecapBlockId = useMemo(
+    () => [...renderedSegments].reverse().find(r => r.seg.entry.block.tag === "TaskRecap")?.seg.entry.blockId ?? null,
+    [renderedSegments],
+  );
 
 
   return (
@@ -1368,9 +1372,7 @@ export function UnifiedFeed({
             </Flex>
           )}
 
-          {(() => {
-            const lastRecapBlockId = [...renderedSegments].reverse().find(r => r.seg.entry.block.tag === "TaskRecap")?.seg.entry.blockId ?? null;
-            return renderedSegments.map(({ seg, agentForBlock, gapLabel, isPhaseBreak }) => {
+          {renderedSegments.map(({ seg, agentForBlock, gapLabel, isPhaseBreak }) => {
             const alreadyKnown = sessionAnimationBaseline.blockIds.has(seg.entry.blockId);
             const animate = !loading && sessionAnimationBaseline.established && !alreadyKnown;
             if (!alreadyKnown) {
@@ -1424,8 +1426,7 @@ export function UnifiedFeed({
                 )}
               </Fragment>
             );
-          });
-          })()}
+          })}
           {trailingGapLabel && (
             <Box className={feedContentColumn}>
               <Text className={feedTimeGap}>{trailingGapLabel}</Text>
