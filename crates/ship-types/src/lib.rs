@@ -175,6 +175,31 @@ pub mod agent {
         pub name: String,
     }
 
+    #[derive(Debug, Clone, PartialEq, Eq, Hash, facet::Facet)]
+    #[repr(transparent)]
+    #[facet(transparent)]
+    pub struct AgentPresetId(pub String);
+
+    #[derive(Debug, Clone, PartialEq, Eq, Hash, facet::Facet)]
+    #[repr(transparent)]
+    #[facet(transparent)]
+    pub struct AgentProviderId(pub String);
+
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct AgentPreset {
+        pub id: AgentPresetId,
+        pub label: String,
+        pub kind: AgentKind,
+        pub provider: AgentProviderId,
+        pub model_id: String,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct AgentPresetsConfig {
+        #[facet(default)]
+        pub presets: Vec<AgentPreset>,
+    }
+
     // r[agent-state.snapshot]
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub struct AgentSnapshot {
@@ -1016,9 +1041,9 @@ pub mod persistence {
 }
 
 pub use agent::{
-    AgentAcpInfo, AgentKind, AgentSnapshot, AgentState, AssignFileRef, CaptainAssignExtras,
-    DirtySessionStrategy, EffortValue, PermissionRequest, PlanStep, PlanStepInput, PlanStepStatus,
-    Role,
+    AgentAcpInfo, AgentKind, AgentPreset, AgentPresetId, AgentPresetsConfig, AgentProviderId,
+    AgentSnapshot, AgentState, AssignFileRef, CaptainAssignExtras, DirtySessionStrategy,
+    EffortValue, PermissionRequest, PlanStep, PlanStepInput, PlanStepStatus, Role,
 };
 pub use events::{
     BlockPatch, CommitSummary, ContentBlock, GlobalEvent, PermissionResolution, SessionEvent,
