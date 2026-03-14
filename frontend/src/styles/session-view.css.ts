@@ -22,6 +22,8 @@ export const unifiedFeedScroll = style({
   display: "flex",
   flexDirection: "column",
   position: "relative",
+  maskImage: "linear-gradient(to bottom, black calc(100% - 24px), transparent 100%)",
+  WebkitMaskImage: "linear-gradient(to bottom, black calc(100% - 24px), transparent 100%)",
 });
 
 export const scrollToBottomBtn = style({
@@ -1320,10 +1322,10 @@ export const playbackBar = style({
   display: "flex",
   alignItems: "center",
   gap: "var(--space-2)",
-  padding: "6px 8px",
-  borderRadius: "var(--radius-2)",
-  background: "var(--gray-a2)",
-  height: 40,
+  padding: "2px 8px",
+  height: 30,
+  width: "80%",
+  alignSelf: "center",
 });
 
 export const composerInputWrapper = style({

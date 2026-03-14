@@ -2111,16 +2111,19 @@ Here is your task:
 
     // r[captain.tool.continue-rebase]
     async fn captain_tool_continue_rebase(&self, session_id: &SessionId) -> Result<String, String> {
-        let (worktree_path, base_branch, branch_name) = {
+        let (worktree_path, base_branch, branch_name, has_active_task) = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let active = sessions
                 .get(session_id)
                 .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-            let status = current_task_status(active).map_err(|error| error.to_string())?;
-            if status != TaskStatus::RebaseConflict {
-                return Err(format!(
-                    "captain_continue_rebase is only valid in RebaseConflict status (current: {status:?})"
-                ));
+            let has_active_task = active.current_task.is_some();
+            if has_active_task {
+                let status = current_task_status(active).map_err(|error| error.to_string())?;
+                if status != TaskStatus::RebaseConflict {
+                    return Err(format!(
+                        "captain_continue_rebase is only valid in RebaseConflict status (current: {status:?})"
+                    ));
+                }
             }
             let worktree_path = active
                 .worktree_path
@@ -2130,6 +2133,7 @@ Here is your task:
                 worktree_path,
                 active.config.base_branch.clone(),
                 active.config.branch_name.clone(),
+                has_active_task,
             )
         };
 
@@ -2151,10 +2155,13 @@ Here is your task:
             ));
         }
 
-        self.complete_after_rebase(session_id, repo_root, branch_name, base_branch, None)
-            .await?;
-
-        Ok("Rebase completed; task accepted.".to_owned())
+        if has_active_task {
+            self.complete_after_rebase(session_id, repo_root, branch_name, base_branch, None)
+                .await?;
+            Ok("Rebase completed; task accepted.".to_owned())
+        } else {
+            Ok("Rebase completed.".to_owned())
+        }
     }
 
     async fn captain_tool_cancel(
@@ -2374,13 +2381,17 @@ Here is your task:
             let session = sessions
                 .get_mut(session_id)
                 .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-            let status = current_task_status(session).map_err(|error| error.to_string())?;
-            if status == TaskStatus::RebaseConflict {
+            if session.current_task.is_none() {
                 false
             } else {
-                transition_task(session, TaskStatus::RebaseConflict)
-                    .map_err(|error| error.to_string())?;
-                true
+                let status = current_task_status(session).map_err(|error| error.to_string())?;
+                if status == TaskStatus::RebaseConflict {
+                    false
+                } else {
+                    transition_task(session, TaskStatus::RebaseConflict)
+                        .map_err(|error| error.to_string())?;
+                    true
+                }
             }
         };
         if changed {
@@ -2397,13 +2408,17 @@ Here is your task:
             let session = sessions
                 .get_mut(session_id)
                 .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-            let status = current_task_status(session).map_err(|error| error.to_string())?;
-            if status != TaskStatus::RebaseConflict {
+            if session.current_task.is_none() {
                 false
             } else {
-                transition_task(session, TaskStatus::ReviewPending)
-                    .map_err(|error| error.to_string())?;
-                true
+                let status = current_task_status(session).map_err(|error| error.to_string())?;
+                if status != TaskStatus::RebaseConflict {
+                    false
+                } else {
+                    transition_task(session, TaskStatus::ReviewPending)
+                        .map_err(|error| error.to_string())?;
+                    true
+                }
             }
         };
         if changed {
@@ -2440,7 +2455,7 @@ Here is your task:
             );
         }
 
-        let (worktree_path, base_branch) = {
+        let (worktree_path, base_branch, branch_name, has_active_task) = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let session = sessions
                 .get(session_id)
@@ -2449,8 +2464,30 @@ Here is your task:
                 .worktree_path
                 .clone()
                 .ok_or_else(|| "session worktree not ready".to_owned())?;
-            (worktree_path, session.config.base_branch.clone())
+            (
+                worktree_path,
+                session.config.base_branch.clone(),
+                session.config.branch_name.clone(),
+                session.current_task.is_some(),
+            )
         };
+
+        if !has_active_task {
+            let repo_root = Self::repo_root_for_worktree(&worktree_path)
+                .map_err(|error| error.to_string())?
+                .to_path_buf();
+            let branch_commits = self
+                .worktree_ops
+                .branch_unmerged_commits(&branch_name, &base_branch, &repo_root)
+                .await
+                .map_err(|error| format!("failed to inspect branch state: {}", error.message))?;
+            if branch_commits.is_empty() {
+                return Err(
+                    "Session has no active task and no committed branch state to review."
+                        .to_owned(),
+                );
+            }
+        }
 
         match self
             .worktree_ops
@@ -9675,6 +9712,80 @@ mod tests {
         assert!(
             worktree_path.join("base.txt").exists(),
             "rebase should bring the updated base branch into the worktree"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn captain_review_diff_without_active_task_still_reviews_committed_branch_state() {
+        let (dir, ship, session_id, _project_root, worktree_path) =
+            create_clean_review_session("captain-review-diff-no-task").await;
+
+        {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(&session_id).expect("session should exist");
+            session.current_task = None;
+        }
+
+        let diff = ship
+            .captain_tool_review_diff(&session_id)
+            .await
+            .expect("review diff should succeed without an active task when branch state exists");
+
+        assert!(diff.contains("+++ b/task.txt"), "unexpected diff: {diff}");
+        assert!(diff.contains("+task branch"), "unexpected diff: {diff}");
+        assert!(!diff.contains("base.txt"), "unexpected diff: {diff}");
+        assert!(
+            worktree_path.join("base.txt").exists(),
+            "rebase should bring the updated base branch into the worktree"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn captain_review_diff_conflict_without_active_task_reports_files() {
+        let (dir, ship, session_id, _project_root, _worktree_path, error) =
+            create_conflicted_rebase_session("captain-review-diff-conflict-no-task").await;
+
+        {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(&session_id).expect("session should exist");
+            session.current_task = None;
+        }
+
+        let review_error = ship
+            .captain_tool_review_diff(&session_id)
+            .await
+            .expect_err("review diff should report conflicts without an active task");
+        assert!(
+            review_error.contains("tracked.txt"),
+            "unexpected review error: {review_error}"
+        );
+
+        let rebase_status = ship
+            .captain_tool_rebase_status(&session_id)
+            .await
+            .expect("rebase status should succeed");
+        assert!(
+            rebase_status.contains("Rebase in progress: yes"),
+            "unexpected rebase status: {rebase_status}"
+        );
+        assert!(
+            rebase_status.contains("Can abort: yes"),
+            "unexpected rebase status: {rebase_status}"
+        );
+
+        let abort_response = ship
+            .captain_tool_abort_rebase(&session_id)
+            .await
+            .expect("abort_rebase should succeed without an active task");
+        assert_eq!(abort_response, "Rebase aborted.");
+
+        assert!(
+            error.contains("tracked.txt"),
+            "unexpected initial review error: {error}"
         );
 
         let _ = std::fs::remove_dir_all(dir);
