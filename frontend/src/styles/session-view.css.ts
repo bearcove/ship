@@ -1804,33 +1804,6 @@ export const bubbleCopyBtn = style({
   transition: "opacity 0.15s",
 });
 
-export const bubbleActions = style({
-  display: "flex",
-  flexDirection: "row",
-  gap: "var(--space-2)",
-  alignSelf: "flex-start",
-  flexShrink: 0,
-});
-
-export const feedBubbleWithActions = style({
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "flex-start",
-  gap: "var(--space-2)",
-  flex: 1,
-  minWidth: 0,
-  marginBottom: "var(--space-4)",
-});
-
-export const feedBubbleWithActionsUser = style({
-  justifyContent: "flex-end",
-  alignItems: "flex-end",
-});
-
-globalStyle(`${feedBubbleWithActions}:hover ${bubbleActions}`, {
-  opacity: 1,
-});
-
 globalStyle(`${textBlockRoot} :where(p, ul, ol, blockquote)`, {
   margin: "0 0 var(--space-3)",
 });
