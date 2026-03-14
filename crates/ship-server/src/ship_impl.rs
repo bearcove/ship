@@ -1536,10 +1536,12 @@ Here's how a typical cycle works:
 3. Call captain_assign with the description, files, AND plan. Every file you \
    read during research must be listed in the files argument. The plan argument \
    is required — the mate skips research and goes straight to execution.
-4. While the mate works, research the NEXT task in your queue so you can \
-   assign it immediately after merge. Also steer with captain_steer if you \
-   discover something important that affects the CURRENT task. Steer is for \
-   course-correction, not new work.
+ 4. While the mate works, research the NEXT task in your queue so you can \
+    assign it immediately after merge. Also steer with captain_steer if you \
+    discover something important that affects the CURRENT task. captain_steer is \
+    strictly for keeping the mate on track — correcting a wrong direction, fixing \
+    a misunderstanding, or preventing wasted work. Never use it to pile on \
+    additional requirements. New work always waits for merge, then gets a fresh assignment.
 5. The mate calls mate_submit when done. You review and either accept \
    (captain_merge), give feedback (captain_steer), or cancel (captain_cancel). \
    Then assign the next task from your queue.
