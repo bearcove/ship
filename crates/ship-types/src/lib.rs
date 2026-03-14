@@ -1055,6 +1055,70 @@ pub mod transcription {
     }
 }
 
+pub mod hooks {
+    use std::collections::HashMap;
+
+    /// Config for a single hook entry as it appears in the Styx config file.
+    /// The hook name comes from the map key.
+    #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
+    pub struct HookEntryConfig {
+        pub command: String,
+        #[facet(default)]
+        pub cwd: Option<String>,
+    }
+
+    /// Raw hooks config as parsed from Styx. Each hook point maps names to configs.
+    #[derive(Debug, Clone, Default, PartialEq, Eq, facet::Facet)]
+    pub struct HooksConfig {
+        #[facet(default)]
+        pub worktree_setup: HashMap<String, HookEntryConfig>,
+        #[facet(default)]
+        pub pre_commit: HashMap<String, HookEntryConfig>,
+        #[facet(default)]
+        pub post_commit: HashMap<String, HookEntryConfig>,
+    }
+
+    /// A resolved hook definition with its name (from the map key).
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct HookDef {
+        pub name: String,
+        pub command: String,
+        pub cwd: Option<String>,
+    }
+
+    /// Resolved hooks with ordered Vec<HookDef> for each hook point.
+    #[derive(Debug, Clone, Default, PartialEq, Eq)]
+    pub struct ResolvedHooks {
+        pub worktree_setup: Vec<HookDef>,
+        pub pre_commit: Vec<HookDef>,
+        pub post_commit: Vec<HookDef>,
+    }
+
+    fn resolve_map(map: HashMap<String, HookEntryConfig>) -> Vec<HookDef> {
+        let mut hooks: Vec<HookDef> = map
+            .into_iter()
+            .map(|(name, entry)| HookDef {
+                name,
+                command: entry.command,
+                cwd: entry.cwd,
+            })
+            .collect();
+        hooks.sort_by(|a, b| a.name.cmp(&b.name));
+        hooks
+    }
+
+    impl HooksConfig {
+        /// Convert the map-based config into ordered, resolved hook definitions.
+        pub fn resolve(self) -> ResolvedHooks {
+            ResolvedHooks {
+                worktree_setup: resolve_map(self.worktree_setup),
+                pre_commit: resolve_map(self.pre_commit),
+                post_commit: resolve_map(self.post_commit),
+            }
+        }
+    }
+}
+
 pub mod persistence {
     use crate::agent::{AgentKind, AgentSnapshot, Role};
     use crate::events::{ContentBlock, SessionEventEnvelope};
@@ -1128,6 +1192,7 @@ pub use events::{
     PermissionResolution, SessionEvent, SessionEventEnvelope, SubscribeMessage, TaskRecapStats,
     TextSource, ToolCallContent, ToolCallLocation, ToolCallStatus, WorkflowMilestoneKind,
 };
+pub use hooks::{HookDef, HookEntryConfig, HooksConfig, ResolvedHooks};
 pub use ids::{BlockId, ProjectName, SessionId, TaskId};
 pub use persistence::{CurrentTask, PersistedSession, SessionConfig, TaskContentRecord};
 pub use prompt::PromptContentPart;
