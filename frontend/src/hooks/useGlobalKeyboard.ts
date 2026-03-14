@@ -1,8 +1,7 @@
-import type React from "react";
 import { useEffect, useRef } from "react";
 import { useNavigate, useMatch } from "react-router-dom";
 import type { SessionSummary } from "../generated/ship";
-import type { UnifiedComposerHandle } from "../components/UnifiedComposer";
+import { useTranscription } from "../context/TranscriptionContext";
 import { sortSessions } from "../pages/session-list-utils";
 import { getShipClient } from "../api/client";
 
@@ -18,21 +17,27 @@ function isEditableTarget(target: EventTarget | null): boolean {
 export function useGlobalKeyboard(
   allSessions: SessionSummary[],
   onSessionArchived?: (slug: string) => void,
-  composerRef?: React.RefObject<UnifiedComposerHandle | null>,
 ) {
   const navigate = useNavigate();
   const sessionMatch = useMatch("/sessions/:sessionId");
   const currentSessionId = sessionMatch?.params.sessionId;
+  const transcription = useTranscription();
 
   // A-A chord state
   const lastAPress = useRef<number>(0);
   // Space hold-to-record: timestamp of keydown, 0 when idle
   const spaceDownAt = useRef<number>(0);
 
+  // Keep stable refs so the effect closure always sees current values
+  const transcriptionRef = useRef(transcription);
+  transcriptionRef.current = transcription;
+  const currentSessionIdRef = useRef(currentSessionId);
+  currentSessionIdRef.current = currentSessionId;
+
   useEffect(() => {
     const orderedSessions = sortSessions(allSessions);
-    const currentSession = currentSessionId
-      ? allSessions.find((s) => s.slug === currentSessionId)
+    const currentSession = currentSessionIdRef.current
+      ? allSessions.find((s) => s.slug === currentSessionIdRef.current)
       : undefined;
 
     function handleKeyDown(e: KeyboardEvent) {
@@ -53,8 +58,9 @@ export function useGlobalKeyboard(
       // J/K: cycle sessions
       if (e.key === "j" || e.key === "k") {
         if (orderedSessions.length === 0) return;
-        const idx = currentSessionId
-          ? orderedSessions.findIndex((s) => s.slug === currentSessionId)
+        const sessionId = currentSessionIdRef.current;
+        const idx = sessionId
+          ? orderedSessions.findIndex((s) => s.slug === sessionId)
           : -1;
 
         let next: number;
@@ -71,14 +77,15 @@ export function useGlobalKeyboard(
       }
 
       // Space: tap to toggle recording, hold to record-and-send
-      if (e.key === " " && !e.repeat && composerRef?.current) {
+      if (e.key === " " && !e.repeat && currentSessionIdRef.current) {
+        const t = transcriptionRef.current;
         e.preventDefault();
-        if (composerRef.current.isRecording()) {
-          composerRef.current.stopAndSend();
+        if (t.isRecording()) {
+          t.stopAndSend();
           spaceDownAt.current = 0;
         } else {
           spaceDownAt.current = Date.now();
-          composerRef.current.startRecording();
+          t.startRecording(currentSessionIdRef.current);
         }
         return;
       }
@@ -93,7 +100,8 @@ export function useGlobalKeyboard(
             const client = await getShipClient();
             const result = await client.archiveSession({ id: currentSession.id, force: true });
             if (result.tag === "Archived") {
-              if (currentSessionId) onSessionArchived?.(currentSessionId);
+              const sessionId = currentSessionIdRef.current;
+              if (sessionId) onSessionArchived?.(sessionId);
               navigate("/");
             }
           })();
@@ -109,12 +117,13 @@ export function useGlobalKeyboard(
       if (isEditableTarget(e.target)) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       e.preventDefault();
+      const t = transcriptionRef.current;
       if (
         spaceDownAt.current > 0 &&
-        composerRef?.current?.isRecording() &&
+        t.isRecording() &&
         Date.now() - spaceDownAt.current > 300
       ) {
-        composerRef.current.stopAndSend();
+        t.stopAndSend();
       }
       spaceDownAt.current = 0;
     }
@@ -125,5 +134,5 @@ export function useGlobalKeyboard(
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [allSessions, currentSessionId, navigate, onSessionArchived]);
+  }, [allSessions, navigate, onSessionArchived]);
 }
