@@ -1840,7 +1840,35 @@ Continue where you left off — wait for the human to give you direction."
         let was_resumed = spawn.was_resumed;
         self.persist_admiral_acp_session_id(&spawn.acp_session_id);
 
+        let (events_tx, _) = broadcast::channel::<SessionEventEnvelope>(256);
+        let acp_info = AgentAcpInfo {
+            acp_session_id: spawn.acp_session_id.clone(),
+            was_resumed: spawn.was_resumed,
+            protocol_version: spawn.protocol_version,
+            agent_name: spawn.agent_name.clone(),
+            agent_version: spawn.agent_version.clone(),
+            cap_load_session: spawn.cap_load_session,
+            cap_resume_session: spawn.cap_resume_session,
+            cap_prompt_image: spawn.cap_prompt_image,
+            cap_prompt_audio: spawn.cap_prompt_audio,
+            cap_prompt_embedded_context: spawn.cap_prompt_embedded_context,
+            cap_mcp_http: spawn.cap_mcp_http,
+            cap_mcp_sse: spawn.cap_mcp_sse,
+            last_event_at: None,
+        };
+        let initial_event = SessionEventEnvelope {
+            seq: 0,
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            event: SessionEvent::AgentAcpInfoChanged {
+                role: Role::Captain,
+                info: acp_info,
+            },
+        };
+        let session_event_log = vec![initial_event.clone()];
+        let _ = events_tx.send(initial_event);
+
         let handle = spawn.handle.clone();
+        let handle_for_pump = handle.clone();
         {
             let mut admiral = self
                 .admiral_session
@@ -1848,8 +1876,41 @@ Continue where you left off — wait for the human to give you direction."
                 .expect("admiral_session mutex poisoned");
             *admiral = Some(AdmiralSession {
                 handle: spawn.handle,
+                events_tx: events_tx.clone(),
+                session_event_log,
+                next_event_seq: 1,
             });
         }
+
+        let ship = self.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                let events: Vec<SessionEvent> = ship
+                    .agent_driver
+                    .notifications(&handle_for_pump)
+                    .collect()
+                    .await;
+                if events.is_empty() {
+                    continue;
+                }
+
+                let mut admiral = ship.admiral_session.lock().expect("admiral mutex poisoned");
+                let Some(ref mut session) = *admiral else {
+                    break;
+                };
+                for event in events {
+                    let envelope = SessionEventEnvelope {
+                        seq: session.next_event_seq,
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                        event,
+                    };
+                    session.next_event_seq += 1;
+                    session.session_event_log.push(envelope.clone());
+                    let _ = session.events_tx.send(envelope);
+                }
+            }
+        });
 
         // Send bootstrap or resume prompt
         let prompt = if was_resumed {
