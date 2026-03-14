@@ -133,6 +133,7 @@ export interface UnifiedComposerHandle {
   insertQuote(text: string): void;
   startRecording(): void;
   stopRecording(): void;
+  stopAndSend(): void;
   isRecording(): boolean;
 }
 
@@ -454,6 +455,10 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
       insertQuote,
       startRecording: () => void transcription.startRecording(),
       stopRecording: () => void transcription.stopRecording(),
+      stopAndSend: () => {
+        setSendAfterTranscription(true);
+        void transcription.stopRecording();
+      },
       isRecording: () => transcription.state.tag === "recording",
     }),
     [transcription],
