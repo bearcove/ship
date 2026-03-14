@@ -110,6 +110,7 @@ function TaskListItem({
           border: 0,
           background: "transparent",
           color: "inherit",
+          fontFamily: "inherit",
           textAlign: "left",
           cursor: "pointer",
         }}
@@ -226,6 +227,7 @@ export function SessionTaskDrawer({
           border: 0,
           background: "transparent",
           color: "inherit",
+          fontFamily: "inherit",
           textAlign: "left",
           cursor: "pointer",
         }}
