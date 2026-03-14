@@ -5710,6 +5710,10 @@ Here is your task:
         {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             if let Some(active) = sessions.get_mut(session_id) {
+                let current_status = active.current_task.as_ref().map(|task| task.record.status);
+                if current_status == Some(TaskStatus::Assigned) {
+                    let _ = transition_task(active, TaskStatus::Working);
+                }
                 let _ = transition_task(active, TaskStatus::ReviewPending);
                 Self::append_workflow_milestone(
                     active,
@@ -6022,6 +6026,13 @@ Here is your task:
     }
 
     fn repo_root_for_worktree(worktree_path: &std::path::Path) -> Result<&std::path::Path, String> {
+        // Tests and some local workflows use direct repo roots as worktrees.
+        // In that case `.git` is a directory. For linked worktrees under `.ship`,
+        // `.git` is typically a file and we should keep walking to the real repo root.
+        if worktree_path.join(".git").is_dir() {
+            return Ok(worktree_path);
+        }
+
         let mut current = worktree_path;
         loop {
             let parent = current
