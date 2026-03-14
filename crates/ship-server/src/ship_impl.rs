@@ -2337,13 +2337,13 @@ Here is your task:
             unmerged_paths,
             conflict_marker_paths,
             review_safe: safe,
-            accept_safe: safe,
+            merge_safe: safe,
         })
     }
 
     fn format_captain_git_status(status: &CaptainGitStatus) -> String {
         format!(
-            "Branch: {}\nBase branch: {}\nDirty: {}\nRebase in progress: {}\nUnmerged paths: {}\nTracked files with conflict markers: {}\nSafe for review: {}\nSafe for accept: {}",
+            "Branch: {}\nBase branch: {}\nDirty: {}\nRebase in progress: {}\nUnmerged paths: {}\nTracked files with conflict markers: {}\nSafe for review: {}\nSafe for merge: {}",
             status.branch_name,
             status.base_branch,
             if status.is_dirty { "yes" } else { "no" },
@@ -2355,7 +2355,7 @@ Here is your task:
             Self::format_string_list(&status.unmerged_paths),
             Self::format_string_list(&status.conflict_marker_paths),
             if status.review_safe { "yes" } else { "no" },
-            if status.accept_safe { "yes" } else { "no" },
+            if status.merge_safe { "yes" } else { "no" },
         )
     }
 
@@ -2365,7 +2365,6 @@ Here is your task:
     ) -> Result<CaptainRebaseStatus, String> {
         let status = self.collect_captain_git_status(session_id).await?;
         let can_continue = status.rebase_in_progress
-            && status.unmerged_paths.is_empty()
             && status.conflict_marker_paths.is_empty();
         let can_abort = status.rebase_in_progress;
         Ok(CaptainRebaseStatus {
@@ -10048,7 +10047,7 @@ mod tests {
             .expect("git status should succeed");
         assert!(status.contains("Dirty: yes"), "unexpected status: {status}");
         assert!(
-            status.contains("Safe for accept: no"),
+            status.contains("Safe for merge: no"),
             "unexpected status: {status}"
         );
 
@@ -10089,7 +10088,7 @@ mod tests {
             "unexpected status: {git_status}"
         );
         assert!(
-            git_status.contains("Safe for accept: no"),
+            git_status.contains("Safe for merge: no"),
             "unexpected status: {git_status}"
         );
 
@@ -10220,6 +10219,55 @@ mod tests {
             continue_error.contains("current: ReviewPending"),
             "unexpected continue error: {continue_error}"
         );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn recovery_resolve_conflict_continue_rebase_then_merge_without_task() {
+        let (dir, ship, session_id, project_root, worktree_path, _review_error) =
+            create_conflicted_rebase_session("recovery-conflict-merge-no-task").await;
+
+        // Clear the task to simulate an out-of-sync state where the branch
+        // has work but the task model lost track.
+        {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(&session_id).expect("session should exist");
+            session.current_task = None;
+        }
+
+        // Resolve the conflict.
+        std::fs::write(worktree_path.join("tracked.txt"), "resolved content\n")
+            .expect("resolved file should be written");
+
+        // captain_continue_rebase should stage the resolved file and complete.
+        let response = ship
+            .captain_tool_continue_rebase(&session_id)
+            .await
+            .expect("continue_rebase should succeed after resolving conflict");
+        assert_eq!(response, "Rebase completed.");
+
+        // Verify rebase is no longer in progress.
+        let rebase_status = ship
+            .captain_tool_rebase_status(&session_id)
+            .await
+            .expect("rebase status should succeed");
+        assert!(
+            rebase_status.contains("Rebase in progress: no"),
+            "unexpected rebase status: {rebase_status}"
+        );
+
+        // captain_merge should work without an active task.
+        let merge_result = ship
+            .captain_tool_merge(&session_id, None)
+            .await
+            .expect("merge should succeed without an active task");
+        assert_eq!(merge_result, "Merged.");
+
+        // Verify the work landed on main.
+        let main_content = std::fs::read_to_string(project_root.join("tracked.txt"))
+            .expect("tracked.txt should exist on main after merge");
+        assert_eq!(main_content, "resolved content\n");
 
         let _ = std::fs::remove_dir_all(dir);
     }

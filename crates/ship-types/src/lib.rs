@@ -845,7 +845,7 @@ pub mod protocol {
         pub unmerged_paths: Vec<String>,
         pub conflict_marker_paths: Vec<String>,
         pub review_safe: bool,
-        pub accept_safe: bool,
+        pub merge_safe: bool,
     }
 
     #[repr(u8)]
