@@ -3029,6 +3029,18 @@ Here is your task:
         blockers
     }
 
+    fn ensure_review_phase_for_diff(session: &ActiveSession) -> Result<(), String> {
+        let Some(task) = session.current_task.as_ref() else {
+            return Ok(());
+        };
+        match task.record.status {
+            TaskStatus::ReviewPending | TaskStatus::RebaseConflict => Ok(()),
+            status => Err(format!(
+                "captain_review_diff is only valid after `mate_submit` (ReviewPending) or while resolving review conflicts (RebaseConflict). Current task status: {status:?}."
+            )),
+        }
+    }
+
     // r[captain.tool.git-status]
     async fn captain_tool_git_status(&self, session_id: &SessionId) -> Result<String, String> {
         let status = self.collect_captain_git_status(session_id).await?;
@@ -3135,6 +3147,14 @@ Here is your task:
         &self,
         session_id: &SessionId,
     ) -> Result<CaptainReviewDiff, String> {
+        {
+            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions
+                .get(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            Self::ensure_review_phase_for_diff(session)?;
+        }
+
         let status = self.collect_captain_git_status(session_id).await?;
         if status.rebase_in_progress {
             let conflicted_files = if status.unmerged_paths.is_empty() {
@@ -5648,6 +5668,14 @@ Here is your task:
                 .current_task
                 .as_mut()
                 .ok_or_else(|| "session has no active task".to_owned())?;
+            match task.record.status {
+                TaskStatus::ReviewPending | TaskStatus::RebaseConflict => {
+                    return Err(
+                        "Review is already in progress. Wait for captain accept/steer/cancel; do not resubmit or commit until review finishes.".to_owned()
+                    );
+                }
+                _ => {}
+            }
             if task.record.steps.is_empty() {
                 task.pending_mate_guidance = Some(PLAN_REQUIRED_MESSAGE.to_owned());
                 return Err(PLAN_REQUIRED_MESSAGE.to_owned());
@@ -9062,7 +9090,7 @@ mod tests {
     use ship_core::{
         AgentDriver, AgentError, AgentSessionConfig, FakeAgentDriver, FakePromptScript,
         JsonSessionStore, ProjectRegistry, PromptResponse, SessionGitNames, SessionStore,
-        StopReason, apply_event,
+        StopReason, apply_event, rebuild_materialized_from_event_log,
     };
     use ship_service::Ship;
     use ship_types::{
@@ -9501,6 +9529,15 @@ mod tests {
         let (dir, ship, session_id, project_root, worktree_path, _branch_name) =
             create_git_workflow_session(test_name).await;
 
+        {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(&session_id).expect("session should exist");
+            super::transition_task(session, TaskStatus::Working)
+                .expect("task should move to working before review");
+            super::transition_task(session, TaskStatus::ReviewPending)
+                .expect("task should move into review before review_diff");
+        }
+
         std::fs::write(worktree_path.join("task.txt"), "task branch\n")
             .expect("task branch file should be written");
         git_succeeds(
@@ -9535,6 +9572,15 @@ mod tests {
     ) -> (PathBuf, ShipImpl, SessionId, PathBuf, PathBuf, String) {
         let (dir, ship, session_id, project_root, worktree_path, _branch_name) =
             create_git_workflow_session(test_name).await;
+
+        {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(&session_id).expect("session should exist");
+            super::transition_task(session, TaskStatus::Working)
+                .expect("task should move to working before review");
+            super::transition_task(session, TaskStatus::ReviewPending)
+                .expect("task should move into review before review_diff");
+        }
 
         std::fs::write(worktree_path.join("tracked.txt"), "task branch\n")
             .expect("task branch file should be written");
@@ -11517,6 +11563,84 @@ agent_presets {
     }
 
     #[tokio::test]
+    async fn rebuild_materialized_state_restores_mate_plan_for_edit_gates() {
+        let _guard = lock_mate_tool_tests();
+        let (dir, ship, session_id) =
+            create_session_for_workflow_test("rebuild-restores-plan").await;
+        let project_root = dir.join("project");
+
+        let restored_plan = vec![PlanStep {
+            title: "Restore plan".to_owned(),
+            description: "Restore plan".to_owned(),
+            status: PlanStepStatus::Pending,
+            started_at: None,
+        }];
+
+        {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(&session_id).expect("session should exist");
+            session.worktree_path = Some(project_root.clone());
+            let task_id = session
+                .current_task
+                .as_ref()
+                .expect("task should exist")
+                .record
+                .id
+                .clone();
+            apply_event(
+                session,
+                SessionEvent::TaskStarted {
+                    task_id,
+                    title: "Investigate workflow".to_owned(),
+                    description: "Investigate workflow".to_owned(),
+                    steps: Vec::new(),
+                },
+            );
+            session
+                .current_task
+                .as_mut()
+                .expect("task should exist")
+                .record
+                .steps = restored_plan.clone();
+            apply_event(
+                session,
+                SessionEvent::AgentStateChanged {
+                    role: Role::Mate,
+                    state: AgentState::Working {
+                        plan: Some(restored_plan.clone()),
+                        activity: Some("Plan set".to_owned()),
+                    },
+                },
+            );
+            rebuild_materialized_from_event_log(session);
+            assert_eq!(
+                session
+                    .current_task
+                    .as_ref()
+                    .expect("task should exist")
+                    .record
+                    .steps,
+                restored_plan
+            );
+        }
+
+        let write = ship
+            .mate_tool_write_file(
+                &session_id,
+                "restored-plan.txt".to_owned(),
+                "ok\n".to_owned(),
+            )
+            .await;
+        assert!(
+            !write.is_error,
+            "write_file should pass plan gate after rebuild: {}",
+            write.text
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
     async fn mate_edit_tools_allow_rebase_conflict_resolution_without_plan() {
         let _guard = lock_mate_tool_tests();
         let (dir, ship, session_id, _project_root, worktree_path, _review_error) =
@@ -11753,6 +11877,27 @@ agent_presets {
         assert_eq!(
             submit_result,
             "Captain feedback (please revise): please add one more note"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn mate_submit_reports_review_in_progress_during_rebase_conflict() {
+        let (dir, ship, session_id, _project_root, _worktree_path, _error) =
+            create_conflicted_rebase_session("mate-submit-rebase-conflict-guard").await;
+
+        let submit_error = ship
+            .mate_tool_submit(&session_id, "retry submit".to_owned())
+            .await
+            .expect_err("submit should be blocked while review rebase is unresolved");
+        assert!(
+            submit_error.contains("Review is already in progress"),
+            "unexpected submit error: {submit_error}"
+        );
+        assert!(
+            !submit_error.contains("uncommitted changes"),
+            "submit should not blame generic uncommitted changes during review: {submit_error}"
         );
 
         let _ = std::fs::remove_dir_all(dir);
@@ -12066,6 +12211,34 @@ agent_presets {
             prompt.contains("repo-root paths, `-C` flags, absolute paths, or `.ship/...` prefixes"),
             "unexpected prompt: {prompt}"
         );
+    }
+
+    #[tokio::test]
+    async fn captain_review_diff_requires_review_phase_when_task_is_active() {
+        let (dir, ship, session_id, _project_root, _worktree_path, _branch_name) =
+            create_git_workflow_session("captain-review-diff-phase-gate").await;
+
+        {
+            let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(&session_id).expect("session should exist");
+            super::transition_task(session, TaskStatus::Working)
+                .expect("task should move to working for this test");
+        }
+
+        let error = ship
+            .captain_tool_review_diff(&session_id)
+            .await
+            .expect_err("review diff should be rejected before mate submission");
+        assert!(
+            error.contains("only valid after `mate_submit`"),
+            "unexpected review diff phase error: {error}"
+        );
+        assert!(
+            error.contains("Working"),
+            "unexpected review diff phase error: {error}"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[tokio::test]

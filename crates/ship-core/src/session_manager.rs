@@ -1263,6 +1263,12 @@ pub fn apply_event_to_materialized_state(session: &mut ActiveSession, event: &Se
             role,
             block,
         } => {
+            if *role == Role::Mate
+                && let Some(task) = session.current_task.as_mut()
+                && let ContentBlock::PlanUpdate { steps } = block
+            {
+                task.record.steps = steps.clone();
+            }
             if let Some(task) = session.current_task.as_mut() {
                 task.content_history.push(TaskContentRecord {
                     block_id: block_id.clone(),
@@ -1325,6 +1331,12 @@ pub fn apply_event_to_materialized_state(session: &mut ActiveSession, event: &Se
             role,
             patch,
         } => {
+            if *role == Role::Mate
+                && let Some(task) = session.current_task.as_mut()
+                && let BlockPatch::PlanReplace { steps } = patch
+            {
+                task.record.steps = steps.clone();
+            }
             if let Some(task) = session.current_task.as_mut()
                 && let Some(record) = task
                     .content_history
@@ -1341,7 +1353,16 @@ pub fn apply_event_to_materialized_state(session: &mut ActiveSession, event: &Se
         }
         SessionEvent::AgentStateChanged { role, state } => match role {
             Role::Captain => session.captain.state = state.clone(),
-            Role::Mate => session.mate.state = state.clone(),
+            Role::Mate => {
+                session.mate.state = state.clone();
+                if let AgentState::Working {
+                    plan: Some(steps), ..
+                } = state
+                    && let Some(task) = session.current_task.as_mut()
+                {
+                    task.record.steps = steps.clone();
+                }
+            }
         },
         SessionEvent::SessionStartupChanged { state } => {
             session.startup_state = state.clone();
