@@ -5727,6 +5727,17 @@ unless the task explicitly targets a subdirectory inside the current worktree.
             .and_then(|task| task.pending_mate_guidance.take())
     }
 
+    fn mate_steer_message(text: &str) -> String {
+        format!(
+            "<system-notification>\
+Captain steer:\n\
+{text}\n\n\
+Act on this correction and continue working by calling tools. Do not write \
+a text response to the captain — they cannot see your text output.\
+</system-notification>"
+        )
+    }
+
     fn mate_update_interrupt_prompt(injected: &str) -> String {
         format!("YOUR MATE HAS AN UPDATE:\n\n{injected}")
     }
