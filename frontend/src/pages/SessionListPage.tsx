@@ -32,7 +32,6 @@ import { SessionRecordingBadge } from "../components/SessionRecordingBadge";
 import { agentKindTooltip, sortSessions } from "./session-list-utils";
 import { useWorktreeDiffStats } from "../hooks/useWorktreeDiffStats";
 import { relativeTime } from "../utils/time";
-import { useActivityEntries } from "../hooks/useActivityEntries";
 import { Anchor } from "@phosphor-icons/react";
 import { useAgentPresets } from "../hooks/useAgentPresets";
 import { UnifiedAgentPicker } from "../components/UnifiedAgentPicker";
@@ -709,8 +708,6 @@ export function SessionListPage() {
   const validProjects = allProjects.filter((p) => p.valid);
   const sessions = useSessionList(projectFilter);
   const sortedSessions = useMemo(() => sortSessions(sessions), [sessions]);
-  const activityEntries = useActivityEntries();
-
   const [newSessionOpen, setNewSessionOpen] = useState(false);
   const [addProjectOpen, setAddProjectOpen] = useState(false);
 
@@ -833,25 +830,13 @@ export function SessionListPage() {
             </Callout.Root>
           )}
 
-          <Link to="/admiral" style={{ textDecoration: "none", color: "inherit" }}>
+          <Link to="/sessions/admiral" style={{ textDecoration: "none", color: "inherit" }}>
             <Card className={sessionCard}>
               <Flex align="center" gap="3" p="1">
                 <Anchor size={20} weight="bold" />
-                <Flex direction="column" gap="1" style={{ flex: 1 }}>
-                  <Text size="3" weight="bold">
-                    Admiral
-                  </Text>
-                  <Text size="1" color="gray">
-                    {activityEntries.length === 0
-                      ? "No activity yet"
-                      : `${activityEntries.length} event${activityEntries.length === 1 ? "" : "s"}`}
-                  </Text>
-                </Flex>
-                {activityEntries.length > 0 && (
-                  <Text size="1" color="gray">
-                    {relativeTime(activityEntries[activityEntries.length - 1].timestamp)}
-                  </Text>
-                )}
+                <Text size="3" weight="bold">
+                  Admiral
+                </Text>
               </Flex>
             </Card>
           </Link>
