@@ -1332,8 +1332,8 @@ export const feedTimeGap = style({
   textAlign: "center",
   fontSize: "var(--font-size-1)",
   color: "var(--gray-9)",
-  paddingTop: "var(--space-3)",
-  paddingBottom: "var(--space-3)",
+  paddingTop: "var(--space-1)",
+  paddingBottom: "var(--space-1)",
   width: "100%",
 });
 
