@@ -13,7 +13,7 @@ use roam::{
 };
 use roam::{Rx, Tx};
 use ship_core::{
-    AcpAgentDriver, ActiveSession, AgentDriver, AgentSessionConfig, GitWorktreeOps, HooksRunError,
+    AcpAgentDriver, ActiveSession, AgentDriver, AgentSessionConfig, GitWorktreeOps,
     JsonSessionStore, PendingEdit, ProjectRegistry, RebaseOutcome, SessionGitNames, SessionStore,
     WorktreeOps, apply_event, archive_terminal_task, coalesce_replay_events, current_task_status,
     load_agent_presets, load_project_hooks, rebuild_materialized_from_event_log,
@@ -1914,9 +1914,9 @@ Continue where you left off — wait for the human to give you direction."
             .filter(|o| o.status.success())
             .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned());
 
-        // Run pre-merge hooks before fast-forwarding into the base branch.
+        // Run checks before fast-forwarding into the base branch.
         if let Ok(hooks) = load_project_hooks(&repo_root).await {
-            if !hooks.pre_merge.is_empty() {
+            if !hooks.checks.is_empty() {
                 let worktree_path = {
                     let sessions = self.sessions.lock().expect("sessions mutex poisoned");
                     sessions
@@ -1924,9 +1924,9 @@ Continue where you left off — wait for the human to give you direction."
                         .and_then(|s| s.worktree_path.clone())
                 };
                 if let Some(worktree_path) = worktree_path {
-                    run_hooks(&hooks.pre_merge, &worktree_path)
+                    run_hooks(&hooks.checks, &worktree_path)
                         .await
-                        .map_err(|error| format!("pre-merge hooks failed:\n{error}"))?;
+                        .map_err(|error| format!("checks failed:\n{error}"))?;
                 }
             }
         }
@@ -2680,12 +2680,12 @@ Here is your task:
             ));
         }
 
-        // Run pre-merge hooks before fast-forwarding into the base branch.
+        // Run checks before fast-forwarding into the base branch.
         if let Ok(hooks) = load_project_hooks(&repo_root).await {
-            if !hooks.pre_merge.is_empty() {
-                run_hooks(&hooks.pre_merge, &worktree_path)
+            if !hooks.checks.is_empty() {
+                run_hooks(&hooks.checks, &worktree_path)
                     .await
-                    .map_err(|error| format!("pre-merge hooks failed:\n{error}"))?;
+                    .map_err(|error| format!("checks failed:\n{error}"))?;
             }
         }
 
@@ -5424,6 +5424,38 @@ Here is your task:
         // Keep the branch up to date with the base branch to avoid
         // misleading diffs when the base branch moves forward.
         Self::rebase_worktree_on_base(&worktree_path, &base_branch).await;
+
+        // Spawn checks in the background after rebase — don't block the mate.
+        // If any fail, notify via the session broadcast channel.
+        if commit.is_some() {
+            if let Ok(hooks) = load_project_hooks(&repo_root).await {
+                if !hooks.checks.is_empty() {
+                    let events_tx = {
+                        let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                        sessions.get(session_id).map(|s| s.events_tx.clone())
+                    };
+                    if let Some(events_tx) = events_tx {
+                        let checks = hooks.checks;
+                        let wt = worktree_path.clone();
+                        tokio::spawn(async move {
+                            if let Err(error) = run_hooks(&checks, &wt).await {
+                                let _ = events_tx.send(SessionEventEnvelope {
+                                    seq: 0,
+                                    timestamp: chrono::Utc::now().to_rfc3339(),
+                                    event: SessionEvent::BlockAppend {
+                                        block_id: BlockId::new(),
+                                        role: Role::Mate,
+                                        block: ContentBlock::Error {
+                                            message: format!("post-commit checks failed:\n{error}"),
+                                        },
+                                    },
+                                });
+                            }
+                        });
+                    }
+                }
+            }
+        }
 
         let commit_summary = Self::commit_summary(commit.as_ref());
         if let Some(step_description) = step_description {

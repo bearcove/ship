@@ -5,7 +5,7 @@ hooks {
         }
     }
 
-    pre_commit {
+    checks {
         codegen {
             command "cargo xtask codegen --check"
             glob ("**/*.rs")
@@ -21,9 +21,7 @@ hooks {
             command "tracey query validate"
             glob ("**/*.rs" "**/*.md")
         }
-    }
 
-    pre_merge {
         capn {
             command "capn pre-push"
         }

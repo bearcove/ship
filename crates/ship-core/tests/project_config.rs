@@ -26,7 +26,7 @@ async fn missing_project_config_returns_empty_hooks() {
     assert_eq!(hooks, ResolvedHooks::default());
     assert!(hooks.worktree_setup.is_empty());
     assert!(hooks.pre_commit.is_empty());
-    assert!(hooks.pre_merge.is_empty());
+    assert!(hooks.checks.is_empty());
 
     let _ = std::fs::remove_dir_all(root);
 }
@@ -48,7 +48,7 @@ hooks {
             command "cargo fmt"
         }
     }
-    pre_merge {
+    checks {
         clippy {
             command "cargo clippy --workspace"
         }
@@ -85,9 +85,9 @@ hooks {
         }]
     );
 
-    // pre_merge hooks should be sorted alphabetically: clippy before typecheck
+    // checks hooks should be sorted alphabetically: clippy before typecheck
     assert_eq!(
-        hooks.pre_merge,
+        hooks.checks,
         vec![
             HookDef {
                 name: "clippy".to_owned(),
@@ -114,7 +114,7 @@ async fn cwd_is_optional_and_defaults_to_none() {
         &root,
         r#"
 hooks {
-    pre_merge {
+    checks {
         no-cwd {
             command "cargo test"
         }
@@ -132,11 +132,11 @@ hooks {
         .expect("valid config should parse");
 
     // sorted: no-cwd < with-cwd
-    assert_eq!(hooks.pre_merge[0].name, "no-cwd");
-    assert_eq!(hooks.pre_merge[0].cwd, None);
+    assert_eq!(hooks.checks[0].name, "no-cwd");
+    assert_eq!(hooks.checks[0].cwd, None);
 
-    assert_eq!(hooks.pre_merge[1].name, "with-cwd");
-    assert_eq!(hooks.pre_merge[1].cwd, Some("frontend".to_owned()));
+    assert_eq!(hooks.checks[1].name, "with-cwd");
+    assert_eq!(hooks.checks[1].cwd, Some("frontend".to_owned()));
 
     let _ = std::fs::remove_dir_all(root);
 }
@@ -180,7 +180,7 @@ async fn partial_config_with_only_some_hook_types() {
         &root,
         r#"
 hooks {
-    pre_merge {
+    checks {
         clippy {
             command "cargo clippy --workspace"
         }
@@ -195,8 +195,8 @@ hooks {
 
     assert!(hooks.worktree_setup.is_empty());
     assert!(hooks.pre_commit.is_empty());
-    assert_eq!(hooks.pre_merge.len(), 1);
-    assert_eq!(hooks.pre_merge[0].command, "cargo clippy --workspace");
+    assert_eq!(hooks.checks.len(), 1);
+    assert_eq!(hooks.checks[0].command, "cargo clippy --workspace");
 
     let _ = std::fs::remove_dir_all(root);
 }
@@ -229,7 +229,7 @@ async fn reports_invalid_config_with_file_context() {
         &root,
         r#"
 hooks {
-    pre_merge {
+    checks {
         clippy {
             this is not valid styx syntax !!!
         }
