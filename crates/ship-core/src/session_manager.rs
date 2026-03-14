@@ -509,6 +509,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                     tasks_total,
                     autonomy_mode: session.config.autonomy_mode,
                     created_at: session.created_at.clone(),
+                    is_admiral: false,
                 }
             })
             .collect()

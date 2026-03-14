@@ -945,6 +945,8 @@ pub mod protocol {
         pub tasks_total: u32,
         pub autonomy_mode: AutonomyMode,
         pub created_at: String,
+        #[facet(default)]
+        pub is_admiral: bool,
     }
 
     // r[event.human-review-requested]

@@ -648,6 +648,7 @@ impl ShipImpl {
             tasks_total,
             autonomy_mode: session.config.autonomy_mode,
             created_at: session.created_at.clone(),
+            is_admiral: false,
         }
     }
 
@@ -3535,7 +3536,7 @@ Here is your task:
             .map_err(|e| format!("persist failed: {e}"))?;
 
         // Emit activity log entry for the captain's notification
-        {
+        let slug = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             if let Some(session) = sessions.get(session_id) {
                 let slug = SessionGitNames::from_session_id(session_id).slug;
@@ -3547,6 +3548,25 @@ Here is your task:
                         message: message.clone(),
                     },
                 );
+                slug
+            } else {
+                SessionGitNames::from_session_id(session_id).slug
+            }
+        };
+
+        // Forward the captain's message to the admiral (fire-and-forget)
+        {
+            let admiral = self.admiral_session.lock().expect("admiral mutex poisoned");
+            if let Some(ref admiral) = *admiral {
+                let handle = admiral.handle.clone();
+                let ship = self.clone();
+                let text = format!("[Captain {slug}]: {message}");
+                tokio::spawn(async move {
+                    let _ = ship
+                        .agent_driver
+                        .prompt(&handle, &[PromptContentPart::Text { text }])
+                        .await;
+                });
             }
         }
 
@@ -7684,9 +7704,53 @@ use captain_steer. Otherwise continue your current work."
         }
     }
 
+    fn admiral_session_summary(&self) -> Option<SessionSummary> {
+        let admiral = self.admiral_session.lock().expect("admiral mutex poisoned");
+        admiral.as_ref()?;
+
+        let empty_snapshot = AgentSnapshot {
+            role: Role::Captain,
+            kind: AgentKind::Claude,
+            state: AgentState::Idle,
+            context_remaining_percent: None,
+            preset_id: None,
+            provider: None,
+            model_id: None,
+            available_models: vec![],
+            effort_config_id: None,
+            effort_value_id: None,
+            available_effort_values: vec![],
+        };
+
+        Some(SessionSummary {
+            id: SessionId(ADMIRAL_SESSION_ID.to_owned()),
+            slug: ADMIRAL_SESSION_ID.to_owned(),
+            project: ProjectName("ship".to_owned()),
+            branch_name: String::new(),
+            title: Some("Admiral".to_owned()),
+            captain: empty_snapshot.clone(),
+            mate: empty_snapshot,
+            startup_state: SessionStartupState::Ready,
+            current_task_title: None,
+            current_task_description: None,
+            task_status: None,
+            diff_stats: None,
+            tasks_done: 0,
+            tasks_total: 0,
+            autonomy_mode: AutonomyMode::Autonomous,
+            created_at: String::new(),
+            is_admiral: true,
+        })
+    }
+
     pub(crate) async fn push_session_list(&self) {
         let sessions = self.sessions.lock().expect("sessions mutex poisoned");
-        let list: Vec<SessionSummary> = sessions.values().map(Self::to_session_summary).collect();
+        let mut list: Vec<SessionSummary> =
+            sessions.values().map(Self::to_session_summary).collect();
+        drop(sessions);
+        if let Some(admiral) = self.admiral_session_summary() {
+            list.push(admiral);
+        }
         let _ = self
             .global_events_tx
             .send(GlobalEvent::SessionListChanged { sessions: list });
@@ -7696,7 +7760,12 @@ use captain_steer. Otherwise continue your current work."
         self.refresh_all_diff_stats().await;
 
         let sessions = self.sessions.lock().expect("sessions mutex poisoned");
-        let list: Vec<SessionSummary> = sessions.values().map(Self::to_session_summary).collect();
+        let mut list: Vec<SessionSummary> =
+            sessions.values().map(Self::to_session_summary).collect();
+        drop(sessions);
+        if let Some(admiral) = self.admiral_session_summary() {
+            list.push(admiral);
+        }
         let _ = self
             .global_events_tx
             .send(GlobalEvent::SessionListChanged { sessions: list });
