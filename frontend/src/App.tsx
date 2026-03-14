@@ -62,11 +62,22 @@ export function App() {
   useEffect(() => {
     if (currentSessionId) {
       setVisitedSessions((prev) => {
-        if (prev.has(currentSessionId)) return prev;
-        return new Set(prev).add(currentSessionId);
+        const toAdd: string[] = [currentSessionId];
+        const orderedSessions = sortSessions(allSessions);
+        const currentIndex = orderedSessions.findIndex((s) => s.slug === currentSessionId);
+        if (currentIndex >= 0 && orderedSessions.length > 1) {
+          toAdd.push(
+            orderedSessions[(currentIndex - 1 + orderedSessions.length) % orderedSessions.length].slug,
+            orderedSessions[(currentIndex + 1) % orderedSessions.length].slug,
+          );
+        }
+        if (toAdd.every((s) => prev.has(s))) return prev;
+        const next = new Set(prev);
+        for (const s of toAdd) next.add(s);
+        return next;
       });
     }
-  }, [currentSessionId]);
+  }, [currentSessionId, allSessions]);
 
   useGlobalKeyboard(allSessions, removeVisitedSession);
 
