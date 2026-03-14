@@ -249,7 +249,8 @@ export function SessionHeader({
     return () => clearInterval(id);
   }, [elapsedSource]);
 
-  const displayTitle = liveTask?.title ?? title ?? branchName;
+  const hasDisplayTitle = !!(liveTask?.title ?? title);
+  const displayTitle = hasDisplayTitle ? (liveTask?.title ?? title!) : "Untitled";
   const history = useMemo(() => [...taskHistory].reverse(), [taskHistory]);
 
   const progressDots =
@@ -287,7 +288,7 @@ export function SessionHeader({
           <div className={sessionHeaderRows}>
             {/* Row 1: title + caret */}
             <div className={sessionHeaderRow1}>
-              <Text size="3" weight="medium" className={sessionHeaderTitle}>
+              <Text size="3" weight="medium" className={sessionHeaderTitle} color={hasDisplayTitle ? undefined : "gray"}>
                 {displayTitle}
               </Text>
               {expanded ? (
@@ -378,10 +379,12 @@ export function SessionHeader({
                     const isActiveTask = ["Working", "Assigned", "ReviewPending", "SteerPending"].includes(
                       session.task_status?.tag ?? "",
                     );
-                    const rowTitle =
-                      isActiveTask && session.current_task_title
+                    const hasRowTitle = isActiveTask ? !!session.current_task_title : !!session.title;
+                    const rowTitle = hasRowTitle
+                      ? (isActiveTask && session.current_task_title
                         ? session.current_task_title
-                        : (session.title ?? session.branch_name);
+                        : session.title!)
+                      : "Untitled";
                     const mateState = session.mate.state;
                     const currentStep =
                       mateState.tag === "Working" && mateState.plan
@@ -400,7 +403,7 @@ export function SessionHeader({
                           setSwitcherOpen(false);
                         }}
                       >
-                        <div className={sessionSwitcherRowTitle}>{rowTitle}</div>
+                        <div className={sessionSwitcherRowTitle} style={hasRowTitle ? undefined : { color: "var(--gray-9)" }}>{rowTitle}</div>
                         <div className={sessionSwitcherRowSub}>
                           {session.project} · {statusLabel(session.task_status)}
                           {stepLabel && <> · {stepLabel}</>}
