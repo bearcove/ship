@@ -290,7 +290,7 @@ export function SessionHeader({
 
   return (
     <>
-      <div className={sessionHeaderRoot} style={expanded ? { flex: 1, minHeight: 0 } : undefined}>
+      <div className={sessionHeaderRoot} style={expanded ? { height: "100vh", background: "var(--color-background)" } : undefined}>
         {/* Collapsed header: rows + side buttons */}
         <div className={sessionHeaderCollapsedArea} onClick={() => setExpanded((v) => !v)}>
           <div className={sessionHeaderRows}>
