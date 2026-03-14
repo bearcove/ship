@@ -55,10 +55,12 @@ function SessionRow({
   const isActiveTask = ["Working", "Assigned", "ReviewPending", "SteerPending"].includes(
     session.task_status?.tag ?? "",
   );
-  const title =
-    isActiveTask && session.current_task_title
+  const hasTitle = isActiveTask ? !!session.current_task_title : !!session.title;
+  const title = hasTitle
+    ? (isActiveTask && session.current_task_title
       ? session.current_task_title
-      : (session.title ?? session.branch_name);
+      : session.title!)
+    : "Untitled";
   const diffStats = session.diff_stats;
   const showTaskCounts = session.tasks_total > 0;
   const showDiffStats =
@@ -73,7 +75,7 @@ function SessionRow({
       onClick={() => onClose?.()}
     >
       <Flex direction="column" gap="1" style={{ minWidth: 0, flex: 1 }}>
-        <Text size="2" className={sessionRowTitle}>
+        <Text size="2" className={sessionRowTitle} color={hasTitle ? undefined : "gray"}>
           {title}
         </Text>
         <Text
