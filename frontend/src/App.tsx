@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Routes, Route, Navigate, useMatch } from "react-router-dom";
 import { Flex, Box, IconButton } from "@radix-ui/themes";
 import { List } from "@phosphor-icons/react";
-import { SessionListPage, NewSessionDialog } from "./pages/SessionListPage";
+import { NewSessionDialog } from "./pages/SessionListPage";
 import { SessionViewPage } from "./pages/SessionViewPage";
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { ConnectingSplash } from "./components/ConnectingSplash";
@@ -144,7 +144,7 @@ export function App() {
         </Box>
         <Box className={appColCenter} style={{ overflow: inSessionView ? "hidden" : "auto" }}>
           <Routes>
-            <Route path="/" element={<SessionListPage onNewSession={() => setNewSessionOpen(true)} />} />
+            <Route path="/" element={<Navigate to="/sessions/admiral" replace />} />
             <Route path="/admiral" element={<Navigate to="/sessions/admiral" replace />} />
             <Route path="/sessions/:sessionId" element={null} />
           </Routes>
