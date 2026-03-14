@@ -139,6 +139,7 @@ export type TaskStatus =
   | { tag: 'Working' }
   | { tag: 'ReviewPending' }
   | { tag: 'SteerPending' }
+  | { tag: 'RebaseConflict' }
   | { tag: 'Accepted' }
   | { tag: 'Cancelled' };
 
@@ -1136,7 +1137,7 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0xaf76c9a268076623n) {
+    } else if (method.id === 0x4373a0d462262adbn) {
       try {
         const result = await this.handler.listSessions();
         call.reply(result);
@@ -1157,7 +1158,7 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0x5e11d84f77dfc307n) {
+    } else if (method.id === 0x6aaaaab1cecedeb3n) {
       try {
         const result = await this.handler.getSession(args[0] as SessionId);
         call.reply(result);
@@ -1297,7 +1298,7 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0xc46321fe0eee3588n) {
+    } else if (method.id === 0x6b853b649ea4f713n) {
       try {
         const result = await this.handler.subscribeEvents(args[0] as SessionId, args[1] as Tx<SubscribeMessage>);
         (args[1] as { close(): void }).close(); // close output before reply
@@ -1305,7 +1306,7 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0x5ca414bc72f5bd2dn) {
+    } else if (method.id === 0xce934dcd79685bcbn) {
       try {
         const result = await this.handler.subscribeGlobalEvents(args[0] as Tx<GlobalEvent>);
         (args[0] as { close(): void }).close(); // close output before reply
@@ -1354,7 +1355,7 @@ const ship_schema_registry: SchemaRegistry = new Map<string, Schema>([
   ["AgentSnapshot", { kind: 'struct', fields: { 'role': { kind: 'ref', name: 'Role' }, 'kind': { kind: 'ref', name: 'AgentKind' }, 'state': { kind: 'ref', name: 'AgentState' }, 'context_remaining_percent': { kind: 'option', inner: { kind: 'u8' } }, 'model_id': { kind: 'option', inner: { kind: 'string' } }, 'available_models': { kind: 'vec', element: { kind: 'string' } }, 'effort_config_id': { kind: 'option', inner: { kind: 'string' } }, 'effort_value_id': { kind: 'option', inner: { kind: 'string' } }, 'available_effort_values': { kind: 'vec', element: { kind: 'ref', name: 'EffortValue' } } } }],
   ["SessionStartupStage", { kind: 'enum', variants: [{ name: 'ResolvingMcp', fields: null }, { name: 'CreatingWorktree', fields: null }, { name: 'StartingCaptain', fields: null }, { name: 'StartingMate', fields: null }, { name: 'GreetingCaptain', fields: null }] }],
   ["SessionStartupState", { kind: 'enum', variants: [{ name: 'Pending', fields: null }, { name: 'Running', fields: { 'stage': { kind: 'ref', name: 'SessionStartupStage' }, 'message': { kind: 'string' } } }, { name: 'Ready', fields: null }, { name: 'Failed', fields: { 'stage': { kind: 'ref', name: 'SessionStartupStage' }, 'message': { kind: 'string' } } }] }],
-  ["TaskStatus", { kind: 'enum', variants: [{ name: 'Assigned', fields: null }, { name: 'Working', fields: null }, { name: 'ReviewPending', fields: null }, { name: 'SteerPending', fields: null }, { name: 'Accepted', fields: null }, { name: 'Cancelled', fields: null }] }],
+  ["TaskStatus", { kind: 'enum', variants: [{ name: 'Assigned', fields: null }, { name: 'Working', fields: null }, { name: 'ReviewPending', fields: null }, { name: 'SteerPending', fields: null }, { name: 'RebaseConflict', fields: null }, { name: 'Accepted', fields: null }, { name: 'Cancelled', fields: null }] }],
   ["WorktreeDiffStats", { kind: 'struct', fields: { 'branch_name': { kind: 'string' }, 'lines_added': { kind: 'u64' }, 'lines_removed': { kind: 'u64' }, 'files_changed': { kind: 'u64' }, 'uncommitted_lines_added': { kind: 'u64' }, 'uncommitted_lines_removed': { kind: 'u64' } } }],
   ["AutonomyMode", { kind: 'enum', variants: [{ name: 'HumanInTheLoop', fields: null }, { name: 'Autonomous', fields: null }] }],
   ["SessionSummary", { kind: 'struct', fields: { 'id': { kind: 'string' }, 'slug': { kind: 'string' }, 'project': { kind: 'string' }, 'branch_name': { kind: 'string' }, 'title': { kind: 'option', inner: { kind: 'string' } }, 'captain': { kind: 'ref', name: 'AgentSnapshot' }, 'mate': { kind: 'ref', name: 'AgentSnapshot' }, 'startup_state': { kind: 'ref', name: 'SessionStartupState' }, 'current_task_title': { kind: 'option', inner: { kind: 'string' } }, 'current_task_description': { kind: 'option', inner: { kind: 'string' } }, 'task_status': { kind: 'option', inner: { kind: 'ref', name: 'TaskStatus' } }, 'diff_stats': { kind: 'option', inner: { kind: 'ref', name: 'WorktreeDiffStats' } }, 'tasks_done': { kind: 'u32' }, 'tasks_total': { kind: 'u32' }, 'autonomy_mode': { kind: 'ref', name: 'AutonomyMode' }, 'created_at': { kind: 'string' } } }],
@@ -1425,7 +1426,7 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: 'listSessions',
-      id: 0xaf76c9a268076623n,
+      id: 0x4373a0d462262adbn,
       args: { kind: 'tuple', elements: [] },
       result: { kind: 'enum', variants: [{ name: 'Ok', fields: { kind: 'vec', element: { kind: 'ref', name: 'SessionSummary' } } }, { name: 'Err', fields: { kind: 'enum', variants: [{ name: 'User', fields: null }, { name: 'UnknownMethod', fields: null }, { name: 'InvalidPayload', fields: null }, { name: 'Cancelled', fields: null }] } }] },
     },
@@ -1443,7 +1444,7 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: 'getSession',
-      id: 0x5e11d84f77dfc307n,
+      id: 0x6aaaaab1cecedeb3n,
       args: { kind: 'tuple', elements: [{ kind: 'string' }] },
       result: { kind: 'enum', variants: [{ name: 'Ok', fields: { kind: 'ref', name: 'SessionDetail' } }, { name: 'Err', fields: { kind: 'enum', variants: [{ name: 'User', fields: null }, { name: 'UnknownMethod', fields: null }, { name: 'InvalidPayload', fields: null }, { name: 'Cancelled', fields: null }] } }] },
     },
@@ -1563,13 +1564,13 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: 'subscribeEvents',
-      id: 0xc46321fe0eee3588n,
+      id: 0x6b853b649ea4f713n,
       args: { kind: 'tuple', elements: [{ kind: 'string' }, { kind: 'tx', element: { kind: 'ref', name: 'SubscribeMessage' } }] },
       result: { kind: 'enum', variants: [{ name: 'Ok', fields: { kind: 'struct', fields: {} } }, { name: 'Err', fields: { kind: 'enum', variants: [{ name: 'User', fields: null }, { name: 'UnknownMethod', fields: null }, { name: 'InvalidPayload', fields: null }, { name: 'Cancelled', fields: null }] } }] },
     },
     {
       name: 'subscribeGlobalEvents',
-      id: 0x5ca414bc72f5bd2dn,
+      id: 0xce934dcd79685bcbn,
       args: { kind: 'tuple', elements: [{ kind: 'tx', element: { kind: 'ref', name: 'GlobalEvent' } }] },
       result: { kind: 'enum', variants: [{ name: 'Ok', fields: { kind: 'struct', fields: {} } }, { name: 'Err', fields: { kind: 'enum', variants: [{ name: 'User', fields: null }, { name: 'UnknownMethod', fields: null }, { name: 'InvalidPayload', fields: null }, { name: 'Cancelled', fields: null }] } }] },
     },
