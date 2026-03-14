@@ -5330,6 +5330,68 @@ Here is your task:
                 .trim()
                 .to_owned();
 
+            let commit_subject = Command::new("git")
+                .arg("-C")
+                .arg(&worktree_path)
+                .args(["log", "-1", "--format=%s", "HEAD"])
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned())
+                .unwrap_or_default();
+
+            let commit_diff = Command::new("git")
+                .arg("-C")
+                .arg(&worktree_path)
+                .args(["show", "--format=", "HEAD"])
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+                .map(|o| {
+                    let raw = String::from_utf8_lossy(&o.stdout);
+                    let trimmed = raw.trim_start_matches('\n').to_owned();
+                    if trimmed.is_empty() {
+                        None
+                    } else {
+                        Some(trimmed)
+                    }
+                })
+                .unwrap_or(None);
+
+            let stats = Command::new("git")
+                .arg("-C")
+                .arg(&worktree_path)
+                .args(["show", "--numstat", "--format=", "HEAD"])
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+                .and_then(|o| {
+                    let (fc, ins, del) = String::from_utf8_lossy(&o.stdout)
+                        .lines()
+                        .filter(|l| !l.is_empty())
+                        .fold((0u32, 0u32, 0u32), |(fc, ins, del), line| {
+                            let mut parts = line.split('\t');
+                            let i = parts
+                                .next()
+                                .and_then(|s| s.parse::<u32>().ok())
+                                .unwrap_or(0);
+                            let d = parts
+                                .next()
+                                .and_then(|s| s.parse::<u32>().ok())
+                                .unwrap_or(0);
+                            (fc + 1, ins + i, del + d)
+                        });
+                    if fc == 0 {
+                        None
+                    } else {
+                        Some(TaskRecapStats {
+                            files_changed: fc,
+                            insertions: ins,
+                            deletions: del,
+                        })
+                    }
+                });
+
             let diff_stat = Command::new("git")
                 .arg("-C")
                 .arg(&worktree_path)
@@ -5343,6 +5405,9 @@ Here is your task:
             Ok(Some(AutoCommitResult {
                 commit_hash,
                 diff_stat: String::from_utf8_lossy(&diff_stat.stdout).trim().to_owned(),
+                commit_subject,
+                commit_diff,
+                stats,
             }))
         })
         .await
