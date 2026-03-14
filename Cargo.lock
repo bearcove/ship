@@ -3165,6 +3165,7 @@ dependencies = [
  "dirs-next",
  "eyre",
  "facet",
+ "facet-json",
  "figue",
  "futures-util",
  "hyper-tungstenite",

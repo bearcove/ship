@@ -20,6 +20,10 @@ impl JsonSessionStore {
         Self { dir }
     }
 
+    pub fn dir(&self) -> &std::path::Path {
+        &self.dir
+    }
+
     fn session_path(&self, id: &SessionId) -> PathBuf {
         self.dir.join(format!("{}.json", id.0))
     }

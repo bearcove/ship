@@ -19,6 +19,7 @@ async-trait = "0.1"
 chrono = { workspace = true }
 axum = { workspace = true }
 facet = { workspace = true }
+facet-json = { workspace = true }
 figue = { workspace = true }
 hyper-tungstenite = { workspace = true }
 eyre = { workspace = true }

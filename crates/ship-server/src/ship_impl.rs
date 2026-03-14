@@ -185,6 +185,82 @@ impl PendingMcpOps {
     }
 }
 
+const ACTIVITY_LOG_MAX_ENTRIES: usize = 200;
+const ACTIVITY_LOG_FILENAME: &str = "activity-log.json";
+
+#[derive(Debug, Clone, facet::Facet)]
+struct PersistedActivityLog {
+    next_id: u64,
+    entries: Vec<ship_types::ActivityEntry>,
+}
+
+struct ActivityLog {
+    next_id: u64,
+    entries: Vec<ship_types::ActivityEntry>,
+    path: PathBuf,
+}
+
+impl ActivityLog {
+    fn load(sessions_dir: &std::path::Path) -> Self {
+        let path = sessions_dir.join(ACTIVITY_LOG_FILENAME);
+        let (next_id, entries) = if path.exists() {
+            match std::fs::read(&path) {
+                Ok(bytes) => match facet_json::from_slice::<PersistedActivityLog>(&bytes) {
+                    Ok(persisted) => (persisted.next_id, persisted.entries),
+                    Err(error) => {
+                        tracing::warn!(%error, "failed to parse activity log, starting fresh");
+                        (0, Vec::new())
+                    }
+                },
+                Err(error) => {
+                    tracing::warn!(%error, "failed to read activity log, starting fresh");
+                    (0, Vec::new())
+                }
+            }
+        } else {
+            (0, Vec::new())
+        };
+        Self {
+            next_id,
+            entries,
+            path,
+        }
+    }
+
+    fn append(&mut self, mut entry: ship_types::ActivityEntry) -> ship_types::ActivityEntry {
+        entry.id = self.next_id;
+        self.next_id += 1;
+        self.entries.push(entry.clone());
+        if self.entries.len() > ACTIVITY_LOG_MAX_ENTRIES {
+            let excess = self.entries.len() - ACTIVITY_LOG_MAX_ENTRIES;
+            self.entries.drain(..excess);
+        }
+        self.persist();
+        entry
+    }
+
+    fn entries(&self) -> &[ship_types::ActivityEntry] {
+        &self.entries
+    }
+
+    fn persist(&self) {
+        let persisted = PersistedActivityLog {
+            next_id: self.next_id,
+            entries: self.entries.clone(),
+        };
+        match facet_json::to_vec_pretty(&persisted) {
+            Ok(bytes) => {
+                if let Err(error) = std::fs::write(&self.path, bytes) {
+                    tracing::warn!(%error, "failed to write activity log");
+                }
+            }
+            Err(error) => {
+                tracing::warn!(%error, "failed to serialize activity log");
+            }
+        }
+    }
+}
+
 // r[server.multi-repo]
 #[derive(Clone)]
 pub struct ShipImpl {
@@ -202,6 +278,7 @@ pub struct ShipImpl {
     whisper_model_path: Arc<Mutex<Option<PathBuf>>>,
     kyutai_model: Arc<Mutex<Option<crate::kyutai_tts::KyutaiTtsModel>>>,
     global_events_tx: broadcast::Sender<GlobalEvent>,
+    activity_log: Arc<Mutex<ActivityLog>>,
 }
 
 /// Default whisper model filename to look for.
@@ -221,6 +298,7 @@ impl ShipImpl {
         agent_discovery: AgentDiscovery,
     ) -> Self {
         let (global_events_tx, _) = broadcast::channel(256);
+        let activity_log = ActivityLog::load(&sessions_dir);
         Self {
             registry: Arc::new(tokio::sync::Mutex::new(registry)),
             agent_discovery,
@@ -236,6 +314,7 @@ impl ShipImpl {
             whisper_model_path: Arc::new(Mutex::new(None)),
             kyutai_model: Arc::new(Mutex::new(None)),
             global_events_tx,
+            activity_log: Arc::new(Mutex::new(activity_log)),
         }
     }
 
