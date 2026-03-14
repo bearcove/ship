@@ -883,7 +883,7 @@ export const sessionTopBarActions = style({
 export const sessionHeaderRoot = style({
   flexShrink: 0,
   position: "relative",
-  boxShadow: "0 0 20px var(--gray-a4)",
+  borderBottom: "1px solid var(--gray-a6)",
   display: "flex",
   flexDirection: "column",
   background: "var(--color-background)",
@@ -920,6 +920,7 @@ export const sessionHeaderSideButton = style({
   padding: "0 var(--space-3)",
   borderRadius: 0,
   border: "none",
+  borderRight: "1px solid var(--gray-a4)",
   background: "transparent",
   color: "var(--gray-11)",
   cursor: "pointer",
@@ -942,7 +943,7 @@ export const sessionHeaderRow1 = style({
   display: "flex",
   alignItems: "center",
   gap: "var(--space-2)",
-  padding: "var(--space-3) var(--space-3) var(--space-1) var(--space-3)",
+  padding: "var(--space-2) var(--space-3) var(--space-1) var(--space-3)",
 });
 
 export const sessionHeaderTitle = style({
@@ -958,7 +959,7 @@ export const sessionHeaderRow2 = style({
   display: "flex",
   alignItems: "center",
   gap: "var(--space-2)",
-  padding: "var(--space-1) var(--space-3) var(--space-3) var(--space-3)",
+  padding: "var(--space-1) var(--space-3) var(--space-2) var(--space-3)",
   border: 0,
   background: "transparent",
   color: "inherit",
