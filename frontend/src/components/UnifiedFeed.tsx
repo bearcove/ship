@@ -1,129 +1,142 @@
-import { Fragment, type ReactNode, useState, useRef, useEffect } from "react";
+import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Flex, Spinner, Text } from "@radix-ui/themes";
 import { ArrowDown, CaretRight, Stop } from "@phosphor-icons/react";
+import { encode } from "gpt-tokenizer";
 import captainAvatar from "../assets/avatars/captain.png";
 import mateAvatar from "../assets/avatars/mate.png";
-import type { AgentSnapshot, ContentBlock, Role, SessionStartupState } from "../generated/ship";
-import type { BlockEntry } from "../state/blockStore";
-import { TextBlock } from "./blocks/TextBlock";
-import { BubbleActionBar } from "./blocks/BubbleActionBar";
-import { ErrorBlock } from "./blocks/ErrorBlock";
-import { PermissionBlock } from "./blocks/PermissionBlock";
-import { ImageBlock } from "./blocks/ImageBlock";
 import { getShipClient } from "../api/client";
+import type { AgentSnapshot, ContentBlock, Role, SessionStartupState } from "../generated/ship";
 import { useDocumentDrop } from "../hooks/useDocumentDrop";
-import { AgentKindIcon } from "./AgentKindIcon";
-import { encode } from "gpt-tokenizer";
-
-const tokenCache = new Map<string, number>();
-
-function countTokens(text: string): number {
-  const cached = tokenCache.get(text);
-  if (cached !== undefined) return cached;
-  const count = encode(text).length;
-  tokenCache.set(text, count);
-  return count;
-}
-
-function stringifyTokenPayload(value: unknown): string | null {
-  if (value == null) return null;
-  const serialized = JSON.stringify(value);
-  return serialized == null || serialized === "null" ? null : serialized;
-}
-
-function toolCallTokenTexts(block: Extract<ContentBlock, { tag: "ToolCall" }>): string[] {
-  const texts = [block.arguments];
-  const rawOutput = stringifyTokenPayload(block.raw_output);
-  if (rawOutput) texts.push(rawOutput);
-  for (const content of block.content) {
-    switch (content.tag) {
-      case "Text":
-        texts.push(content.text);
-        break;
-      case "Diff":
-        texts.push(content.unified_diff);
-        break;
-      case "Terminal":
-        if (content.snapshot?.output) {
-          texts.push(content.snapshot.output);
-        }
-        break;
-      case "Raw": {
-        const rawContent = stringifyTokenPayload(content.data);
-        if (rawContent) texts.push(rawContent);
-        break;
-      }
-    }
-  }
-  if (block.error) {
-    texts.push(block.error.message);
-    const details = stringifyTokenPayload(block.error.details);
-    if (details) texts.push(details);
-  }
-  return texts.filter((text) => text.length > 0);
-}
-
+import type { BlockEntry } from "../state/blockStore";
 import {
+  diffAdd,
+  diffContext,
+  diffRemove,
   feedBubble,
+  feedBubbleActivitySummary,
+  feedBubbleCaptain,
   feedBubbleCol,
   feedBubbleColUser,
-  feedBubbleCaptain,
   feedBubbleMate,
   feedBubbleRelay,
+  feedBubbleSelected,
   feedBubbleSteer,
   feedBubbleUser,
-  feedBubbleActivitySummary,
+  feedContentColumn,
+  feedImageUser,
+  feedMessageMeta,
   feedRowAgent,
   feedRowAnimate,
   feedRowUser,
-  feedSystemMessage,
-  liveBubbleDot,
+  feedTimeGap,
   liveBubbleSlot,
   liveBubblesRow,
-  thinkingBubble,
+  scrollToBottomBtn,
   shimmerText,
-  thinkingAvatarBtn,
-  thinkingAvatarImg,
-  thinkingAvatarStop,
   startupFeedBody,
   startupFeedItem,
-  feedMessageMeta,
-  scrollToBottomBtn,
-  unifiedFeedRoot,
-  unifiedFeedScroll,
-  unifiedFeedStream,
-  feedContentColumn,
-  userAvatar,
-  userAvatarSpacer,
-  feedImageUser,
-  diffAdd,
-  diffRemove,
-  diffContext,
   taskRecapBoundary,
-  taskRecapHeader,
-  taskRecapEyebrow,
-  taskRecapTitle,
-  taskRecapSummary,
+  taskRecapCaret,
+  taskRecapCommitHash,
   taskRecapCommitList,
   taskRecapCommitRow,
-  taskRecapCommitToggle,
   taskRecapCommitStatic,
-  taskRecapCommitHash,
   taskRecapCommitSubject,
-  taskRecapCaret,
+  taskRecapCommitToggle,
   taskRecapContent,
   taskRecapDiff,
   taskRecapDiffInner,
-  feedTimeGap,
-  feedBubbleSelected,
+  taskRecapEyebrow,
+  taskRecapHeader,
+  taskRecapSummary,
+  taskRecapTitle,
+  thinkingAvatarBtn,
+  thinkingAvatarImg,
+  thinkingAvatarStop,
+  thinkingBubble,
+  unifiedFeedRoot,
+  unifiedFeedScroll,
+  unifiedFeedStream,
 } from "../styles/session-view.css";
+import { AgentKindIcon } from "./AgentKindIcon";
+import { BubbleActionBar } from "./blocks/BubbleActionBar";
+import { ErrorBlock } from "./blocks/ErrorBlock";
+import { ImageBlock } from "./blocks/ImageBlock";
+import { PermissionBlock } from "./blocks/PermissionBlock";
+import { TextBlock } from "./blocks/TextBlock";
+
+const GAP_MS = 2 * 60 * 1000;
+const MAX_RENDERED_BLOCKS = 80;
+const TOKEN_CACHE_LIMIT = 500;
+const NOOP_IMAGE_DROP = () => undefined;
+
+const tokenCache = new Map<string, number>();
+const structuredTokenCache = new WeakMap<object, number>();
+
+function rememberTokenCount(key: string, count: number): number {
+  tokenCache.set(key, count);
+  if (tokenCache.size > TOKEN_CACHE_LIMIT) {
+    const oldestKey = tokenCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      tokenCache.delete(oldestKey);
+    }
+  }
+  return count;
+}
+
+function countTokens(text: string): number {
+  const cached = tokenCache.get(text);
+  if (cached !== undefined) {
+    tokenCache.delete(text);
+    tokenCache.set(text, cached);
+    return cached;
+  }
+  return rememberTokenCount(text, encode(text).length);
+}
+
+function countStructuredTokens(value: unknown): number {
+  if (value == null) return 0;
+  if (typeof value === "string") return countTokens(value);
+  if (typeof value === "object") {
+    const cached = structuredTokenCache.get(value);
+    if (cached !== undefined) return cached;
+    const count = countTokens(JSON.stringify(value));
+    structuredTokenCache.set(value, count);
+    return count;
+  }
+  return countTokens(String(value));
+}
 
 type TextBlockType = Extract<ContentBlock, { tag: "Text" }>;
+type ToolCallBlockType = Extract<ContentBlock, { tag: "ToolCall" }>;
+type TaskRecapBlockType = Extract<ContentBlock, { tag: "TaskRecap" }>;
 
-function formatRelativeTime(iso: string, now: number): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const diffMs = now - d.getTime();
+type SingleSegment = { kind: "single"; entry: BlockEntry };
+type FeedSegment = SingleSegment;
+
+type TurnStats = {
+  tokens: number;
+  ok: number;
+  failed: number;
+  lastUtterance: string;
+};
+
+type RenderedSegment = {
+  seg: FeedSegment;
+  agentForBlock: AgentSnapshot | null;
+  isTaskRecap: boolean;
+  gapLabel: string | null;
+  timestampMs: number | null;
+};
+
+function parseTimestampMs(iso: string | null | undefined): number | null {
+  if (!iso) return null;
+  const timestampMs = Date.parse(iso);
+  return Number.isNaN(timestampMs) ? null : timestampMs;
+}
+
+function formatRelativeTime(timestampMs: number, now: number): string {
+  const diffMs = now - timestampMs;
   const seconds = Math.floor(diffMs / 1000);
   if (seconds < 60) return "just now";
   const minutes = Math.floor(seconds / 60);
@@ -156,6 +169,7 @@ function isSystemInjection(block: Extract<ContentBlock, { tag: "Text" }>): boole
   if (isMateActivitySummary(block)) return false;
   return block.text.includes("<system-notification>");
 }
+
 function formatDuration(totalSeconds: number): string {
   if (totalSeconds < 60) return `${totalSeconds}s`;
   const mins = Math.floor(totalSeconds / 60);
@@ -166,9 +180,6 @@ function formatDuration(totalSeconds: number): string {
 
 // ─── Feed segmentation ────────────────────────────────────────────────────────
 
-type SingleSegment = { kind: "single"; entry: BlockEntry };
-type FeedSegment = SingleSegment;
-
 function buildSegments(blocks: BlockEntry[], debugMode: boolean): FeedSegment[] {
   const visible = blocks.filter(
     (b) =>
@@ -178,35 +189,68 @@ function buildSegments(blocks: BlockEntry[], debugMode: boolean): FeedSegment[] 
       !(b.block.tag === "Text" && b.block.text.trim() === "") &&
       !(b.block.tag === "Text" && isSystemInjection(b.block as Extract<ContentBlock, { tag: "Text" }>)) &&
       !(b.block.tag === "Permission" && b.block.resolution?.tag === "Approved") &&
-      // Allow Mate-role Human/Steer blocks through (messages relayed to the mate)
       (b.role.tag !== "Mate" ||
         (b.block.tag === "Text" && (b.block.source.tag === "Human" || b.block.source.tag === "Steer"))),
   );
   return visible.map((entry) => ({ kind: "single", entry }));
 }
 
-// Returns the "agent side" role of a segment, or null if it's a real user message.
 function segmentAgentRole(seg: FeedSegment): Role | null {
   const { block, role } = seg.entry;
   if (block.tag === "Text" && block.source.tag === "Steer") {
-    return { tag: "Captain" }; // captain steer to mate → left side
+    return { tag: "Captain" };
   }
   if (block.tag === "Text" && block.source.tag === "Human" && !isSystemInjection(block)) {
-    if (role.tag === "Captain") return null; // real user message → right side
-    return { tag: "Captain" }; // captain relaying to mate → left side
+    if (role.tag === "Captain") return null;
+    return { tag: "Captain" };
   }
   if (block.tag === "Image" && role.tag === "Captain") {
-    return null; // user-sent image → right side
+    return null;
   }
-  if (block.tag === "TaskRecap" || block.tag === "WorkflowMilestone") return null; // phase break, no avatar
+  if (block.tag === "TaskRecap") return null;
   return role;
 }
 
-// ─── User avatar ──────────────────────────────────────────────────────────────
+function computeTurnStats(blocks: BlockEntry[], roleTag: "Captain" | "Mate"): TurnStats {
+  let tokens = 0;
+  let ok = 0;
+  let failed = 0;
+  let lastUtterance = "";
+  let lastMsgIdx = -1;
 
-function UserAvatar({ url }: { url: string | null }) {
-  if (!url) return <div className={userAvatarSpacer} />;
-  return <img src={url} className={userAvatar} alt="You" />;
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const blockEntry = blocks[i];
+    if (
+      blockEntry.role.tag === roleTag &&
+      blockEntry.block.tag === "Text" &&
+      blockEntry.block.source.tag === "AgentMessage"
+    ) {
+      lastMsgIdx = i;
+      break;
+    }
+  }
+
+  for (const blockEntry of blocks.slice(lastMsgIdx + 1)) {
+    if (blockEntry.role.tag !== roleTag) continue;
+    if (blockEntry.block.tag === "Text" && blockEntry.block.source.tag === "AgentThought") {
+      tokens += countTokens(blockEntry.block.text);
+      lastUtterance = blockEntry.block.text;
+    } else if (blockEntry.block.tag === "ToolCall") {
+      if (blockEntry.block.status.tag === "Success") ok++;
+      else if (blockEntry.block.status.tag === "Failure") failed++;
+      tokens += countTokens(blockEntry.block.arguments);
+      tokens += countStructuredTokens(blockEntry.block.raw_output);
+    }
+  }
+
+  if (!lastUtterance && lastMsgIdx >= 0) {
+    const lastMessage = blocks[lastMsgIdx];
+    if (lastMessage.block.tag === "Text") {
+      lastUtterance = lastMessage.block.text;
+    }
+  }
+
+  return { tokens, ok, failed, lastUtterance };
 }
 
 // ─── TaskRecap components ──────────────────────────────────────────────────────
@@ -221,18 +265,20 @@ function CommitDiffView({ diff }: { diff: string }) {
     >
       <Box className={taskRecapDiffInner}>
         {diff.split("\n").map((line, index) => {
-          if (line.startsWith("+") && !line.startsWith("+++"))
+          if (line.startsWith("+") && !line.startsWith("+++")) {
             return (
               <span key={index} className={diffAdd}>
                 {line}
               </span>
             );
-          if (line.startsWith("-") && !line.startsWith("---"))
+          }
+          if (line.startsWith("-") && !line.startsWith("---")) {
             return (
               <span key={index} className={diffRemove}>
                 {line}
               </span>
             );
+          }
           return (
             <span key={index} className={diffContext}>
               {line}
@@ -241,60 +287,6 @@ function CommitDiffView({ diff }: { diff: string }) {
         })}
       </Box>
     </Box>
-  );
-}
-
-type TaskRecapBlockType = Extract<ContentBlock, { tag: "TaskRecap" }>;
-type WorkflowMilestoneBlockType = Extract<ContentBlock, { tag: "WorkflowMilestone" }>;
-
-function PhaseBreakBoundary({
-  children,
-  kind,
-  testId,
-}: {
-  children: ReactNode;
-  kind: string;
-  testId?: string;
-}) {
-  return (
-    <Box
-      className={taskRecapBoundary}
-      data-testid={testId}
-      data-feed-boundary="phase-break"
-      data-phase-break-kind={kind}
-    >
-      <Box className={taskRecapContent}>{children}</Box>
-    </Box>
-  );
-}
-
-function WorkflowMilestoneBlock({ block }: { block: WorkflowMilestoneBlockType }) {
-  return (
-    <PhaseBreakBoundary kind={block.kind.tag} testId="workflow-milestone-boundary">
-      <Flex className={taskRecapHeader} align="start" justify="between" gap="3">
-        <Box style={{ minWidth: 0 }}>
-          <Text className={taskRecapEyebrow}>Phase break</Text>
-          <Text className={taskRecapTitle}>{block.title}</Text>
-          <Text style={{ fontSize: "var(--font-size-1)", color: "var(--gray-9)", whiteSpace: "pre-wrap" }}>
-            {block.summary}
-          </Text>
-        </Box>
-      </Flex>
-      {block.items.length > 0 && (
-        <Box className={taskRecapCommitList}>
-          {block.items.map((item, index) => (
-            <Box key={`${block.kind.tag}-${index}`} className={taskRecapCommitRow}>
-              <Flex className={taskRecapCommitStatic} align="start" gap="2">
-                <Text className={taskRecapCommitHash}>{String(index + 1).padStart(2, "0")}</Text>
-                <Text className={taskRecapCommitSubject} style={{ whiteSpace: "pre-wrap" }}>
-                  {item}
-                </Text>
-              </Flex>
-            </Box>
-          ))}
-        </Box>
-      )}
-    </PhaseBreakBoundary>
   );
 }
 
@@ -318,65 +310,71 @@ function TaskRecapBlock({
   }
 
   return (
-    <PhaseBreakBoundary kind="TaskRecap" testId="task-recap-boundary">
-      <Flex className={taskRecapHeader} align="start" justify="between" gap="3">
-        <Box style={{ minWidth: 0 }}>
-          <Text className={taskRecapEyebrow}>Phase break</Text>
-          <Text className={taskRecapTitle}>Previous task accepted</Text>
-          {duration != null && (
-            <Text style={{ fontSize: "var(--font-size-1)", color: "var(--gray-9)" }}>
-              Completed in {formatDuration(duration)}
+    <Box
+      className={taskRecapBoundary}
+      data-testid="task-recap-boundary"
+      data-feed-boundary="phase-break"
+    >
+      <Box className={taskRecapContent}>
+        <Flex className={taskRecapHeader} align="start" justify="between" gap="3">
+          <Box style={{ minWidth: 0 }}>
+            <Text className={taskRecapEyebrow}>Phase break</Text>
+            <Text className={taskRecapTitle}>Previous task accepted</Text>
+            {duration != null && (
+              <Text style={{ fontSize: "var(--font-size-1)", color: "var(--gray-9)" }}>
+                Completed in {formatDuration(duration)}
+              </Text>
+            )}
+          </Box>
+          {stats && (
+            <Text className={taskRecapSummary}>
+              <span style={{ color: "var(--green-11)" }}>+{stats.insertions}</span>{" "}
+              <span style={{ color: "var(--red-11)" }}>−{stats.deletions}</span> across{" "}
+              {stats.files_changed} file{stats.files_changed !== 1 ? "s" : ""}
             </Text>
           )}
-        </Box>
-        {stats && (
-          <Text className={taskRecapSummary}>
-            <span style={{ color: "var(--green-11)" }}>+{stats.insertions}</span>{" "}
-            <span style={{ color: "var(--red-11)" }}>−{stats.deletions}</span> across{" "}
-            {stats.files_changed} file{stats.files_changed !== 1 ? "s" : ""}
-          </Text>
-        )}
-      </Flex>
-      {commits.length > 0 && (
-        <Box className={taskRecapCommitList}>
-          {commits.map((c) => {
-            const expanded = expandedHashes.has(c.hash);
-            const commitLine = (
-              <>
-                {c.diff && (
-                  <CaretRight
-                    size={12}
-                    className={taskRecapCaret}
-                    style={{ transform: expanded ? "rotate(90deg)" : "rotate(0deg)" }}
-                  />
-                )}
-                <Text className={taskRecapCommitHash}>{c.hash}</Text>
-                <Text className={taskRecapCommitSubject}>{c.subject}</Text>
-              </>
-            );
+        </Flex>
+        {commits.length > 0 && (
+          <Box className={taskRecapCommitList}>
+            {commits.map((commit) => {
+              const expanded = expandedHashes.has(commit.hash);
+              const commitLine = (
+                <>
+                  {commit.diff && (
+                    <CaretRight
+                      size={12}
+                      className={taskRecapCaret}
+                      style={{ transform: expanded ? "rotate(90deg)" : "rotate(0deg)" }}
+                    />
+                  )}
+                  <Text className={taskRecapCommitHash}>{commit.hash}</Text>
+                  <Text className={taskRecapCommitSubject}>{commit.subject}</Text>
+                </>
+              );
 
-            return (
-              <Box key={c.hash} className={taskRecapCommitRow}>
-                {c.diff ? (
-                  <button
-                    type="button"
-                    className={taskRecapCommitToggle}
-                    onClick={() => toggleExpanded(c.hash)}
-                  >
-                    {commitLine}
-                  </button>
-                ) : (
-                  <Flex className={taskRecapCommitStatic} align="center" gap="2">
-                    {commitLine}
-                  </Flex>
-                )}
-                {expanded && c.diff && <CommitDiffView diff={c.diff} />}
-              </Box>
-            );
-          })}
-        </Box>
-      )}
-    </PhaseBreakBoundary>
+              return (
+                <Box key={commit.hash} className={taskRecapCommitRow}>
+                  {commit.diff ? (
+                    <button
+                      type="button"
+                      className={taskRecapCommitToggle}
+                      onClick={() => toggleExpanded(commit.hash)}
+                    >
+                      {commitLine}
+                    </button>
+                  ) : (
+                    <Flex className={taskRecapCommitStatic} align="center" gap="2">
+                      {commitLine}
+                    </Flex>
+                  )}
+                  {expanded && commit.diff && <CommitDiffView diff={commit.diff} />}
+                </Box>
+              );
+            })}
+          </Box>
+        )}
+      </Box>
+    </Box>
   );
 }
 
@@ -384,11 +382,11 @@ function TaskRecapBlock({
 
 function RawBlockDebug({ entry }: { entry: BlockEntry }) {
   const [expanded, setExpanded] = useState(false);
-  const json = JSON.stringify(
-    { blockId: entry.blockId, role: entry.role, block: entry.block },
-    null,
-    2,
+  const json = useMemo(
+    () => JSON.stringify({ blockId: entry.blockId, role: entry.role, block: entry.block }, null, 2),
+    [entry.blockId, entry.role, entry.block],
   );
+
   return (
     <Box
       px="2"
@@ -416,7 +414,7 @@ function RawBlockDebug({ entry }: { entry: BlockEntry }) {
       </Box>
       <button
         type="button"
-        onClick={() => setExpanded((v) => !v)}
+        onClick={() => setExpanded((value) => !value)}
         style={{
           all: "unset",
           cursor: "pointer",
@@ -434,9 +432,13 @@ function RawBlockDebug({ entry }: { entry: BlockEntry }) {
 
 // ─── Single block ─────────────────────────────────────────────────────────────
 
-type ToolCallBlockType = Extract<ContentBlock, { tag: "ToolCall" }>;
-
-function ToolCallDebugBlock({ block, role }: { block: ToolCallBlockType; role: Role }) {
+const ToolCallDebugBlock = memo(function ToolCallDebugBlock({
+  block,
+  role,
+}: {
+  block: ToolCallBlockType;
+  role: Role;
+}) {
   const [expanded, setExpanded] = useState(false);
   const statusColor =
     block.status.tag === "Success"
@@ -444,14 +446,15 @@ function ToolCallDebugBlock({ block, role }: { block: ToolCallBlockType; role: R
       : block.status.tag === "Failure"
         ? "var(--red-9)"
         : "var(--gray-9)";
-  const prettyArgs = (() => {
+  const prettyArgs = useMemo(() => {
     try {
       return JSON.stringify(JSON.parse(block.arguments), null, 2);
     } catch {
       return block.arguments;
     }
-  })();
-  const hasArgs = block.arguments && block.arguments !== "{}";
+  }, [block.arguments]);
+  const hasArgs = block.arguments !== "" && block.arguments !== "{}";
+
   return (
     <Box
       px="2"
@@ -491,7 +494,7 @@ function ToolCallDebugBlock({ block, role }: { block: ToolCallBlockType; role: R
           </Box>
           <button
             type="button"
-            onClick={() => setExpanded((v) => !v)}
+            onClick={() => setExpanded((value) => !value)}
             style={{
               all: "unset",
               cursor: "pointer",
@@ -512,17 +515,16 @@ function ToolCallDebugBlock({ block, role }: { block: ToolCallBlockType; role: R
       )}
     </Box>
   );
-}
+});
 
-function SingleBlock({
+const SingleBlock = memo(function SingleBlock({
   entry,
   sessionId,
   lastUnresolvedPermBlockId,
   agentForBlock,
-  userAvatarUrl,
   taskCompletedDuration,
   debugMode = false,
-  selectedBlockId,
+  isSelected,
   onSelectBlock,
   onReplyRequest,
 }: {
@@ -530,19 +532,17 @@ function SingleBlock({
   sessionId: string;
   lastUnresolvedPermBlockId: string | undefined;
   agentForBlock: AgentSnapshot | null;
-  userAvatarUrl: string | null;
   taskCompletedDuration: number | null;
   debugMode?: boolean;
-  selectedBlockId: string | null;
+  isSelected: boolean;
   onSelectBlock: (id: string | null) => void;
   onReplyRequest?: () => void;
 }) {
   const { block, blockId, role } = entry;
   const isCaptain = role.tag === "Captain";
-  const isSelected = selectedBlockId === blockId;
 
-  function handleBubbleClick(e: React.MouseEvent) {
-    e.stopPropagation();
+  function handleBubbleClick(event: React.MouseEvent) {
+    event.stopPropagation();
     onSelectBlock(isSelected ? null : blockId);
   }
 
@@ -552,15 +552,14 @@ function SingleBlock({
       const isThought = block.source.tag === "AgentThought";
       const isAgent = block.source.tag === "AgentMessage";
 
-      // Mate activity summary injected by Haiku — yellow bubble
       if (isHuman && isMateActivitySummary(block)) {
         const summary = extractMateActivitySummary(block.text);
         const summaryBlock = { ...block, text: summary };
-        const cls = `${feedBubble} ${feedBubbleActivitySummary}${isSelected ? ` ${feedBubbleSelected}` : ""}`;
+        const className = `${feedBubble} ${feedBubbleActivitySummary}${isSelected ? ` ${feedBubbleSelected}` : ""}`;
         return (
           <Box className={feedRowAgent}>
             <Box className={feedBubbleCol}>
-              <Box className={cls} onClick={handleBubbleClick}>
+              <Box className={className} onClick={handleBubbleClick}>
                 <TextBlock block={summaryBlock as TextBlockType} />
               </Box>
               {isSelected && <BubbleActionBar text={summary} onReply={onReplyRequest} />}
@@ -569,13 +568,12 @@ function SingleBlock({
         );
       }
 
-      // Real user message — right side
       if (isHuman && role.tag === "Captain") {
-        const cls = `${feedBubble} ${feedBubbleUser}${isSelected ? ` ${feedBubbleSelected}` : ""}`;
+        const className = `${feedBubble} ${feedBubbleUser}${isSelected ? ` ${feedBubbleSelected}` : ""}`;
         return (
           <Box className={feedRowUser}>
             <Box className={`${feedBubbleCol} ${feedBubbleColUser}`}>
-              <Box className={cls} onClick={handleBubbleClick}>
+              <Box className={className} onClick={handleBubbleClick}>
                 <TextBlock block={block as TextBlockType} />
               </Box>
               {isSelected && <BubbleActionBar text={block.text} onReply={onReplyRequest} />}
@@ -584,13 +582,12 @@ function SingleBlock({
         );
       }
 
-      // Captain steer to mate — left side, teal tint
       if (block.source.tag === "Steer" && role.tag === "Mate") {
-        const cls = `${feedBubble} ${feedBubbleSteer}${isSelected ? ` ${feedBubbleSelected}` : ""}`;
+        const className = `${feedBubble} ${feedBubbleSteer}${isSelected ? ` ${feedBubbleSelected}` : ""}`;
         return (
           <Box className={feedRowAgent}>
             <Box className={feedBubbleCol}>
-              <Box className={cls} onClick={handleBubbleClick}>
+              <Box className={className} onClick={handleBubbleClick}>
                 <TextBlock block={block as TextBlockType} />
               </Box>
               {isSelected && <BubbleActionBar text={block.text} speakable onReply={onReplyRequest} />}
@@ -599,13 +596,12 @@ function SingleBlock({
         );
       }
 
-      // Captain relaying to mate — left side, amber tint
       if (isHuman && role.tag === "Mate") {
-        const cls = `${feedBubble} ${feedBubbleRelay}${isSelected ? ` ${feedBubbleSelected}` : ""}`;
+        const className = `${feedBubble} ${feedBubbleRelay}${isSelected ? ` ${feedBubbleSelected}` : ""}`;
         return (
           <Box className={feedRowAgent}>
             <Box className={feedBubbleCol}>
-              <Box className={cls} onClick={handleBubbleClick}>
+              <Box className={className} onClick={handleBubbleClick}>
                 <TextBlock block={block as TextBlockType} />
               </Box>
               {isSelected && <BubbleActionBar text={block.text} speakable onReply={onReplyRequest} />}
@@ -614,25 +610,21 @@ function SingleBlock({
         );
       }
 
-      // Thought block — hidden
       if (isThought) {
         return null;
       }
 
-      // Agent message — left side
-      {
-        const cls = `${feedBubble}${isCaptain ? ` ${feedBubbleCaptain}` : ` ${feedBubbleMate}`}${isSelected ? ` ${feedBubbleSelected}` : ""}`;
-        return (
-          <Box className={feedRowAgent}>
-            <Box className={feedBubbleCol}>
-              <Box className={cls} onClick={handleBubbleClick}>
-                <TextBlock block={block as TextBlockType} />
-              </Box>
-              {isSelected && <BubbleActionBar text={block.text} speakable={isAgent} onReply={onReplyRequest} />}
+      const className = `${feedBubble}${isCaptain ? ` ${feedBubbleCaptain}` : ` ${feedBubbleMate}`}${isSelected ? ` ${feedBubbleSelected}` : ""}`;
+      return (
+        <Box className={feedRowAgent}>
+          <Box className={feedBubbleCol}>
+            <Box className={className} onClick={handleBubbleClick}>
+              <TextBlock block={block as TextBlockType} />
             </Box>
+            {isSelected && <BubbleActionBar text={block.text} speakable={isAgent} onReply={onReplyRequest} />}
           </Box>
-        );
-      }
+        </Box>
+      );
     }
 
     case "ToolCall":
@@ -658,8 +650,7 @@ function SingleBlock({
     case "PlanUpdate":
       return null;
 
-    case "Image": {
-      // User-sent image (captain role, human source) — right side
+    case "Image":
       if (role.tag === "Captain") {
         return (
           <Box className={feedRowUser}>
@@ -669,7 +660,6 @@ function SingleBlock({
           </Box>
         );
       }
-      // Relay image — left side
       return (
         <Box className={feedRowAgent}>
           <Box className={feedBubbleCol}>
@@ -679,7 +669,6 @@ function SingleBlock({
           </Box>
         </Box>
       );
-    }
 
     case "WorkflowMilestone":
       return <WorkflowMilestoneBlock block={block} />;
@@ -687,7 +676,7 @@ function SingleBlock({
     case "TaskRecap":
       return <TaskRecapBlock block={block} duration={taskCompletedDuration} />;
   }
-}
+});
 
 // ─── Startup state ────────────────────────────────────────────────────────────
 
@@ -711,11 +700,13 @@ function StartupFeedState({ startupState }: { startupState: SessionStartupState 
 
 // ─── Live bubbles ─────────────────────────────────────────────────────────────
 
-function ThinkingBubble({
+const ThinkingBubble = memo(function ThinkingBubble({
   sessionId,
   avatarSrc,
   agentName,
-  agent,
+  agentKind,
+  modelLabel,
+  effortLabel,
   lastUtterance,
   thinkingTokens,
   toolsOk,
@@ -724,16 +715,15 @@ function ThinkingBubble({
   sessionId: string;
   avatarSrc: string;
   agentName: string;
-  agent: AgentSnapshot;
+  agentKind: AgentSnapshot["kind"];
+  modelLabel: string;
+  effortLabel: string | null;
   lastUtterance: string;
   thinkingTokens: number;
   toolsOk: number;
   toolsFailed: number;
 }) {
   const [hovered, setHovered] = useState(false);
-
-  const modelLabel = agent.model_id ?? "unknown";
-  const effortLabel = agent.effort_value_id;
 
   return (
     <Box
@@ -761,11 +751,17 @@ function ThinkingBubble({
           }}
         >
           <Flex align="center" gap="2" mb={lastUtterance ? "2" : "0"}>
-            <AgentKindIcon kind={agent.kind} />
-            <Text size="2" weight="bold">{agentName}</Text>
-            <Text size="1" color="gray">{modelLabel}</Text>
+            <AgentKindIcon kind={agentKind} />
+            <Text size="2" weight="bold">
+              {agentName}
+            </Text>
+            <Text size="1" color="gray">
+              {modelLabel}
+            </Text>
             {effortLabel && (
-              <Text size="1" color="gray">({effortLabel})</Text>
+              <Text size="1" color="gray">
+                ({effortLabel})
+              </Text>
             )}
           </Flex>
           {lastUtterance && (
@@ -798,7 +794,9 @@ function ThinkingBubble({
           title="Stop agent"
         >
           <img src={avatarSrc} alt={agentName} className={thinkingAvatarImg} />
-          <span className={thinkingAvatarStop}><Stop size={14} weight="fill" /></span>
+          <span className={thinkingAvatarStop}>
+            <Stop size={14} weight="fill" />
+          </span>
         </button>
         {toolsOk > 0 && (
           <Text size="2" style={{ color: "var(--green-11)" }}>
@@ -816,7 +814,7 @@ function ThinkingBubble({
       </div>
     </Box>
   );
-}
+});
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
@@ -869,7 +867,6 @@ export function UnifiedFeed({
   taskCompletedDuration,
   captainTurnStartedAt = null,
   mateTurnStartedAt = null,
-  userAvatarUrl = null,
   loading,
   loadingLabel,
   debugMode = false,
@@ -882,7 +879,7 @@ export function UnifiedFeed({
   const [atBottom, setAtBottom] = useState(true);
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<HTMLDivElement | null>(null);
-  const isImageDragOver = useDocumentDrop(dropTarget, onImageDrop ?? (() => undefined));
+  const isImageDragOver = useDocumentDrop(dropTarget, onImageDrop ?? NOOP_IMAGE_DROP);
   const [tick, setTick] = useState(() => Date.now());
 
   useEffect(() => {
@@ -900,8 +897,6 @@ export function UnifiedFeed({
     };
   }, [onImageDragStateChange]);
 
-  // Track which blocks belong to the per-session historical baseline so a feed
-  // remount does not replay entrance animations for existing history.
   const sessionAnimationBaseline = getSessionFeedAnimationBaseline(sessionId);
   if (loading || !sessionAnimationBaseline.established) {
     for (const block of blocks) {
@@ -912,46 +907,43 @@ export function UnifiedFeed({
     sessionAnimationBaseline.established = true;
   }
 
-  const humanMsgCount = blocks.filter(
-    (b) => b.block.tag === "Text" && b.block.source.tag === "Human",
-  ).length;
+  const humanMsgCount = useMemo(
+    () => blocks.filter((block) => block.block.tag === "Text" && block.block.source.tag === "Human").length,
+    [blocks],
+  );
 
-  // Always scroll to bottom when the user sends a message.
   useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
+    const element = scrollRef.current;
+    if (!element) return;
+    element.scrollTop = element.scrollHeight;
     stickyScroll.current = true;
     setAtBottom(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [humanMsgCount]);
 
   useEffect(() => {
-    const el = scrollRef.current;
-    if (!el || !stickyScroll.current) return;
-    el.scrollTop = el.scrollHeight;
+    const element = scrollRef.current;
+    if (!element || !stickyScroll.current) return;
+    element.scrollTop = element.scrollHeight;
   }, [blocks, captain?.state, mate?.state]);
 
-  // Re-snap to bottom when the scroll container resizes (e.g. composer
-  // auto-grow causes flex reflow, or window resize).
   useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    const observer = new ResizeObserver(() => {
       if (stickyScroll.current) {
-        el.scrollTop = el.scrollHeight;
+        element.scrollTop = element.scrollHeight;
       }
     });
-    ro.observe(el);
-    return () => ro.disconnect();
+    observer.observe(element);
+    return () => observer.disconnect();
   }, []);
 
   function handleScroll() {
-    const el = scrollRef.current;
-    if (!el) return;
-    const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 32;
-    stickyScroll.current = isAtBottom;
-    setAtBottom(isAtBottom);
+    const element = scrollRef.current;
+    if (!element) return;
+    const nextAtBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 32;
+    stickyScroll.current = nextAtBottom;
+    setAtBottom(nextAtBottom);
   }
 
   function scrollToBottom() {
@@ -961,59 +953,70 @@ export function UnifiedFeed({
   const showStartupFeed = startupState?.tag !== "Ready";
   const captainWorking = captain?.state.tag === "Working";
   const mateWorking = mate?.state.tag === "Working";
-
-  const MAX_RENDERED_BLOCKS = 80;
   const truncated = blocks.length > MAX_RENDERED_BLOCKS;
-  const visibleBlocks = truncated ? blocks.slice(blocks.length - MAX_RENDERED_BLOCKS) : blocks;
-
-  function computeTurnStats(roleTag: "Captain" | "Mate", turnStartedAt: string) {
-    let tokens = 0;
-    let ok = 0;
-    let failed = 0;
-    let lastUtterance = "";
-    const turnStartMs = Date.parse(turnStartedAt);
-    let turnStarted = Number.isNaN(turnStartMs);
-    for (const b of blocks) {
-      if (!turnStarted) {
-        const blockMs = b.timestamp ? Date.parse(b.timestamp) : Number.NaN;
-        if (!Number.isNaN(blockMs) && blockMs >= turnStartMs) {
-          turnStarted = true;
-        } else {
-          continue;
-        }
-      }
-      if (b.role.tag !== roleTag) continue;
-      if (b.block.tag === "Text") {
-        if (b.block.source.tag === "AgentThought" || b.block.source.tag === "AgentMessage") {
-          tokens += countTokens(b.block.text);
-          lastUtterance = b.block.text;
-        }
-      } else if (b.block.tag === "ToolCall") {
-        if (b.block.status.tag === "Success") ok++;
-        else if (b.block.status.tag === "Failure") failed++;
-        for (const text of toolCallTokenTexts(b.block)) {
-          tokens += countTokens(text);
-        }
+  const visibleBlocks = useMemo(
+    () => (truncated ? blocks.slice(blocks.length - MAX_RENDERED_BLOCKS) : blocks),
+    [blocks, truncated],
+  );
+  const segments = useMemo(() => buildSegments(visibleBlocks, debugMode), [visibleBlocks, debugMode]);
+  const lastUnresolvedPermBlockId = useMemo(() => {
+    let blockId: string | undefined;
+    for (const entry of visibleBlocks) {
+      if (entry.block.tag === "Permission" && !entry.block.resolution) {
+        blockId = entry.blockId;
       }
     }
-    return { tokens, ok, failed, lastUtterance };
-  }
+    return blockId;
+  }, [visibleBlocks]);
+  const captainTurn = useMemo(
+    () =>
+      captainWorking ? computeTurnStats(visibleBlocks, "Captain", captainTurnStartedAt) : null,
+    [captainWorking, visibleBlocks, captainTurnStartedAt],
+  );
+  const mateTurn = useMemo(
+    () => (mateWorking ? computeTurnStats(visibleBlocks, "Mate", mateTurnStartedAt) : null),
+    [mateWorking, visibleBlocks, mateTurnStartedAt],
+  );
+  const renderedSegments = useMemo<RenderedSegment[]>(() => {
+    let previousTimestampMs: number | null = null;
 
-  const captainTurn =
-    captainWorking && captainTurnStartedAt
-      ? computeTurnStats("Captain", captainTurnStartedAt)
-      : null;
-  const mateTurn =
-    mateWorking && mateTurnStartedAt ? computeTurnStats("Mate", mateTurnStartedAt) : null;
+    return segments.map((seg) => {
+      const agentRole = segmentAgentRole(seg);
+      const agentForBlock =
+        agentRole?.tag === "Captain"
+          ? captain
+          : agentRole?.tag === "Mate"
+            ? mate
+            : seg.entry.role.tag === "Captain"
+              ? captain
+              : mate;
+      const timestampMs = parseTimestampMs(seg.entry.timestamp);
+      const gapLabel =
+        previousTimestampMs != null &&
+        timestampMs != null &&
+        timestampMs - previousTimestampMs > GAP_MS
+          ? formatRelativeTime(timestampMs, tick)
+          : null;
 
-  let lastUnresolvedPermBlockId: string | undefined;
-  for (const entry of visibleBlocks) {
-    if (entry.block.tag === "Permission" && !entry.block.resolution) {
-      lastUnresolvedPermBlockId = entry.blockId;
-    }
-  }
+      if (timestampMs != null) {
+        previousTimestampMs = timestampMs;
+      }
 
-  const segments = buildSegments(visibleBlocks, debugMode);
+      return {
+        seg,
+        agentForBlock,
+        isTaskRecap: seg.entry.block.tag === "TaskRecap",
+        gapLabel,
+        timestampMs,
+      };
+    });
+  }, [segments, captain, mate, tick]);
+  const trailingGapLabel = useMemo(() => {
+    const lastTimestampMs = renderedSegments[renderedSegments.length - 1]?.timestampMs ?? null;
+    if (lastTimestampMs == null || tick - lastTimestampMs <= GAP_MS) return null;
+    return formatRelativeTime(lastTimestampMs, tick);
+  }, [renderedSegments, tick]);
+
 
   return (
     <Box ref={setDropTarget} className={unifiedFeedRoot} data-testid="session-feed-drop-target">
@@ -1026,7 +1029,12 @@ export function UnifiedFeed({
         </Flex>
       )}
 
-      <Box ref={scrollRef} className={unifiedFeedScroll} onScroll={handleScroll} onClick={() => setSelectedBlockId(null)}>
+      <Box
+        ref={scrollRef}
+        className={unifiedFeedScroll}
+        onScroll={handleScroll}
+        onClick={() => setSelectedBlockId(null)}
+      >
         {!atBottom && (
           <button
             type="button"
@@ -1052,40 +1060,11 @@ export function UnifiedFeed({
             </Flex>
           )}
 
-          {segments.map((seg, idx) => {
-            const agentRole = segmentAgentRole(seg);
-            const agentForBlock =
-              agentRole?.tag === "Captain"
-                ? captain
-                : agentRole?.tag === "Mate"
-                  ? mate
-                  : seg.entry.role.tag === "Captain"
-                    ? captain
-                    : mate;
+          {renderedSegments.map(({ seg, agentForBlock, gapLabel, isTaskRecap }) => {
             const alreadyKnown = sessionAnimationBaseline.blockIds.has(seg.entry.blockId);
             const animate = !loading && sessionAnimationBaseline.established && !alreadyKnown;
             if (!alreadyKnown) {
               sessionAnimationBaseline.blockIds.add(seg.entry.blockId);
-            }
-            const isPhaseBreak =
-              seg.entry.block.tag === "TaskRecap" || seg.entry.block.tag === "WorkflowMilestone";
-
-            // Gap detection: check if >2 minutes between previous and current segment
-            let gapIndicator: React.ReactNode = null;
-            if (idx > 0) {
-              const prevTs = segments[idx - 1].entry.timestamp;
-              const curTs = seg.entry.timestamp;
-              if (prevTs && curTs) {
-                const prevTime = new Date(prevTs).getTime();
-                const curTime = new Date(curTs).getTime();
-                if (!Number.isNaN(prevTime) && !Number.isNaN(curTime) && curTime - prevTime > 2 * 60 * 1000) {
-                  gapIndicator = (
-                    <Box className={feedContentColumn}>
-                      <Text className={feedTimeGap}>{formatRelativeTime(curTs, tick)}</Text>
-                    </Box>
-                  );
-                }
-              }
             }
 
             const blockContent = animate ? (
@@ -1095,10 +1074,9 @@ export function UnifiedFeed({
                   sessionId={sessionId}
                   lastUnresolvedPermBlockId={lastUnresolvedPermBlockId}
                   agentForBlock={agentForBlock}
-                  userAvatarUrl={userAvatarUrl}
                   taskCompletedDuration={taskCompletedDuration}
                   debugMode={debugMode}
-                  selectedBlockId={selectedBlockId}
+                  isSelected={selectedBlockId === seg.entry.blockId}
                   onSelectBlock={setSelectedBlockId}
                   onReplyRequest={onReplyRequest}
                 />
@@ -1109,20 +1087,22 @@ export function UnifiedFeed({
                 sessionId={sessionId}
                 lastUnresolvedPermBlockId={lastUnresolvedPermBlockId}
                 agentForBlock={agentForBlock}
-                userAvatarUrl={userAvatarUrl}
                 taskCompletedDuration={taskCompletedDuration}
                 debugMode={debugMode}
-                selectedBlockId={selectedBlockId}
+                isSelected={selectedBlockId === seg.entry.blockId}
                 onSelectBlock={setSelectedBlockId}
                 onReplyRequest={onReplyRequest}
               />
             );
+
             return (
               <Fragment key={seg.entry.blockId}>
-                {gapIndicator}
-                {isPhaseBreak ? blockContent : (
-                  <Box className={feedContentColumn}>{blockContent}</Box>
+                {gapLabel && (
+                  <Box className={feedContentColumn}>
+                    <Text className={feedTimeGap}>{gapLabel}</Text>
+                  </Box>
                 )}
+                {isTaskRecap ? blockContent : <Box className={feedContentColumn}>{blockContent}</Box>}
                 {debugMode && (
                   <Box className={feedContentColumn}>
                     <RawBlockDebug entry={seg.entry} />
@@ -1131,21 +1111,11 @@ export function UnifiedFeed({
               </Fragment>
             );
           })}
-          {/* Trailing gap indicator after the last segment */}
-          {segments.length > 0 && (() => {
-            const lastTs = segments[segments.length - 1].entry.timestamp;
-            if (lastTs) {
-              const lastTime = new Date(lastTs).getTime();
-              if (!Number.isNaN(lastTime) && tick - lastTime > 2 * 60 * 1000) {
-                return (
-                  <Box className={feedContentColumn}>
-                    <Text className={feedTimeGap}>{formatRelativeTime(lastTs, tick)}</Text>
-                  </Box>
-                );
-              }
-            }
-            return null;
-          })()}
+          {trailingGapLabel && (
+            <Box className={feedContentColumn}>
+              <Text className={feedTimeGap}>{trailingGapLabel}</Text>
+            </Box>
+          )}
         </Box>
 
         <Box className={feedContentColumn}>
@@ -1162,7 +1132,9 @@ export function UnifiedFeed({
                   sessionId={sessionId}
                   avatarSrc={captainAvatar}
                   agentName="Captain"
-                  agent={captain}
+                  agentKind={captain.kind}
+                  modelLabel={captain.model_id ?? "unknown"}
+                  effortLabel={captain.effort_value_id}
                   lastUtterance={captainTurn.lastUtterance}
                   thinkingTokens={captainTurn.tokens}
                   toolsOk={captainTurn.ok}
@@ -1182,7 +1154,9 @@ export function UnifiedFeed({
                   sessionId={sessionId}
                   avatarSrc={mateAvatar}
                   agentName="Mate"
-                  agent={mate}
+                  agentKind={mate.kind}
+                  modelLabel={mate.model_id ?? "unknown"}
+                  effortLabel={mate.effort_value_id}
                   lastUtterance={mateTurn.lastUtterance}
                   thinkingTokens={mateTurn.tokens}
                   toolsOk={mateTurn.ok}
