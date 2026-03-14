@@ -36,17 +36,21 @@ export function useGlobalKeyboard(
 
   useEffect(() => {
     const orderedSessions = sortSessions(allSessions);
-    const currentSession = currentSessionIdRef.current
-      ? allSessions.find((s) => s.slug === currentSessionIdRef.current)
-      : undefined;
+
+    function getActiveSession() {
+      const sessionSlug = currentSessionIdRef.current;
+      return sessionSlug ? allSessions.find((session) => session.slug === sessionSlug) : undefined;
+    }
 
     function handleKeyDown(e: KeyboardEvent) {
+      const activeSession = getActiveSession();
+
       // Alt+Escape: stop agents — works globally, even in text inputs
-      if (e.key === "Escape" && e.altKey && currentSession) {
+      if (e.key === "Escape" && e.altKey && activeSession) {
         e.preventDefault();
         void (async () => {
           const client = await getShipClient();
-          await client.stopAgents(currentSession.id);
+          await client.stopAgents(activeSession.id);
         })();
         return;
       }
@@ -77,7 +81,7 @@ export function useGlobalKeyboard(
       }
 
       // Space: tap to toggle recording, hold to record-and-send
-      if (e.key === " " && !e.repeat && currentSessionIdRef.current) {
+      if (e.key === " " && !e.repeat && activeSession) {
         const t = transcriptionRef.current;
         e.preventDefault();
         if (t.isRecording()) {
@@ -85,20 +89,20 @@ export function useGlobalKeyboard(
           spaceDownAt.current = 0;
         } else {
           spaceDownAt.current = Date.now();
-          t.startRecording(currentSessionIdRef.current);
+          t.startRecording(activeSession.id);
         }
         return;
       }
 
       // A-A chord: archive current session
-      if (e.key === "a" && currentSession) {
+      if (e.key === "a" && activeSession) {
         const now = Date.now();
         if (now - lastAPress.current < 500) {
           e.preventDefault();
           lastAPress.current = 0;
           void (async () => {
             const client = await getShipClient();
-            const result = await client.archiveSession({ id: currentSession.id, force: true });
+            const result = await client.archiveSession({ id: activeSession.id, force: true });
             if (result.tag === "Archived") {
               const sessionId = currentSessionIdRef.current;
               if (sessionId) onSessionArchived?.(sessionId);
