@@ -34,7 +34,6 @@ import {
   feedBubbleSteer,
   feedBubbleUser,
   feedBubbleActivitySummary,
-  feedTimestamp,
   feedRowAgent,
   feedRowAnimate,
   feedRowUser,
@@ -81,12 +80,6 @@ import {
 } from "../styles/session-view.css";
 
 type TextBlockType = Extract<ContentBlock, { tag: "Text" }>;
-
-function formatTime(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-}
 
 // ─── System message detection ─────────────────────────────────────────────────
 // Human blocks injected by the server (task assignments, system prompts) are
@@ -466,7 +459,7 @@ function SingleBlock({
                 block={summaryBlock as TextBlockType}
                 speakable={false}
                 isLast={isLast}
-                timestamp={entry.timestamp ?? undefined}
+
               />
             </Box>
           </Box>
@@ -502,7 +495,7 @@ function SingleBlock({
                 block={block as TextBlockType}
                 speakable
                 isLast={isLast}
-                timestamp={entry.timestamp ?? undefined}
+
               />
             </Box>
           </Box>
@@ -523,7 +516,7 @@ function SingleBlock({
                 block={block as TextBlockType}
                 speakable
                 isLast={isLast}
-                timestamp={entry.timestamp ?? undefined}
+
               />
             </Box>
           </Box>
@@ -550,7 +543,6 @@ function SingleBlock({
               block={block as TextBlockType}
               speakable
               isLast={isLast}
-              timestamp={entry.timestamp ?? undefined}
             />
           </Box>
         </Box>
@@ -599,9 +591,6 @@ function SingleBlock({
             <Box className={`${feedBubble} ${feedBubbleRelay}`}>
               <ImageBlock block={block} />
             </Box>
-            {isLast && entry.timestamp && (
-              <Text className={feedTimestamp}>{formatTime(entry.timestamp)}</Text>
-            )}
           </Box>
         </Box>
       );
