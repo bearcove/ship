@@ -772,6 +772,15 @@ export const sessionHeaderSideButton = style({
   justifyContent: "center",
   padding: "0 var(--space-3)",
   borderRadius: 0,
+  border: "none",
+  background: "transparent",
+  color: "var(--gray-11)",
+  cursor: "pointer",
+  selectors: {
+    "&:hover": {
+      background: "var(--gray-a3)",
+    },
+  },
 });
 
 export const sessionHeaderSideButtonDesktopOnly = style({
