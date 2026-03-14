@@ -1292,6 +1292,15 @@ export const feedTimestamp = style({
   color: "var(--gray-9)",
 });
 
+export const feedTimeGap = style({
+  textAlign: "center",
+  fontSize: "var(--font-size-1)",
+  color: "var(--gray-9)",
+  paddingTop: "var(--space-3)",
+  paddingBottom: "var(--space-3)",
+  width: "100%",
+});
+
 export const feedBubbleCol = style({
   display: "flex",
   flexDirection: "column",
