@@ -43,6 +43,11 @@ const PRESET_CONTINUATION_PROMPT: &str = "Sorry for the interruption, please con
 const PRESET_RESPAWN_NOT_IMPLEMENTED: &str =
     "preset switches that require respawning the agent are not implemented yet";
 
+struct SpawnedRoleAgent {
+    spawn: ship_core::AgentSpawnInfo,
+    acp_info: AgentAcpInfo,
+}
+
 fn extract_agent_text(events: Vec<SessionEvent>) -> String {
     let mut blocks: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     let mut order: Vec<String> = Vec::new();
@@ -376,6 +381,18 @@ impl ShipImpl {
         }
 
         self.agent_driver.set_model(handle, model_id).await
+    }
+
+    async fn agent_kill(
+        &self,
+        handle: &ship_core::AgentHandle,
+    ) -> Result<(), ship_core::AgentError> {
+        #[cfg(test)]
+        if let Some(driver) = Self::test_agent_driver() {
+            return driver.kill(handle).await;
+        }
+
+        self.agent_driver.kill(handle).await
     }
 
     /// Configure the whisper model path from env var or default locations.
@@ -907,6 +924,93 @@ impl ShipImpl {
             .unwrap_or_else(|| agent.kind.default_provider_id())
     }
 
+    async fn spawn_session_role(
+        &self,
+        session_id: &SessionId,
+        role: Role,
+        kind: AgentKind,
+        resume_session_id: Option<String>,
+    ) -> Result<SpawnedRoleAgent, String> {
+        let worktree_path = self.ensure_session_worktree_path(session_id).await?;
+        let ship_mcp = match role {
+            Role::Captain => self.install_captain_mcp_server(session_id).await?,
+            Role::Mate => self.install_mate_mcp_server(session_id).await?,
+        };
+        let config = AgentSessionConfig {
+            worktree_path,
+            mcp_servers: vec![ship_mcp],
+            resume_session_id,
+        };
+        let spawn = self
+            .agent_spawn(kind, role, &config)
+            .await
+            .map_err(|error| error.message)?;
+        let acp_info = AgentAcpInfo {
+            acp_session_id: spawn.acp_session_id.clone(),
+            was_resumed: spawn.was_resumed,
+            protocol_version: spawn.protocol_version,
+            agent_name: spawn.agent_name.clone(),
+            agent_version: spawn.agent_version.clone(),
+            cap_load_session: spawn.cap_load_session,
+            cap_resume_session: spawn.cap_resume_session,
+            cap_prompt_image: spawn.cap_prompt_image,
+            cap_prompt_audio: spawn.cap_prompt_audio,
+            cap_prompt_embedded_context: spawn.cap_prompt_embedded_context,
+            cap_mcp_http: spawn.cap_mcp_http,
+            cap_mcp_sse: spawn.cap_mcp_sse,
+            last_event_at: None,
+        };
+        Ok(SpawnedRoleAgent { spawn, acp_info })
+    }
+
+    fn apply_spawned_role_to_session(
+        session: &mut ActiveSession,
+        role: Role,
+        spawned: SpawnedRoleAgent,
+    ) {
+        let SpawnedRoleAgent { spawn, acp_info } = spawned;
+        let ship_core::AgentSpawnInfo {
+            handle,
+            model_id,
+            available_models,
+            effort_config_id,
+            effort_value_id,
+            available_effort_values,
+            acp_session_id,
+            ..
+        } = spawn;
+
+        match role {
+            Role::Captain => {
+                session.captain_handle = Some(handle);
+                session.captain_acp_session_id = Some(acp_session_id);
+                if model_id.is_some() {
+                    session.captain.model_id = model_id;
+                }
+                if !available_models.is_empty() {
+                    session.captain.available_models = available_models;
+                }
+            }
+            Role::Mate => {
+                session.mate_handle = Some(handle);
+                session.mate_acp_session_id = Some(acp_session_id);
+                session.mate.model_id = model_id;
+                session.mate.available_models = available_models;
+                session.mate.effort_config_id = effort_config_id;
+                session.mate.effort_value_id = effort_value_id;
+                session.mate.available_effort_values = available_effort_values;
+            }
+        }
+
+        apply_event(
+            session,
+            SessionEvent::AgentAcpInfoChanged {
+                role,
+                info: acp_info,
+            },
+        );
+    }
+
     async fn resolve_project_root(
         &self,
         project: &ProjectName,
@@ -1167,7 +1271,6 @@ Continue where you left off — wait for the human to give you direction."
         session_id: &SessionId,
         send_bootstrap: bool,
     ) -> Result<(), String> {
-        // 1. Kill old handle if any
         let old_handle = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             sessions
@@ -1175,16 +1278,9 @@ Continue where you left off — wait for the human to give you direction."
                 .and_then(|s| s.captain_handle.clone())
         };
         if let Some(handle) = old_handle {
-            let _ = self.agent_driver.kill(&handle).await;
+            let _ = self.agent_kill(&handle).await;
         }
 
-        // 2. Ensure worktree_path is set. If not, compute it from session ID + project.
-        let worktree_path = self.ensure_session_worktree_path(session_id).await?;
-
-        // 3. Install captain MCP server
-        let captain_ship_mcp = self.install_captain_mcp_server(session_id).await?;
-
-        // 4. Get stored ACP session ID and other config
         let (captain_kind, captain_acp_id) = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let s = sessions
@@ -1193,70 +1289,24 @@ Continue where you left off — wait for the human to give you direction."
             (s.config.captain_kind, s.captain_acp_session_id.clone())
         };
 
-        let captain_config = AgentSessionConfig {
-            worktree_path,
-            mcp_servers: vec![captain_ship_mcp],
-            resume_session_id: captain_acp_id,
-        };
+        let spawned = self
+            .spawn_session_role(session_id, Role::Captain, captain_kind, captain_acp_id)
+            .await?;
+        let was_resumed = spawned.spawn.was_resumed;
 
-        // 5. Spawn captain
-        let captain_spawn = self
-            .agent_driver
-            .spawn(captain_kind, Role::Captain, &captain_config)
-            .await
-            .map_err(|e| e.message)?;
-
-        let was_resumed = captain_spawn.was_resumed;
-
-        let captain_acp_info = AgentAcpInfo {
-            acp_session_id: captain_spawn.acp_session_id.clone(),
-            was_resumed: captain_spawn.was_resumed,
-            protocol_version: captain_spawn.protocol_version,
-            agent_name: captain_spawn.agent_name.clone(),
-            agent_version: captain_spawn.agent_version.clone(),
-            cap_load_session: captain_spawn.cap_load_session,
-            cap_resume_session: captain_spawn.cap_resume_session,
-            cap_prompt_image: captain_spawn.cap_prompt_image,
-            cap_prompt_audio: captain_spawn.cap_prompt_audio,
-            cap_prompt_embedded_context: captain_spawn.cap_prompt_embedded_context,
-            cap_mcp_http: captain_spawn.cap_mcp_http,
-            cap_mcp_sse: captain_spawn.cap_mcp_sse,
-            last_event_at: None,
-        };
-
-        // 6. Update session
         {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
-            if let Some(s) = sessions.get_mut(session_id) {
-                s.captain_handle = Some(captain_spawn.handle);
-                s.captain_acp_session_id = Some(captain_spawn.acp_session_id);
-                if captain_spawn.model_id.is_some() {
-                    s.captain.model_id = captain_spawn.model_id;
-                }
-                if !captain_spawn.available_models.is_empty() {
-                    s.captain.available_models = captain_spawn.available_models;
-                }
-                apply_event(
-                    s,
-                    ship_types::SessionEvent::AgentAcpInfoChanged {
-                        role: Role::Captain,
-                        info: captain_acp_info,
-                    },
-                );
+            if let Some(session) = sessions.get_mut(session_id) {
+                Self::apply_spawned_role_to_session(session, Role::Captain, spawned);
             }
         }
         let _ = self.persist_session(session_id).await;
 
-        // 7. Discard replayed notifications from load_session.
-        // When the agent loads a previous session, it replays all historical
-        // events as notifications. We already have those in our event log,
-        // so drain and discard them to avoid duplicates.
         if was_resumed {
             self.discard_queued_notifications(session_id, Role::Captain)
                 .await;
         }
 
-        // 8. Send bootstrap prompt (skipped when a user prompt is about to follow)
         if send_bootstrap {
             let prompt = if was_resumed {
                 Self::captain_resume_prompt()
@@ -1740,64 +1790,23 @@ Continue where you left off — wait for the human to give you direction."
             )
         };
 
-        let worktree_path = self.ensure_session_worktree_path(session_id).await?;
-
         if let Some(handle) = old_handle {
-            let _ = self.agent_driver.kill(&handle).await;
+            let _ = self.agent_kill(&handle).await;
         }
 
-        let mate_ship_mcp = self.install_mate_mcp_server(session_id).await?;
-        let mate_config = AgentSessionConfig {
-            worktree_path,
-            mcp_servers: vec![mate_ship_mcp],
-            resume_session_id: mate_acp_id,
-        };
-
-        let mate_spawn = self
-            .agent_spawn(mate_kind, Role::Mate, &mate_config)
-            .await
-            .map_err(|error| error.message)?;
-
-        let was_resumed = mate_spawn.was_resumed;
-
-        let mate_acp_info = AgentAcpInfo {
-            acp_session_id: mate_spawn.acp_session_id.clone(),
-            was_resumed: mate_spawn.was_resumed,
-            protocol_version: mate_spawn.protocol_version,
-            agent_name: mate_spawn.agent_name.clone(),
-            agent_version: mate_spawn.agent_version.clone(),
-            cap_load_session: mate_spawn.cap_load_session,
-            cap_resume_session: mate_spawn.cap_resume_session,
-            cap_prompt_image: mate_spawn.cap_prompt_image,
-            cap_prompt_audio: mate_spawn.cap_prompt_audio,
-            cap_prompt_embedded_context: mate_spawn.cap_prompt_embedded_context,
-            cap_mcp_http: mate_spawn.cap_mcp_http,
-            cap_mcp_sse: mate_spawn.cap_mcp_sse,
-            last_event_at: None,
-        };
+        let spawned = self
+            .spawn_session_role(session_id, Role::Mate, mate_kind, mate_acp_id)
+            .await?;
+        let was_resumed = spawned.spawn.was_resumed;
 
         {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             if let Some(session) = sessions.get_mut(session_id) {
-                session.mate_handle = Some(mate_spawn.handle);
-                session.mate_acp_session_id = Some(mate_spawn.acp_session_id);
-                session.mate.model_id = mate_spawn.model_id;
-                session.mate.available_models = mate_spawn.available_models;
-                session.mate.effort_config_id = mate_spawn.effort_config_id;
-                session.mate.effort_value_id = mate_spawn.effort_value_id;
-                session.mate.available_effort_values = mate_spawn.available_effort_values;
-                apply_event(
-                    session,
-                    ship_types::SessionEvent::AgentAcpInfoChanged {
-                        role: Role::Mate,
-                        info: mate_acp_info,
-                    },
-                );
+                Self::apply_spawned_role_to_session(session, Role::Mate, spawned);
             }
         }
         let _ = self.persist_session(session_id).await;
 
-        // Discard replayed notifications from load_session to prevent duplicates
         if was_resumed {
             self.discard_queued_notifications(session_id, Role::Mate)
                 .await;
