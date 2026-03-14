@@ -435,9 +435,24 @@ export type SubscribeMessage =
   | { tag: 'Event'; value: SessionEventEnvelope }
   | { tag: 'ReplayComplete' };
 
+export type ActivityKind =
+  | { tag: 'CaptainMessage'; message: string }
+  | { tag: 'SessionCreated' }
+  | { tag: 'SessionArchived' };
+
+export interface ActivityEntry {
+  id: bigint;
+  timestamp: string;
+  session_id: SessionId;
+  session_slug: string;
+  session_title: string | null;
+  kind: ActivityKind;
+}
+
 export type GlobalEvent =
   | { tag: 'SessionListChanged'; sessions: SessionSummary[] }
-  | { tag: 'ProjectListChanged'; projects: ProjectInfo[] };
+  | { tag: 'ProjectListChanged'; projects: ProjectInfo[] }
+  | { tag: 'Activity'; entry: ActivityEntry };
 
 export interface TranscribeSegment {
   start_ms: bigint;
@@ -1354,7 +1369,7 @@ export class ShipDispatcher implements ChannelingDispatcher {
       } catch {
         call.replyInternalError();
       }
-    } else if (method.id === 0xede327b9d8c492a7n) {
+    } else if (method.id === 0x142813dd67aadd26n) {
       try {
         const result = await this.handler.subscribeGlobalEvents(args[0] as Tx<GlobalEvent>);
         (args[0] as { close(): void }).close(); // close output before reply
@@ -1448,7 +1463,9 @@ const ship_schema_registry: SchemaRegistry = new Map<string, Schema>([
   ["SessionEvent", { kind: 'enum', variants: [{ name: 'BlockAppend', fields: { 'block_id': { kind: 'string' }, 'role': { kind: 'ref', name: 'Role' }, 'block': { kind: 'ref', name: 'ContentBlock' } } }, { name: 'BlockPatch', fields: { 'block_id': { kind: 'string' }, 'role': { kind: 'ref', name: 'Role' }, 'patch': { kind: 'ref', name: 'BlockPatch' } } }, { name: 'AgentStateChanged', fields: { 'role': { kind: 'ref', name: 'Role' }, 'state': { kind: 'ref', name: 'AgentState' } } }, { name: 'SessionStartupChanged', fields: { 'state': { kind: 'ref', name: 'SessionStartupState' } } }, { name: 'TaskStatusChanged', fields: { 'task_id': { kind: 'string' }, 'status': { kind: 'ref', name: 'TaskStatus' } } }, { name: 'ContextUpdated', fields: { 'role': { kind: 'ref', name: 'Role' }, 'remaining_percent': { kind: 'u8' } } }, { name: 'TaskStarted', fields: { 'task_id': { kind: 'string' }, 'title': { kind: 'string' }, 'description': { kind: 'string' }, 'steps': { kind: 'vec', element: { kind: 'ref', name: 'PlanStep' } } } }, { name: 'AgentModelChanged', fields: { 'role': { kind: 'ref', name: 'Role' }, 'model_id': { kind: 'option', inner: { kind: 'string' } }, 'available_models': { kind: 'vec', element: { kind: 'string' } } } }, { name: 'AgentPresetChanged', fields: { 'role': { kind: 'ref', name: 'Role' }, 'preset_id': { kind: 'option', inner: { kind: 'string' } }, 'kind': { kind: 'ref', name: 'AgentKind' }, 'provider': { kind: 'option', inner: { kind: 'string' } } } }, { name: 'AgentEffortChanged', fields: { 'role': { kind: 'ref', name: 'Role' }, 'effort_config_id': { kind: 'option', inner: { kind: 'string' } }, 'effort_value_id': { kind: 'option', inner: { kind: 'string' } }, 'available_effort_values': { kind: 'vec', element: { kind: 'ref', name: 'EffortValue' } } } }, { name: 'MateGuidanceQueued', fields: { 'role': { kind: 'ref', name: 'Role' }, 'message': { kind: 'string' } } }, { name: 'HumanReviewRequested', fields: { 'message': { kind: 'string' }, 'diff': { kind: 'string' }, 'worktree_path': { kind: 'string' } } }, { name: 'HumanReviewCleared', fields: null }, { name: 'SessionTitleChanged', fields: { 'title': { kind: 'string' } } }, { name: 'AgentAcpInfoChanged', fields: { 'role': { kind: 'ref', name: 'Role' }, 'info': { kind: 'ref', name: 'AgentAcpInfo' } } }] }],
   ["SessionEventEnvelope", { kind: 'struct', fields: { 'seq': { kind: 'u64' }, 'timestamp': { kind: 'string' }, 'event': { kind: 'ref', name: 'SessionEvent' } } }],
   ["SubscribeMessage", { kind: 'enum', variants: [{ name: 'Event', fields: { kind: 'ref', name: 'SessionEventEnvelope' } }, { name: 'ReplayComplete', fields: null }] }],
-  ["GlobalEvent", { kind: 'enum', variants: [{ name: 'SessionListChanged', fields: { 'sessions': { kind: 'vec', element: { kind: 'ref', name: 'SessionSummary' } } } }, { name: 'ProjectListChanged', fields: { 'projects': { kind: 'vec', element: { kind: 'ref', name: 'ProjectInfo' } } } }] }],
+  ["ActivityKind", { kind: 'enum', variants: [{ name: 'CaptainMessage', fields: { 'message': { kind: 'string' } } }, { name: 'SessionCreated', fields: null }, { name: 'SessionArchived', fields: null }] }],
+  ["ActivityEntry", { kind: 'struct', fields: { 'id': { kind: 'u64' }, 'timestamp': { kind: 'string' }, 'session_id': { kind: 'string' }, 'session_slug': { kind: 'string' }, 'session_title': { kind: 'option', inner: { kind: 'string' } }, 'kind': { kind: 'ref', name: 'ActivityKind' } } }],
+  ["GlobalEvent", { kind: 'enum', variants: [{ name: 'SessionListChanged', fields: { 'sessions': { kind: 'vec', element: { kind: 'ref', name: 'SessionSummary' } } } }, { name: 'ProjectListChanged', fields: { 'projects': { kind: 'vec', element: { kind: 'ref', name: 'ProjectInfo' } } } }, { name: 'Activity', fields: { 'entry': { kind: 'ref', name: 'ActivityEntry' } } }] }],
   ["TranscribeSegment", { kind: 'struct', fields: { 'start_ms': { kind: 'u64' }, 'end_ms': { kind: 'u64' }, 'text': { kind: 'string' } } }],
   ["TranscribeMessage", { kind: 'enum', variants: [{ name: 'Segment', fields: { kind: 'ref', name: 'TranscribeSegment' } }, { name: 'Error', fields: { 'message': { kind: 'string' } } }] }],
 ]);
@@ -1628,7 +1645,7 @@ export const ship_descriptor: ServiceDescriptor = {
     },
     {
       name: 'subscribeGlobalEvents',
-      id: 0xede327b9d8c492a7n,
+      id: 0x142813dd67aadd26n,
       args: { kind: 'tuple', elements: [{ kind: 'tx', element: { kind: 'ref', name: 'GlobalEvent' } }] },
       result: { kind: 'enum', variants: [{ name: 'Ok', fields: { kind: 'struct', fields: {} } }, { name: 'Err', fields: { kind: 'enum', variants: [{ name: 'User', fields: null }, { name: 'UnknownMethod', fields: null }, { name: 'InvalidPayload', fields: null }, { name: 'Cancelled', fields: null }] } }] },
     },
