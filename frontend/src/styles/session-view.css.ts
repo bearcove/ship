@@ -179,9 +179,9 @@ export const feedBubbleCaptain = style({
 });
 
 export const feedBubbleSelected = style({
-  transform: "scale(0.98)",
+  padding: "var(--space-3) var(--space-4)",
   borderColor: "var(--gray-a6)",
-  transition: "transform 0.12s ease, border-color 0.12s ease, outline 0.12s ease",
+  transition: "padding 0.12s ease, border-color 0.12s ease, outline 0.12s ease",
 });
 
 // Captain bubbles have border:none, so use outline for selected state
