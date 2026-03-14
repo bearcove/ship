@@ -831,13 +831,13 @@ export const sessionHeaderRow2Title = style({
 export const sessionHeaderExpanded = style({
   borderTop: "1px solid var(--gray-a4)",
   background: "var(--gray-a1)",
-  maxHeight: 0,
-  overflow: "hidden",
-  transition: "max-height 0.22s ease",
+  display: "none",
+  overflowY: "auto",
   selectors: {
     '&[data-open="true"]': {
-      maxHeight: "28rem",
-      overflowY: "auto",
+      display: "flex",
+      flexDirection: "column",
+      flex: 1,
     },
   },
 });
