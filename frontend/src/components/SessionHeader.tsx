@@ -23,8 +23,7 @@ import type {
   TaskStatus,
   WorktreeDiffStats,
 } from "../generated/ship";
-import { AgentModelPicker } from "./AgentModelPicker";
-import { AgentEffortPicker } from "./AgentEffortPicker";
+import { AgentPresetPicker } from "./AgentPresetPicker";
 import { AgentKindIcon } from "./AgentKindIcon";
 import { MarkdownCodeBlock } from "./blocks/TextBlock";
 import { fixMarkdownBackticks } from "../utils/fixMarkdownBackticks";
@@ -487,8 +486,7 @@ export function SessionHeader({
                   <Box className={sessionHeaderInlineAvatar}>
                     <AgentKindIcon kind={captain.kind} />
                   </Box>
-                  <AgentModelPicker sessionId={sessionId} agent={captain} />
-                  <AgentEffortPicker sessionId={sessionId} agent={captain} />
+                  <AgentPresetPicker sessionId={sessionId} agent={captain} />
                 </>
               )}
               {mate && (
@@ -496,8 +494,7 @@ export function SessionHeader({
                   <Box className={sessionHeaderInlineAvatar}>
                     <AgentKindIcon kind={mate.kind} />
                   </Box>
-                  <AgentModelPicker sessionId={sessionId} agent={mate} />
-                  <AgentEffortPicker sessionId={sessionId} agent={mate} />
+                  <AgentPresetPicker sessionId={sessionId} agent={mate} />
                 </>
               )}
               <Box style={{ flex: 1 }} />

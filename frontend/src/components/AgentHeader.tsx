@@ -2,8 +2,7 @@ import { Box, Button, Callout, Flex, Text } from "@radix-ui/themes";
 import { ArrowsClockwise, Warning } from "@phosphor-icons/react";
 import type { AgentSnapshot } from "../generated/ship";
 import { AgentKindIcon } from "./AgentKindIcon";
-import { AgentModelPicker } from "./AgentModelPicker";
-import { AgentEffortPicker } from "./AgentEffortPicker";
+import { AgentPresetPicker } from "./AgentPresetPicker";
 import { getShipClient } from "../api/client";
 import {
   agentHeader,
@@ -85,8 +84,7 @@ export function AgentHeader({ sessionId, agent, avatarSrc }: Props) {
               </Box>
             )}
           </Flex>
-          <AgentModelPicker sessionId={sessionId} agent={agent} />
-          <AgentEffortPicker sessionId={sessionId} agent={agent} />
+          <AgentPresetPicker sessionId={sessionId} agent={agent} />
         </Flex>
       </Flex>
 
