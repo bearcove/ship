@@ -589,7 +589,7 @@ async fn run_serve(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
     ensure_project_ship_gitignored(&project_registry)?;
 
     let sessions_dir = project_registry.config_dir().join("sessions");
-    let ship = ShipImpl::new(project_registry, sessions_dir, agent_discovery);
+    let mut ship = ShipImpl::new(project_registry, sessions_dir, agent_discovery);
     // r[resilience.server-restart]
     ship.load_persisted_sessions().await;
     ship.fetch_github_user_avatar().await;
