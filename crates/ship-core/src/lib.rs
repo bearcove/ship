@@ -175,6 +175,12 @@ pub trait AgentDriver: Send + Sync {
     async fn kill(&self, handle: &AgentHandle) -> Result<(), AgentError>;
 }
 
+/// Outcome of a rebase operation that may encounter conflicts.
+pub enum RebaseOutcome {
+    Clean,
+    Conflict { files: Vec<String> },
+}
+
 // r[testability.git-trait]
 #[allow(async_fn_in_trait)]
 pub trait WorktreeOps: Send + Sync {
@@ -210,6 +216,20 @@ pub trait WorktreeOps: Send + Sync {
         worktree_path: &Path,
         onto_branch: &str,
     ) -> Result<(), WorktreeError>;
+
+    /// Like `rebase_onto` but returns `RebaseOutcome::Conflict` instead of
+    /// aborting on conflicts. Only aborts and returns `Err` on unexpected
+    /// git failures. On conflict, leaves the rebase in-progress.
+    async fn rebase_onto_conflict_ok(
+        &self,
+        worktree_path: &Path,
+        onto_branch: &str,
+    ) -> Result<RebaseOutcome, WorktreeError>;
+
+    /// Stage all changes (`git add -A`) and continue a paused rebase.
+    /// Returns `RebaseOutcome::Conflict` if more conflicts remain after the
+    /// continue step, or `RebaseOutcome::Clean` when the rebase finishes.
+    async fn rebase_continue(&self, worktree_path: &Path) -> Result<RebaseOutcome, WorktreeError>;
 
     /// Reset the already-checked-out worktree branch in place so it matches
     /// `base_branch`. This is server-owned state management for starting fresh

@@ -318,6 +318,7 @@ pub mod task {
         Working,
         ReviewPending,
         SteerPending,
+        RebaseConflict,
         Accepted,
         Cancelled,
     }

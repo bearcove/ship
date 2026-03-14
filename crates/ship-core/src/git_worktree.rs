@@ -3,7 +3,7 @@ use std::process::Output;
 
 use tokio::process::Command;
 
-use crate::{WorktreeError, WorktreeOps};
+use crate::{RebaseOutcome, WorktreeError, WorktreeOps};
 
 // r[testability.git-trait]
 #[derive(Debug, Default, Clone, Copy)]
@@ -194,6 +194,133 @@ impl WorktreeOps for GitWorktreeOps {
         let stderr = String::from_utf8_lossy(&output.stderr);
         Err(WorktreeError {
             message: format!("rebase onto {onto_branch} failed: {}", stderr.trim()),
+        })
+    }
+
+    async fn rebase_onto_conflict_ok(
+        &self,
+        worktree_path: &Path,
+        onto_branch: &str,
+    ) -> Result<RebaseOutcome, WorktreeError> {
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(worktree_path)
+            .arg("rebase")
+            .arg(onto_branch)
+            .output()
+            .await
+            .map_err(|error| WorktreeError {
+                message: error.to_string(),
+            })?;
+
+        if output.status.success() {
+            return Ok(RebaseOutcome::Clean);
+        }
+
+        // Check for actual merge conflicts vs unexpected git failure.
+        let conflict_output = Command::new("git")
+            .arg("-C")
+            .arg(worktree_path)
+            .arg("diff")
+            .arg("--name-only")
+            .arg("--diff-filter=U")
+            .output()
+            .await
+            .map_err(|error| WorktreeError {
+                message: error.to_string(),
+            })?;
+
+        let conflict_files: Vec<String> = String::from_utf8_lossy(&conflict_output.stdout)
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(|l| l.to_owned())
+            .collect();
+
+        if !conflict_files.is_empty() {
+            return Ok(RebaseOutcome::Conflict {
+                files: conflict_files,
+            });
+        }
+
+        // No conflict markers — something else went wrong. Abort and surface the error.
+        let _ = Command::new("git")
+            .arg("-C")
+            .arg(worktree_path)
+            .arg("rebase")
+            .arg("--abort")
+            .output()
+            .await;
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(WorktreeError {
+            message: format!("rebase onto {onto_branch} failed: {}", stderr.trim()),
+        })
+    }
+
+    async fn rebase_continue(&self, worktree_path: &Path) -> Result<RebaseOutcome, WorktreeError> {
+        // Stage all changes so resolved conflict markers are included.
+        let add_output = Command::new("git")
+            .arg("-C")
+            .arg(worktree_path)
+            .arg("add")
+            .arg("-A")
+            .output()
+            .await
+            .map_err(|error| WorktreeError {
+                message: error.to_string(),
+            })?;
+
+        if !add_output.status.success() {
+            let stderr = String::from_utf8_lossy(&add_output.stderr);
+            return Err(WorktreeError {
+                message: format!("git add -A failed: {}", stderr.trim()),
+            });
+        }
+
+        let continue_output = Command::new("git")
+            .arg("-C")
+            .arg(worktree_path)
+            .arg("rebase")
+            .arg("--continue")
+            .env("GIT_EDITOR", "true")
+            .output()
+            .await
+            .map_err(|error| WorktreeError {
+                message: error.to_string(),
+            })?;
+
+        if continue_output.status.success() {
+            return Ok(RebaseOutcome::Clean);
+        }
+
+        // Check if more conflicts remain.
+        let conflict_output = Command::new("git")
+            .arg("-C")
+            .arg(worktree_path)
+            .arg("diff")
+            .arg("--name-only")
+            .arg("--diff-filter=U")
+            .output()
+            .await
+            .map_err(|error| WorktreeError {
+                message: error.to_string(),
+            })?;
+
+        let conflict_files: Vec<String> = String::from_utf8_lossy(&conflict_output.stdout)
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(|l| l.to_owned())
+            .collect();
+
+        if !conflict_files.is_empty() {
+            return Ok(RebaseOutcome::Conflict {
+                files: conflict_files,
+            });
+        }
+
+        let stderr = String::from_utf8_lossy(&continue_output.stderr);
+        Err(WorktreeError {
+            message: format!("rebase --continue failed: {}", stderr.trim()),
         })
     }
 

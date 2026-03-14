@@ -9,7 +9,7 @@ use ship_types::{AgentKind, PersistedSession, Role, SessionEvent, SessionId};
 
 use crate::{
     AgentDriver, AgentError, AgentHandle, AgentSessionConfig, AgentSpawnInfo, PromptResponse,
-    SessionStore, StopReason, StoreError, WorktreeError, WorktreeOps,
+    RebaseOutcome, SessionStore, StopReason, StoreError, WorktreeError, WorktreeOps,
 };
 
 #[derive(Debug, Clone)]
@@ -255,6 +255,7 @@ struct FakeWorktreeInner {
     reset_errors: HashMap<PathBuf, String>,
     unmerged_commits: HashMap<String, Vec<String>>,
     commit_all_calls: Vec<(PathBuf, String)>,
+    rebase_conflict_result: Option<Vec<String>>,
 }
 
 #[derive(Clone, Default)]
@@ -304,6 +305,13 @@ impl FakeWorktreeOps {
             .expect("fake worktree ops mutex poisoned")
             .unmerged_commits
             .insert(branch_name.into(), commits);
+    }
+
+    pub fn set_rebase_conflict(&self, files: Vec<String>) {
+        self.inner
+            .lock()
+            .expect("fake worktree ops mutex poisoned")
+            .rebase_conflict_result = Some(files);
     }
 
     pub fn created_paths(&self) -> Vec<PathBuf> {
@@ -456,6 +464,22 @@ impl WorktreeOps for FakeWorktreeOps {
         _onto_branch: &str,
     ) -> Result<(), WorktreeError> {
         Ok(())
+    }
+
+    async fn rebase_onto_conflict_ok(
+        &self,
+        _worktree_path: &Path,
+        _onto_branch: &str,
+    ) -> Result<RebaseOutcome, WorktreeError> {
+        let inner = self.inner.lock().expect("fake worktree ops mutex poisoned");
+        if let Some(files) = inner.rebase_conflict_result.clone() {
+            return Ok(RebaseOutcome::Conflict { files });
+        }
+        Ok(RebaseOutcome::Clean)
+    }
+
+    async fn rebase_continue(&self, _worktree_path: &Path) -> Result<RebaseOutcome, WorktreeError> {
+        Ok(RebaseOutcome::Clean)
     }
 
     async fn reset_to_base(
