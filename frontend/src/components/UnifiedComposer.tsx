@@ -426,6 +426,21 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
     }
   }, [transcription.voiceMode, captainBlocks, captainStateTag, playback]);
 
+  // Barge-in: stop TTS when user starts speaking during voice mode
+  const prevTranscriptionResultRef = useRef(transcription.result);
+  useEffect(() => {
+    const prev = prevTranscriptionResultRef.current;
+    prevTranscriptionResultRef.current = transcription.result;
+    if (
+      transcription.voiceMode &&
+      transcription.result !== prev &&
+      transcription.result !== null &&
+      (playback.state === "playing" || playback.state === "loading")
+    ) {
+      playback.clearQueue();
+    }
+  }, [transcription.voiceMode, transcription.result, playback]);
+
   const filteredFiles = fileMatches;
 
   // r[ui.composer.file-mention]
