@@ -608,6 +608,14 @@ pub mod events {
             role: Role,
             patch: BlockPatch,
         },
+        // r[event.block-finalized]
+        /// Emitted when a text block is complete (all streaming appends received).
+        /// Internal-only: not forwarded to frontend subscribers.
+        BlockFinalized {
+            block_id: BlockId,
+            role: Role,
+            text: String,
+        },
         // r[event.agent-state-changed]
         AgentStateChanged {
             role: Role,
