@@ -9756,7 +9756,7 @@ impl CaptainMcp for CaptainMcpSessionService {
     // r[captain.tool.write-file]
     async fn captain_write_file(&self, path: String, content: String) -> McpToolCallResponse {
         self.ship
-            .mate_tool_write_file(&self.session_id, path, content)
+            .mate_tool_write_file(&self.session_id, path, content, false)
             .await
     }
 
@@ -9769,14 +9769,21 @@ impl CaptainMcp for CaptainMcpSessionService {
         replace_all: Option<bool>,
     ) -> McpToolCallResponse {
         self.ship
-            .mate_tool_edit_prepare(&self.session_id, path, old_string, new_string, replace_all)
+            .mate_tool_edit_prepare(
+                &self.session_id,
+                path,
+                old_string,
+                new_string,
+                replace_all,
+                false,
+            )
             .await
     }
 
     // r[captain.tool.edit-confirm]
     async fn captain_edit_confirm(&self, edit_id: String) -> McpToolCallResponse {
         self.ship
-            .mate_tool_edit_confirm(&self.session_id, edit_id)
+            .mate_tool_edit_confirm(&self.session_id, edit_id, false)
             .await
     }
 
