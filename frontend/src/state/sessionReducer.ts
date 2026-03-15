@@ -337,6 +337,7 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
           case "MateGuidanceQueued":
           case "HumanReviewRequested":
           case "HumanReviewCleared":
+          case "BlockFinalized":
             break;
           case "ChecksStarted":
             checksState = {
@@ -613,6 +614,10 @@ export function sessionReducer(state: SessionViewState, action: SessionAction): 
         case "HumanReviewCleared": {
           return { ...nextState, pendingHumanReview: null };
         }
+        // BlockFinalized is internal-only and filtered from subscribers,
+        // but TypeScript exhaustiveness requires a case.
+        case "BlockFinalized":
+          return nextState;
         case "ChecksStarted":
           return {
             ...nextState,
