@@ -9878,7 +9878,7 @@ impl MateMcp for MateMcpSessionService {
     // r[mate.tool.write-file]
     async fn write_file(&self, path: String, content: String) -> McpToolCallResponse {
         self.ship
-            .mate_tool_write_file(&self.session_id, path, content)
+            .mate_tool_write_file(&self.session_id, path, content, true)
             .await
     }
 
@@ -9891,14 +9891,21 @@ impl MateMcp for MateMcpSessionService {
         replace_all: Option<bool>,
     ) -> McpToolCallResponse {
         self.ship
-            .mate_tool_edit_prepare(&self.session_id, path, old_string, new_string, replace_all)
+            .mate_tool_edit_prepare(
+                &self.session_id,
+                path,
+                old_string,
+                new_string,
+                replace_all,
+                true,
+            )
             .await
     }
 
     // r[mate.tool.edit-confirm]
     async fn edit_confirm(&self, edit_id: String) -> McpToolCallResponse {
         self.ship
-            .mate_tool_edit_confirm(&self.session_id, edit_id)
+            .mate_tool_edit_confirm(&self.session_id, edit_id, true)
             .await
     }
 
