@@ -333,6 +333,80 @@ struct MateActivityFlushData {
     task_context: Option<String>,
 }
 
+/// Parse an @mention at the start of text (case-insensitive, whitespace-bounded).
+/// Returns the lowercase mention target (e.g. "captain", "mate", "human", "admiral")
+/// if found, along with the rest of the text after the mention prefix.
+fn parse_mention(text: &str) -> Option<(&'static str, &str)> {
+    let trimmed = text.trim_start();
+    ["captain", "mate", "human", "admiral"]
+        .into_iter()
+        .find_map(|target| {
+            let prefix = format!("@{target}");
+            let matches = trimmed
+                .get(..prefix.len())
+                .filter(|s| s.eq_ignore_ascii_case(&prefix))
+                .is_some()
+                && (trimmed.len() == prefix.len()
+                    || trimmed
+                        .as_bytes()
+                        .get(prefix.len())
+                        .map_or(true, |&b| b.is_ascii_whitespace()));
+            if matches {
+                // Strip the @mention prefix and any following whitespace
+                let rest = trimmed[prefix.len()..].trim_start();
+                Some((target, rest))
+            } else {
+                None
+            }
+        })
+}
+
+/// Action to take after a text block is finalized with (or without) a mention.
+enum MentionAction {
+    /// Captain said @mate — route stripped text as a steer to the mate.
+    RouteToMate { text: String },
+    /// Mate said @captain — route stripped text as an update to the captain.
+    RouteToCaptain { text: String },
+    /// @human mentioned — just log, human already sees everything.
+    RouteToHuman,
+    /// @admiral mentioned — log for now, not yet implemented.
+    RouteToAdmiral,
+    /// Agent message with no mention — bounce guidance back to sender.
+    Unaddressed { role: Role },
+    /// No routing needed (non-agent text source, or non-captain/mate role).
+    None,
+}
+
+/// Determine what routing action to take for a finalized text block.
+fn determine_mention_action(role: Role, source: TextSource, text: &str) -> MentionAction {
+    // Only route captain/mate messages
+    if !matches!(role, Role::Captain | Role::Mate) {
+        return MentionAction::None;
+    }
+
+    if let Some((target, rest)) = parse_mention(text) {
+        match (role, target) {
+            (Role::Captain, "mate") => MentionAction::RouteToMate {
+                text: rest.to_owned(),
+            },
+            (Role::Mate, "captain") => MentionAction::RouteToCaptain {
+                text: rest.to_owned(),
+            },
+            (_, "human") => MentionAction::RouteToHuman,
+            (_, "admiral") => MentionAction::RouteToAdmiral,
+            // Mention targeting self or invalid combo — treat as addressed (no bounce)
+            _ => MentionAction::None,
+        }
+    } else {
+        // No mention found — only bounce AgentMessage texts (not steers/system)
+        if source == TextSource::AgentMessage {
+            MentionAction::Unaddressed { role }
+        } else {
+            MentionAction::None
+        }
+    }
+}
+
 impl ShipImpl {
     pub fn new(
         registry: ProjectRegistry,
