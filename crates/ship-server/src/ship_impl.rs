@@ -7240,11 +7240,7 @@ Reply with \"Ready.\" to confirm.";
             session.utility_last_task_id = data.task_id.clone();
         }
 
-        let message = format!(
-            "<mate-activity-summary>\n{summary}\n</mate-activity-summary>\n\n\
-The mate's recent activity is summarized above. If something needs correction, \
-use captain_steer. Otherwise continue your current work."
-        );
+        let message = format!("<mate-activity-summary>\n{summary}\n</mate-activity-summary>");
         if let Err(error) = self.notify_captain_progress(&session_id, message).await {
             Self::log_error("flush_mate_activity_notify_captain", &error);
         }
