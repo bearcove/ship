@@ -5,6 +5,8 @@ import type { TranscribeMessage, TranscribeSegment } from "../generated/ship";
 
 const TARGET_SAMPLE_RATE = 16000;
 
+const VOICE_MODE_PHRASES = new Set(["come alive", "voice mode", "hey ship"]);
+
 export type TranscriptionState =
   | { tag: "idle" }
   | { tag: "recording"; elapsed: number }
@@ -192,9 +194,9 @@ export function TranscriptionProvider({ children }: { children: React.ReactNode 
             const trimmed = segment.text.trim().replace(/[.!?,;:]+$/, "");
             const lower = trimmed.toLowerCase();
 
-            // Detect "come alive" on any segment to activate voice mode
-            if (lower === "come alive" && !voiceModeRef.current) {
-              console.info("[transcription] voice mode activated");
+            // Detect voice mode activation phrases on any segment
+            if (VOICE_MODE_PHRASES.has(lower) && !voiceModeRef.current) {
+              console.info(`[transcription] voice mode activated via "${lower}"`);
               voiceModeRef.current = true;
               setVoiceMode(true);
               continue;
