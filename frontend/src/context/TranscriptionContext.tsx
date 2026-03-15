@@ -188,7 +188,7 @@ export function TranscriptionProvider({ children }: { children: React.ReactNode 
             }
 
             const segment = msg.value;
-            const trimmed = segment.text.trim();
+            const trimmed = segment.text.trim().replace(/[.!?,;:]+$/, "");
             const lower = trimmed.toLowerCase();
 
             // Detect "come alive" on the first segment to activate voice mode
