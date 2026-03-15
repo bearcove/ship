@@ -56,21 +56,11 @@ pub fn captain_unaddressed_bounce() -> String {
 // ---------------------------------------------------------------------------
 
 pub fn captain_steer(text: &str) -> String {
-    format!(
-        "<system-notification>\
-         Captain steer:\n\
-         {text}\n\n\
-         Act on this correction and continue working by calling tools. Do not write \
-         a text response to the captain — they cannot see your text output.\
-         </system-notification>"
-    )
+    format!("@mate {text}\n\nAct on this correction and continue working.")
 }
 
 pub fn mate_forced_submit_nudge() -> String {
-    "<system-notification>You stopped without submitting your work. \
-     Call mate_submit with a summary of what you accomplished. \
-     Do not write a text response — use the mate_submit tool.\
-     </system-notification>"
+    "@mate You stopped without submitting. Call mate_submit with a summary of what you accomplished."
         .to_owned()
 }
 
@@ -85,5 +75,5 @@ pub fn mate_unaddressed_bounce() -> String {
 // ---------------------------------------------------------------------------
 
 pub fn mate_update_interrupt(injected: &str) -> String {
-    format!("YOUR MATE HAS AN UPDATE:\n\n{injected}")
+    injected.to_owned()
 }
