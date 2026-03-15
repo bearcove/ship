@@ -10432,6 +10432,8 @@ mod tests {
     use tokio::time::timeout;
 
     use super::{ShipImpl, StartupTargetModels};
+    use crate::prompt_templates::CaptainBootstrapPrompt;
+    use sailfish::TemplateOnce;
 
     static MATE_TOOL_TEST_LOCK: AsyncMutex<()> = AsyncMutex::const_new(());
     static FAKE_AGENT_DRIVER_TEST_LOCK: AsyncMutex<()> = AsyncMutex::const_new(());
@@ -10975,7 +10977,9 @@ mod tests {
     // r[verify captain.system-prompt]
     #[test]
     fn captain_bootstrap_prompt_makes_git_captain_owned() {
-        let prompt = ShipImpl::captain_bootstrap_prompt();
+        let prompt = CaptainBootstrapPrompt
+            .render_once()
+            .expect("captain bootstrap template render failed");
 
         assert!(prompt.contains("You have no raw git access"));
         assert!(prompt.contains("All git operations flow through Ship"));
@@ -14005,7 +14009,9 @@ agent_presets {
     // r[verify captain.system-prompt]
     #[test]
     fn captain_bootstrap_prompt_describes_backend_managed_workflow() {
-        let prompt = ShipImpl::captain_bootstrap_prompt();
+        let prompt = CaptainBootstrapPrompt
+            .render_once()
+            .expect("captain bootstrap template render failed");
         assert!(
             prompt.contains("You have no raw git access"),
             "unexpected prompt: {prompt}"
