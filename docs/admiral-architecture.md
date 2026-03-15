@@ -19,8 +19,7 @@ to accommodate both cases.
 
 A single persistent agent that sits above all sessions:
 
-- **One agent** — no captain/mate split, no summarizer, no tasks, no plans,
-  no worktree.
+- **One agent** — no captain/mate split, no summarizer, no tasks, no plans.
 - **Not project-scoped** — the admiral sees across all projects and sessions.
 - **Persistent** — survives across sessions, maintains long-running context.
 - **Cross-session routing** — receives `@admiral` mentions from any captain
@@ -45,15 +44,34 @@ itself). Same composer, same message rendering, same feel.
 
 A session has a **session kind** that determines its shape:
 
-- **Task session** (current model): captain + mate + summarizer, scoped
-  to a project worktree, has tasks/plans/commits.
-- **Admiral session**: single agent, no worktree, no tasks, receives
-  cross-session mentions.
+- **Task session** (current model): captain + mate + summarizer, has
+  tasks/plans/commits. Operates in an isolated worktree branch.
+- **Admiral session**: single agent, no tasks, receives cross-session
+  mentions. No worktree needed.
 
 The session model gains flexibility rather than the admiral getting a
 separate system. This means `ActiveSession` needs to support optional
 fields (mate is `None`, current_task is `None`, etc.) or the session
 kind gates which fields are present.
+
+### Worktree flexibility
+
+Sessions should support different worktree modes:
+
+- **Isolated worktree** (current task session default): a separate git
+  worktree branched from main. Changes merge back to main via
+  captain_merge.
+- **Main tree**: the session works directly in the main worktree. Useful
+  for iterating on things in-place without branch overhead.
+- **No tree**: an empty temp directory or no filesystem context at all.
+  For the admiral or pure conversation sessions.
+
+### Merge model
+
+Currently all task sessions merge locally back to main on the same
+machine. A pull request model is planned for later — the session would
+push to a remote branch and open a PR instead of merging locally. The
+session model should not assume local merge is the only path.
 
 ### Routing
 
