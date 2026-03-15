@@ -9,9 +9,9 @@
 
 pub fn mate_plan_set(plan_status: &str) -> String {
     format!(
-        "The mate has set their plan.\n\n\
+        "@captain I've set my plan.\n\n\
          {plan_status}\n\n\
-         We will keep you posted as they progress. You have nothing to do now."
+         I'll keep you posted as I progress."
     )
 }
 
@@ -20,32 +20,29 @@ pub fn mate_step_committed(
     commit_summary: &str,
     diff_section: &str,
 ) -> String {
-    format!(
-        "The mate completed a step from their plan.\n\n\
-         Completed: {step_description}\n\n\
-         {commit_summary}{diff_section}\n\n\
-         We will notify you when they are done and need your review."
-    )
+    format!("@captain Completed step: {step_description}\n\n{commit_summary}{diff_section}")
 }
 
 pub fn mate_committed_no_step(commit_summary: &str, diff_section: &str) -> String {
-    format!("The mate committed without a plan step.\n\n{commit_summary}{diff_section}")
+    format!("@captain Committed:\n\n{commit_summary}{diff_section}")
 }
 
 pub fn mate_update(message: &str) -> String {
-    format!("<mate-update>\n{message}\n</mate-update>")
+    format!("@captain {message}")
 }
 
 pub fn mate_submitted(summary: &str) -> String {
-    format!("The mate has submitted their work for review: {summary}")
+    format!(
+        "@captain I've submitted my work for review: {summary}\n\n_(to reply, @mate your message)_"
+    )
 }
 
 pub fn mate_question(question: &str) -> String {
-    format!("The mate has a question for you: {question}")
+    format!("@captain {question}\n\n_(to reply, @mate your message)_")
 }
 
 pub fn mate_activity_summary(summary: &str) -> String {
-    format!("<mate-activity-summary>\n{summary}\n</mate-activity-summary>")
+    format!("@captain [Summarizer]\n{summary}")
 }
 
 pub fn captain_unaddressed_bounce() -> String {
