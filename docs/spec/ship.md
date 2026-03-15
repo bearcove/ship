@@ -677,6 +677,12 @@ A `BlockAppend` event MUST be emitted when a new content block is created. It
 contains the block ID, the role, and the full initial block data. The frontend
 MUST insert this block at the end of the role's block list.
 
+r[event.block-finalized]
+A `BlockFinalized` event MUST be emitted when a text block is complete (all
+streaming appends have been received). This is an internal event used for
+server-side processing such as @mention detection and routing. It MUST NOT
+be forwarded to frontend subscribers.
+
 r[event.patch]
 A `BlockPatch` event MUST be emitted when an existing block is updated. It
 contains the block ID, the role, and a patch payload describing what changed.

@@ -566,6 +566,10 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
         let (subscriber_tx, subscriber_rx) = broadcast::channel(256);
 
         for envelope in replay {
+            // BlockFinalized is internal-only — don't replay to subscribers.
+            if matches!(envelope.event, SessionEvent::BlockFinalized { .. }) {
+                continue;
+            }
             let _ = subscriber_tx.send(envelope);
         }
 
@@ -573,6 +577,10 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             loop {
                 match live_rx.recv().await {
                     Ok(envelope) => {
+                        // BlockFinalized is internal-only — don't forward to subscribers.
+                        if matches!(envelope.event, SessionEvent::BlockFinalized { .. }) {
+                            continue;
+                        }
                         if subscriber_tx.send(envelope).is_err() {
                             break;
                         }
