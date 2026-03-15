@@ -367,6 +367,65 @@ export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function
     };
   }, [sessionId, mentionQuery]);
 
+  // Auto-TTS: watch captain text blocks for new sentences and enqueue them
+  const spokenLengthRef = useRef(0);
+  const sentenceBufferRef = useRef("");
+  const lastBlockIdRef = useRef<string | null>(null);
+  const prevCaptainStateTagRef = useRef(captainStateTag);
+
+  useEffect(() => {
+    if (!transcription.voiceMode) return;
+
+    // Find the last captain Text block
+    let lastCaptainBlockId: string | null = null;
+    let lastCaptainText = "";
+    for (let i = captainBlocks.blocks.length - 1; i >= 0; i--) {
+      const entry = captainBlocks.blocks[i];
+      if (entry.role.tag === "Captain" && entry.block.tag === "Text") {
+        lastCaptainBlockId = entry.blockId;
+        lastCaptainText = entry.block.text;
+        break;
+      }
+    }
+
+    if (lastCaptainBlockId === null) return;
+
+    // Reset tracking when a new block appears
+    if (lastCaptainBlockId !== lastBlockIdRef.current) {
+      lastBlockIdRef.current = lastCaptainBlockId;
+      spokenLengthRef.current = 0;
+      sentenceBufferRef.current = "";
+    }
+
+    // Extract new text delta
+    if (lastCaptainText.length > spokenLengthRef.current) {
+      const delta = lastCaptainText.slice(spokenLengthRef.current);
+      spokenLengthRef.current = lastCaptainText.length;
+      sentenceBufferRef.current += delta;
+
+      // Detect sentence boundaries and enqueue complete sentences
+      const sentenceRe = /[.!?]\s+/g;
+      let lastSplitEnd = 0;
+      let match: RegExpExecArray | null;
+      while ((match = sentenceRe.exec(sentenceBufferRef.current)) !== null) {
+        const sentence = sentenceBufferRef.current.slice(lastSplitEnd, match.index + 1).trim();
+        if (sentence.length > 0) {
+          playback.enqueue(sentence);
+        }
+        lastSplitEnd = match.index + match[0].length;
+      }
+      sentenceBufferRef.current = sentenceBufferRef.current.slice(lastSplitEnd);
+    }
+
+    // Flush remaining buffer when captain stops working
+    const wasWorking = prevCaptainStateTagRef.current === "Working";
+    prevCaptainStateTagRef.current = captainStateTag;
+    if (wasWorking && captainStateTag !== "Working" && sentenceBufferRef.current.trim().length > 0) {
+      playback.enqueue(sentenceBufferRef.current.trim());
+      sentenceBufferRef.current = "";
+    }
+  }, [transcription.voiceMode, captainBlocks, captainStateTag, playback]);
+
   const filteredFiles = fileMatches;
 
   // r[ui.composer.file-mention]
