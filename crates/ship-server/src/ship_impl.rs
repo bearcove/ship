@@ -5738,12 +5738,11 @@ unless the task explicitly targets a subdirectory inside the current worktree.
         session_id: &SessionId,
         message: String,
     ) -> Result<(), String> {
-        let wrapped = format!("<system-notification>\n{message}\n</system-notification>");
         self.append_human_message(
             session_id,
             Role::Captain,
             &[PromptContentPart::Text {
-                text: wrapped.clone(),
+                text: message.clone(),
             }],
         )
         .await?;
@@ -5751,7 +5750,7 @@ unless the task explicitly targets a subdirectory inside the current worktree.
         let this = self.clone();
         let session_id = session_id.clone();
         tokio::spawn(async move {
-            if let Err(error) = this.interrupt_captain(&session_id, wrapped).await {
+            if let Err(error) = this.interrupt_captain(&session_id, message).await {
                 Self::log_error("notify_captain_progress", &error);
             }
         });
@@ -5767,11 +5766,10 @@ unless the task explicitly targets a subdirectory inside the current worktree.
         session_id: &SessionId,
         message: String,
     ) -> Result<(), String> {
-        let wrapped = format!("<system-notification>\n{message}\n</system-notification>");
         self.append_human_message(
             session_id,
             Role::Captain,
-            &[PromptContentPart::Text { text: wrapped }],
+            &[PromptContentPart::Text { text: message }],
         )
         .await
     }
@@ -6388,10 +6386,7 @@ unless the task explicitly targets a subdirectory inside the current worktree.
         }
         self.persist_session(session_id).await?;
 
-        let injected = format!(
-            "<system-notification>\n{}\n</system-notification>",
-            message_templates::mate_submitted(&summary)
-        );
+        let injected = message_templates::mate_submitted(&summary);
         self.append_human_message(
             session_id,
             Role::Captain,
@@ -8163,7 +8158,7 @@ Reply with \"Ready.\" to confirm.";
 
     async fn prompt_mate_from_steer(&self, session_id: SessionId, parts: Vec<PromptContentPart>) {
         // Wrap the first text part through captain_steer so the mate gets
-        // a system-notification with a reminder not to reply via text.
+        // an @mate-prefixed message with a reminder to act on the correction.
         let initial_parts: Vec<PromptContentPart> = {
             let mut result = Vec::with_capacity(parts.len() + 1);
             let mut prefixed = false;
@@ -13398,8 +13393,8 @@ agent_presets {
             other => panic!("expected Text part, got {other:?}"),
         };
         assert!(
-            first_text.contains("Captain steer:"),
-            "missing steer prefix: {first_text}"
+            first_text.contains("@mate"),
+            "missing @mate prefix: {first_text}"
         );
         assert!(
             first_text.contains("Ask the mate to add coverage"),
@@ -13912,7 +13907,7 @@ agent_presets {
             let sessions = ship.sessions.lock().expect("sessions mutex poisoned");
             let session = sessions.get(&session_id).expect("session should exist");
             let task = session.current_task.as_ref().expect("task should exist");
-            let injected = format!("<mate-update>\n{message}\n</mate-update>");
+            let injected = format!("@captain {message}");
             assert!(task.content_history.iter().any(|entry| matches!(
                 &entry.block,
                 ContentBlock::Text { text, .. } if text == &injected
@@ -13923,11 +13918,10 @@ agent_presets {
     }
 
     #[test]
-    fn mate_update_interrupt_prompt_adds_explicit_prefix_before_tagged_payload() {
-        let injected = "<mate-update>\nParser fallback needs review\n</mate-update>";
+    fn mate_update_interrupt_passes_through_injected_text() {
+        let injected = "@captain Parser fallback needs review";
         let prompt = crate::message_templates::mate_update_interrupt(injected);
-        assert!(prompt.starts_with("YOUR MATE HAS AN UPDATE:"));
-        assert!(prompt.contains(injected));
+        assert_eq!(prompt, injected);
     }
 
     // r[verify mate.tool.read-file]
@@ -14956,7 +14950,7 @@ hooks {
                     role: Role::Captain,
                     block: ContentBlock::Text { text, .. },
                     ..
-                } if text.contains("<mate-activity-summary>")
+                } if text.contains("@captain [Summarizer]")
             )
         });
         assert!(!has_summary, "stale flush should not notify the captain");

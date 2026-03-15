@@ -720,8 +720,11 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                 transition_task(session, TaskStatus::Working)?;
             }
 
-            self.prompt_mate(session_id, format!("Captain steer:\n{message}"))
-                .await?;
+            self.prompt_mate(
+                session_id,
+                format!("@mate {message}\n\nAct on this correction and continue working."),
+            )
+            .await?;
         } else {
             let session = self
                 .sessions
