@@ -1360,7 +1360,7 @@ mod tests {
 
     // r[verify mate.capabilities]
     #[tokio::test(flavor = "current_thread")]
-    async fn non_write_permissions_are_auto_approved() {
+    async fn non_write_permissions_are_also_rejected() {
         let local = tokio::task::LocalSet::new();
         local
             .run_until(async {
@@ -1401,7 +1401,7 @@ mod tests {
                 assert_eq!(
                     response.outcome,
                     RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
-                        "allow-once",
+                        "reject-once",
                     ))
                 );
 
