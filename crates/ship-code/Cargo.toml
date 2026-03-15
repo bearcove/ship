@@ -1,0 +1,16 @@
+[package]
+name = "ship-code"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+facet = { workspace = true }
+facet-json = { workspace = true }
+tracing = { workspace = true }
+eyre = { workspace = true }
+similar = "2"
+arborium-tree-sitter = "2.16.0"
+arborium-rust = "2.16.0"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
