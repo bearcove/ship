@@ -2160,7 +2160,7 @@ You are now active. Wait for messages from captains or the human.\n",
                 // We must set this BEFORE cancelling the in-flight prompt so
                 // the loop always sees the guidance on the Cancelled stop reason
                 // and continues rather than archiving the task.
-                let guidance = Self::mate_steer_message(&log_text);
+                let guidance = message_templates::captain_steer(&log_text);
                 if let Some(task) = active.current_task.as_mut() {
                     task.pending_mate_guidance = Some(guidance);
                 }
@@ -5844,21 +5844,6 @@ unless the task explicitly targets a subdirectory inside the current worktree.
             .and_then(|task| task.pending_mate_guidance.take())
     }
 
-    fn mate_steer_message(text: &str) -> String {
-        format!(
-            "<system-notification>\
-Captain steer:\n\
-{text}\n\n\
-Act on this correction and continue working by calling tools. Do not write \
-a text response to the captain — they cannot see your text output.\
-</system-notification>"
-        )
-    }
-
-    fn mate_update_interrupt_prompt(injected: &str) -> String {
-        format!("YOUR MATE HAS AN UPDATE:\n\n{injected}")
-    }
-
     async fn mate_tool_send_update(
         &self,
         session_id: &SessionId,
@@ -5875,7 +5860,7 @@ a text response to the captain — they cannot see your text output.\
         )
         .await?;
 
-        let captain_prompt = Self::mate_update_interrupt_prompt(&injected);
+        let captain_prompt = message_templates::mate_update_interrupt(&injected);
         let this = self.clone();
         let session_id = session_id.clone();
         tokio::spawn(async move {
@@ -7532,7 +7517,7 @@ Reply with \"Ready.\" to confirm.";
                     let this = self.clone();
                     let session_id = session_id.clone();
                     tokio::spawn(async move {
-                        let steer_msg = Self::mate_steer_message(&text);
+                        let steer_msg = message_templates::captain_steer(&text);
                         let parts = vec![PromptContentPart::Text { text: steer_msg }];
                         if let Err(error) = this.dispatch_steer_to_mate(&session_id, parts).await {
                             tracing::warn!(
@@ -7615,7 +7600,7 @@ Reply with \"Ready.\" to confirm.";
                     let this = self.clone();
                     let session_id = session_id.clone();
                     tokio::spawn(async move {
-                        let steer_msg = Self::mate_steer_message(&text);
+                        let steer_msg = message_templates::captain_steer(&text);
                         let parts = vec![PromptContentPart::Text { text: steer_msg }];
                         if let Err(error) = this.dispatch_steer_to_mate(&session_id, parts).await {
                             tracing::warn!(
@@ -8181,7 +8166,7 @@ Reply with \"Ready.\" to confirm.";
     }
 
     async fn prompt_mate_from_steer(&self, session_id: SessionId, parts: Vec<PromptContentPart>) {
-        // Wrap the first text part through mate_steer_message so the mate gets
+        // Wrap the first text part through captain_steer so the mate gets
         // a system-notification with a reminder not to reply via text.
         let initial_parts: Vec<PromptContentPart> = {
             let mut result = Vec::with_capacity(parts.len() + 1);
@@ -8191,7 +8176,7 @@ Reply with \"Ready.\" to confirm.";
                     PromptContentPart::Text { text } => {
                         if !prefixed {
                             result.push(PromptContentPart::Text {
-                                text: Self::mate_steer_message(text),
+                                text: message_templates::captain_steer(text),
                             });
                             prefixed = true;
                         } else {
@@ -8201,7 +8186,7 @@ Reply with \"Ready.\" to confirm.";
                     PromptContentPart::Image { .. } => {
                         if !prefixed {
                             result.push(PromptContentPart::Text {
-                                text: Self::mate_steer_message(""),
+                                text: message_templates::captain_steer(""),
                             });
                             prefixed = true;
                         }
@@ -8211,7 +8196,7 @@ Reply with \"Ready.\" to confirm.";
             }
             if !prefixed {
                 result.push(PromptContentPart::Text {
-                    text: Self::mate_steer_message(""),
+                    text: message_templates::captain_steer(""),
                 });
             }
             result
@@ -8293,11 +8278,7 @@ Reply with \"Ready.\" to confirm.";
                     }
 
                     current_parts = Some(vec![PromptContentPart::Text {
-                        text: "<system-notification>You stopped without submitting your work. \
-                            Call mate_submit with a summary of what you accomplished. \
-                            Do not write a text response — use the mate_submit tool.\
-                            </system-notification>"
-                            .to_owned(),
+                        text: message_templates::mate_forced_submit_nudge(),
                     }]);
                 }
                 ship_core::StopReason::ContextExhausted => {
@@ -13948,7 +13929,7 @@ agent_presets {
     #[test]
     fn mate_update_interrupt_prompt_adds_explicit_prefix_before_tagged_payload() {
         let injected = "<mate-update>\nParser fallback needs review\n</mate-update>";
-        let prompt = ShipImpl::mate_update_interrupt_prompt(injected);
+        let prompt = crate::message_templates::mate_update_interrupt(injected);
         assert!(prompt.starts_with("YOUR MATE HAS AN UPDATE:"));
         assert!(prompt.contains(injected));
     }
