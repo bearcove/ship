@@ -588,6 +588,8 @@ impl ShipImpl {
                 captain_prompt_gen: 0,
                 mate_prompt_gen: 0,
                 is_read: persisted.is_read,
+                captain_has_ever_assigned: persisted.captain_has_ever_assigned,
+                captain_delegation_reminded: persisted.captain_delegation_reminded,
                 utility_handle: None,
                 utility_last_task_id: None,
                 mate_activity_buffer: Vec::new(),
@@ -8552,6 +8554,8 @@ impl Ship for ShipImpl {
             captain_prompt_gen: 0,
             mate_prompt_gen: 0,
             is_read: true,
+            captain_has_ever_assigned: false,
+            captain_delegation_reminded: false,
             utility_handle: None,
             utility_last_task_id: None,
             mate_activity_buffer: Vec::new(),
@@ -10605,6 +10609,8 @@ mod tests {
             captain_prompt_gen: 0,
             mate_prompt_gen: 0,
             is_read: true,
+            captain_has_ever_assigned: false,
+            captain_delegation_reminded: false,
             diff_stats: None,
             utility_handle: None,
             utility_last_task_id: None,
@@ -12045,6 +12051,8 @@ agent_presets {
             captain_acp_session_id: None,
             mate_acp_session_id: None,
             is_read: true,
+            captain_has_ever_assigned: false,
+            captain_delegation_reminded: false,
         };
         store
             .save_session(&completed)
@@ -12154,6 +12162,8 @@ agent_presets {
             captain_acp_session_id: None,
             mate_acp_session_id: None,
             is_read: true,
+            captain_has_ever_assigned: false,
+            captain_delegation_reminded: false,
         };
         store
             .save_session(&active)
