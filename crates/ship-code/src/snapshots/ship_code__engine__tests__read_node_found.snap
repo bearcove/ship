@@ -1,0 +1,12 @@
+---
+source: crates/ship-code/src/engine.rs
+expression: result.format()
+---
+fn hello [lib.rs:1-3]
+```
+fn hello() {
+    println!("hello");
+}
+```
+
+[snapshot: 0 | shadow commits: 0]

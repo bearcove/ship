@@ -1,0 +1,14 @@
+---
+source: crates/ship-code/src/engine.rs
+expression: result.format()
+---
+lib.rs:1-7 (7 lines total)
+   1 │ fn hello() {
+   2 │     println!("hello");
+   3 │ }
+   4 │ 
+   5 │ fn world() {
+   6 │     println!("world");
+   7 │ }
+
+[snapshot: 0 | shadow commits: 0]

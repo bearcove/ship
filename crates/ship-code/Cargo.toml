@@ -10,6 +10,7 @@ tracing = { workspace = true }
 eyre = { workspace = true }
 similar = "2"
 ship-git = { path = "../ship-git" }
+tokio = { version = "1", features = ["process", "time"] }
 grep = "0.4.1"
 regex-syntax = "0.8"
 tiktoken-rs = "0.9.1"

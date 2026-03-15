@@ -1,8 +1,10 @@
 ---
 source: crates/ship-code/src/engine.rs
-expression: output
+expression: result.format()
 ---
-ERROR: Snapshot 99 does not exist. Current snapshot: 1. Valid range: 1-1.
+ERROR (undo): Snapshot 99 does not exist. Current snapshot: 1. Valid range: 1-1.
 Hint: you can only undo to snapshots that have already been created.
+
+0 remaining op(s) were not executed due to the error above.
 
 [snapshot: 1 | shadow commits: 1 | undo available: 1-1]

@@ -1,8 +1,10 @@
 ---
 source: crates/ship-code/src/engine.rs
-expression: output
+expression: result.format()
 ---
-ERROR: Edit failed on 'lib.rs': text not found: "nonexistent_string"
+ERROR (edit): Edit failed on 'lib.rs': text not found: "nonexistent_string"
 Hint: line numbers are 1-indexed. The file has 7 lines.
+
+0 remaining op(s) were not executed due to the error above.
 
 [snapshot: 0 | shadow commits: 0]
