@@ -1412,7 +1412,7 @@ mod tests {
 
     // r[verify mate.capabilities]
     #[tokio::test(flavor = "current_thread")]
-    async fn mate_read_builtin_is_auto_approved() {
+    async fn mate_read_builtin_is_rejected() {
         let local = tokio::task::LocalSet::new();
         local
             .run_until(async {
@@ -1456,7 +1456,7 @@ mod tests {
                 assert_eq!(
                     response.outcome,
                     RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
-                        "allow-once",
+                        "reject-once",
                     ))
                 );
 
