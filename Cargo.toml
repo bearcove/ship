@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "crates/ship-acp",
   "crates/ship-git",
   "crates/ship-types",
   "crates/ship-core",

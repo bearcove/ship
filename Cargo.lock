@@ -3504,6 +3504,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "ship-acp"
+version = "0.1.0"
+dependencies = [
+ "agent-client-protocol",
+ "async-trait",
+ "base64",
+ "chrono",
+ "fs-err",
+ "futures",
+ "futures-core",
+ "futures-util",
+ "serde_json",
+ "ship-types",
+ "similar",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "ship-code"
 version = "0.1.0"
 dependencies = [
@@ -3528,9 +3548,7 @@ dependencies = [
 name = "ship-core"
 version = "0.1.0"
 dependencies = [
- "agent-client-protocol",
  "async-trait",
- "base64",
  "camino",
  "chrono",
  "eyre",
@@ -3543,12 +3561,11 @@ dependencies = [
  "futures-util",
  "globset",
  "serde_json",
+ "ship-acp",
  "ship-code",
  "ship-git",
  "ship-types",
- "similar",
  "tokio",
- "tokio-util",
  "tracing",
  "ulid",
 ]

@@ -46,7 +46,7 @@ pub async fn resolve_mcp_servers(
         .unwrap_or_default())
 }
 
-pub(crate) fn to_acp_mcp_server(mcp_server: &McpServerConfig) -> McpServer {
+pub fn to_acp_mcp_server(mcp_server: &McpServerConfig) -> McpServer {
     match mcp_server {
         McpServerConfig::Http(config) => McpServer::Http(
             McpServerHttp::new(config.name.clone(), config.url.clone())

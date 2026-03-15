@@ -17,13 +17,14 @@ use tokio::process::Command;
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
-use crate::acp_client::ShipAcpClient;
+use crate::client::ShipAcpClient;
 use crate::mcp::to_acp_mcp_server;
 use crate::{
     AgentDriver, AgentError, AgentHandle, AgentSessionConfig, AgentSpawnInfo, PromptResponse,
-    SessionId, StopReason,
+    StopReason,
 };
 use crate::{SystemBinaryPathProbe, resolve_agent_launcher};
+use ship_types::SessionId;
 
 type ModelInfo = (Option<String>, Vec<String>);
 type EffortInfo = (Option<String>, Option<String>, Vec<EffortValue>);
@@ -813,7 +814,7 @@ fn mate_client_capabilities() -> ClientCapabilities {
 // to the worktree directory only. This is the actual security boundary —
 // the agent process cannot write outside its worktree.
 fn command_for_launcher(
-    launcher: crate::AgentLauncher,
+    launcher: crate::launcher::AgentLauncher,
     worktree_path: &std::path::Path,
 ) -> Command {
     if cfg!(target_os = "macos") {
@@ -955,9 +956,10 @@ mod tests {
         command_for_launcher,
     };
     use crate::{
-        AgentDriver, AgentHandle, AgentLauncher, AgentSessionConfig, BinaryPathProbe, SessionId,
-        resolve_agent_launcher,
+        AgentDriver, AgentHandle, AgentSessionConfig, BinaryPathProbe,
+        launcher::AgentLauncher, resolve_agent_launcher,
     };
+    use ship_types::SessionId;
 
     #[derive(Clone, Copy)]
     struct FakeProbe {
