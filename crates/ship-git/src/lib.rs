@@ -450,6 +450,19 @@ impl GitContext {
             .collect())
     }
 
+    /// List files that differ from the given revision (`git diff --name-only <rev>`).
+    pub async fn diff_name_only(&self, rev: &Rev) -> Result<Vec<Utf8PathBuf>> {
+        let out = self
+            .run(&["diff", "--name-only", rev.as_str()])
+            .await
+            .wrap_err_with(|| format!("diff --name-only {rev}"))?;
+        Ok(out
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(Utf8PathBuf::from)
+            .collect())
+    }
+
     /// List all tracked files (null-separated internally, returned as Vec).
     pub async fn ls_files(&self) -> Result<Vec<Utf8PathBuf>> {
         let output = Command::new("git")

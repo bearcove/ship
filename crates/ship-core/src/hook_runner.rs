@@ -159,21 +159,15 @@ pub async fn run_hooks(
 /// Falls back to an empty list if git is unavailable or there is no HEAD yet,
 /// which causes glob-filtered hooks to be skipped rather than incorrectly run.
 async fn collect_changed_files(worktree_root: &Path) -> Vec<String> {
-    let output = Command::new("git")
-        .args(["diff", "--name-only", "HEAD"])
-        .current_dir(worktree_root)
-        .output()
-        .await;
-
-    match output {
-        Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout)
-            .lines()
-            .filter(|l| !l.is_empty())
-            .map(|l| l.to_owned())
-            .collect(),
-        // No HEAD yet (empty repo) or any other git error — run all hooks.
-        _ => Vec::new(),
-    }
+    let Some(utf8) = camino::Utf8Path::from_path(worktree_root) else {
+        return Vec::new();
+    };
+    let git = ship_git::GitContext::new(utf8);
+    // No HEAD yet (empty repo) or any other git error — return empty.
+    git.diff_name_only(&ship_git::Rev::new("HEAD"))
+        .await
+        .map(|paths| paths.into_iter().map(|p| p.into_string()).collect())
+        .unwrap_or_default()
 }
 
 /// Returns true if any file in `files` matches at least one glob in `patterns`.
