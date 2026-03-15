@@ -10,6 +10,8 @@ interface PlaybackContextValue {
   analyser: AnalyserNode | null;
   speak: (text: string) => void;
   stop: () => void;
+  enqueue: (text: string) => void;
+  clearQueue: () => void;
 }
 
 const PlaybackContext = createContext<PlaybackContextValue>(null!);
@@ -20,6 +22,11 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
   const sourcesRef = useRef<AudioBufferSourceNode[]>([]);
   const ctxRef = useRef<AudioContext | null>(null);
+  const queueRef = useRef<string[]>([]);
+  const stateRef = useRef<PlaybackState>("idle");
+
+  // speakRef holds the current speak function so cleanup can call it without circular deps
+  const speakRef = useRef<(text: string) => void>(() => {});
 
   const cleanup = useCallback(() => {
     for (const src of sourcesRef.current) {
@@ -37,7 +44,14 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
     }
     setAnalyser(null);
     setActiveText(null);
+    stateRef.current = "idle";
     setState("idle");
+
+    // Auto-advance: if queue has items, speak the next one
+    const next = queueRef.current.shift();
+    if (next !== undefined) {
+      speakRef.current(next);
+    }
   }, []);
 
   const stop = useCallback(() => {
@@ -46,13 +60,14 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
 
   const speak = useCallback(
     (text: string) => {
-      if (state !== "idle") return;
+      if (stateRef.current !== "idle") return;
 
       // Create AudioContext immediately in the user gesture handler
       // so it isn't blocked on mobile browsers (iOS Safari requires this)
       const audioCtx = new AudioContext({ sampleRate: 24000 });
       ctxRef.current = audioCtx;
       setActiveText(text);
+      stateRef.current = "loading";
       setState("loading");
 
       const analyserNode = audioCtx.createAnalyser();
@@ -105,6 +120,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
 
             if (chunkCount === 0) {
               setAnalyser(analyserNode);
+              stateRef.current = "playing";
               setState("playing");
             }
             chunkCount++;
@@ -135,12 +151,34 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
         }
       })();
     },
-    [state, cleanup],
+    [cleanup],
   );
 
+  // Keep speakRef in sync so cleanup's auto-advance can call speak
+  speakRef.current = speak;
+
+  const enqueue = useCallback(
+    (text: string) => {
+      queueRef.current.push(text);
+      // If idle, start speaking immediately
+      if (stateRef.current === "idle") {
+        const next = queueRef.current.shift();
+        if (next !== undefined) {
+          speak(next);
+        }
+      }
+    },
+    [speak],
+  );
+
+  const clearQueue = useCallback(() => {
+    queueRef.current = [];
+    stop();
+  }, [stop]);
+
   const value = useMemo(
-    () => ({ state, activeText, analyser, speak, stop }),
-    [state, activeText, analyser, speak, stop],
+    () => ({ state, activeText, analyser, speak, stop, enqueue, clearQueue }),
+    [state, activeText, analyser, speak, stop, enqueue, clearQueue],
   );
 
   return <PlaybackContext.Provider value={value}>{children}</PlaybackContext.Provider>;
