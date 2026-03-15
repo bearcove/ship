@@ -2878,6 +2878,15 @@ unless the task explicitly targets a subdirectory inside the current worktree.
             None
         };
 
+        // Clear the mate activity buffer so the summarizer only accumulates
+        // activity since this steer checkpoint.
+        {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            if let Some(session) = sessions.get_mut(session_id) {
+                Self::clear_mate_activity_buffer(session);
+            }
+        }
+
         // If the mate is blocked on a mid-task plan change, reject it and redirect.
         let pending_plan_change = self
             .pending_mcp_ops
