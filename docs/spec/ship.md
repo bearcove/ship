@@ -1194,6 +1194,14 @@ mate's `commit` tool: takes a required `message` (string, used verbatim) and
 an optional `step_index` (integer). The captain writes to the same worktree as
 the mate; commits from either agent are interleaved on the same branch.
 
+r[captain.delegation-gate]
+When the captain calls `write_file`, `edit_prepare`, `edit_confirm`, or
+`commit` and has never called `captain_assign` in the current session, the
+backend MUST block the call once with a reminder to delegate work via
+`captain_assign`. The reminder sets a persisted flag so subsequent calls
+proceed normally. If the captain has previously assigned work (tracked by a
+separate persisted flag set in `captain_assign`), the gate does not fire.
+
 r[captain.tool.continue-rebase]
 The captain MUST have access to a `captain_continue_rebase` tool (no
 arguments). It is only valid when the task is in `RebaseConflict` status. When
