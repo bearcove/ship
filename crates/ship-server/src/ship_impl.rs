@@ -4992,6 +4992,7 @@ unless the task explicitly targets a subdirectory inside the current worktree.
         old_string: String,
         new_string: String,
         replace_all: Option<bool>,
+        require_plan: bool,
     ) -> McpToolCallResponse {
         let result: Result<McpToolCallResponse, String> = async {
             let relative_path = Self::validate_worktree_path(&path)?.to_path_buf();
@@ -5002,7 +5003,11 @@ unless the task explicitly targets a subdirectory inside the current worktree.
                     .ok_or_else(|| format!("session not found: {}", session_id.0))?;
                 (
                     Self::current_task_worktree_path(session)?.to_path_buf(),
-                    Self::require_mate_plan(session).is_ok(),
+                    if require_plan {
+                        Self::require_mate_plan(session).is_ok()
+                    } else {
+                        true
+                    },
                 )
             };
             if !has_plan_or_rebase_conflict_status {
