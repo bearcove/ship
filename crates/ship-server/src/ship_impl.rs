@@ -7597,50 +7597,87 @@ Reply with \"Ready.\" to confirm.";
 
         // Finalize any remaining open text block when the drain loop ends
         // (agent turn finished).
-        if let Some((block_id, fin_role, text)) = open_text_block.take() {
-            // Mention detection: check for @mentions at start of finalized text
-            if matches!(fin_role, Role::Captain | Role::Mate) {
-                let trimmed = text.trim_start();
-                let mention_target =
-                    ["captain", "mate", "human", "admiral"]
-                        .iter()
-                        .find(|target| {
-                            let prefix = format!("@{target}");
-                            trimmed
-                                .get(..prefix.len())
-                                .filter(|s| s.eq_ignore_ascii_case(&prefix))
-                                .is_some()
-                                && (trimmed.len() == prefix.len()
-                                    || trimmed
-                                        .as_bytes()
-                                        .get(prefix.len())
-                                        .map_or(true, |&b| b.is_ascii_whitespace()))
-                        });
-                if let Some(target) = mention_target {
-                    tracing::info!(
-                        block_id = %block_id.0,
-                        from = ?fin_role,
-                        target = %target,
-                        "mention detected in finalized text block"
-                    );
-                } else {
-                    tracing::info!(
-                        block_id = %block_id.0,
-                        from = ?fin_role,
-                        "unaddressed message from {fin_role:?}"
+        if let Some((block_id, fin_role, fin_source, text)) = open_text_block.take() {
+            {
+                let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                if let Some(session) = sessions.get_mut(session_id) {
+                    apply_event(
+                        session,
+                        SessionEvent::BlockFinalized {
+                            block_id,
+                            role: fin_role,
+                            text: text.clone(),
+                        },
                     );
                 }
             }
-            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
-            if let Some(session) = sessions.get_mut(session_id) {
-                apply_event(
-                    session,
-                    SessionEvent::BlockFinalized {
-                        block_id,
-                        role: fin_role,
-                        text,
-                    },
-                );
+            let mention_action = determine_mention_action(fin_role, fin_source, &text);
+            match mention_action {
+                MentionAction::RouteToMate { text } => {
+                    let this = self.clone();
+                    let session_id = session_id.clone();
+                    tokio::spawn(async move {
+                        let steer_msg = Self::mate_steer_message(&text);
+                        let parts = vec![PromptContentPart::Text { text: steer_msg }];
+                        if let Err(error) = this.dispatch_steer_to_mate(&session_id, parts).await {
+                            tracing::warn!(
+                                error = %error,
+                                "failed to route @mate mention as steer (post-loop)"
+                            );
+                        }
+                    });
+                }
+                MentionAction::RouteToCaptain { text } => {
+                    let this = self.clone();
+                    let session_id = session_id.clone();
+                    let wrapped = format!("<mate-update>\n{text}\n</mate-update>");
+                    tokio::spawn(async move {
+                        if let Err(error) = this.notify_captain_progress(&session_id, wrapped).await
+                        {
+                            tracing::warn!(
+                                error = %error,
+                                "failed to route @captain mention as update (post-loop)"
+                            );
+                        }
+                    });
+                }
+                MentionAction::RouteToHuman => {
+                    tracing::info!("@human mention — no routing needed, human sees all output");
+                }
+                MentionAction::RouteToAdmiral => {
+                    tracing::info!("@admiral mention — routing not yet implemented");
+                }
+                MentionAction::Unaddressed {
+                    role: unaddressed_role,
+                } => match unaddressed_role {
+                    Role::Captain => {
+                        let this = self.clone();
+                        let session_id = session_id.clone();
+                        tokio::spawn(async move {
+                            let msg = "Your last message didn't address anyone. \
+                                    Please start messages with @mate, @human, or @admiral."
+                                .to_owned();
+                            if let Err(error) = this.notify_captain_progress(&session_id, msg).await
+                            {
+                                tracing::warn!(
+                                    error = %error,
+                                    "failed to send unaddressed bounce to captain (post-loop)"
+                                );
+                            }
+                        });
+                    }
+                    Role::Mate => {
+                        let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                        if let Some(session) = sessions.get_mut(session_id) {
+                            Self::queue_mate_guidance(
+                                session,
+                                "Your last message didn't address anyone. \
+                                     Please start messages with @captain, @human, or @admiral.",
+                            );
+                        }
+                    }
+                },
+                MentionAction::None => {}
             }
         }
 
