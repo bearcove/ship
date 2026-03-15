@@ -6064,8 +6064,12 @@ a text response to the captain — they cannot see your text output.\
                     );
                 }
                 self.persist_session(session_id).await?;
+                let diff_section = match &commit.commit_diff {
+                    Some(diff) => format!("\n\n<diff>\n{diff}\n</diff>"),
+                    None => String::new(),
+                };
                 let captain_message = format!(
-                    "The mate completed a step from their plan.\n\nCompleted: {step_description}\n\n{commit_summary}\n\nWe will notify you when they are done and need your review.",
+                    "The mate completed a step from their plan.\n\nCompleted: {step_description}\n\n{commit_summary}{diff_section}\n\nWe will notify you when they are done and need your review.",
                 );
                 self.append_captain_feed(session_id, captain_message)
                     .await?;
@@ -6081,6 +6085,17 @@ a text response to the captain — they cannot see your text output.\
                 ))
             }
         } else {
+            if let Some(commit) = commit.as_ref() {
+                let diff_section = match &commit.commit_diff {
+                    Some(diff) => format!("\n\n<diff>\n{diff}\n</diff>"),
+                    None => String::new(),
+                };
+                let captain_message = format!(
+                    "The mate committed without a plan step.\n\n{commit_summary}{diff_section}",
+                );
+                self.append_captain_feed(session_id, captain_message)
+                    .await?;
+            }
             Ok(commit_summary)
         }
     }
