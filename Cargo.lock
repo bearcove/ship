@@ -3307,6 +3307,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ship-git"
+version = "0.1.0"
+dependencies = [
+ "camino",
+ "eyre",
+ "tokio",
+]
+
+[[package]]
 name = "ship-server"
 version = "0.1.0"
 dependencies = [

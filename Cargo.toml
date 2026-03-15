@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "crates/ship-git",
   "crates/ship-types",
   "crates/ship-core",
   "crates/ship-service",
@@ -12,6 +13,7 @@ resolver = "2"
 edition = "2024"
 
 [workspace.dependencies]
+camino = "1.2"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 ulid = "1"
 futures-core = "0.3"
