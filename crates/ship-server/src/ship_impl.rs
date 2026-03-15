@@ -13141,7 +13141,12 @@ agent_presets {
             .expect("run_command without plan should succeed");
 
         let write_err = ship
-            .mate_tool_write_file(&session_id, "test.txt".to_owned(), "content".to_owned())
+            .mate_tool_write_file(
+                &session_id,
+                "test.txt".to_owned(),
+                "content".to_owned(),
+                true,
+            )
             .await;
         assert!(write_err.is_error, "write_file without plan should fail");
         assert!(
@@ -13162,6 +13167,7 @@ agent_presets {
                 "old".to_owned(),
                 "new".to_owned(),
                 None,
+                true,
             )
             .await;
         assert!(edit_err.is_error, "edit_prepare without plan should fail");
@@ -13172,7 +13178,7 @@ agent_presets {
         );
 
         let confirm_err = ship
-            .mate_tool_edit_confirm(&session_id, "edit-0".to_owned())
+            .mate_tool_edit_confirm(&session_id, "edit-0".to_owned(), true)
             .await;
         assert!(
             confirm_err.is_error,
@@ -13252,6 +13258,7 @@ agent_presets {
                 &session_id,
                 "restored-plan.txt".to_owned(),
                 "ok\n".to_owned(),
+                true,
             )
             .await;
         assert!(
@@ -13288,6 +13295,7 @@ agent_presets {
                 "old value".to_owned(),
                 "new value".to_owned(),
                 None,
+                true,
             )
             .await;
         assert!(
@@ -13297,7 +13305,9 @@ agent_presets {
         );
         let edit_id = parse_edit_id(&prepared.text);
 
-        let confirmed = ship.mate_tool_edit_confirm(&session_id, edit_id).await;
+        let confirmed = ship
+            .mate_tool_edit_confirm(&session_id, edit_id, true)
+            .await;
         assert!(
             !confirmed.is_error,
             "edit_confirm should succeed during rebase without plan: {}",
@@ -14716,6 +14726,7 @@ hooks {
                 &session_id,
                 "src/lib.rs".to_owned(),
                 "mod blah;\npub fn main( ) -> u32 {1}\n".to_owned(),
+                true,
             )
             .await;
         assert!(
@@ -14735,6 +14746,7 @@ hooks {
                 &session_id,
                 "notes/nested/file.txt".to_owned(),
                 "alpha\nbeta\n".to_owned(),
+                true,
             )
             .await;
         assert!(
@@ -14770,7 +14782,12 @@ hooks {
         }
 
         let escaped = ship
-            .mate_tool_write_file(&session_id, "../Cargo.toml".to_owned(), "nope".to_owned())
+            .mate_tool_write_file(
+                &session_id,
+                "../Cargo.toml".to_owned(),
+                "nope".to_owned(),
+                true,
+            )
             .await;
         assert!(escaped.is_error, "path escape should be rejected");
         assert_eq!(escaped.text, "Path resolves outside the worktree.");
@@ -14780,6 +14797,7 @@ hooks {
                 &session_id,
                 project_root.join("src/lib.rs").display().to_string(),
                 "nope".to_owned(),
+                true,
             )
             .await;
         assert!(absolute.is_error, "absolute path should be rejected");
@@ -14790,6 +14808,7 @@ hooks {
                 &session_id,
                 "src/lib.rs".to_owned(),
                 "pub fn broken( {\n".to_owned(),
+                true,
             )
             .await;
         assert!(invalid.is_error, "invalid rust file should be rejected");
@@ -14827,6 +14846,7 @@ hooks {
                 &session_id,
                 "src/lib.rs".to_owned(),
                 "pub fn unformatted( ) -> u32 {1}\n".to_owned(),
+                true,
             )
             .await;
         assert!(
@@ -14871,6 +14891,7 @@ hooks {
                 "old_name();".to_owned(),
                 "new_name( );".to_owned(),
                 None,
+                true,
             )
             .await;
         assert!(
@@ -14894,7 +14915,7 @@ hooks {
         let edit_id = parse_edit_id(&prepared.text);
 
         let confirmed = ship
-            .mate_tool_edit_confirm(&session_id, edit_id.clone())
+            .mate_tool_edit_confirm(&session_id, edit_id.clone(), true)
             .await;
         assert!(
             !confirmed.is_error,
@@ -14947,6 +14968,7 @@ hooks {
                 "gamma".to_owned(),
                 "delta".to_owned(),
                 None,
+                true,
             )
             .await;
         assert!(missing.is_error, "missing old_string should fail");
@@ -14959,6 +14981,7 @@ hooks {
                 "alpha".to_owned(),
                 "delta".to_owned(),
                 None,
+                true,
             )
             .await;
         assert!(ambiguous.is_error, "ambiguous old_string should fail");
@@ -14995,6 +15018,7 @@ hooks {
                 "middle".to_owned(),
                 "center".to_owned(),
                 None,
+                true,
             )
             .await;
         assert!(
@@ -15011,6 +15035,7 @@ hooks {
                 "foo".to_owned(),
                 "bar".to_owned(),
                 Some(true),
+                true,
             )
             .await;
         assert!(
@@ -15033,7 +15058,9 @@ hooks {
         let second_id = parse_edit_id(&second.text);
 
         // Confirm first edit (middle → center). File becomes foo\ncenter\nfoo\n.
-        let first_confirm = ship.mate_tool_edit_confirm(&session_id, first_id).await;
+        let first_confirm = ship
+            .mate_tool_edit_confirm(&session_id, first_id, true)
+            .await;
         assert!(
             !first_confirm.is_error,
             "first confirm should succeed: {}",
@@ -15042,7 +15069,9 @@ hooks {
 
         // Confirm second edit (replace_all foo → bar). File changed since prepare
         // but old_string "foo" is still uniquely re-applicable → re-apply succeeds.
-        let second_confirm = ship.mate_tool_edit_confirm(&session_id, second_id).await;
+        let second_confirm = ship
+            .mate_tool_edit_confirm(&session_id, second_id, true)
+            .await;
         assert!(
             !second_confirm.is_error,
             "replace_all confirm should succeed after re-apply: {}",
@@ -15080,6 +15109,7 @@ hooks {
                 "beta".to_owned(),
                 "gamma".to_owned(),
                 None,
+                true,
             )
             .await;
         assert!(
@@ -15094,7 +15124,9 @@ hooks {
             .expect("file mutation should succeed");
 
         // Re-apply is attempted but old_string "beta" is no longer in the file.
-        let stale = ship.mate_tool_edit_confirm(&session_id, edit_id).await;
+        let stale = ship
+            .mate_tool_edit_confirm(&session_id, edit_id, true)
+            .await;
         assert!(
             stale.is_error,
             "stale edit should fail when old_string is gone"
@@ -15106,7 +15138,7 @@ hooks {
         );
 
         let unknown = ship
-            .mate_tool_edit_confirm(&session_id, "edit-does-not-exist".to_owned())
+            .mate_tool_edit_confirm(&session_id, "edit-does-not-exist".to_owned(), true)
             .await;
         assert!(unknown.is_error, "unknown edit id should fail");
         assert_eq!(
@@ -15143,6 +15175,7 @@ hooks {
                 "pub fn intact() {}\n".to_owned(),
                 "pub fn broken( {\n".to_owned(),
                 None,
+                true,
             )
             .await;
         assert!(err.is_error, "prepare should fail for invalid Rust");
