@@ -1,0 +1,8 @@
+---
+source: crates/ship-policy/src/tests.rs
+expression: wrapped
+---
+<message from="Cedar">
+Focus on the error handling first, the UI can wait.
+</message>
+<routing>Act on this correction and continue working.</routing>

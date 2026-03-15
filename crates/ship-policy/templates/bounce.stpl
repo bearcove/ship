@@ -1,0 +1,3 @@
+Your last message didn't address anyone. Start your message with an @mention:
+<% for name in &self.allowed_names { %>- @<%= name %>
+<% } %>

@@ -1,0 +1,4 @@
+<message from="<%= self.from_name %>">
+<%= self.text %>
+</message>
+<routing><%= self.routing_hint %></routing>

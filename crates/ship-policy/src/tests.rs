@@ -1,4 +1,6 @@
 use crate::*;
+use crate::prompts::*;
+use sailfish::TemplateOnce;
 
 fn test_topology() -> Topology {
     Topology {
@@ -303,4 +305,98 @@ fn unknown_target() {
             attempted_target: "Nobody".into(),
         }
     );
+}
+
+// ── Prompt snapshots ─────────────────────────────────────────────────
+
+#[test]
+fn snapshot_captain_prompt() {
+    let prompt = CaptainPrompt {
+        captain_name: "Cedar".into(),
+        mate_name: "Jordan".into(),
+        human_name: "Amos".into(),
+        admiral_name: Some("Morgan".into()),
+        state_summary: "New session, no active task. Greet the human and wait for direction.".into(),
+    };
+    insta::assert_snapshot!("captain_prompt", prompt.render_once().unwrap());
+}
+
+#[test]
+fn snapshot_captain_prompt_no_admiral() {
+    let prompt = CaptainPrompt {
+        captain_name: "Cedar".into(),
+        mate_name: "Jordan".into(),
+        human_name: "Amos".into(),
+        admiral_name: None,
+        state_summary: "New session, no active task. Greet the human and wait for direction.".into(),
+    };
+    insta::assert_snapshot!("captain_prompt_no_admiral", prompt.render_once().unwrap());
+}
+
+#[test]
+fn snapshot_mate_prompt() {
+    let prompt = MatePrompt {
+        mate_name: "Jordan".into(),
+        captain_name: "Cedar".into(),
+        human_name: "Amos".into(),
+        task_description: "Refactor the auth middleware to use the new session store.".into(),
+    };
+    insta::assert_snapshot!("mate_prompt", prompt.render_once().unwrap());
+}
+
+#[test]
+fn snapshot_admiral_prompt() {
+    let prompt = AdmiralPrompt {
+        admiral_name: "Morgan".into(),
+        human_name: "Amos".into(),
+        lanes: vec![
+            LaneInfo {
+                captain_name: "Cedar".into(),
+                label: "auth-refactor".into(),
+                status_summary: "working, step 3/5".into(),
+            },
+            LaneInfo {
+                captain_name: "Birch".into(),
+                label: "logging-migration".into(),
+                status_summary: "idle, finished step 1".into(),
+            },
+        ],
+    };
+    insta::assert_snapshot!("admiral_prompt", prompt.render_once().unwrap());
+}
+
+// ── Message wrapping snapshots ───────────────────────────────────────
+
+#[test]
+fn snapshot_wrap_mate_to_captain() {
+    let wrapped = wrap_message(
+        "Jordan",
+        "I've completed the refactor and all tests pass.",
+        &captain_routing_hint("Jordan", "Amos"),
+    );
+    insta::assert_snapshot!("wrap_mate_to_captain", wrapped);
+}
+
+#[test]
+fn snapshot_wrap_captain_steer_to_mate() {
+    let wrapped = wrap_message(
+        "Cedar",
+        "Focus on the error handling first, the UI can wait.",
+        &mate_routing_hint(),
+    );
+    insta::assert_snapshot!("wrap_captain_steer_to_mate", wrapped);
+}
+
+#[test]
+fn snapshot_bounce_for_captain() {
+    let topo = test_topology();
+    let bounce = bounce_for(&topo, "Cedar").unwrap();
+    insta::assert_snapshot!("bounce_captain", bounce);
+}
+
+#[test]
+fn snapshot_bounce_for_mate() {
+    let topo = test_topology();
+    let bounce = bounce_for(&topo, "Jordan").unwrap();
+    insta::assert_snapshot!("bounce_mate", bounce);
 }

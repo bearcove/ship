@@ -3641,6 +3641,7 @@ name = "ship-policy"
 version = "0.1.0"
 dependencies = [
  "insta",
+ "sailfish",
 ]
 
 [[package]]

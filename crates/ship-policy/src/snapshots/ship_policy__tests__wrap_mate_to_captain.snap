@@ -1,0 +1,8 @@
+---
+source: crates/ship-policy/src/tests.rs
+expression: wrapped
+---
+<message from="Jordan">
+I&#039;ve completed the refactor and all tests pass.
+</message>
+<routing>Reply to mate: @Jordan · Reply to human: @Amos</routing>

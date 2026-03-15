@@ -4,6 +4,7 @@ version = "0.1.0"
 edition.workspace = true
 
 [dependencies]
+sailfish = "0.9"
 
 [dev-dependencies]
 insta = { version = "1.46.3", features = ["redactions"] }
