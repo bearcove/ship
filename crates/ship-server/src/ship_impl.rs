@@ -9799,6 +9799,13 @@ impl CaptainMcp for CaptainMcpSessionService {
 
     // r[captain.tool.write-file]
     async fn captain_write_file(&self, path: String, content: String) -> McpToolCallResponse {
+        if let Some(resp) = self
+            .ship
+            .check_captain_delegation_gate(&self.session_id)
+            .await
+        {
+            return resp;
+        }
         self.ship
             .mate_tool_write_file(&self.session_id, path, content, false)
             .await
@@ -9812,6 +9819,13 @@ impl CaptainMcp for CaptainMcpSessionService {
         new_string: String,
         replace_all: Option<bool>,
     ) -> McpToolCallResponse {
+        if let Some(resp) = self
+            .ship
+            .check_captain_delegation_gate(&self.session_id)
+            .await
+        {
+            return resp;
+        }
         self.ship
             .mate_tool_edit_prepare(
                 &self.session_id,
@@ -9826,6 +9840,13 @@ impl CaptainMcp for CaptainMcpSessionService {
 
     // r[captain.tool.edit-confirm]
     async fn captain_edit_confirm(&self, edit_id: String) -> McpToolCallResponse {
+        if let Some(resp) = self
+            .ship
+            .check_captain_delegation_gate(&self.session_id)
+            .await
+        {
+            return resp;
+        }
         self.ship
             .mate_tool_edit_confirm(&self.session_id, edit_id, false)
             .await
@@ -9837,6 +9858,13 @@ impl CaptainMcp for CaptainMcpSessionService {
         step_index: Option<u64>,
         message: String,
     ) -> McpToolCallResponse {
+        if let Some(resp) = self
+            .ship
+            .check_captain_delegation_gate(&self.session_id)
+            .await
+        {
+            return resp;
+        }
         let step_index = match step_index {
             Some(idx) => match usize::try_from(idx) {
                 Ok(i) => Some(i),
