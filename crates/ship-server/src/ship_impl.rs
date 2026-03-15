@@ -10164,9 +10164,11 @@ mod tests {
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
     use std::path::PathBuf;
-    use std::process::Command;
     use std::time::Duration;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    use ship_git::{BranchName, GitContext, Rev};
+    use tokio::process::Command as TokioCommand;
 
     use crate::captain_mcp::worktree_tools::{read_file_tool, run_command_tool};
     use ship_core::{
@@ -10508,46 +10510,42 @@ mod tests {
         spawn.handle
     }
 
-    fn init_git_repo(path: &std::path::Path) {
-        let status = std::process::Command::new("git")
-            .arg("init")
-            .arg("-b")
-            .arg("main")
-            .arg(path)
-            .status()
-            .expect("git init should run");
-        assert!(status.success(), "git init should succeed");
-
-        for (key, value) in [
-            ("user.name", "Ship Tests"),
-            ("user.email", "ship-tests@example.com"),
-        ] {
-            let status = std::process::Command::new("git")
-                .arg("-C")
-                .arg(path)
-                .args(["config", key, value])
-                .status()
-                .expect("git config should run");
-            assert!(status.success(), "git config should succeed");
-        }
+    async fn init_git_repo(path: &std::path::Path) -> GitContext {
+        let utf8 = camino::Utf8Path::from_path(path).expect("test path should be valid UTF-8");
+        let git = GitContext::init(utf8, &BranchName::new("main"))
+            .await
+            .expect("git init should succeed");
+        git.config_set("user.name", "Ship Tests")
+            .await
+            .expect("git config user.name should succeed");
+        git.config_set("user.email", "ship-tests@example.com")
+            .await
+            .expect("git config user.email should succeed");
+        git
     }
 
-    fn git_succeeds(path: &std::path::Path, args: &[&str], message: &str) {
-        let status = Command::new("git")
-            .arg("-C")
-            .arg(path)
-            .args(args)
-            .status()
-            .expect("git command should run");
-        assert!(status.success(), "{message}");
-    }
-
-    fn git_stdout(path: &std::path::Path, args: &[&str], message: &str) -> String {
-        let output = Command::new("git")
+    async fn git_succeeds(path: &std::path::Path, args: &[&str], message: &str) {
+        let output = TokioCommand::new("git")
             .arg("-C")
             .arg(path)
             .args(args)
             .output()
+            .await
+            .expect("git command should run");
+        assert!(
+            output.status.success(),
+            "{message}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    async fn git_stdout(path: &std::path::Path, args: &[&str], message: &str) -> String {
+        let output = TokioCommand::new("git")
+            .arg("-C")
+            .arg(path)
+            .args(args)
+            .output()
+            .await
             .expect("git command should run");
         assert!(
             output.status.success(),
@@ -10562,15 +10560,11 @@ mod tests {
     ) -> (PathBuf, ShipImpl, SessionId, PathBuf, PathBuf, String) {
         let (dir, ship, session_id) = create_session_for_workflow_test(test_name).await;
         let project_root = dir.join("project");
-        init_git_repo(&project_root);
+        let git = init_git_repo(&project_root).await;
         std::fs::write(project_root.join("tracked.txt"), "base\n")
             .expect("tracked file should be written");
-        git_succeeds(&project_root, &["add", "."], "git add should succeed");
-        git_succeeds(
-            &project_root,
-            &["commit", "-m", "initial"],
-            "git commit should succeed",
-        );
+        git.add_all().await.expect("git add should succeed");
+        git.commit("initial").await.expect("git commit should succeed");
 
         let branch_name = {
             let sessions = ship.sessions.lock().expect("sessions mutex poisoned");
@@ -10583,21 +10577,11 @@ mod tests {
         };
         let worktree_dir = SessionGitNames::from_session_id(&session_id).worktree_dir;
         let worktree_path = project_root.join(".ship").join(&worktree_dir);
-        let worktree_display = worktree_path.display().to_string();
-        let status = Command::new("git")
-            .arg("-C")
-            .arg(&project_root)
-            .args([
-                "worktree",
-                "add",
-                "-b",
-                &branch_name,
-                &worktree_display,
-                "main",
-            ])
-            .status()
-            .expect("git worktree add should run");
-        assert!(status.success(), "git worktree add should succeed");
+        let utf8_wt = camino::Utf8Path::from_path(&worktree_path)
+            .expect("worktree path should be valid UTF-8");
+        git.worktree_add(utf8_wt, &BranchName::new(&branch_name), &Rev::new("main"))
+            .await
+            .expect("git worktree add should succeed");
 
         {
             let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
@@ -10636,12 +10620,12 @@ mod tests {
             &worktree_path,
             &["add", "task.txt"],
             "git add should succeed",
-        );
+        ).await;
         git_succeeds(
             &worktree_path,
             &["commit", "-m", "task change"],
             "task commit should succeed",
-        );
+        ).await;
 
         std::fs::write(project_root.join("base.txt"), "main branch\n")
             .expect("main branch file should be written");
@@ -10649,12 +10633,12 @@ mod tests {
             &project_root,
             &["add", "base.txt"],
             "git add should succeed",
-        );
+        ).await;
         git_succeeds(
             &project_root,
             &["commit", "-m", "main change"],
             "main commit should succeed",
-        );
+        ).await;
 
         (dir, ship, session_id, project_root, worktree_path)
     }
@@ -10680,7 +10664,7 @@ mod tests {
             &worktree_path,
             &["commit", "-am", "task change"],
             "task commit should succeed",
-        );
+        ).await;
 
         std::fs::write(project_root.join("tracked.txt"), "main branch\n")
             .expect("main branch file should be written");
@@ -10688,7 +10672,7 @@ mod tests {
             &project_root,
             &["commit", "-am", "main change"],
             "main commit should succeed",
-        );
+        ).await;
 
         let error = ship
             .captain_tool_review_diff(&session_id)
@@ -10764,52 +10748,28 @@ mod tests {
             create_ready_session_for_assign_test("captain-assign-reset", "task").await;
         let project_root = dir.join("project");
         let worktree_path = project_root.join(".ship").join("@task");
-        init_git_repo(&project_root);
+        init_git_repo(&project_root).await;
 
         std::fs::write(project_root.join("tracked.txt"), "v1\n")
             .expect("tracked file should be written");
-        assert!(
-            Command::new("git")
-                .arg("-C")
-                .arg(&project_root)
-                .args(["add", "."])
-                .status()
-                .expect("git add should run")
-                .success(),
-            "git add should succeed"
-        );
-        assert!(
-            Command::new("git")
-                .arg("-C")
-                .arg(&project_root)
-                .args(["commit", "-m", "initial"])
-                .status()
-                .expect("git commit should run")
-                .success(),
-            "git commit should succeed"
-        );
-        assert!(
-            Command::new("git")
-                .arg("-C")
-                .arg(&project_root)
-                .args(["worktree", "add", "-b", "task", ".ship/@task", "main"])
-                .status()
-                .expect("git worktree add should run")
-                .success(),
-            "git worktree add should succeed"
-        );
+        git_succeeds(&project_root, &["add", "."], "git add should succeed").await;
+        git_succeeds(
+            &project_root,
+            &["commit", "-m", "initial"],
+            "git commit should succeed",
+        ).await;
+        git_succeeds(
+            &project_root,
+            &["worktree", "add", "-b", "task", ".ship/@task", "main"],
+            "git worktree add should succeed",
+        ).await;
         std::fs::write(project_root.join("tracked.txt"), "v2\n")
             .expect("updated tracked file should be written");
-        assert!(
-            Command::new("git")
-                .arg("-C")
-                .arg(&project_root)
-                .args(["commit", "-am", "advance base"])
-                .status()
-                .expect("git commit should run")
-                .success(),
-            "git commit on main should succeed"
-        );
+        git_succeeds(
+            &project_root,
+            &["commit", "-am", "advance base"],
+            "git commit on main should succeed",
+        ).await;
         assert_eq!(
             std::fs::read_to_string(worktree_path.join("tracked.txt"))
                 .expect("worktree tracked file should be readable before reset"),
@@ -10840,14 +10800,15 @@ mod tests {
                 .expect("reset tracked file should be readable"),
             "v2\n"
         );
-        let branch = Command::new("git")
-            .arg("-C")
-            .arg(&worktree_path)
-            .args(["branch", "--show-current"])
-            .output()
-            .expect("git branch should run");
-        assert!(branch.status.success(), "git branch should succeed");
-        assert_eq!(String::from_utf8_lossy(&branch.stdout).trim(), "task");
+        assert_eq!(
+            git_stdout(
+                &worktree_path,
+                &["branch", "--show-current"],
+                "git branch should succeed",
+            ).await
+            .trim(),
+            "task"
+        );
 
         let _ = std::fs::remove_dir_all(dir);
     }
@@ -10861,21 +10822,21 @@ mod tests {
             create_ready_session_for_assign_test("captain-assign-dirty", "task").await;
         let project_root = dir.join("project");
         let worktree_path = project_root.join(".ship").join("@task");
-        init_git_repo(&project_root);
+        init_git_repo(&project_root).await;
 
         std::fs::write(project_root.join("tracked.txt"), "base\n")
             .expect("tracked file should be written");
-        git_succeeds(&project_root, &["add", "."], "git add should succeed");
+        git_succeeds(&project_root, &["add", "."], "git add should succeed").await;
         git_succeeds(
             &project_root,
             &["commit", "-m", "initial"],
             "git commit should succeed",
-        );
+        ).await;
         git_succeeds(
             &project_root,
             &["worktree", "add", "-b", "task", ".ship/@task", "main"],
             "git worktree add should succeed",
-        );
+        ).await;
         std::fs::write(worktree_path.join("dirty.txt"), "dirty\n")
             .expect("dirty file should be written");
 
@@ -10919,28 +10880,28 @@ mod tests {
             create_ready_session_for_assign_test("captain-assign-continue", "task").await;
         let project_root = dir.join("project");
         let worktree_path = project_root.join(".ship").join("@task");
-        init_git_repo(&project_root);
+        init_git_repo(&project_root).await;
 
         std::fs::write(project_root.join("tracked.txt"), "base\n")
             .expect("tracked file should be written");
-        git_succeeds(&project_root, &["add", "."], "git add should succeed");
+        git_succeeds(&project_root, &["add", "."], "git add should succeed").await;
         git_succeeds(
             &project_root,
             &["commit", "-m", "initial"],
             "git commit should succeed",
-        );
+        ).await;
         git_succeeds(
             &project_root,
             &["worktree", "add", "-b", "task", ".ship/@task", "main"],
             "git worktree add should succeed",
-        );
+        ).await;
         std::fs::write(worktree_path.join("tracked.txt"), "task\n")
             .expect("task branch file should be written");
         git_succeeds(
             &worktree_path,
             &["commit", "-am", "task change"],
             "git commit on task should succeed",
-        );
+        ).await;
 
         let assigned = ship
             .captain_tool_assign(
@@ -10971,7 +10932,7 @@ mod tests {
                 &worktree_path,
                 &["branch", "--show-current"],
                 "git branch should succeed"
-            )
+            ).await
             .trim(),
             "task"
         );
@@ -10993,21 +10954,21 @@ mod tests {
             create_ready_session_for_assign_test("captain-assign-save-clean", "task").await;
         let project_root = dir.join("project");
         let worktree_path = project_root.join(".ship").join("@task");
-        init_git_repo(&project_root);
+        init_git_repo(&project_root).await;
 
         std::fs::write(project_root.join("tracked.txt"), "base\n")
             .expect("tracked file should be written");
-        git_succeeds(&project_root, &["add", "."], "git add should succeed");
+        git_succeeds(&project_root, &["add", "."], "git add should succeed").await;
         git_succeeds(
             &project_root,
             &["commit", "-m", "initial"],
             "git commit should succeed",
-        );
+        ).await;
         git_succeeds(
             &project_root,
             &["worktree", "add", "-b", "task", ".ship/@task", "main"],
             "git worktree add should succeed",
-        );
+        ).await;
 
         std::fs::write(worktree_path.join("tracked.txt"), "task committed\n")
             .expect("task branch file should be written");
@@ -11015,7 +10976,7 @@ mod tests {
             &worktree_path,
             &["commit", "-am", "task change"],
             "git commit on task should succeed",
-        );
+        ).await;
         std::fs::write(worktree_path.join("dirty.txt"), "dirty\n")
             .expect("dirty file should be written");
 
@@ -11025,7 +10986,7 @@ mod tests {
             &project_root,
             &["commit", "-am", "advance base"],
             "git commit on main should succeed",
-        );
+        ).await;
 
         let assigned = ship
             .captain_tool_assign(
@@ -11065,7 +11026,7 @@ mod tests {
                 &worktree_path,
                 &["branch", "--show-current"],
                 "git branch should succeed"
-            )
+            ).await
             .trim(),
             "task"
         );
@@ -11074,19 +11035,19 @@ mod tests {
                 &project_root,
                 &["rev-parse", "task"],
                 "git rev-parse task should succeed"
-            ),
+            ).await,
             git_stdout(
                 &project_root,
                 &["rev-parse", "main"],
                 "git rev-parse main should succeed"
-            )
+            ).await
         );
         assert_eq!(
             git_stdout(
                 &project_root,
                 &["show", &format!("{saved_branch}:tracked.txt")],
                 "git show tracked file on saved branch should succeed"
-            ),
+            ).await,
             "task committed\n"
         );
         assert_eq!(
@@ -11094,7 +11055,7 @@ mod tests {
                 &project_root,
                 &["show", &format!("{saved_branch}:dirty.txt")],
                 "git show dirty file on saved branch should succeed"
-            ),
+            ).await,
             "dirty\n"
         );
 
@@ -11111,21 +11072,21 @@ mod tests {
             create_ready_session_for_assign_test("captain-assign-save-failure", "task").await;
         let project_root = dir.join("project");
         let worktree_path = project_root.join(".ship").join("@task");
-        init_git_repo(&project_root);
+        init_git_repo(&project_root).await;
 
         std::fs::write(project_root.join("tracked.txt"), "base\n")
             .expect("tracked file should be written");
-        git_succeeds(&project_root, &["add", "."], "git add should succeed");
+        git_succeeds(&project_root, &["add", "."], "git add should succeed").await;
         git_succeeds(
             &project_root,
             &["commit", "-m", "initial"],
             "git commit should succeed",
-        );
+        ).await;
         git_succeeds(
             &project_root,
             &["worktree", "add", "-b", "task", ".ship/@task", "main"],
             "git worktree add should succeed",
-        );
+        ).await;
         std::fs::write(worktree_path.join("dirty.txt"), "dirty\n")
             .expect("dirty file should be written");
         install_failing_pre_commit_hook(&project_root);
@@ -11154,7 +11115,7 @@ mod tests {
                 &worktree_path,
                 &["branch", "--show-current"],
                 "git branch should succeed after restore"
-            )
+            ).await
             .trim(),
             "task"
         );
@@ -11163,7 +11124,7 @@ mod tests {
                 &project_root,
                 &["branch", "--list", "task-saved-*"],
                 "git branch --list should succeed"
-            )
+            ).await
             .contains("task-saved-"),
             "saved branch should still exist after the failed save attempt"
         );
@@ -11552,15 +11513,15 @@ agent_presets {
         let config_dir = dir.join("config");
         let project_root = dir.join("project");
         std::fs::create_dir_all(project_root.join(".ship")).expect("project ship dir should exist");
-        init_git_repo(&project_root);
+        init_git_repo(&project_root).await;
         std::fs::write(project_root.join("README.md"), "base\n")
             .expect("base file should be written");
-        git_succeeds(&project_root, &["add", "."], "git add should succeed");
+        git_succeeds(&project_root, &["add", "."], "git add should succeed").await;
         git_succeeds(
             &project_root,
             &["commit", "-m", "initial"],
             "git commit should succeed",
-        );
+        ).await;
 
         let mut registry = ProjectRegistry::load_in(config_dir)
             .await
@@ -13250,7 +13211,7 @@ agent_presets {
     async fn mate_plan_tools_persist_plan_commit_worktree_and_emit_milestones() {
         let (dir, ship, session_id) = create_session_for_workflow_test("mate-plan-tools").await;
         let project_root = dir.join("project");
-        init_git_repo(&project_root);
+        init_git_repo(&project_root).await;
 
         {
             let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
@@ -13305,13 +13266,12 @@ agent_presets {
             .await
             .expect("commit should succeed");
 
-        let step_head = std::process::Command::new("git")
-            .arg("-C")
-            .arg(&project_root)
-            .args(["rev-list", "--count", "HEAD"])
-            .output()
-            .expect("git rev-list should run");
-        assert_eq!(String::from_utf8_lossy(&step_head.stdout).trim(), "1");
+        let rev_count = git_stdout(
+            &project_root,
+            &["rev-list", "--count", "HEAD"],
+            "git rev-list should run",
+        ).await;
+        assert_eq!(rev_count.trim(), "1");
 
         {
             let sessions = ship.sessions.lock().expect("sessions mutex poisoned");
@@ -13341,7 +13301,7 @@ agent_presets {
         let (dir, ship, session_id) =
             create_session_for_workflow_test("mate-submit-milestone").await;
         let project_root = dir.join("project");
-        init_git_repo(&project_root);
+        init_git_repo(&project_root).await;
 
         {
             let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
@@ -14253,7 +14213,7 @@ hooks {
             &worktree_path,
             &["add", "tracked.txt"],
             "git add should mark the file resolved",
-        );
+        ).await;
 
         let rebase_status = ship
             .captain_tool_rebase_status(&session_id)
@@ -14354,7 +14314,7 @@ hooks {
             &worktree_path,
             &["add", "tracked.txt"],
             "git add should mark the file resolved",
-        );
+        ).await;
 
         {
             let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
