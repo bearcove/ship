@@ -5170,6 +5170,7 @@ unless the task explicitly targets a subdirectory inside the current worktree.
         &self,
         session_id: &SessionId,
         edit_id: String,
+        require_plan: bool,
     ) -> McpToolCallResponse {
         let (worktree_path, has_plan_or_rebase_conflict_status) = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
@@ -5193,7 +5194,14 @@ unless the task explicitly targets a subdirectory inside the current worktree.
                     };
                 }
             };
-            (worktree, Self::require_mate_plan(session).is_ok())
+            (
+                worktree,
+                if require_plan {
+                    Self::require_mate_plan(session).is_ok()
+                } else {
+                    true
+                },
+            )
         };
         if !has_plan_or_rebase_conflict_status {
             let rebase_in_progress = self
