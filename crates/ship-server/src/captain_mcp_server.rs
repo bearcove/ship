@@ -1,9 +1,6 @@
 use std::sync::Arc;
 
-use super::worktree_tools::{
-    ToolDefinition, code_tool, commit_tool, edit_confirm_tool, edit_prepare_tool, read_file_tool,
-    run_command_tool, to_sdk_tool, web_search_tool, write_file_tool,
-};
+use super::worktree_tools::{ToolDefinition, code_tool, to_sdk_tool, web_search_tool};
 use async_trait::async_trait;
 use roam::{ConnectionSettings, MetadataEntry, MetadataFlags, MetadataValue, NoopCaller, Parity};
 use rust_mcp_sdk::mcp_server::{McpServerOptions, ServerHandler, server_runtime};
@@ -237,94 +234,6 @@ impl ServerHandler for CaptainMcpHandler {
                 };
                 self.client
                     .captain_notify_human(message.to_owned())
-                    .await
-                    .map_err(call_tool_rpc_error)?
-            }
-            // r[captain.tool.read-only]
-            "read_file" => {
-                let Some(path) = arguments.get("path").and_then(Value::as_str) else {
-                    return Ok(tool_result("missing required argument: path", true));
-                };
-                let offset = arguments.get("offset").and_then(Value::as_u64);
-                let limit = arguments.get("limit").and_then(Value::as_u64);
-                self.client
-                    .captain_read_file(path.to_owned(), offset, limit)
-                    .await
-                    .map_err(call_tool_rpc_error)?
-            }
-            "run_command" => {
-                let Some(command) = arguments.get("command").and_then(Value::as_str) else {
-                    return Ok(tool_result("missing required argument: command", true));
-                };
-                let cwd = arguments
-                    .get("cwd")
-                    .and_then(Value::as_str)
-                    .map(ToOwned::to_owned);
-                self.client
-                    .captain_run_command(command.to_owned(), cwd)
-                    .await
-                    .map_err(call_tool_rpc_error)?
-            }
-            // r[captain.tool.write-file]
-            "write_file" => {
-                let Some(path) = arguments.get("path").and_then(Value::as_str) else {
-                    return Ok(tool_result("missing required argument: path", true));
-                };
-                let Some(content) = arguments.get("content").and_then(Value::as_str) else {
-                    return Ok(tool_result("missing required argument: content", true));
-                };
-                self.client
-                    .captain_write_file(path.to_owned(), content.to_owned())
-                    .await
-                    .map_err(call_tool_rpc_error)?
-            }
-            // r[captain.tool.edit-prepare]
-            "edit_prepare" => {
-                let Some(path) = arguments.get("path").and_then(Value::as_str) else {
-                    return Ok(tool_result("missing required argument: path", true));
-                };
-                let Some(old_string) = arguments.get("old_string").and_then(Value::as_str) else {
-                    return Ok(tool_result("missing required argument: old_string", true));
-                };
-                let Some(new_string) = arguments.get("new_string").and_then(Value::as_str) else {
-                    return Ok(tool_result("missing required argument: new_string", true));
-                };
-                let replace_all = match arguments.get("replace_all") {
-                    Some(value) => Some(
-                        value
-                            .as_bool()
-                            .ok_or_else(|| call_tool_rpc_error("replace_all must be a boolean"))?,
-                    ),
-                    None => None,
-                };
-                self.client
-                    .captain_edit_prepare(
-                        path.to_owned(),
-                        old_string.to_owned(),
-                        new_string.to_owned(),
-                        replace_all,
-                    )
-                    .await
-                    .map_err(call_tool_rpc_error)?
-            }
-            // r[captain.tool.edit-confirm]
-            "edit_confirm" => {
-                let Some(edit_id) = arguments.get("edit_id").and_then(Value::as_str) else {
-                    return Ok(tool_result("missing required argument: edit_id", true));
-                };
-                self.client
-                    .captain_edit_confirm(edit_id.to_owned())
-                    .await
-                    .map_err(call_tool_rpc_error)?
-            }
-            // r[captain.tool.commit]
-            "commit" => {
-                let Some(message) = arguments.get("message").and_then(Value::as_str) else {
-                    return Ok(tool_result("missing required argument: message", true));
-                };
-                let step_index = arguments.get("step_index").and_then(Value::as_u64);
-                self.client
-                    .captain_commit(step_index, message.to_owned())
                     .await
                     .map_err(call_tool_rpc_error)?
             }
@@ -612,12 +521,7 @@ skips research and goes straight to execution. Omitting files or plan wastes the
                 "additionalProperties": false,
             }),
         },
-        read_file_tool(),
-        run_command_tool(),
-        write_file_tool(),
-        edit_prepare_tool(),
-        edit_confirm_tool(),
-        commit_tool(),
+        code_tool(),
         web_search_tool(),
         ToolDefinition {
             name: "captain_continue_rebase",
@@ -637,7 +541,6 @@ skips research and goes straight to execution. Omitting files or plan wastes the
                 "additionalProperties": false,
             }),
         },
-        code_tool(),
     ]
 }
 

@@ -20,10 +20,11 @@ Focus on the error handling first, the UI can wait.
 
 Every message you send MUST start with an @mention to route it: @captain for the captain, @human for the human. Messages without an @mention prefix will be bounced back to you.
 
-Tools for captain communication:
-- `mate_send_update` — non-blocking progress update. Use freely to report status. Equivalent to writing @captain in text output.
-- `mate_ask_captain` — blocking question. Use when you genuinely need a decision or are stuck. Blocks until the captain responds.
-- `mate_submit` — final submission. Blocks until the captain accepts, steers, or cancels. After calling mate_submit, do not send any further messages. The tool call is the final action — the submission itself carries the summary.
+To communicate with the captain, use the `code` tool's messaging ops:
+- `{"message": {"to": "captain", "text": "..."}}` — non-blocking progress update. Use freely to report status.
+- `{"submit": {"summary": "..."}}` — final submission. Blocks until the captain accepts, steers, or cancels. After submitting, do not send further messages.
+
+You also have `mate_ask_captain` as a separate tool for blocking questions — use when you genuinely need a decision or are stuck. Blocks until the captain responds.
 
 ## Workflow
 
@@ -39,7 +40,29 @@ Do not run git commands of any kind. That includes `git status`, `git diff`, `gi
 
 ## Tools
 
-All your file operations go through Ship's MCP tools: run_command (shell commands), read_file, write_file, edit_prepare/edit_confirm. Built-in tools (Bash, Read, Write, Edit) are disabled — if you try one and see an error or a rejection, do not stop. Just use the MCP equivalent and continue your task.
+Your primary tool is `code`. It accepts a batch of operations in a single call:
+- `search` — regex/literal text search + symbol search across the codebase
+- `read` — read a file or line range
+- `read_node` — read a specific symbol (function, struct, impl) by query
+- `edit` — line-range edits, find/replace within a file (returns diff + undo snapshot)
+- `replace_node` / `delete_node` — structural edits by symbol name (re-parses fresh with tree-sitter)
+- `run` — execute a shell command
+- `commit` — squash edits into a real commit
+- `undo` — restore to a previous snapshot
+
+You can batch multiple operations in one `code` call. Read-only ops continue on failure; mutations stop on the first error. Every mutation creates an undo snapshot.
+
+Example — search then read:
+```json
+{"ops": [{"search": {"query": "fn handle_request"}}, {"read": {"file": "src/server.rs", "start_line": 42, "end_line": 80}}]}
+```
+
+Example — find/replace edit:
+```json
+{"ops": [{"edit": {"file": "src/lib.rs", "edits": [{"find_replace": {"find": "old_name", "replace": "new_name", "replace_all": true}}]}}]}
+```
+
+Built-in tools (Bash, Read, Write, Edit) are disabled — if you try one and see an error or a rejection, do not stop. Use the `code` tool instead and continue your task.
 
 All paths and commands are already scoped to the current session worktree. Omit `cwd` by default. Do not pass repo-root paths or `.ship/...` prefixes unless the task explicitly targets a subdirectory inside the current worktree.
 

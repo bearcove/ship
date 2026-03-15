@@ -10298,7 +10298,6 @@ mod tests {
     use ship_git::{BranchName, GitContext, Rev};
     use tokio::process::Command as TokioCommand;
 
-    use crate::captain_mcp::worktree_tools::{read_file_tool, run_command_tool};
     use ship_core::{
         AgentDriver, AgentError, AgentSessionConfig, FakeAgentDriver, FakePromptScript,
         JsonSessionStore, ProjectRegistry, PromptResponse, SessionGitNames, SessionStore,
@@ -14671,50 +14670,6 @@ hooks {
         assert!(
             prompt_without_plan.contains("Omit `cwd` by default."),
             "unexpected prompt: {prompt_without_plan}"
-        );
-    }
-
-    // r[verify mate.tool.description.search-ladder]
-    #[test]
-    fn worktree_tool_descriptions_reinforce_worktree_scope_and_rg_syntax() {
-        let run_command = run_command_tool();
-        assert!(
-            run_command.description.contains("current session worktree"),
-            "unexpected description: {}",
-            run_command.description
-        );
-        assert!(
-            run_command
-                .description
-                .contains("`rg 'foo|bar'`, not `rg 'foo\\|bar'`"),
-            "unexpected description: {}",
-            run_command.description
-        );
-        assert!(
-            run_command.description.contains("Omit cwd unless the task explicitly targets a subdirectory inside the current worktree."),
-            "unexpected description: {}",
-            run_command.description
-        );
-        assert!(
-            run_command
-                .description
-                .contains("Do not pass repo-root paths or `.ship/...` prefixes."),
-            "unexpected description: {}",
-            run_command.description
-        );
-
-        let read_file = read_file_tool();
-        assert!(
-            read_file.description.contains("current session worktree"),
-            "unexpected description: {}",
-            read_file.description
-        );
-        assert!(
-            read_file.description.contains(
-                "Paths are worktree-relative; do not pass repo-root paths or `.ship/...` prefixes."
-            ),
-            "unexpected description: {}",
-            read_file.description
         );
     }
 
