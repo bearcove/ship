@@ -7455,6 +7455,23 @@ Reply with \"Ready.\" to confirm.";
                 });
             }
         }
+
+        // Finalize any remaining open text block when the drain loop ends
+        // (agent turn finished).
+        if let Some((block_id, role, text)) = open_text_block.take() {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            if let Some(session) = sessions.get_mut(session_id) {
+                apply_event(
+                    session,
+                    SessionEvent::BlockFinalized {
+                        block_id,
+                        role,
+                        text,
+                    },
+                );
+            }
+        }
+
         drop(stream);
 
         Ok(())
