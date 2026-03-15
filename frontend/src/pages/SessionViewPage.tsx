@@ -397,11 +397,7 @@ export function SessionViewPage({
         preselectedMateKind={session.mate.kind}
       />
       <Flex
-        ref={sessionViewRef}
         className={sessionViewRoot}
-        onTouchStart={onTouchStart}
-        onTouchMove={onTouchMove}
-        onTouchEnd={onTouchEnd}
       >
         <Flex style={{ flex: 1, overflow: "hidden", minHeight: 0 }}>
           <Box className={sessionFeedColumn} ref={feedColumnRef}>
@@ -446,30 +442,37 @@ export function SessionViewPage({
                 mateAcpInfo={eventState.mateAcpInfo}
               />
             )}
-            <Box className={feedContentColumn}>
-              <UnifiedComposer
-                ref={composerRef}
-                sessionId={session.id}
-                captain={captain}
-                mate={mate}
-                startupState={startupState}
-                taskStatus={liveTask?.status ?? null}
-                captainBlocks={eventState.captainBlocks}
-              />
-            </Box>
-            {orderedSessions.length > 1 && (
-              <div className={pageDotsRow}>
-                {orderedSessions.map((s, i) => (
-                  <div
-                    key={s.slug}
-                    className={`${pageDot} ${i === currentIndex ? pageDotActive : ""}`}
-                    onClick={() => navigate(`/sessions/${s.slug}`)}
-                  />
-                ))}
-              </div>
-            )}
           </Box>
         </Flex>
+        <div
+          ref={sessionViewRef}
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
+        >
+          <Box className={feedContentColumn}>
+            <UnifiedComposer
+              ref={composerRef}
+              sessionId={session.id}
+              captain={captain}
+              mate={mate}
+              startupState={startupState}
+              taskStatus={liveTask?.status ?? null}
+              captainBlocks={eventState.captainBlocks}
+            />
+          </Box>
+          {orderedSessions.length > 1 && (
+            <div className={pageDotsRow}>
+              {orderedSessions.map((s, i) => (
+                <div
+                  key={s.slug}
+                  className={`${pageDot} ${i === currentIndex ? pageDotActive : ""}`}
+                  onClick={() => navigate(`/sessions/${s.slug}`)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
 
         {session.pending_steer && (
           <SteerReview
