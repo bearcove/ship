@@ -6801,6 +6801,8 @@ a text response to the captain — they cannot see your text output.\
                 captain_acp_session_id: session.captain_acp_session_id.clone(),
                 mate_acp_session_id: session.mate_acp_session_id.clone(),
                 is_read: session.is_read,
+                captain_has_ever_assigned: session.captain_has_ever_assigned,
+                captain_delegation_reminded: session.captain_delegation_reminded,
             }
         };
 
@@ -9628,6 +9630,48 @@ impl ConnectionAcceptor for ShipMcpConnectionAcceptor {
             }),
             _ => Err(rejection_metadata("unknown ship-service")),
         }
+    }
+}
+
+impl ShipImpl {
+    // r[captain.delegation-gate]
+    /// If the captain has never assigned work and hasn't been reminded yet,
+    /// returns an error response reminding them to delegate via captain_assign.
+    /// After the one-time reminder fires, subsequent calls proceed normally.
+    async fn check_captain_delegation_gate(
+        &self,
+        session_id: &SessionId,
+    ) -> Option<McpToolCallResponse> {
+        let should_block = {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions.get_mut(session_id)?;
+            if session.captain_has_ever_assigned || session.captain_delegation_reminded {
+                return None;
+            }
+            session.captain_delegation_reminded = true;
+            true
+        };
+
+        if should_block {
+            // Persist the reminded flag so it survives restarts
+            if let Err(e) = self.persist_session(session_id).await {
+                Self::log_error("check_captain_delegation_gate_persist", &e);
+            }
+            return Some(McpToolCallResponse {
+                text: "You haven't delegated any work to the mate yet in this session. \
+                       Your role is to coordinate — use captain_assign to delegate \
+                       implementation work to the mate. The mate handles code changes; \
+                       you handle planning, review, and merge.\n\n\
+                       If this is genuinely captain-level work (fixing check failures, \
+                       resolving rebase conflicts, or a trivial doc-only change), call \
+                       this tool again and it will proceed."
+                    .to_owned(),
+                is_error: true,
+                diffs: vec![],
+            });
+        }
+
+        None
     }
 }
 
