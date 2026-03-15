@@ -7224,7 +7224,7 @@ Reply with \"Ready.\" to confirm.";
             .collect()
             .await;
         let summary = extract_agent_text(events);
-        if summary.is_empty() {
+        if summary.is_empty() || summary.to_ascii_lowercase().contains("nothing to report") {
             return;
         }
 
