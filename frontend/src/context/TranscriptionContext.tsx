@@ -73,6 +73,7 @@ export function TranscriptionProvider({ children }: { children: React.ReactNode 
 
   const startRecording = useCallback((sessionId: string) => {
     if (activeRef.current) return;
+    console.info("[transcription] starting recording for session", sessionId);
     setResult(null);
     setTargetSessionId(sessionId);
     setSendAfterTranscription(false);
@@ -100,6 +101,7 @@ export function TranscriptionProvider({ children }: { children: React.ReactNode 
 
         // Start the RPC call
         const client = await getShipClient();
+        console.info("[transcription] RPC call started");
         const callPromise = client.transcribeAudio(audioRx, segTx);
 
         // Buffer audio samples and send in ~100ms batches to avoid flooding
@@ -170,11 +172,19 @@ export function TranscriptionProvider({ children }: { children: React.ReactNode 
           let isFirstSegment = true;
           while (true) {
             const msg = await segRx.recv();
-            if (msg === null) break;
+            if (msg === null) {
+              console.info("[transcription] segment channel closed");
+              break;
+            }
             if (msg.tag === "Error") {
+              console.warn("[transcription] error:", msg.message);
               setState({ tag: "error", message: msg.message });
               gotError = true;
               break;
+            }
+
+            if (isFirstSegment) {
+              console.info("[transcription] first segment received");
             }
 
             const segment = msg.value;
@@ -185,6 +195,7 @@ export function TranscriptionProvider({ children }: { children: React.ReactNode 
             if (isFirstSegment) {
               isFirstSegment = false;
               if (lower === "come alive") {
+                console.info("[transcription] voice mode activated");
                 voiceModeRef.current = true;
                 setVoiceMode(true);
                 continue;
@@ -216,6 +227,7 @@ export function TranscriptionProvider({ children }: { children: React.ReactNode 
             setResult({ text: fullText, segments: [...allSegments] });
 
             if (endsWithOverAndOut) {
+              console.info("[transcription] 'over and out' detected, submitting and exiting voice mode");
               // Submit accumulated text then tear down and exit voice mode
               if (fullText.trim()) {
                 setVoiceSubmitText(fullText.trim());
@@ -227,6 +239,7 @@ export function TranscriptionProvider({ children }: { children: React.ReactNode 
             }
 
             if (endsWithOver) {
+              console.info("[transcription] 'over' detected, submitting");
               if (voiceModeRef.current) {
                 // In voice mode: submit accumulated text, clear segments, keep recording
                 if (fullText.trim()) {
@@ -243,6 +256,7 @@ export function TranscriptionProvider({ children }: { children: React.ReactNode 
             }
           }
           await callPromise;
+          console.info("[transcription] RPC call completed");
           if (!gotError) {
             setState({ tag: "idle" });
           }
@@ -261,6 +275,7 @@ export function TranscriptionProvider({ children }: { children: React.ReactNode 
   const teardown = useCallback(async () => {
     const active = activeRef.current;
     if (!active) return;
+    console.info("[transcription] teardown started");
     activeRef.current = null;
     setAnalyser(null);
 
@@ -275,17 +290,20 @@ export function TranscriptionProvider({ children }: { children: React.ReactNode 
     // Close the audio channel to signal the server to process
     active.audioTx.close();
     await active.audioContext.close();
+    console.info("[transcription] teardown complete");
 
     setState({ tag: "processing" });
     setVoiceMode(false);
 
     // Safety timeout: if still "processing" after 15s, transition to error
     setTimeout(() => {
-      setState((prev) =>
-        prev.tag === "processing"
-          ? { tag: "error", message: "Transcription timed out" }
-          : prev,
-      );
+      setState((prev) => {
+        if (prev.tag === "processing") {
+          console.warn("[transcription] processing timed out");
+          return { tag: "error", message: "Transcription timed out" };
+        }
+        return prev;
+      });
     }, 15_000);
   }, []);
   teardownRef.current = teardown;
