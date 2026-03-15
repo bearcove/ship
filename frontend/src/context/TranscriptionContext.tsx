@@ -169,7 +169,7 @@ export function TranscriptionProvider({ children }: { children: React.ReactNode 
         void (async () => {
           const allSegments: TranscribeSegment[] = [];
           let gotError = false;
-          let isFirstSegment = true;
+          let segmentCount = 0;
           while (true) {
             const msg = await segRx.recv();
             if (msg === null) {
@@ -183,23 +183,21 @@ export function TranscriptionProvider({ children }: { children: React.ReactNode 
               break;
             }
 
-            if (isFirstSegment) {
+            if (segmentCount === 0) {
               console.info("[transcription] first segment received");
             }
+            segmentCount++;
 
             const segment = msg.value;
             const trimmed = segment.text.trim().replace(/[.!?,;:]+$/, "");
             const lower = trimmed.toLowerCase();
 
-            // Detect "come alive" on the first segment to activate voice mode
-            if (isFirstSegment) {
-              isFirstSegment = false;
-              if (lower === "come alive") {
-                console.info("[transcription] voice mode activated");
-                voiceModeRef.current = true;
-                setVoiceMode(true);
-                continue;
-              }
+            // Detect "come alive" on any segment to activate voice mode
+            if (lower === "come alive" && !voiceModeRef.current) {
+              console.info("[transcription] voice mode activated");
+              voiceModeRef.current = true;
+              setVoiceMode(true);
+              continue;
             }
 
             // Detect "over and out" BEFORE "over" (since "over and out" ends with "over" too)
