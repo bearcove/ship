@@ -5865,7 +5865,7 @@ a text response to the captain — they cannot see your text output.\
         message: String,
     ) -> Result<String, String> {
         // Inject the update into the captain's stream as a user message, then prompt the captain.
-        let injected = format!("<mate-update>\n{message}\n</mate-update>");
+        let injected = message_templates::mate_update(&message);
         self.append_human_message(
             session_id,
             Role::Captain,
@@ -5951,10 +5951,8 @@ a text response to the captain — they cannot see your text output.\
                 );
             }
             self.persist_session(session_id).await?;
-            let captain_message = format!(
-                "The mate has set their plan.\n\n{}\n\nWe will keep you posted as they progress. You have nothing to do now.",
-                Self::format_plan_status(&new_plan),
-            );
+            let captain_message =
+                message_templates::mate_plan_set(&Self::format_plan_status(&new_plan));
             self.notify_captain_progress(session_id, captain_message)
                 .await?;
             Ok(format!("Plan set for task '{task_description}'."))
@@ -6175,8 +6173,10 @@ a text response to the captain — they cannot see your text output.\
                     Some(diff) => format!("\n\n<diff>\n{diff}\n</diff>"),
                     None => String::new(),
                 };
-                let captain_message = format!(
-                    "The mate completed a step from their plan.\n\nCompleted: {step_description}\n\n{commit_summary}{diff_section}\n\nWe will notify you when they are done and need your review.",
+                let captain_message = message_templates::mate_step_committed(
+                    &step_description,
+                    &commit_summary,
+                    &diff_section,
                 );
                 self.append_captain_feed(session_id, captain_message)
                     .await?;
@@ -6197,9 +6197,8 @@ a text response to the captain — they cannot see your text output.\
                     Some(diff) => format!("\n\n<diff>\n{diff}\n</diff>"),
                     None => String::new(),
                 };
-                let captain_message = format!(
-                    "The mate committed without a plan step.\n\n{commit_summary}{diff_section}",
-                );
+                let captain_message =
+                    message_templates::mate_committed_no_step(&commit_summary, &diff_section);
                 self.append_captain_feed(session_id, captain_message)
                     .await?;
             }
@@ -6224,7 +6223,7 @@ a text response to the captain — they cannot see your text output.\
             entry.captain_reply = Some(tx);
         }
 
-        let injected = format!("The mate has a question for you: {question}");
+        let injected = message_templates::mate_question(&question);
         self.append_human_message(
             session_id,
             Role::Captain,
@@ -6409,7 +6408,8 @@ a text response to the captain — they cannot see your text output.\
         self.persist_session(session_id).await?;
 
         let injected = format!(
-            "<system-notification>\nThe mate has submitted their work for review: {summary}\n</system-notification>"
+            "<system-notification>\n{}\n</system-notification>",
+            message_templates::mate_submitted(&summary)
         );
         self.append_human_message(
             session_id,
@@ -7340,7 +7340,7 @@ Reply with \"Ready.\" to confirm.";
             session.utility_last_task_id = data.task_id.clone();
         }
 
-        let message = format!("<mate-activity-summary>\n{summary}\n</mate-activity-summary>");
+        let message = message_templates::mate_activity_summary(&summary);
         if let Err(error) = self.notify_captain_progress(&session_id, message).await {
             Self::log_error("flush_mate_activity_notify_captain", &error);
         }
@@ -7545,7 +7545,7 @@ Reply with \"Ready.\" to confirm.";
                 MentionAction::RouteToCaptain { text } => {
                     let this = self.clone();
                     let session_id = session_id.clone();
-                    let wrapped = format!("<mate-update>\n{text}\n</mate-update>");
+                    let wrapped = message_templates::mate_update(&text);
                     tokio::spawn(async move {
                         if let Err(error) = this.notify_captain_progress(&session_id, wrapped).await
                         {
@@ -7569,9 +7569,7 @@ Reply with \"Ready.\" to confirm.";
                         let this = self.clone();
                         let session_id = session_id.clone();
                         tokio::spawn(async move {
-                            let msg = "Your last message didn't address anyone. \
-                                    Please start messages with @mate, @human, or @admiral."
-                                .to_owned();
+                            let msg = message_templates::captain_unaddressed_bounce();
                             if let Err(error) = this.notify_captain_progress(&session_id, msg).await
                             {
                                 tracing::warn!(
@@ -7586,8 +7584,7 @@ Reply with \"Ready.\" to confirm.";
                         if let Some(session) = sessions.get_mut(session_id) {
                             Self::queue_mate_guidance(
                                 session,
-                                "Your last message didn't address anyone. \
-                                     Please start messages with @captain, @human, or @admiral.",
+                                &message_templates::mate_unaddressed_bounce(),
                             );
                         }
                     }
@@ -7631,7 +7628,7 @@ Reply with \"Ready.\" to confirm.";
                 MentionAction::RouteToCaptain { text } => {
                     let this = self.clone();
                     let session_id = session_id.clone();
-                    let wrapped = format!("<mate-update>\n{text}\n</mate-update>");
+                    let wrapped = message_templates::mate_update(&text);
                     tokio::spawn(async move {
                         if let Err(error) = this.notify_captain_progress(&session_id, wrapped).await
                         {
@@ -7655,9 +7652,7 @@ Reply with \"Ready.\" to confirm.";
                         let this = self.clone();
                         let session_id = session_id.clone();
                         tokio::spawn(async move {
-                            let msg = "Your last message didn't address anyone. \
-                                    Please start messages with @mate, @human, or @admiral."
-                                .to_owned();
+                            let msg = message_templates::captain_unaddressed_bounce();
                             if let Err(error) = this.notify_captain_progress(&session_id, msg).await
                             {
                                 tracing::warn!(
@@ -7672,8 +7667,7 @@ Reply with \"Ready.\" to confirm.";
                         if let Some(session) = sessions.get_mut(session_id) {
                             Self::queue_mate_guidance(
                                 session,
-                                "Your last message didn't address anyone. \
-                                     Please start messages with @captain, @human, or @admiral.",
+                                &message_templates::mate_unaddressed_bounce(),
                             );
                         }
                     }
