@@ -3516,7 +3516,7 @@ dependencies = [
  "ship-git",
  "ship-service",
  "ship-types",
- "silero-vad-rust",
+ "ship-voice",
  "similar",
  "tokio",
  "tokio-tungstenite 0.26.2",
@@ -3525,7 +3525,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "ulid",
- "whisper-cpp-plus",
 ]
 
 [[package]]
@@ -3542,6 +3541,17 @@ version = "0.1.0"
 dependencies = [
  "facet",
  "ulid",
+]
+
+[[package]]
+name = "ship-voice"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dirs-next",
+ "silero-vad-rust",
+ "tracing",
+ "whisper-cpp-plus",
 ]
 
 [[package]]

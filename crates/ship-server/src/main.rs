@@ -1,10 +1,8 @@
 mod agent_discovery;
 mod captain_mcp;
-mod kyutai_tts;
 mod message_templates;
 mod prompt_templates;
 mod ship_impl;
-mod transcriber;
 
 use std::io::Write;
 use std::net::SocketAddr;
@@ -610,7 +608,7 @@ async fn run_serve(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
     // r[resilience.server-restart]
     ship.load_persisted_sessions().await;
     ship.fetch_github_user_avatar().await;
-    ship.load_whisper_model();
+    ship.load_voice_transcriber();
     {
         let ship = ship.clone();
         tokio::spawn(async move {
@@ -1478,9 +1476,9 @@ async fn run_speak(args: SpeakArgs) -> Result<(), Box<dyn std::error::Error>> {
 
     let text = args.text.clone();
     let samples: Vec<f32> = tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<f32>> {
-        let mut model = kyutai_tts::KyutaiTtsModel::load()?;
+        let mut engine = ship_voice::TtsEngine::load()?;
         let mut all_samples = Vec::new();
-        model.speak(&text, |bytes| {
+        engine.speak(&text, |bytes| {
             for chunk in bytes.chunks_exact(4) {
                 all_samples.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
             }
@@ -1539,19 +1537,17 @@ async fn run_listen(args: ListenArgs) -> Result<(), Box<dyn std::error::Error>> 
         .with_env_filter(EnvFilter::from_default_env().add_directive(Level::INFO.into()))
         .init();
 
-    // Resolve whisper model path
-    let whisper_model = args
+    // Resolve voice model path
+    let explicit_path = args
         .whisper_model
-        .or_else(|| std::env::var("SHIP_WHISPER_MODEL").ok())
-        .ok_or("whisper model required: pass --whisper-model or set SHIP_WHISPER_MODEL")?;
+        .or_else(|| std::env::var("SHIP_WHISPER_MODEL").ok());
 
-    tracing::info!(whisper = %whisper_model, "loading models");
+    let factory = ship_voice::load_transcriber_factory(explicit_path.as_deref())
+        .ok_or("voice model required: pass --whisper-model or set SHIP_WHISPER_MODEL")?;
 
-    let whisper_ctx = std::sync::Arc::new(
-        whisper_cpp_plus::WhisperContext::new(&whisper_model)
-            .map_err(|e| format!("failed to load whisper model: {e}"))?,
-    );
-    let mut transcriber = transcriber::SpeechTranscriber::new(whisper_ctx)?;
+    let mut transcriber = factory
+        .create()
+        .map_err(|e| format!("failed to create transcriber: {e}"))?;
 
     // Set up mic capture via cpal
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -1641,19 +1637,19 @@ async fn run_listen(args: ListenArgs) -> Result<(), Box<dyn std::error::Error>> 
             Some(samples) = audio_rx.recv() => {
                 for event in transcriber.feed(&samples) {
                     match event {
-                        transcriber::SpeechEvent::SpeechStarted { sample } => {
+                        ship_voice::SpeechEvent::SpeechStarted { sample } => {
                             eprint!(
                                 "\r\x1b[2K[speech started at {:.1}s]",
                                 sample as f64 / 16000.0
                             );
                             let _ = std::io::stderr().flush();
                         }
-                        transcriber::SpeechEvent::SpeechEnded { segment } => {
+                        ship_voice::SpeechEvent::SpeechEnded { segment } => {
                             eprintln!();
                             tracing::info!("transcribed: {}", segment.text);
                             transcribed_segments.push(segment.text);
                         }
-                        transcriber::SpeechEvent::None => {
+                        ship_voice::SpeechEvent::None => {
                             let state = if transcriber.is_speaking() {
                                 format!("speaking ({:.1}s)", transcriber.speech_duration_secs())
                             } else {
@@ -1667,7 +1663,7 @@ async fn run_listen(args: ListenArgs) -> Result<(), Box<dyn std::error::Error>> 
                             );
                             let _ = std::io::stderr().flush();
                         }
-                        transcriber::SpeechEvent::Error(e) => {
+                        ship_voice::SpeechEvent::Error(e) => {
                             tracing::warn!("transcriber error: {e}");
                         }
                     }

@@ -21,14 +21,21 @@ fn read_audio_frame(reader: &mut impl Read) -> Result<Vec<u8>> {
     Ok(data)
 }
 
-pub struct KyutaiTtsModel {
+/// Opaque handle to a Kyutai/pocket-tts Python subprocess.
+///
+/// Spawns on [`TtsEngine::load`], streams 24 kHz mono f32-LE PCM via
+/// [`TtsEngine::speak`]. The subprocess is killed on drop.
+pub struct TtsEngine {
     child: Child,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
 }
 
-impl KyutaiTtsModel {
-    /// Spawn the Python TTS worker. Sync; call from `tokio::task::spawn_blocking`.
+impl TtsEngine {
+    /// Spawn the Python TTS worker.
+    ///
+    /// This is a blocking call — use `tokio::task::spawn_blocking` from async
+    /// code.
     pub fn load() -> Result<Self> {
         tracing::info!("spawning pocket-tts worker");
         let mut child = Command::new("uv")
@@ -48,9 +55,10 @@ impl KyutaiTtsModel {
         })
     }
 
-    /// Stream synthesized 24kHz mono f32 LE PCM chunks for `text`.
-    /// `on_chunk` is called for each decoded audio chunk as it's generated.
-    /// Runs synchronously; call from `tokio::task::spawn_blocking`.
+    /// Stream synthesized 24 kHz mono f32-LE PCM chunks for `text`.
+    ///
+    /// `on_chunk` is called for each decoded audio chunk as it is generated.
+    /// Runs synchronously — use `tokio::task::spawn_blocking` from async code.
     pub fn speak(&mut self, text: &str, mut on_chunk: impl FnMut(Vec<u8>)) -> Result<()> {
         write_text_request(&mut self.stdin, text)?;
         self.stdin.flush()?;
@@ -67,7 +75,7 @@ impl KyutaiTtsModel {
     }
 }
 
-impl Drop for KyutaiTtsModel {
+impl Drop for TtsEngine {
     fn drop(&mut self) {
         let _ = self.child.kill();
     }

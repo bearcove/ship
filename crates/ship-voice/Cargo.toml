@@ -1,0 +1,17 @@
+[package]
+name = "ship-voice"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = []
+whisper = ["dep:whisper-cpp-plus", "dep:silero-vad-rust"]
+
+[dependencies]
+anyhow = "1"
+tracing = { workspace = true }
+dirs-next = "2.0.0"
+
+# Optional heavy dependencies for speech transcription
+whisper-cpp-plus = { version = "0.1.4", features = ["metal", "async", "tokio"], optional = true }
+silero-vad-rust = { version = "6.2.1", optional = true }

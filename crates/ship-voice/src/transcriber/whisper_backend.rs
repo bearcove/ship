@@ -1,64 +1,69 @@
-use silero_vad_rust::silero_vad::model::load_silero_vad;
-use silero_vad_rust::silero_vad::utils_vad::{VadEvent, VadIterator, VadIteratorParams};
+use std::path::PathBuf;
 use std::sync::Arc;
 
+use silero_vad_rust::silero_vad::model::load_silero_vad;
+use silero_vad_rust::silero_vad::utils_vad::{VadEvent, VadIterator, VadIteratorParams};
+
+use super::{SpeechEvent, SpeechTranscriber, TranscriberFactory, TranscribedSegment};
+
+const DEFAULT_MODEL_FILENAME: &str = "ggml-base.en.bin";
 const VAD_CHUNK_SIZE: usize = 512;
 
-/// A completed speech segment with its transcribed text.
-pub struct TranscribedSegment {
-    pub text: String,
-    pub start_sample: usize,
-    pub end_sample: usize,
+struct WhisperFactory {
+    ctx: Arc<whisper_cpp_plus::WhisperContext>,
 }
 
-/// Events emitted by the speech transcriber as audio flows through.
-pub enum SpeechEvent {
-    /// Speech started at this sample position.
-    SpeechStarted { sample: usize },
-    /// Speech ended, and here's the transcription.
-    SpeechEnded { segment: TranscribedSegment },
-    /// No state change (still silent or still speaking).
-    None,
-    /// VAD or whisper error (non-fatal, processing continues).
-    Error(String),
-}
-
-/// Streaming speech transcriber: Silero VAD for speech boundaries,
-/// whisper-cpp for transcription of completed segments.
-pub struct SpeechTranscriber {
+struct WhisperTranscriber {
     whisper_state: whisper_cpp_plus::WhisperState,
     vad_iter: VadIterator,
-
-    // Buffering for 512-sample VAD chunks
     sample_buf: Vec<f32>,
-    // Audio for the current speech segment (between Start and End)
     speech_audio: Vec<f32>,
-    // Rolling buffer of recent audio (for backfilling speech start)
     all_audio: Vec<f32>,
-    // Whether we're currently in a speech segment
     speech_start_sample: Option<usize>,
-    // Total samples processed through the VAD
     total_samples: usize,
 }
 
-impl SpeechTranscriber {
-    /// Create a new transcriber with a shared WhisperContext.
-    /// Only loads the Silero VAD model (bundled); the whisper context
-    /// is provided pre-loaded.
-    pub fn new(
-        whisper_ctx: Arc<whisper_cpp_plus::WhisperContext>,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        let silero_model = load_silero_vad()?;
+/// Try to load a whisper-backed transcriber factory. Returns `None` if no model
+/// is found.
+pub(super) fn load_factory(
+    explicit_path: Option<&str>,
+) -> Option<Box<dyn TranscriberFactory>> {
+    let path = resolve_model_path(explicit_path)?;
+
+    tracing::info!(path = %path.display(), "loading whisper model");
+    let ctx = match whisper_cpp_plus::WhisperContext::new(path.to_str().unwrap()) {
+        Ok(ctx) => {
+            tracing::info!(path = %path.display(), "whisper model loaded");
+            Arc::new(ctx)
+        }
+        Err(e) => {
+            tracing::error!(path = %path.display(), error = %e, "failed to load whisper model");
+            return None;
+        }
+    };
+
+    Some(Box::new(WhisperFactory { ctx }))
+}
+
+impl TranscriberFactory for WhisperFactory {
+    fn create(&self) -> Result<Box<dyn SpeechTranscriber + Send>, String> {
+        let silero_model = load_silero_vad().map_err(|e| format!("failed to load VAD: {e}"))?;
+
         let vad_params = VadIteratorParams {
             threshold: 0.5,
             sampling_rate: 16_000,
             min_silence_duration_ms: 300,
             speech_pad_ms: 30,
         };
-        let vad_iter = VadIterator::new(silero_model, vad_params)?;
-        let whisper_state = whisper_ctx.create_state()?;
+        let vad_iter = VadIterator::new(silero_model, vad_params)
+            .map_err(|e| format!("failed to create VAD: {e}"))?;
 
-        Ok(Self {
+        let whisper_state = self
+            .ctx
+            .create_state()
+            .map_err(|e| format!("failed to create whisper state: {e}"))?;
+
+        Ok(Box::new(WhisperTranscriber {
             whisper_state,
             vad_iter,
             sample_buf: Vec::new(),
@@ -66,12 +71,50 @@ impl SpeechTranscriber {
             all_audio: Vec::new(),
             speech_start_sample: None,
             total_samples: 0,
-        })
+        }))
+    }
+}
+
+fn resolve_model_path(explicit_path: Option<&str>) -> Option<PathBuf> {
+    if let Some(p) = explicit_path {
+        let p = PathBuf::from(p);
+        if p.exists() {
+            return Some(p);
+        }
+        tracing::warn!(path = %p.display(), "explicit model path does not exist");
+        return None;
     }
 
-    /// Feed 16kHz mono f32 audio samples. Returns speech events for each
-    /// VAD chunk boundary crossed. Call this as audio arrives.
-    pub fn feed(&mut self, samples: &[f32]) -> Vec<SpeechEvent> {
+    if let Ok(env_path) = std::env::var("SHIP_WHISPER_MODEL") {
+        let p = PathBuf::from(env_path);
+        if p.exists() {
+            return Some(p);
+        }
+        tracing::warn!(path = %p.display(), "SHIP_WHISPER_MODEL path does not exist");
+        return None;
+    }
+
+    let candidates = [
+        dirs_next::data_dir().map(|d| d.join("whisper").join(DEFAULT_MODEL_FILENAME)),
+        dirs_next::home_dir()
+            .map(|d| d.join(".local/share/whisper").join(DEFAULT_MODEL_FILENAME)),
+        Some(PathBuf::from(DEFAULT_MODEL_FILENAME)),
+    ];
+    let found = candidates.into_iter().flatten().find(|p| p.exists());
+
+    if found.is_none() {
+        tracing::info!(
+            "no whisper model found — voice transcription disabled. \
+             Set SHIP_WHISPER_MODEL or place {DEFAULT_MODEL_FILENAME} in \
+             ~/.local/share/whisper/"
+        );
+    }
+
+    found
+}
+
+impl SpeechTranscriber for WhisperTranscriber {
+    fn feed(&mut self, samples: &[f32]) -> Vec<SpeechEvent> {
         self.sample_buf.extend_from_slice(samples);
         self.all_audio.extend_from_slice(samples);
 
@@ -90,8 +133,6 @@ impl SpeechTranscriber {
                     let start_sample = pos as usize;
                     self.speech_start_sample = Some(start_sample);
 
-                    // Backfill: grab audio from the start position (which may be
-                    // padded back by speech_pad_ms before the current chunk).
                     let offset_in_all = if start_sample < self.total_samples {
                         self.all_audio
                             .len()
@@ -140,9 +181,7 @@ impl SpeechTranscriber {
         events
     }
 
-    /// Flush: if speech is in progress, transcribe what we have so far.
-    /// Call this when the audio stream ends.
-    pub fn flush(&mut self) -> Option<TranscribedSegment> {
+    fn flush(&mut self) -> Option<TranscribedSegment> {
         if self.speech_start_sample.is_none() || self.speech_audio.is_empty() {
             return None;
         }
@@ -162,23 +201,23 @@ impl SpeechTranscriber {
         result
     }
 
-    /// Whether we're currently inside a speech segment.
-    pub fn is_speaking(&self) -> bool {
+    fn is_speaking(&self) -> bool {
         self.speech_start_sample.is_some()
     }
 
-    /// Duration of the current speech segment so far (seconds).
-    pub fn speech_duration_secs(&self) -> f64 {
+    fn speech_duration_secs(&self) -> f64 {
         self.speech_audio.len() as f64 / 16000.0
     }
 
-    /// Total samples processed.
-    pub fn total_samples(&self) -> usize {
+    fn total_samples(&self) -> usize {
         self.total_samples
     }
 }
 
-fn transcribe_audio(state: &mut whisper_cpp_plus::WhisperState, audio: &[f32]) -> Option<String> {
+fn transcribe_audio(
+    state: &mut whisper_cpp_plus::WhisperState,
+    audio: &[f32],
+) -> Option<String> {
     let params =
         whisper_cpp_plus::FullParams::new(whisper_cpp_plus::SamplingStrategy::BeamSearch {
             beam_size: 5,

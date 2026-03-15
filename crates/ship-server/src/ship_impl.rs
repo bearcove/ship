@@ -323,15 +323,12 @@ pub struct ShipImpl {
     listen_http_urls: Arc<Mutex<Vec<String>>>,
     startup_started_at: Arc<Mutex<HashMap<SessionId, Instant>>>,
     user_avatar_url: Arc<Mutex<Option<String>>>,
-    whisper_ctx: Option<Arc<whisper_cpp_plus::WhisperContext>>,
-    kyutai_model: Arc<Mutex<Option<crate::kyutai_tts::KyutaiTtsModel>>>,
+    voice_transcriber: Option<Arc<dyn ship_voice::TranscriberFactory>>,
+    tts_engine: Arc<Mutex<Option<ship_voice::TtsEngine>>>,
     global_events_tx: broadcast::Sender<GlobalEvent>,
     activity_log: Arc<Mutex<ActivityLog>>,
     admiral_session: Arc<Mutex<Option<AdmiralSession>>>,
 }
-
-/// Default whisper model filename to look for.
-const WHISPER_MODEL_FILENAME: &str = "ggml-base.en.bin";
 
 struct MateActivityFlushData {
     buffer: String,
@@ -441,8 +438,8 @@ impl ShipImpl {
             listen_http_urls: Arc::new(Mutex::new(Vec::new())),
             startup_started_at: Arc::new(Mutex::new(HashMap::new())),
             user_avatar_url: Arc::new(Mutex::new(None)),
-            whisper_ctx: None,
-            kyutai_model: Arc::new(Mutex::new(None)),
+            voice_transcriber: None,
+            tts_engine: Arc::new(Mutex::new(None)),
             global_events_tx,
             activity_log: Arc::new(Mutex::new(activity_log)),
             admiral_session: Arc::new(Mutex::new(None)),
@@ -526,45 +523,10 @@ impl ShipImpl {
         self.agent_driver.kill(handle).await
     }
 
-    /// Resolve the whisper model path from env var or default locations,
-    /// load it into a WhisperContext, and store it for the lifetime of the server.
-    pub fn load_whisper_model(&mut self) {
-        let path = if let Ok(path) = std::env::var("SHIP_WHISPER_MODEL") {
-            let p = PathBuf::from(path);
-            if p.exists() {
-                Some(p)
-            } else {
-                tracing::warn!(path = %p.display(), "SHIP_WHISPER_MODEL path does not exist");
-                None
-            }
-        } else {
-            // Check common locations
-            let candidates = [
-                dirs_next::data_dir().map(|d| d.join("whisper").join(WHISPER_MODEL_FILENAME)),
-                dirs_next::home_dir()
-                    .map(|d| d.join(".local/share/whisper").join(WHISPER_MODEL_FILENAME)),
-                Some(PathBuf::from(WHISPER_MODEL_FILENAME)),
-            ];
-            candidates.into_iter().flatten().find(|p| p.exists())
-        };
-
-        let Some(path) = path else {
-            tracing::info!(
-                "no whisper model found — voice transcription disabled. Set SHIP_WHISPER_MODEL or place {WHISPER_MODEL_FILENAME} in ~/.local/share/whisper/"
-            );
-            return;
-        };
-
-        tracing::info!(path = %path.display(), "loading whisper model");
-        match whisper_cpp_plus::WhisperContext::new(path.to_str().unwrap()) {
-            Ok(ctx) => {
-                tracing::info!(path = %path.display(), "whisper model loaded");
-                self.whisper_ctx = Some(Arc::new(ctx));
-            }
-            Err(e) => {
-                tracing::error!(path = %path.display(), error = %e, "failed to load whisper model");
-            }
-        }
+    /// Load the voice transcription backend (checks env var / default paths).
+    pub fn load_voice_transcriber(&mut self) {
+        self.voice_transcriber =
+            ship_voice::load_transcriber_factory(None).map(Arc::from);
     }
 
     pub async fn fetch_github_user_avatar(&self) {
@@ -9212,21 +9174,19 @@ impl Ship for ShipImpl {
     ) {
         tracing::info!("transcribe_audio: stream started");
 
-        // Get the shared whisper context (loaded once at startup)
-        let Some(whisper_ctx) = self.whisper_ctx.clone() else {
-            tracing::warn!("transcribe_audio: no whisper model configured");
+        // Get the voice transcriber factory (loaded once at startup)
+        let Some(factory) = self.voice_transcriber.clone() else {
+            tracing::warn!("transcribe_audio: no voice transcriber configured");
             let _ = segments_out
                 .send(TranscribeMessage::Error {
-                    message: "No whisper model configured".into(),
+                    message: "No voice transcriber configured".into(),
                 })
                 .await;
             let _ = segments_out.close(Default::default()).await;
             return;
         };
 
-        let mut transcriber = match crate::transcriber::SpeechTranscriber::new(whisper_ctx)
-            .map_err(|e| e.to_string())
-        {
+        let mut transcriber = match factory.create() {
             Ok(t) => {
                 tracing::info!("transcribe_audio: transcriber created");
                 t
@@ -9272,13 +9232,13 @@ impl Ship for ShipImpl {
 
                         for event in transcriber.feed(&samples) {
                             match event {
-                                crate::transcriber::SpeechEvent::SpeechStarted { sample } => {
+                                ship_voice::SpeechEvent::SpeechStarted { sample } => {
                                     tracing::info!(
                                         "transcribe_audio: speech started at {:.1}s",
                                         sample as f64 / 16000.0
                                     );
                                 }
-                                crate::transcriber::SpeechEvent::SpeechEnded { segment } => {
+                                ship_voice::SpeechEvent::SpeechEnded { segment } => {
                                     tracing::info!(
                                         "transcribe_audio: transcribed: {}",
                                         segment.text
@@ -9296,7 +9256,7 @@ impl Ship for ShipImpl {
                                         );
                                     }
                                 }
-                                crate::transcriber::SpeechEvent::Error(e) => {
+                                ship_voice::SpeechEvent::Error(e) => {
                                     tracing::warn!("transcribe_audio: {e}");
                                     if let Err(e) = segments_out
                                         .send(TranscribeMessage::Error { message: e })
@@ -9307,7 +9267,7 @@ impl Ship for ShipImpl {
                                         );
                                     }
                                 }
-                                crate::transcriber::SpeechEvent::None => {}
+                                ship_voice::SpeechEvent::None => {}
                             }
                         }
                     }
@@ -9347,23 +9307,23 @@ impl Ship for ShipImpl {
     async fn speak_text(&self, text: String, audio_out: Tx<Vec<u8>>) {
         tracing::info!(text_len = text.len(), "speak_text: request received");
 
-        let kyutai_model = Arc::clone(&self.kyutai_model);
+        let tts_engine = Arc::clone(&self.tts_engine);
 
         tokio::spawn(async move {
             let result = tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
-                // Lazy-load model on first call
-                let mut model_guard = kyutai_model.lock().expect("kyutai_model mutex poisoned");
-                if model_guard.is_none() {
-                    tracing::info!("speak_text: loading Kyutai TTS model");
-                    let model = crate::kyutai_tts::KyutaiTtsModel::load()?;
-                    *model_guard = Some(model);
+                // Lazy-load engine on first call
+                let mut engine_guard = tts_engine.lock().expect("tts_engine mutex poisoned");
+                if engine_guard.is_none() {
+                    tracing::info!("speak_text: loading TTS engine");
+                    let engine = ship_voice::TtsEngine::load()?;
+                    *engine_guard = Some(engine);
                 }
-                let model = model_guard
+                let engine = engine_guard
                     .as_mut()
-                    .expect("model must be Some after loading");
+                    .expect("engine must be Some after loading");
 
                 let handle = tokio::runtime::Handle::current();
-                let result = model.speak(&text, |bytes| {
+                let result = engine.speak(&text, |bytes| {
                     handle.block_on(async {
                         let _ = audio_out.send(bytes).await;
                     });

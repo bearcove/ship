@@ -6,6 +6,7 @@ members = [
   "crates/ship-service",
   "crates/ship-server",
   "xtask", "crates/ship-code",
+  "crates/ship-voice",
 ]
 resolver = "2"
 
