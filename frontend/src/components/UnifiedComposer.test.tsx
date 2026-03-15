@@ -2,6 +2,7 @@ import { act, fireEvent, screen } from "@testing-library/react";
 import { createRef, type Ref } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentSnapshot } from "../generated/ship";
+import { createBlockStore } from "../state/blockStore";
 import { renderWithTheme } from "../test/render";
 import { UnifiedComposer, type UnifiedComposerHandle } from "./UnifiedComposer";
 
@@ -75,6 +76,7 @@ function renderComposer(sessionId = "session-1", ref?: Ref<UnifiedComposerHandle
       mate={makeAgent("Mate", { tag: "Idle" })}
       startupState={null}
       taskStatus={null}
+      captainBlocks={createBlockStore()}
     />,
   );
 }
@@ -152,6 +154,7 @@ describe("UnifiedComposer", () => {
         mate={makeAgent("Mate", { tag: "Idle" })}
         startupState={null}
         taskStatus={null}
+        captainBlocks={createBlockStore()}
       />,
     );
 
@@ -193,6 +196,7 @@ describe("UnifiedComposer", () => {
         mate={makeAgent("Mate", { tag: "Idle" })}
         startupState={null}
         taskStatus={null}
+        captainBlocks={createBlockStore()}
       />,
     );
 
@@ -205,6 +209,7 @@ describe("UnifiedComposer", () => {
         mate={makeAgent("Mate", { tag: "Idle" })}
         startupState={null}
         taskStatus={null}
+        captainBlocks={createBlockStore()}
       />,
     );
 
@@ -219,6 +224,7 @@ describe("UnifiedComposer", () => {
         mate={makeAgent("Mate", { tag: "Idle" })}
         startupState={null}
         taskStatus={null}
+        captainBlocks={createBlockStore()}
       />,
     );
 
@@ -231,6 +237,7 @@ describe("UnifiedComposer", () => {
         mate={makeAgent("Mate", { tag: "Idle" })}
         startupState={null}
         taskStatus={null}
+        captainBlocks={createBlockStore()}
       />,
     );
 

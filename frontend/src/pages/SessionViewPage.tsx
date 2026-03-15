@@ -400,6 +400,7 @@ export function SessionViewPage({
                 mate={mate}
                 startupState={startupState}
                 taskStatus={liveTask?.status ?? null}
+                captainBlocks={eventState.captainBlocks}
               />
             </Box>
           </Box>

@@ -17,6 +17,7 @@ import type {
   SessionStartupState,
   TaskStatus,
 } from "../generated/ship";
+import type { BlockStore } from "../state/blockStore";
 import {
   agentStateChip,
   attachedImageRemove,
@@ -124,6 +125,7 @@ interface Props {
   mate: AgentSnapshot | null;
   startupState: SessionStartupState | null;
   taskStatus: TaskStatus | null;
+  captainBlocks: BlockStore;
 }
 
 export interface UnifiedComposerHandle {
@@ -198,7 +200,7 @@ function formatElapsed(ms: number): string {
 // r[ui.composer.image-attach]
 // r[view.agent-panel.activity]
 export const UnifiedComposer = forwardRef<UnifiedComposerHandle, Props>(function UnifiedComposer(
-  { sessionId, captain, mate, startupState, taskStatus }: Props,
+  { sessionId, captain, mate, startupState, taskStatus, captainBlocks }: Props,
   ref,
 ) {
   const [text, setText] = useState("");
