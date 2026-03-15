@@ -636,7 +636,7 @@ export const sessionViewRoot = style({
   flexDirection: "column",
   height: "100%",
   overflow: "hidden",
-  touchAction: "pan-y",
+  touchAction: "manipulation",
 });
 
 export const sessionFeedColumn = style({
