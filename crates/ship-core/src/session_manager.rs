@@ -107,6 +107,8 @@ pub struct ActiveSession {
     pub captain_prompt_gen: u64,
     pub mate_prompt_gen: u64,
     pub is_read: bool,
+    pub captain_has_ever_assigned: bool,
+    pub captain_delegation_reminded: bool,
     // Runtime-only fields (not persisted)
     pub utility_handle: Option<crate::AgentHandle>,
     pub utility_last_task_id: Option<TaskId>,

@@ -1250,6 +1250,10 @@ pub mod persistence {
         pub mate_acp_session_id: Option<String>,
         #[facet(default)]
         pub is_read: bool,
+        #[facet(default)]
+        pub captain_has_ever_assigned: bool,
+        #[facet(default)]
+        pub captain_delegation_reminded: bool,
     }
 }
 
