@@ -1,0 +1,8 @@
+---
+source: crates/ship-code/src/engine.rs
+expression: output
+---
+ERROR: Cannot read 'nope.rs': No such file or directory (os error 2)
+Hint: paths are relative to the worktree root.
+
+[snapshot: 0 | shadow commits: 0]

@@ -134,7 +134,7 @@ fn find_replace(source: &str, find: &str, replace: &str, replace_all: bool) -> R
 }
 
 /// Generate a unified diff between old and new content.
-fn unified_diff(path: &Path, old: &str, new: &str) -> String {
+pub fn unified_diff(path: &Path, old: &str, new: &str) -> String {
     if old == new {
         return String::new();
     }

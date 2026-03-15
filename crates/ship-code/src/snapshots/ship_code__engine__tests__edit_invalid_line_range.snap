@@ -1,0 +1,8 @@
+---
+source: crates/ship-code/src/engine.rs
+expression: output
+---
+ERROR: Edit failed on 'lib.rs': line numbers are 1-indexed, got start=0
+Hint: line numbers are 1-indexed. The file has 7 lines.
+
+[snapshot: 0 | shadow commits: 0]
