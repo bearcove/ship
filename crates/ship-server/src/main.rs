@@ -2,6 +2,7 @@ mod agent_discovery;
 mod captain_mcp;
 mod kyutai_tts;
 mod message_templates;
+mod prompt_templates;
 mod ship_impl;
 mod transcriber;
 
