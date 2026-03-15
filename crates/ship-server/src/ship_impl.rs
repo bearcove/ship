@@ -7354,6 +7354,66 @@ Reply with \"Ready.\" to confirm.";
             }
 
             // --- Text block finalization tracking ---
+            // Helper: finalize an open text block by emitting BlockFinalized
+            // and logging any @mention detected at the start of the text.
+            let finalize_text_block =
+                |sessions: &std::sync::Mutex<HashMap<SessionId, ActiveSession>>,
+                 sid: &SessionId,
+                 block_id: BlockId,
+                 role: Role,
+                 text: String| {
+                    let mut sessions = sessions.lock().expect("sessions mutex poisoned");
+                    if let Some(session) = sessions.get_mut(sid) {
+                        apply_event(
+                            session,
+                            SessionEvent::BlockFinalized {
+                                block_id: block_id.clone(),
+                                role,
+                                text: text.clone(),
+                            },
+                        );
+                    }
+                    // Mention detection (captain/mate messages only)
+                    if matches!(role, Role::Captain | Role::Mate) {
+                        let trimmed = text.trim_start();
+                        // Case-insensitive check for @captain, @mate, @human, @admiral
+                        let mention_target =
+                            ["captain", "mate", "human", "admiral"]
+                                .iter()
+                                .find(|target| {
+                                    let prefix = format!("@{target}");
+                                    if let Some(rest) = trimmed
+                                        .get(..prefix.len())
+                                        .filter(|s| s.eq_ignore_ascii_case(&prefix))
+                                    {
+                                        let _ = rest; // used via filter
+                                        // Must be followed by whitespace or end-of-string
+                                        trimmed.len() == prefix.len()
+                                            || trimmed
+                                                .as_bytes()
+                                                .get(prefix.len())
+                                                .map_or(true, |&b| b.is_ascii_whitespace())
+                                    } else {
+                                        false
+                                    }
+                                });
+                        if let Some(target) = mention_target {
+                            tracing::info!(
+                                block_id = %block_id.0,
+                                from = ?role,
+                                target = %target,
+                                "mention detected in finalized text block"
+                            );
+                        } else {
+                            tracing::info!(
+                                block_id = %block_id.0,
+                                from = ?role,
+                                "unaddressed message from {role:?}"
+                            );
+                        }
+                    }
+                };
+
             // Finalize the previous open text block when a new block starts or
             // a non-text block arrives.
             match &event {
@@ -7364,17 +7424,13 @@ Reply with \"Ready.\" to confirm.";
                 } => {
                     // Finalize any previously-open text block
                     if let Some((prev_id, prev_role, prev_text)) = open_text_block.take() {
-                        let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
-                        if let Some(session) = sessions.get_mut(session_id) {
-                            apply_event(
-                                session,
-                                SessionEvent::BlockFinalized {
-                                    block_id: prev_id,
-                                    role: prev_role,
-                                    text: prev_text,
-                                },
-                            );
-                        }
+                        finalize_text_block(
+                            &self.sessions,
+                            session_id,
+                            prev_id,
+                            prev_role,
+                            prev_text,
+                        );
                     }
                     // Start tracking the new text block
                     open_text_block = Some((block_id.clone(), *ev_role, text.clone()));
@@ -7382,17 +7438,13 @@ Reply with \"Ready.\" to confirm.";
                 SessionEvent::BlockAppend { .. } => {
                     // Non-text block arrived — finalize any open text block
                     if let Some((prev_id, prev_role, prev_text)) = open_text_block.take() {
-                        let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
-                        if let Some(session) = sessions.get_mut(session_id) {
-                            apply_event(
-                                session,
-                                SessionEvent::BlockFinalized {
-                                    block_id: prev_id,
-                                    role: prev_role,
-                                    text: prev_text,
-                                },
-                            );
-                        }
+                        finalize_text_block(
+                            &self.sessions,
+                            session_id,
+                            prev_id,
+                            prev_role,
+                            prev_text,
+                        );
                     }
                 }
                 SessionEvent::BlockPatch {
@@ -7458,14 +7510,47 @@ Reply with \"Ready.\" to confirm.";
 
         // Finalize any remaining open text block when the drain loop ends
         // (agent turn finished).
-        if let Some((block_id, role, text)) = open_text_block.take() {
+        if let Some((block_id, fin_role, text)) = open_text_block.take() {
+            // Mention detection: check for @mentions at start of finalized text
+            if matches!(fin_role, Role::Captain | Role::Mate) {
+                let trimmed = text.trim_start();
+                let mention_target =
+                    ["captain", "mate", "human", "admiral"]
+                        .iter()
+                        .find(|target| {
+                            let prefix = format!("@{target}");
+                            trimmed
+                                .get(..prefix.len())
+                                .filter(|s| s.eq_ignore_ascii_case(&prefix))
+                                .is_some()
+                                && (trimmed.len() == prefix.len()
+                                    || trimmed
+                                        .as_bytes()
+                                        .get(prefix.len())
+                                        .map_or(true, |&b| b.is_ascii_whitespace()))
+                        });
+                if let Some(target) = mention_target {
+                    tracing::info!(
+                        block_id = %block_id.0,
+                        from = ?fin_role,
+                        target = %target,
+                        "mention detected in finalized text block"
+                    );
+                } else {
+                    tracing::info!(
+                        block_id = %block_id.0,
+                        from = ?fin_role,
+                        "unaddressed message from {fin_role:?}"
+                    );
+                }
+            }
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             if let Some(session) = sessions.get_mut(session_id) {
                 apply_event(
                     session,
                     SessionEvent::BlockFinalized {
                         block_id,
-                        role,
+                        role: fin_role,
                         text,
                     },
                 );
