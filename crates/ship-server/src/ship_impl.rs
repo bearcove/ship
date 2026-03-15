@@ -7040,7 +7040,7 @@ a text response to the captain — they cannot see your text output.\
             .mate_activity_first_at
             .map(|t| t.elapsed())
             .unwrap_or(Duration::ZERO);
-        if buffer_size <= 4000 && age <= Duration::from_secs(60) {
+        if buffer_size <= 32000 && age <= Duration::from_secs(300) {
             return None;
         }
 
