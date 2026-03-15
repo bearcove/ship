@@ -128,6 +128,8 @@ fn make_persisted_session(id: &str, description: &str) -> PersistedSession {
         captain_acp_session_id: None,
         mate_acp_session_id: None,
         is_read: true,
+        captain_has_ever_assigned: false,
+        captain_delegation_reminded: false,
     }
 }
 
