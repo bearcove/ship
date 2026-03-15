@@ -89,36 +89,11 @@ impl ShipAcpClient {
 
     // r[captain.capabilities]
     // r[mate.capabilities]
-    // Agents run in sandboxed worktrees so most built-in tools are safe.
-    // Edit/Delete of code files (.rs, .ts, .tsx, .js, .jsx) are blocked —
-    // they bypass the MCP layer's rustfmt validation and structural integrity
-    // checks. Non-code files (e.g. .md plans) are allowed through.
+    // All ACP built-in tool permissions are unconditionally rejected.
+    // Ship's MCP tools don't go through request_permission at all, so
+    // they are unaffected. Any permission request that reaches this
+    // method is for a built-in tool and must be rejected.
     fn blocked_permission_option_id(&self, request: &RequestPermissionRequest) -> Option<String> {
-        let is_write_tool = request
-            .tool_call
-            .fields
-            .kind
-            .as_ref()
-            .is_some_and(|kind| matches!(kind, ToolKind::Edit | ToolKind::Delete));
-        if !is_write_tool {
-            return None;
-        }
-
-        let targets_code_file = request
-            .tool_call
-            .fields
-            .locations
-            .as_deref()
-            .unwrap_or(&[])
-            .iter()
-            .any(|loc| {
-                let ext = loc.path.extension().and_then(|e| e.to_str()).unwrap_or("");
-                matches!(ext, "rs" | "ts" | "tsx" | "js" | "jsx")
-            });
-        if !targets_code_file {
-            return None;
-        }
-
         request.options.iter().find_map(|option| {
             matches!(
                 option.kind,
