@@ -7385,7 +7385,7 @@ Reply with \"Ready.\" to confirm.";
         let mut stream = self.agent_driver.notifications(&handle);
         // Track the currently-open text block so we can emit BlockFinalized
         // when streaming is complete (next block arrives or drain loop ends).
-        let mut open_text_block: Option<(BlockId, Role, String)> = None;
+        let mut open_text_block: Option<(BlockId, Role, TextSource, String)> = None;
         while let Some(event) = stream.next().await {
             let event_seq = {
                 let sessions = self.sessions.lock().expect("sessions mutex poisoned");
@@ -7428,98 +7428,42 @@ Reply with \"Ready.\" to confirm.";
             }
 
             // --- Text block finalization tracking ---
-            // Helper: finalize an open text block by emitting BlockFinalized
-            // and logging any @mention detected at the start of the text.
-            let finalize_text_block =
-                |sessions: &std::sync::Mutex<HashMap<SessionId, ActiveSession>>,
-                 sid: &SessionId,
-                 block_id: BlockId,
-                 role: Role,
-                 text: String| {
-                    let mut sessions = sessions.lock().expect("sessions mutex poisoned");
-                    if let Some(session) = sessions.get_mut(sid) {
+            // Finalize an open text block: emit BlockFinalized and determine
+            // the mention routing action to execute after releasing the lock.
+            let mut mention_action = MentionAction::None;
+            if let Some((prev_id, prev_role, prev_source, prev_text)) = match &event {
+                SessionEvent::BlockAppend {
+                    block: ContentBlock::Text { .. },
+                    ..
+                }
+                | SessionEvent::BlockAppend { .. } => open_text_block.take(),
+                _ => Option::None,
+            } {
+                {
+                    let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                    if let Some(session) = sessions.get_mut(session_id) {
                         apply_event(
                             session,
                             SessionEvent::BlockFinalized {
-                                block_id: block_id.clone(),
-                                role,
-                                text: text.clone(),
+                                block_id: prev_id,
+                                role: prev_role,
+                                text: prev_text.clone(),
                             },
                         );
                     }
-                    // Mention detection (captain/mate messages only)
-                    if matches!(role, Role::Captain | Role::Mate) {
-                        let trimmed = text.trim_start();
-                        // Case-insensitive check for @captain, @mate, @human, @admiral
-                        let mention_target =
-                            ["captain", "mate", "human", "admiral"]
-                                .iter()
-                                .find(|target| {
-                                    let prefix = format!("@{target}");
-                                    if let Some(rest) = trimmed
-                                        .get(..prefix.len())
-                                        .filter(|s| s.eq_ignore_ascii_case(&prefix))
-                                    {
-                                        let _ = rest; // used via filter
-                                        // Must be followed by whitespace or end-of-string
-                                        trimmed.len() == prefix.len()
-                                            || trimmed
-                                                .as_bytes()
-                                                .get(prefix.len())
-                                                .map_or(true, |&b| b.is_ascii_whitespace())
-                                    } else {
-                                        false
-                                    }
-                                });
-                        if let Some(target) = mention_target {
-                            tracing::info!(
-                                block_id = %block_id.0,
-                                from = ?role,
-                                target = %target,
-                                "mention detected in finalized text block"
-                            );
-                        } else {
-                            tracing::info!(
-                                block_id = %block_id.0,
-                                from = ?role,
-                                "unaddressed message from {role:?}"
-                            );
-                        }
-                    }
-                };
+                }
+                mention_action = determine_mention_action(prev_role, prev_source, &prev_text);
+            }
 
-            // Finalize the previous open text block when a new block starts or
-            // a non-text block arrives.
+            // Track text blocks for finalization
             match &event {
                 SessionEvent::BlockAppend {
                     block_id,
                     role: ev_role,
-                    block: ContentBlock::Text { text, .. },
+                    block: ContentBlock::Text { text, source },
                 } => {
-                    // Finalize any previously-open text block
-                    if let Some((prev_id, prev_role, prev_text)) = open_text_block.take() {
-                        finalize_text_block(
-                            &self.sessions,
-                            session_id,
-                            prev_id,
-                            prev_role,
-                            prev_text,
-                        );
-                    }
                     // Start tracking the new text block
-                    open_text_block = Some((block_id.clone(), *ev_role, text.clone()));
-                }
-                SessionEvent::BlockAppend { .. } => {
-                    // Non-text block arrived — finalize any open text block
-                    if let Some((prev_id, prev_role, prev_text)) = open_text_block.take() {
-                        finalize_text_block(
-                            &self.sessions,
-                            session_id,
-                            prev_id,
-                            prev_role,
-                            prev_text,
-                        );
-                    }
+                    open_text_block = Some((block_id.clone(), *ev_role, *source, text.clone()));
                 }
                 SessionEvent::BlockPatch {
                     block_id,
@@ -7527,7 +7471,7 @@ Reply with \"Ready.\" to confirm.";
                     ..
                 } => {
                     // Append streaming text to the tracked block
-                    if let Some((ref tracked_id, _, ref mut tracked_text)) = open_text_block {
+                    if let Some((ref tracked_id, _, _, ref mut tracked_text)) = open_text_block {
                         if tracked_id == block_id {
                             tracked_text.push_str(text);
                         }
@@ -7579,6 +7523,75 @@ Reply with \"Ready.\" to confirm.";
                 tokio::spawn(async move {
                     this.flush_mate_activity(session_id, data).await;
                 });
+            }
+
+            // Execute mention routing asynchronously (outside session lock)
+            match mention_action {
+                MentionAction::RouteToMate { text } => {
+                    let this = self.clone();
+                    let session_id = session_id.clone();
+                    tokio::spawn(async move {
+                        let steer_msg = Self::mate_steer_message(&text);
+                        let parts = vec![PromptContentPart::Text { text: steer_msg }];
+                        if let Err(error) = this.dispatch_steer_to_mate(&session_id, parts).await {
+                            tracing::warn!(
+                                error = %error,
+                                "failed to route @mate mention as steer"
+                            );
+                        }
+                    });
+                }
+                MentionAction::RouteToCaptain { text } => {
+                    let this = self.clone();
+                    let session_id = session_id.clone();
+                    let wrapped = format!("<mate-update>\n{text}\n</mate-update>");
+                    tokio::spawn(async move {
+                        if let Err(error) = this.notify_captain_progress(&session_id, wrapped).await
+                        {
+                            tracing::warn!(
+                                error = %error,
+                                "failed to route @captain mention as update"
+                            );
+                        }
+                    });
+                }
+                MentionAction::RouteToHuman => {
+                    tracing::info!("@human mention — no routing needed, human sees all output");
+                }
+                MentionAction::RouteToAdmiral => {
+                    tracing::info!("@admiral mention — routing not yet implemented");
+                }
+                MentionAction::Unaddressed {
+                    role: unaddressed_role,
+                } => match unaddressed_role {
+                    Role::Captain => {
+                        let this = self.clone();
+                        let session_id = session_id.clone();
+                        tokio::spawn(async move {
+                            let msg = "Your last message didn't address anyone. \
+                                    Please start messages with @mate, @human, or @admiral."
+                                .to_owned();
+                            if let Err(error) = this.notify_captain_progress(&session_id, msg).await
+                            {
+                                tracing::warn!(
+                                    error = %error,
+                                    "failed to send unaddressed bounce to captain"
+                                );
+                            }
+                        });
+                    }
+                    Role::Mate => {
+                        let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                        if let Some(session) = sessions.get_mut(session_id) {
+                            Self::queue_mate_guidance(
+                                session,
+                                "Your last message didn't address anyone. \
+                                     Please start messages with @captain, @human, or @admiral.",
+                            );
+                        }
+                    }
+                },
+                MentionAction::None => {}
             }
         }
 
