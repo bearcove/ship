@@ -43,6 +43,7 @@ use ship_types::{
     TaskId, TaskRecapStats, TaskRecord, TaskStatus, TextSource, ToolCallKind, ToolTarget,
     TranscribeMessage, TranscribeSegment, WorkflowMilestoneKind, WorktreeDiffStats,
 };
+use ship_git::{GitContext, Rev};
 use similar::TextDiff;
 use tokio::process::Command as TokioCommand;
 use tokio::sync::broadcast;
@@ -2181,14 +2182,15 @@ Continue where you left off — wait for captain messages or human input."
         base_branch: String,
         summary: Option<String>,
     ) -> Result<(), String> {
-        let old_base_head = TokioCommand::new("git")
-            .args(["rev-parse", &base_branch])
-            .current_dir(&repo_root)
-            .output()
+        let git = GitContext::new(
+            camino::Utf8Path::from_path(&repo_root)
+                .expect("repo_root should be valid UTF-8"),
+        );
+        let old_base_head = git
+            .rev_parse(&Rev::new(&base_branch))
             .await
             .ok()
-            .filter(|o| o.status.success())
-            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned());
+            .map(|h| h.into_string());
 
         // Run checks before fast-forwarding into the base branch.
         if let Ok(hooks) = load_project_hooks(&repo_root).await
@@ -2272,79 +2274,39 @@ Continue where you left off — wait for captain messages or human input."
 
         // Collect recap info now that the merge succeeded.
         let (recap_commits, recap_stats) = if let Some(old_head) = old_base_head {
-            let log_output = TokioCommand::new("git")
-                .args([
-                    "log",
-                    &format!("{}..{}", old_head, base_branch),
-                    "--format=%h %s",
-                ])
-                .current_dir(&repo_root)
-                .output()
+            let mut commits: Vec<CommitSummary> = git
+                .log(&format!("{old_head}..{base_branch}"))
                 .await
                 .ok()
-                .filter(|o| o.status.success());
-
-            let mut commits: Vec<CommitSummary> = log_output
-                .map(|o| {
-                    String::from_utf8_lossy(&o.stdout)
-                        .lines()
-                        .filter(|l| !l.is_empty())
-                        .map(|line| {
-                            let (hash, subject) = line.split_once(' ').unwrap_or((line, ""));
-                            CommitSummary {
-                                hash: hash.to_owned(),
-                                subject: subject.to_owned(),
-                                diff: None,
-                            }
+                .map(|entries| {
+                    entries
+                        .into_iter()
+                        .map(|e| CommitSummary {
+                            hash: e.hash.into_string(),
+                            subject: e.subject,
+                            diff: None,
                         })
                         .collect()
                 })
                 .unwrap_or_default();
 
             for commit in &mut commits {
-                commit.diff = TokioCommand::new("git")
-                    .args(["show", "--format=", &commit.hash])
-                    .current_dir(&repo_root)
-                    .output()
+                commit.diff = git
+                    .show(&Rev::new(&commit.hash))
                     .await
                     .ok()
-                    .filter(|o| o.status.success())
-                    .map(|o| {
-                        let raw = String::from_utf8_lossy(&o.stdout);
-                        raw.trim_start_matches('\n').to_owned()
-                    });
+                    .map(|d| d.into_string())
+                    .filter(|s| !s.is_empty());
             }
 
             let stats = if !commits.is_empty() {
-                TokioCommand::new("git")
-                    .args(["diff", "--numstat", &old_head, &base_branch])
-                    .current_dir(&repo_root)
-                    .output()
+                git.diff_numstat(&Rev::new(&old_head), &Rev::new(&base_branch))
                     .await
                     .ok()
-                    .filter(|o| o.status.success())
-                    .map(|o| {
-                        let (files_changed, insertions, deletions) =
-                            String::from_utf8_lossy(&o.stdout)
-                                .lines()
-                                .filter(|l| !l.is_empty())
-                                .fold((0u32, 0u32, 0u32), |(fc, ins, del), line| {
-                                    let mut parts = line.split('\t');
-                                    let i = parts
-                                        .next()
-                                        .and_then(|s| s.parse::<u32>().ok())
-                                        .unwrap_or(0);
-                                    let d = parts
-                                        .next()
-                                        .and_then(|s| s.parse::<u32>().ok())
-                                        .unwrap_or(0);
-                                    (fc + 1, ins + i, del + d)
-                                });
-                        TaskRecapStats {
-                            files_changed,
-                            insertions,
-                            deletions,
-                        }
+                    .map(|ds| TaskRecapStats {
+                        files_changed: ds.files_changed() as u32,
+                        insertions: ds.total_added() as u32,
+                        deletions: ds.total_removed() as u32,
                     })
             } else {
                 None
@@ -6118,76 +6080,45 @@ release candidates. Make sure tests pass before calling mate_submit."
         }
 
         let (review_commits, review_stats) = {
-            let log_output = TokioCommand::new("git")
-                .args(["log", &format!("{}..HEAD", base_branch), "--format=%h %s"])
-                .current_dir(&worktree_path)
-                .output()
+            let review_git = GitContext::new(
+                camino::Utf8Path::from_path(&worktree_path)
+                    .expect("worktree_path should be valid UTF-8"),
+            );
+
+            let mut commits: Vec<CommitSummary> = review_git
+                .log(&format!("{base_branch}..HEAD"))
                 .await
                 .ok()
-                .filter(|o| o.status.success());
-
-            let mut commits: Vec<CommitSummary> = log_output
-                .map(|o| {
-                    String::from_utf8_lossy(&o.stdout)
-                        .lines()
-                        .filter(|l| !l.is_empty())
-                        .map(|line| {
-                            let (hash, subject) = line.split_once(' ').unwrap_or((line, ""));
-                            CommitSummary {
-                                hash: hash.to_owned(),
-                                subject: subject.to_owned(),
-                                diff: None,
-                            }
+                .map(|entries| {
+                    entries
+                        .into_iter()
+                        .map(|e| CommitSummary {
+                            hash: e.hash.into_string(),
+                            subject: e.subject,
+                            diff: None,
                         })
                         .collect()
                 })
                 .unwrap_or_default();
 
             for commit in &mut commits {
-                commit.diff = TokioCommand::new("git")
-                    .args(["show", "--format=", &commit.hash])
-                    .current_dir(&worktree_path)
-                    .output()
+                commit.diff = review_git
+                    .show(&Rev::new(&commit.hash))
                     .await
                     .ok()
-                    .filter(|o| o.status.success())
-                    .map(|o| {
-                        let raw = String::from_utf8_lossy(&o.stdout);
-                        let t = raw.trim_start_matches('\n').to_owned();
-                        if t.is_empty() { None } else { Some(t) }
-                    })
-                    .unwrap_or(None);
+                    .map(|d| d.into_string())
+                    .filter(|s| !s.is_empty());
             }
 
             let stats = if !commits.is_empty() {
-                TokioCommand::new("git")
-                    .args(["diff", "--numstat", &base_branch, "HEAD"])
-                    .current_dir(&worktree_path)
-                    .output()
+                review_git
+                    .diff_numstat(&Rev::new(&base_branch), &Rev::new("HEAD"))
                     .await
                     .ok()
-                    .filter(|o| o.status.success())
-                    .map(|o| {
-                        let (fc, ins, del) = String::from_utf8_lossy(&o.stdout)
-                            .lines()
-                            .filter(|l| !l.is_empty())
-                            .fold((0u32, 0u32, 0u32), |(fc, ins, del), line| {
-                                let mut parts = line.split('\t');
-                                let i = parts
-                                    .next()
-                                    .and_then(|s| s.parse::<u32>().ok())
-                                    .unwrap_or(0);
-                                let d = parts
-                                    .next()
-                                    .and_then(|s| s.parse::<u32>().ok())
-                                    .unwrap_or(0);
-                                (fc + 1, ins + i, del + d)
-                            });
-                        TaskRecapStats {
-                            files_changed: fc,
-                            insertions: ins,
-                            deletions: del,
-                        }
+                    .map(|ds| TaskRecapStats {
+                        files_changed: ds.files_changed() as u32,
+                        insertions: ds.total_added() as u32,
+                        deletions: ds.total_removed() as u32,
                     })
             } else {
                 None
@@ -8291,69 +8222,33 @@ async fn compute_worktree_diff_stats(
     branch_name: String,
     base_branch: String,
 ) -> Option<WorktreeDiffStats> {
+    let git = GitContext::new(
+        camino::Utf8Path::from_path(&worktree_path)
+            .expect("worktree_path should be valid UTF-8"),
+    );
+
     // Find the merge-base so we only see changes on this branch,
     // not changes that landed on the base branch since we branched.
-    let merge_base_output = TokioCommand::new("git")
-        .args(["merge-base", "HEAD", &base_branch])
-        .current_dir(&worktree_path)
-        .output()
+    let merge_base = git
+        .merge_base(&Rev::new("HEAD"), &Rev::new(&base_branch))
         .await
         .ok()?;
-    let merge_base = String::from_utf8_lossy(&merge_base_output.stdout)
-        .trim()
-        .to_owned();
-    let diff_target = if merge_base.is_empty() {
-        base_branch.clone()
-    } else {
-        merge_base
-    };
+
+    let diff_target = Rev::from(&merge_base);
 
     // Total diff vs merge-base (includes committed + uncommitted changes)
-    let output = TokioCommand::new("git")
-        .args(["diff", "--numstat", &diff_target])
-        .current_dir(&worktree_path)
-        .output()
-        .await
-        .ok()?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut lines_added: u64 = 0;
-    let mut lines_removed: u64 = 0;
-    let mut files_changed: u64 = 0;
-    for line in stdout.lines() {
-        let parts: Vec<&str> = line.split('\t').collect();
-        if parts.len() >= 3 {
-            lines_added += parts[0].parse::<u64>().unwrap_or(0);
-            lines_removed += parts[1].parse::<u64>().unwrap_or(0);
-            files_changed += 1;
-        }
-    }
+    let total = git.diff_numstat_against(&diff_target).await.ok()?;
 
     // Uncommitted diff (staged + unstaged vs HEAD)
-    let uncommitted_output = TokioCommand::new("git")
-        .args(["diff", "--numstat", "HEAD"])
-        .current_dir(&worktree_path)
-        .output()
-        .await
-        .ok()?;
-    let uncommitted_stdout = String::from_utf8_lossy(&uncommitted_output.stdout);
-    let mut uncommitted_lines_added: u64 = 0;
-    let mut uncommitted_lines_removed: u64 = 0;
-    for line in uncommitted_stdout.lines() {
-        let parts: Vec<&str> = line.split('\t').collect();
-        if parts.len() >= 3 {
-            uncommitted_lines_added += parts[0].parse::<u64>().unwrap_or(0);
-            uncommitted_lines_removed += parts[1].parse::<u64>().unwrap_or(0);
-        }
-    }
+    let uncommitted = git.diff_numstat_head().await.ok()?;
 
     Some(WorktreeDiffStats {
         branch_name,
-        lines_added,
-        lines_removed,
-        files_changed,
-        uncommitted_lines_added,
-        uncommitted_lines_removed,
+        lines_added: total.total_added() as u64,
+        lines_removed: total.total_removed() as u64,
+        files_changed: total.files_changed() as u64,
+        uncommitted_lines_added: uncommitted.total_added() as u64,
+        uncommitted_lines_removed: uncommitted.total_removed() as u64,
     })
 }
 

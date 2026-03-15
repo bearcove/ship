@@ -20,6 +20,7 @@ path = "src/main.rs"
 
 [dependencies]
 async-trait = "0.1"
+camino = { workspace = true }
 chrono = { workspace = true }
 axum = { workspace = true }
 facet = { workspace = true }
@@ -33,6 +34,7 @@ ulid = { workspace = true }
 roam = { workspace = true }
 roam-websocket = { workspace = true }
 ship-core = { path = "../ship-core" }
+ship-git = { path = "../ship-git" }
 ship-service = { path = "../ship-service" }
 ship-types = { path = "../ship-types" }
 tokio = { workspace = true, features = ["signal", "sync", "process", "time", "net"] }
