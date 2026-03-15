@@ -1,7 +1,15 @@
 /// Centralized message templates for captain↔mate communication.
 ///
-/// Organized by audience: captain-facing (about the mate), mate-facing
-/// (from the captain/system to the mate), and utility wrappers.
+/// Every injected message uses `<message from="...">` for attribution
+/// and `<routing>` for reply instructions, so agents always know
+/// who is speaking and how to respond.
+
+// ---------------------------------------------------------------------------
+// Routing hints (appended to messages so agents know how to reply)
+// ---------------------------------------------------------------------------
+
+const CAPTAIN_ROUTING: &str =
+    "<routing>Reply to mate: @mate · Reply to human: @human</routing>";
 
 // ---------------------------------------------------------------------------
 // Captain-facing messages (injected into the captain's feed)
@@ -9,9 +17,12 @@
 
 pub fn mate_plan_set(plan_status: &str) -> String {
     format!(
-        "@captain I've set my plan.\n\n\
+        "<message from=\"mate\">\n\
+         I've set my plan.\n\n\
          {plan_status}\n\n\
-         I'll keep you posted as I progress."
+         I'll keep you posted as I progress.\n\
+         </message>\n\
+         {CAPTAIN_ROUTING}"
     )
 }
 
@@ -20,34 +31,64 @@ pub fn mate_step_committed(
     commit_summary: &str,
     diff_section: &str,
 ) -> String {
-    format!("@captain Completed step: {step_description}\n\n{commit_summary}{diff_section}")
+    format!(
+        "<message from=\"mate\">\n\
+         Completed step: {step_description}\n\n\
+         {commit_summary}{diff_section}\n\
+         </message>\n\
+         {CAPTAIN_ROUTING}"
+    )
 }
 
 pub fn mate_committed_no_step(commit_summary: &str, diff_section: &str) -> String {
-    format!("@captain Committed:\n\n{commit_summary}{diff_section}")
+    format!(
+        "<message from=\"mate\">\n\
+         Committed:\n\n\
+         {commit_summary}{diff_section}\n\
+         </message>\n\
+         {CAPTAIN_ROUTING}"
+    )
 }
 
 pub fn mate_update(message: &str) -> String {
-    format!("@captain {message}")
+    format!(
+        "<message from=\"mate\">\n\
+         {message}\n\
+         </message>\n\
+         {CAPTAIN_ROUTING}"
+    )
 }
 
 pub fn mate_submitted(summary: &str) -> String {
     format!(
-        "@captain I've submitted my work for review: {summary}\n\n_(to reply, @mate your message)_"
+        "<message from=\"mate\">\n\
+         I've submitted my work for review: {summary}\n\
+         </message>\n\
+         {CAPTAIN_ROUTING}"
     )
 }
 
 pub fn mate_question(question: &str) -> String {
-    format!("@captain {question}\n\n_(to reply, @mate your message)_")
+    format!(
+        "<message from=\"mate\">\n\
+         {question}\n\
+         </message>\n\
+         {CAPTAIN_ROUTING}"
+    )
 }
 
 pub fn mate_activity_summary(summary: &str) -> String {
-    format!("@captain [Summarizer]\n{summary}")
+    format!(
+        "<message from=\"summarizer\">\n\
+         {summary}\n\
+         </message>\n\
+         {CAPTAIN_ROUTING}"
+    )
 }
 
 pub fn captain_unaddressed_bounce() -> String {
-    "Your last message didn't address anyone. \
-     Please start messages with @mate, @human, or @admiral."
+    "<routing>Your last message didn't address anyone. \
+     Reply to mate: @mate · Reply to human: @human</routing>"
         .to_owned()
 }
 
@@ -56,17 +97,24 @@ pub fn captain_unaddressed_bounce() -> String {
 // ---------------------------------------------------------------------------
 
 pub fn captain_steer(text: &str) -> String {
-    format!("@mate {text}\n\nAct on this correction and continue working.")
+    format!(
+        "<message from=\"captain\">\n\
+         {text}\n\
+         </message>\n\
+         <routing>Act on this correction and continue working.</routing>"
+    )
 }
 
 pub fn mate_forced_submit_nudge() -> String {
-    "@mate You stopped without submitting. Call mate_submit with a summary of what you accomplished."
-        .to_owned()
+    format!(
+        "<routing>You stopped without submitting. \
+         Call mate_submit with a summary of what you accomplished.</routing>"
+    )
 }
 
 pub fn mate_unaddressed_bounce() -> String {
-    "Your last message didn't address anyone. \
-     Please start messages with @captain, @human, or @admiral."
+    "<routing>Your last message didn't address anyone. \
+     Reply to captain: @captain · Reply to human: @human</routing>"
         .to_owned()
 }
 

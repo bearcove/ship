@@ -406,7 +406,14 @@ fn determine_mention_action(role: Role, source: TextSource, text: &str) -> Menti
     } else {
         // No mention found — only bounce AgentMessage texts (not steers/system)
         if source == TextSource::AgentMessage {
-            MentionAction::Unaddressed { role }
+            // Don't bounce text that looks like an incomplete mention attempt
+            // (e.g. just "@" or "@hum" emitted as a standalone block during streaming).
+            let trimmed = text.trim();
+            if trimmed.starts_with('@') && !trimmed.contains(' ') {
+                MentionAction::None
+            } else {
+                MentionAction::Unaddressed { role }
+            }
         } else {
             MentionAction::None
         }
@@ -13221,8 +13228,8 @@ agent_presets {
             other => panic!("expected Text part, got {other:?}"),
         };
         assert!(
-            first_text.contains("@mate"),
-            "missing @mate prefix: {first_text}"
+            first_text.contains("<message from=\"captain\">"),
+            "missing captain attribution: {first_text}"
         );
         assert!(
             first_text.contains("Ask the mate to add coverage"),
@@ -13735,10 +13742,10 @@ agent_presets {
             let sessions = ship.sessions.lock().expect("sessions mutex poisoned");
             let session = sessions.get(&session_id).expect("session should exist");
             let task = session.current_task.as_ref().expect("task should exist");
-            let injected = format!("@captain {message}");
+            let expected = crate::message_templates::mate_update(&message);
             assert!(task.content_history.iter().any(|entry| matches!(
                 &entry.block,
-                ContentBlock::Text { text, .. } if text == &injected
+                ContentBlock::Text { text, .. } if text == &expected
             )));
         }
 
@@ -14780,7 +14787,7 @@ hooks {
                     role: Role::Captain,
                     block: ContentBlock::Text { text, .. },
                     ..
-                } if text.contains("@captain [Summarizer]")
+                } if text.contains("<message from=\"summarizer\">")
             )
         });
         assert!(!has_summary, "stale flush should not notify the captain");
