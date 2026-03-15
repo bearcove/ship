@@ -340,30 +340,13 @@ impl Client for ShipAcpClient {
     ) -> AcpResult<RequestPermissionResponse> {
         self.reset_text_block();
 
-        // Auto-reject built-in tool permissions silently, before emitting any UI events.
+        // Auto-reject all ACP built-in tool permissions silently.
+        // Ship's MCP tools don't go through request_permission, so anything
+        // that reaches here is a built-in tool and must be rejected.
         if let Some(option_id) = self.blocked_permission_option_id(&args) {
             tracing::warn!(role = ?self.role, "auto-rejected ACP built-in tool permission request");
             return Ok(RequestPermissionResponse::new(
                 RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(option_id)),
-            ));
-        }
-
-        // Auto-approve non-built-in tool permissions (e.g. ExitPlanMode).
-        // There's no human to click approve, so select the first allow option.
-        if let Some(allow_id) = args.options.iter().find_map(|option| {
-            matches!(
-                option.kind,
-                PermissionOptionKind::AllowOnce | PermissionOptionKind::AllowAlways
-            )
-            .then_some(option.option_id.0.to_string())
-        }) {
-            tracing::info!(
-                role = ?self.role,
-                title = ?args.tool_call.fields.title,
-                "auto-approved non-built-in tool permission request"
-            );
-            return Ok(RequestPermissionResponse::new(
-                RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(allow_id)),
             ));
         }
 
