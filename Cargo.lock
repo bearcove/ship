@@ -3603,6 +3603,7 @@ dependencies = [
  "rust-mcp-sdk",
  "sailfish",
  "serde_json",
+ "ship-acp",
  "ship-code",
  "ship-core",
  "ship-git",

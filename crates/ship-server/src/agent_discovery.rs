@@ -1,1 +1,1 @@
-pub use ship_core::{SystemBinaryPathProbe, discover_agents};
+pub use ship_acp::{SystemBinaryPathProbe, discover_agents};

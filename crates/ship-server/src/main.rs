@@ -21,7 +21,8 @@ use axum::routing::any;
 use figue::{self as args, FigueBuiltins};
 use futures_util::{SinkExt, StreamExt};
 use roam::channel;
-use ship_core::{AcpAgentDriver, AgentDriver, AgentSessionConfig, ProjectRegistry};
+use ship_acp::{AcpAgentDriver, AgentDriver, AgentSessionConfig};
+use ship_core::ProjectRegistry;
 use ship_impl::ShipImpl;
 use ship_service::{ShipClient, ShipDispatcher};
 use ship_types::{
@@ -1690,7 +1691,7 @@ mod tests {
 
     use axum::http::Method;
 
-    use ship_core::FakeAgentDriver;
+    use ship_acp::FakeAgentDriver;
     use ship_types::{AgentDiscovery, AgentKind};
 
     use super::{

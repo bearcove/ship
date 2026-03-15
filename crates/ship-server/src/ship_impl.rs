@@ -18,12 +18,12 @@ use roam::{
 };
 use roam::{Rx, Tx};
 use sailfish::TemplateOnce;
+use ship_acp::{AcpAgentDriver, AgentDriver, AgentSessionConfig, resolve_mcp_servers};
 use ship_core::{
-    AcpAgentDriver, ActiveSession, AgentDriver, AgentSessionConfig, GitWorktreeOps,
-    JsonSessionStore, PendingEdit, ProjectRegistry, RebaseOutcome, SessionGitNames, SessionStore,
-    WorktreeOps, apply_event, archive_terminal_task, coalesce_replay_events, current_task_status,
-    load_agent_presets, load_project_hooks, rebuild_materialized_from_event_log,
-    resolve_mcp_servers, run_hooks, set_agent_state, transition_task,
+    ActiveSession, GitWorktreeOps, JsonSessionStore, PendingEdit, ProjectRegistry, RebaseOutcome,
+    SessionGitNames, SessionStore, WorktreeOps, apply_event, archive_terminal_task,
+    coalesce_replay_events, current_task_status, load_agent_presets, load_project_hooks,
+    rebuild_materialized_from_event_log, run_hooks, set_agent_state, transition_task,
 };
 use ship_service::{
     AdmiralMcp, AdmiralMcpDispatcher, CaptainMcp, CaptainMcpDispatcher, MateMcp, MateMcpDispatcher,
@@ -52,7 +52,7 @@ use tokio::task::JoinHandle;
 const PRESET_CONTINUATION_PROMPT: &str = "Sorry for the interruption, please continue";
 
 struct SpawnedRoleAgent {
-    spawn: ship_core::AgentSpawnInfo,
+    spawn: ship_acp::AgentSpawnInfo,
     acp_info: AgentAcpInfo,
 }
 
@@ -167,10 +167,10 @@ enum RustfmtOutcome {
 struct StartupTargetModels<'a> {
     session_id: &'a SessionId,
     captain_failure_stage: SessionStartupStage,
-    captain_handle: &'a ship_core::AgentHandle,
+    captain_handle: &'a ship_acp::AgentHandle,
     captain_spawn_model_id: Option<String>,
     captain_target_model_id: Option<String>,
-    mate_handle: &'a ship_core::AgentHandle,
+    mate_handle: &'a ship_acp::AgentHandle,
     mate_spawn_model_id: Option<String>,
     mate_target_model_id: Option<String>,
 }
@@ -185,7 +185,7 @@ type ResolvedCreateSessionAgent = (
 #[cfg(test)]
 static TEST_RUSTFMT_PROGRAM: Mutex<Option<std::ffi::OsString>> = Mutex::new(None);
 #[cfg(test)]
-static TEST_AGENT_DRIVER: Mutex<Option<ship_core::FakeAgentDriver>> = Mutex::new(None);
+static TEST_AGENT_DRIVER: Mutex<Option<ship_acp::FakeAgentDriver>> = Mutex::new(None);
 
 pub enum MateReviewOutcome {
     Accepted { summary: Option<String> },
@@ -303,7 +303,7 @@ const ADMIRAL_SESSION_ID: &str = "admiral";
 /// State for the singleton Admiral agent.
 struct AdmiralSession {
     /// ACP agent handle for prompting the admiral.
-    handle: ship_core::AgentHandle,
+    handle: ship_acp::AgentHandle,
     events_tx: broadcast::Sender<SessionEventEnvelope>,
     session_event_log: Vec<SessionEventEnvelope>,
     next_event_seq: u64,
@@ -452,7 +452,7 @@ impl ShipImpl {
     }
 
     #[cfg(test)]
-    fn test_agent_driver() -> Option<ship_core::FakeAgentDriver> {
+    fn test_agent_driver() -> Option<ship_acp::FakeAgentDriver> {
         TEST_AGENT_DRIVER
             .lock()
             .expect("test agent driver mutex poisoned")
@@ -464,7 +464,7 @@ impl ShipImpl {
         kind: AgentKind,
         role: Role,
         config: &AgentSessionConfig,
-    ) -> Result<ship_core::AgentSpawnInfo, ship_core::AgentError> {
+    ) -> Result<ship_acp::AgentSpawnInfo, ship_acp::AgentError> {
         #[cfg(test)]
         if let Some(driver) = Self::test_agent_driver() {
             return driver.spawn(kind, role, config).await;
@@ -475,9 +475,9 @@ impl ShipImpl {
 
     async fn agent_prompt(
         &self,
-        handle: &ship_core::AgentHandle,
+        handle: &ship_acp::AgentHandle,
         parts: &[PromptContentPart],
-    ) -> Result<ship_core::PromptResponse, ship_core::AgentError> {
+    ) -> Result<ship_acp::PromptResponse, ship_acp::AgentError> {
         #[cfg(test)]
         if let Some(driver) = Self::test_agent_driver() {
             return driver.prompt(handle, parts).await;
@@ -488,8 +488,8 @@ impl ShipImpl {
 
     async fn agent_cancel(
         &self,
-        handle: &ship_core::AgentHandle,
-    ) -> Result<(), ship_core::AgentError> {
+        handle: &ship_acp::AgentHandle,
+    ) -> Result<(), ship_acp::AgentError> {
         #[cfg(test)]
         if let Some(driver) = Self::test_agent_driver() {
             return driver.cancel(handle).await;
@@ -500,9 +500,9 @@ impl ShipImpl {
 
     async fn agent_set_model(
         &self,
-        handle: &ship_core::AgentHandle,
+        handle: &ship_acp::AgentHandle,
         model_id: &str,
-    ) -> Result<(), ship_core::AgentError> {
+    ) -> Result<(), ship_acp::AgentError> {
         #[cfg(test)]
         if let Some(driver) = Self::test_agent_driver() {
             return driver.set_model(handle, model_id).await;
@@ -513,8 +513,8 @@ impl ShipImpl {
 
     async fn agent_kill(
         &self,
-        handle: &ship_core::AgentHandle,
-    ) -> Result<(), ship_core::AgentError> {
+        handle: &ship_acp::AgentHandle,
+    ) -> Result<(), ship_acp::AgentError> {
         #[cfg(test)]
         if let Some(driver) = Self::test_agent_driver() {
             return driver.kill(handle).await;
@@ -1098,7 +1098,7 @@ impl ShipImpl {
         spawned: SpawnedRoleAgent,
     ) {
         let SpawnedRoleAgent { spawn, acp_info } = spawned;
-        let ship_core::AgentSpawnInfo {
+        let ship_acp::AgentSpawnInfo {
             handle,
             model_id,
             available_models,
@@ -1142,7 +1142,7 @@ impl ShipImpl {
 
     async fn collect_agent_notifications(
         &self,
-        handle: &ship_core::AgentHandle,
+        handle: &ship_acp::AgentHandle,
     ) -> Vec<SessionEvent> {
         #[cfg(test)]
         if let Some(driver) = Self::test_agent_driver() {
@@ -1154,9 +1154,9 @@ impl ShipImpl {
 
     async fn prompt_staged_agent_parts(
         &self,
-        handle: &ship_core::AgentHandle,
+        handle: &ship_acp::AgentHandle,
         parts: Vec<PromptContentPart>,
-    ) -> Result<(ship_core::StopReason, Vec<SessionEvent>), String> {
+    ) -> Result<(ship_acp::StopReason, Vec<SessionEvent>), String> {
         let response = self
             .agent_prompt(handle, &parts)
             .await
@@ -1167,9 +1167,9 @@ impl ShipImpl {
 
     async fn prompt_staged_agent_text(
         &self,
-        handle: &ship_core::AgentHandle,
+        handle: &ship_acp::AgentHandle,
         text: String,
-    ) -> Result<(ship_core::StopReason, Vec<SessionEvent>), String> {
+    ) -> Result<(ship_acp::StopReason, Vec<SessionEvent>), String> {
         self.prompt_staged_agent_parts(handle, vec![PromptContentPart::Text { text }])
             .await
     }
@@ -1330,7 +1330,7 @@ impl ShipImpl {
         &self,
         session_id: &SessionId,
         role: Role,
-        old_handle: ship_core::AgentHandle,
+        old_handle: ship_acp::AgentHandle,
         preset: ship_types::AgentPreset,
     ) -> SetAgentPresetResponse {
         let cancel_result = match role {
@@ -1377,7 +1377,7 @@ impl ShipImpl {
                 return SetAgentPresetResponse::Failed { message };
             }
         };
-        if handoff_stop_reason == ship_core::StopReason::ContextExhausted {
+        if handoff_stop_reason == ship_acp::StopReason::ContextExhausted {
             let _ = self.agent_kill(&staged_handle).await;
             return SetAgentPresetResponse::Failed {
                 message: "fresh preset session exhausted context during history handoff".to_owned(),
@@ -1424,7 +1424,7 @@ impl ShipImpl {
                     Self::apply_staged_preset_switch_event(session_state, event);
                 }
                 let final_state =
-                    if continuation_stop_reason == ship_core::StopReason::ContextExhausted {
+                    if continuation_stop_reason == ship_acp::StopReason::ContextExhausted {
                         AgentState::ContextExhausted
                     } else {
                         AgentState::Idle
@@ -6794,7 +6794,7 @@ release candidates. Make sure tests pass before calling mate_submit."
         })
     }
 
-    async fn ensure_utility_agent(&self, session_id: &SessionId) -> Option<ship_core::AgentHandle> {
+    async fn ensure_utility_agent(&self, session_id: &SessionId) -> Option<ship_acp::AgentHandle> {
         let existing = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             sessions
@@ -7299,7 +7299,7 @@ release candidates. Make sure tests pass before calling mate_submit."
         session_id: &SessionId,
         role: Role,
         text: String,
-    ) -> Result<ship_core::StopReason, String> {
+    ) -> Result<ship_acp::StopReason, String> {
         self.prompt_agent(session_id, role, vec![PromptContentPart::Text { text }])
             .await
     }
@@ -7404,7 +7404,7 @@ release candidates. Make sure tests pass before calling mate_submit."
         &self,
         session_id: &SessionId,
         text: String,
-    ) -> Result<ship_core::StopReason, String> {
+    ) -> Result<ship_acp::StopReason, String> {
         self.interrupt_captain_with_parts(session_id, vec![PromptContentPart::Text { text }])
             .await
     }
@@ -7458,7 +7458,7 @@ release candidates. Make sure tests pass before calling mate_submit."
         &self,
         session_id: &SessionId,
         parts: Vec<PromptContentPart>,
-    ) -> Result<ship_core::StopReason, String> {
+    ) -> Result<ship_acp::StopReason, String> {
         // Cancel any in-flight prompt — this makes the current prompt()
         // call return with StopReason::Cancelled, which resets the
         // prompt_in_flight flag.
@@ -7472,7 +7472,7 @@ release candidates. Make sure tests pass before calling mate_submit."
         session_id: &SessionId,
         role: Role,
         parts: Vec<PromptContentPart>,
-    ) -> Result<ship_core::StopReason, String> {
+    ) -> Result<ship_acp::StopReason, String> {
         let text_len: usize = parts
             .iter()
             .filter_map(|p| {
@@ -7554,7 +7554,7 @@ release candidates. Make sure tests pass before calling mate_submit."
             };
             if current_gen == prompt_gen {
                 match response.stop_reason {
-                    ship_core::StopReason::ContextExhausted => {
+                    ship_acp::StopReason::ContextExhausted => {
                         set_agent_state(session, role, AgentState::ContextExhausted)
                     }
                     _ => set_agent_state(session, role, AgentState::Idle),
@@ -7572,10 +7572,10 @@ release candidates. Make sure tests pass before calling mate_submit."
     async fn handle_mate_stop_reason(
         &self,
         session_id: &SessionId,
-        stop_reason: ship_core::StopReason,
+        stop_reason: ship_acp::StopReason,
     ) -> Result<(), String> {
         match stop_reason {
-            ship_core::StopReason::EndTurn => {
+            ship_acp::StopReason::EndTurn => {
                 let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
                 let session = sessions
                     .get_mut(session_id)
@@ -7589,7 +7589,7 @@ release candidates. Make sure tests pass before calling mate_submit."
                 }
                 Self::invalidate_mate_activity_summary_state(session);
             }
-            ship_core::StopReason::Cancelled => {
+            ship_acp::StopReason::Cancelled => {
                 let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
                 let session = sessions
                     .get_mut(session_id)
@@ -7601,7 +7601,7 @@ release candidates. Make sure tests pass before calling mate_submit."
                 }
                 session.mate_handle = None;
             }
-            ship_core::StopReason::ContextExhausted => {
+            ship_acp::StopReason::ContextExhausted => {
                 let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
                 let session = sessions
                     .get_mut(session_id)
@@ -7845,7 +7845,7 @@ release candidates. Make sure tests pass before calling mate_submit."
 
             match stop_reason {
                 // r[task.completion.enforce-submit]
-                ship_core::StopReason::EndTurn => {
+                ship_acp::StopReason::EndTurn => {
                     let already_submitted = {
                         let sessions = self.sessions.lock().expect("sessions mutex poisoned");
                         sessions
@@ -7880,7 +7880,7 @@ release candidates. Make sure tests pass before calling mate_submit."
                         text: message_templates::mate_forced_submit_nudge(),
                     }]);
                 }
-                ship_core::StopReason::ContextExhausted => {
+                ship_acp::StopReason::ContextExhausted => {
                     {
                         let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
                         if let Some(session) = sessions.get_mut(&session_id) {
@@ -10298,10 +10298,13 @@ mod tests {
     use ship_git::{BranchName, GitContext, Rev};
     use tokio::process::Command as TokioCommand;
 
-    use ship_core::{
+    use ship_acp::{
         AgentDriver, AgentError, AgentSessionConfig, FakeAgentDriver, FakePromptScript,
-        JsonSessionStore, ProjectRegistry, PromptResponse, SessionGitNames, SessionStore,
-        StopReason, apply_event, rebuild_materialized_from_event_log,
+        PromptResponse, StopReason,
+    };
+    use ship_core::{
+        JsonSessionStore, ProjectRegistry, SessionGitNames, SessionStore, apply_event,
+        rebuild_materialized_from_event_log,
     };
     use ship_service::Ship;
     use ship_types::{
@@ -10605,7 +10608,7 @@ mod tests {
         role: Role,
         kind: AgentKind,
         fake_driver: &FakeAgentDriver,
-    ) -> ship_core::AgentHandle {
+    ) -> ship_acp::AgentHandle {
         let worktree_path = {
             let sessions = ship.sessions.lock().expect("sessions mutex poisoned");
             sessions
