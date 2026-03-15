@@ -2659,13 +2659,14 @@ unless the task explicitly targets a subdirectory inside the current worktree.
         let dirty_session_strategy = extras.dirty_session_strategy;
         let plan_steps = Self::build_plan_steps(extras.plan);
         let session = {
-            let sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let session = sessions
-                .get(session_id)
+                .get_mut(session_id)
                 .ok_or_else(|| format!("session not found: {}", session_id.0))?;
             if session.current_task.is_some() {
                 return Err("session already has an active non-terminal task".to_owned());
             }
+            session.captain_has_ever_assigned = true;
             session.clone()
         };
         let worktree_path = Self::current_task_worktree_path(&session)?.to_path_buf();
