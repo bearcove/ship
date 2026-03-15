@@ -101,6 +101,14 @@ impl fmt::Display for WorktreeError {
 
 impl Error for WorktreeError {}
 
+impl From<eyre::Report> for WorktreeError {
+    fn from(e: eyre::Report) -> Self {
+        Self {
+            message: format!("{e:#}"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoreError {
     pub message: String,

@@ -302,19 +302,13 @@ impl GitContext {
     /// List branch names.
     pub async fn branch_list(&self) -> Result<Vec<BranchName>> {
         let out = self.run(&["branch"]).await.wrap_err("branch")?;
-        Ok(out
-            .lines()
-            .map(|l| BranchName::new(l.trim().trim_start_matches("* ")))
-            .collect())
+        Ok(parse_branch_lines(&out))
     }
 
     /// List all branches (including remote-tracking).
     pub async fn branch_list_all(&self) -> Result<Vec<BranchName>> {
         let out = self.run(&["branch", "-a"]).await.wrap_err("branch -a")?;
-        Ok(out
-            .lines()
-            .map(|l| BranchName::new(l.trim().trim_start_matches("* ")))
-            .collect())
+        Ok(parse_branch_lines(&out))
     }
 
     /// Delete a branch.
@@ -366,10 +360,16 @@ impl GitContext {
     }
 
     /// Continue an in-progress rebase (after resolving conflicts and staging).
+    /// Sets `GIT_EDITOR=true` to skip the editor for squash/reword commits.
     pub async fn rebase_continue(&self) -> Result<RebaseOutcome> {
-        let output = self
-            .run_raw(&["rebase", "--continue"])
-            .await?;
+        let output = Command::new("git")
+            .args(["rebase", "--continue"])
+            .env("GIT_EDITOR", "true")
+            .current_dir(self.worktree.as_std_path())
+            .output()
+            .await
+            .wrap_err("spawning git rebase --continue")?;
+
         if output.status.success() {
             return Ok(RebaseOutcome::Success);
         }
@@ -389,6 +389,12 @@ impl GitContext {
             .await
             .wrap_err("rebase --abort")?;
         Ok(())
+    }
+
+    /// Abort an in-progress rebase, ignoring errors.
+    /// Useful when cleaning up after a failed rebase.
+    pub async fn rebase_abort_quiet(&self) {
+        let _ = self.run_raw(&["rebase", "--abort"]).await;
     }
 
     /// Check if a rebase is in progress.
@@ -543,6 +549,16 @@ impl GitContext {
 }
 
 // ── Parsing helpers ──────────────────────────────────────────────────
+
+fn parse_branch_lines(output: &str) -> Vec<BranchName> {
+    output
+        .lines()
+        .map(|line| line.trim_start_matches(['*', '+', ' ']))
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(BranchName::new)
+        .collect()
+}
 
 fn parse_numstat(output: &str) -> Result<DiffStats> {
     let mut entries = Vec::new();

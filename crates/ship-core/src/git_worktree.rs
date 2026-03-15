@@ -1,13 +1,26 @@
 use std::path::{Path, PathBuf};
-use std::process::Output;
 
-use tokio::process::Command;
+use camino::Utf8Path;
+use ship_git::{BranchName, GitContext, Rev};
 
 use crate::{RebaseOutcome, WorktreeError, WorktreeOps};
 
 // r[testability.git-trait]
 #[derive(Debug, Default, Clone, Copy)]
 pub struct GitWorktreeOps;
+
+fn ctx(path: &Path) -> Result<GitContext, WorktreeError> {
+    let utf8 = Utf8Path::from_path(path).ok_or_else(|| WorktreeError {
+        message: format!("path is not valid UTF-8: {}", path.display()),
+    })?;
+    Ok(GitContext::new(utf8))
+}
+
+fn utf8(path: &Path) -> Result<&Utf8Path, WorktreeError> {
+    Utf8Path::from_path(path).ok_or_else(|| WorktreeError {
+        message: format!("path is not valid UTF-8: {}", path.display()),
+    })
+}
 
 // r[backend.git-shell]
 #[async_trait::async_trait]
@@ -37,22 +50,14 @@ impl WorktreeOps for GitWorktreeOps {
                 message: error.to_string(),
             })?;
 
-        let output = Command::new("git")
-            .arg("-C")
-            .arg(repo_root)
-            .arg("worktree")
-            .arg("add")
-            .arg("-b")
-            .arg(branch_name)
-            .arg(&worktree_path)
-            .arg(base_branch)
-            .output()
-            .await
-            .map_err(|error| WorktreeError {
-                message: error.to_string(),
-            })?;
+        let git = ctx(repo_root)?;
+        git.worktree_add(
+            utf8(&worktree_path)?,
+            &BranchName::new(branch_name),
+            &Rev::new(base_branch),
+        )
+        .await?;
 
-        ensure_success(output)?;
         tracing::info!(
             branch_name = %branch_name,
             worktree_path = %worktree_path.display(),
@@ -63,61 +68,32 @@ impl WorktreeOps for GitWorktreeOps {
 
     async fn remove_worktree(&self, path: &Path, force: bool) -> Result<(), WorktreeError> {
         let repo_root = repo_root_for_worktree(path)?;
-
-        let mut command = Command::new("git");
-        command
-            .arg("-C")
-            .arg(repo_root)
-            .arg("worktree")
-            .arg("remove");
-        if force {
-            command.arg("--force");
-        }
-        command.arg(path);
-
-        let output = command.output().await.map_err(|error| WorktreeError {
-            message: error.to_string(),
-        })?;
-
-        ensure_success(output)
+        let git = ctx(repo_root)?;
+        git.worktree_remove(utf8(path)?, force).await?;
+        Ok(())
     }
 
     async fn has_uncommitted_changes(&self, path: &Path) -> Result<bool, WorktreeError> {
-        let output = Command::new("git")
-            .arg("-C")
-            .arg(path)
-            .arg("status")
-            .arg("--porcelain")
-            .output()
-            .await
-            .map_err(|error| WorktreeError {
-                message: error.to_string(),
-            })?;
-
-        ensure_success_stdout(output).map(|stdout| !stdout.trim().is_empty())
+        let git = ctx(path)?;
+        let status = git.status().await?;
+        Ok(!status.is_clean())
     }
 
     async fn current_branch(&self, worktree_path: &Path) -> Result<String, WorktreeError> {
-        let output = Command::new("git")
-            .arg("-C")
-            .arg(worktree_path)
-            .args(["rev-parse", "--abbrev-ref", "HEAD"])
-            .output()
-            .await
-            .map_err(|error| WorktreeError {
-                message: error.to_string(),
-            })?;
-
-        Ok(ensure_success_stdout(output)?.trim().to_owned())
+        let git = ctx(worktree_path)?;
+        let branch = git.branch_name().await?;
+        Ok(branch.into_string())
     }
 
     async fn is_rebase_in_progress(&self, worktree_path: &Path) -> Result<bool, WorktreeError> {
-        Ok(git_path_exists(worktree_path, "rebase-merge").await?
-            || git_path_exists(worktree_path, "rebase-apply").await?)
+        let git = ctx(worktree_path)?;
+        Ok(git.is_rebasing().await?)
     }
 
     async fn unmerged_paths(&self, worktree_path: &Path) -> Result<Vec<String>, WorktreeError> {
-        git_diff_filter_paths(worktree_path, "U").await
+        let git = ctx(worktree_path)?;
+        let paths = git.unmerged_files().await?;
+        Ok(paths.into_iter().map(|p| p.into_string()).collect())
     }
 
     async fn tracked_conflict_marker_paths(
@@ -151,60 +127,22 @@ impl WorktreeOps for GitWorktreeOps {
         worktree_path: &Path,
         base_branch: &str,
     ) -> Result<String, WorktreeError> {
-        let output = Command::new("git")
-            .arg("-C")
-            .arg(worktree_path)
-            .arg("diff")
-            .arg(format!("{base_branch}..HEAD"))
-            .output()
-            .await
-            .map_err(|error| WorktreeError {
-                message: error.to_string(),
-            })?;
-
-        ensure_success_stdout(output)
+        let git = ctx(worktree_path)?;
+        let diff = git.diff(&Rev::new(base_branch), &Rev::new("HEAD")).await?;
+        Ok(diff.into_string())
     }
 
     async fn commit_all(&self, worktree_path: &Path, message: &str) -> Result<(), WorktreeError> {
-        let add_output = Command::new("git")
-            .arg("-C")
-            .arg(worktree_path)
-            .arg("add")
-            .arg("-A")
-            .output()
-            .await
-            .map_err(|e| WorktreeError {
-                message: e.to_string(),
-            })?;
-        ensure_success(add_output)?;
-
-        let commit_output = Command::new("git")
-            .arg("-C")
-            .arg(worktree_path)
-            .arg("commit")
-            .arg("-m")
-            .arg(message)
-            .output()
-            .await
-            .map_err(|e| WorktreeError {
-                message: e.to_string(),
-            })?;
-        ensure_success(commit_output)
+        let git = ctx(worktree_path)?;
+        git.add_all().await?;
+        git.commit(message).await?;
+        Ok(())
     }
 
     async fn list_branches(&self, repo_root: &Path) -> Result<Vec<String>, WorktreeError> {
-        let output = Command::new("git")
-            .arg("-C")
-            .arg(repo_root)
-            .arg("branch")
-            .output()
-            .await
-            .map_err(|error| WorktreeError {
-                message: error.to_string(),
-            })?;
-
-        let stdout = ensure_success_stdout(output)?;
-        Ok(parse_branch_lines(&stdout))
+        let git = ctx(repo_root)?;
+        let branches = git.branch_list().await?;
+        Ok(branches.into_iter().map(|b| b.into_string()).collect())
     }
 
     async fn delete_branch(
@@ -213,21 +151,10 @@ impl WorktreeOps for GitWorktreeOps {
         force: bool,
         repo_root: &Path,
     ) -> Result<(), WorktreeError> {
-        let delete_flag = if force { "-D" } else { "-d" };
-
-        let output = Command::new("git")
-            .arg("-C")
-            .arg(repo_root)
-            .arg("branch")
-            .arg(delete_flag)
-            .arg(branch_name)
-            .output()
-            .await
-            .map_err(|error| WorktreeError {
-                message: error.to_string(),
-            })?;
-
-        ensure_success(output)
+        let git = ctx(repo_root)?;
+        git.branch_delete(&BranchName::new(branch_name), force)
+            .await?;
+        Ok(())
     }
 
     async fn rebase_onto(
@@ -235,34 +162,19 @@ impl WorktreeOps for GitWorktreeOps {
         worktree_path: &Path,
         onto_branch: &str,
     ) -> Result<(), WorktreeError> {
-        let output = Command::new("git")
-            .arg("-C")
-            .arg(worktree_path)
-            .arg("rebase")
-            .arg(onto_branch)
-            .output()
-            .await
-            .map_err(|error| WorktreeError {
-                message: error.to_string(),
-            })?;
+        let git = ctx(worktree_path)?;
+        let outcome = git.rebase(&Rev::new(onto_branch)).await?;
 
-        if output.status.success() {
-            return Ok(());
+        match outcome {
+            ship_git::RebaseOutcome::Success => Ok(()),
+            ship_git::RebaseOutcome::Conflict { .. } => {
+                // Abort the failed rebase so the worktree is left clean.
+                git.rebase_abort_quiet().await;
+                Err(WorktreeError {
+                    message: format!("rebase onto {onto_branch} failed"),
+                })
+            }
         }
-
-        // Abort the failed rebase so the worktree is left clean.
-        let _ = Command::new("git")
-            .arg("-C")
-            .arg(worktree_path)
-            .arg("rebase")
-            .arg("--abort")
-            .output()
-            .await;
-
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(WorktreeError {
-            message: format!("rebase onto {onto_branch} failed: {}", stderr.trim()),
-        })
     }
 
     async fn rebase_onto_conflict_ok(
@@ -270,82 +182,32 @@ impl WorktreeOps for GitWorktreeOps {
         worktree_path: &Path,
         onto_branch: &str,
     ) -> Result<RebaseOutcome, WorktreeError> {
-        let output = Command::new("git")
-            .arg("-C")
-            .arg(worktree_path)
-            .arg("rebase")
-            .arg(onto_branch)
-            .output()
-            .await
-            .map_err(|error| WorktreeError {
-                message: error.to_string(),
-            })?;
+        let git = ctx(worktree_path)?;
+        let outcome = git.rebase(&Rev::new(onto_branch)).await?;
 
-        if output.status.success() {
-            return Ok(RebaseOutcome::Clean);
+        match outcome {
+            ship_git::RebaseOutcome::Success => Ok(RebaseOutcome::Clean),
+            ship_git::RebaseOutcome::Conflict { conflicting_files } => {
+                let files: Vec<String> =
+                    conflicting_files.into_iter().map(|p| p.into_string()).collect();
+                if files.is_empty() {
+                    // No conflict markers — something else went wrong. Abort and surface the error.
+                    git.rebase_abort_quiet().await;
+                    Err(WorktreeError {
+                        message: format!("rebase onto {onto_branch} failed"),
+                    })
+                } else {
+                    Ok(RebaseOutcome::Conflict { files })
+                }
+            }
         }
-
-        // Check for actual merge conflicts vs unexpected git failure.
-        let conflict_output = Command::new("git")
-            .arg("-C")
-            .arg(worktree_path)
-            .arg("diff")
-            .arg("--name-only")
-            .arg("--diff-filter=U")
-            .output()
-            .await
-            .map_err(|error| WorktreeError {
-                message: error.to_string(),
-            })?;
-
-        let conflict_files: Vec<String> = String::from_utf8_lossy(&conflict_output.stdout)
-            .lines()
-            .filter(|l| !l.is_empty())
-            .map(|l| l.to_owned())
-            .collect();
-
-        if !conflict_files.is_empty() {
-            return Ok(RebaseOutcome::Conflict {
-                files: conflict_files,
-            });
-        }
-
-        // No conflict markers — something else went wrong. Abort and surface the error.
-        let _ = Command::new("git")
-            .arg("-C")
-            .arg(worktree_path)
-            .arg("rebase")
-            .arg("--abort")
-            .output()
-            .await;
-
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(WorktreeError {
-            message: format!("rebase onto {onto_branch} failed: {}", stderr.trim()),
-        })
     }
 
     async fn rebase_continue(&self, worktree_path: &Path) -> Result<RebaseOutcome, WorktreeError> {
-        // Stage first so that resolved files are no longer marked as unmerged.
-        // Previously we checked unmerged_paths before staging, which blocked
-        // continue_rebase even after the user had resolved all conflicts.
-        let add_output = Command::new("git")
-            .arg("-C")
-            .arg(worktree_path)
-            .arg("add")
-            .arg("-A")
-            .output()
-            .await
-            .map_err(|error| WorktreeError {
-                message: error.to_string(),
-            })?;
+        let git = ctx(worktree_path)?;
 
-        if !add_output.status.success() {
-            let stderr = String::from_utf8_lossy(&add_output.stderr);
-            return Err(WorktreeError {
-                message: format!("git add -A failed: {}", stderr.trim()),
-            });
-        }
+        // Stage first so that resolved files are no longer marked as unmerged.
+        git.add_all().await?;
 
         // After staging, check for conflict markers that would indicate
         // the user resolved the merge status but left markers in the file.
@@ -361,48 +223,22 @@ impl WorktreeOps for GitWorktreeOps {
             });
         }
 
-        let continue_output = Command::new("git")
-            .arg("-C")
-            .arg(worktree_path)
-            .arg("rebase")
-            .arg("--continue")
-            .env("GIT_EDITOR", "true")
-            .output()
-            .await
-            .map_err(|error| WorktreeError {
-                message: error.to_string(),
-            })?;
+        let outcome = git.rebase_continue().await?;
 
-        if continue_output.status.success() {
-            return Ok(RebaseOutcome::Clean);
+        match outcome {
+            ship_git::RebaseOutcome::Success => Ok(RebaseOutcome::Clean),
+            ship_git::RebaseOutcome::Conflict { conflicting_files } => {
+                let files: Vec<String> =
+                    conflicting_files.into_iter().map(|p| p.into_string()).collect();
+                Ok(RebaseOutcome::Conflict { files })
+            }
         }
-
-        let conflict_files = self.unmerged_paths(worktree_path).await?;
-        if !conflict_files.is_empty() {
-            return Ok(RebaseOutcome::Conflict {
-                files: conflict_files,
-            });
-        }
-
-        let stderr = String::from_utf8_lossy(&continue_output.stderr);
-        Err(WorktreeError {
-            message: format!("rebase --continue failed: {}", stderr.trim()),
-        })
     }
 
     async fn rebase_abort(&self, worktree_path: &Path) -> Result<(), WorktreeError> {
-        let output = Command::new("git")
-            .arg("-C")
-            .arg(worktree_path)
-            .arg("rebase")
-            .arg("--abort")
-            .output()
-            .await
-            .map_err(|error| WorktreeError {
-                message: error.to_string(),
-            })?;
-
-        ensure_success(output)
+        let git = ctx(worktree_path)?;
+        git.rebase_abort().await?;
+        Ok(())
     }
 
     async fn reset_to_base(
@@ -413,19 +249,9 @@ impl WorktreeOps for GitWorktreeOps {
         let repo_root = repo_root_for_worktree(worktree_path)?;
         ensure_valid_base_ref(repo_root, base_branch).await?;
 
-        let output = Command::new("git")
-            .arg("-C")
-            .arg(worktree_path)
-            .arg("reset")
-            .arg("--hard")
-            .arg(base_branch)
-            .output()
-            .await
-            .map_err(|error| WorktreeError {
-                message: error.to_string(),
-            })?;
-
-        ensure_success(output)
+        let git = ctx(worktree_path)?;
+        git.reset_hard(&Rev::new(base_branch)).await?;
+        Ok(())
     }
 
     async fn merge_ff_only(
@@ -434,55 +260,24 @@ impl WorktreeOps for GitWorktreeOps {
         branch: &str,
         into_branch: &str,
     ) -> Result<(), WorktreeError> {
+        let git = ctx(repo_root)?;
+
         // Check whether into_branch is currently checked out in the repo root.
         // `git fetch .` refuses to update a checked-out branch, so we fall back
         // to `git merge --ff-only` in that case (which works because the branch
         // IS checked out).
-        let head_output = Command::new("git")
-            .arg("-C")
-            .arg(repo_root)
-            .args(["symbolic-ref", "--short", "HEAD"])
-            .output()
-            .await
-            .map_err(|error| WorktreeError {
-                message: error.to_string(),
-            })?;
+        let current_branch = git.branch_name().await?;
 
-        let current_branch = String::from_utf8_lossy(&head_output.stdout)
-            .trim()
-            .to_owned();
-
-        if current_branch == into_branch {
+        if current_branch.as_str() == into_branch {
             // into_branch is checked out — use merge --ff-only directly.
-            let output = Command::new("git")
-                .arg("-C")
-                .arg(repo_root)
-                .arg("merge")
-                .arg("--ff-only")
-                .arg(branch)
-                .output()
-                .await
-                .map_err(|error| WorktreeError {
-                    message: error.to_string(),
-                })?;
-            ensure_success(output)
+            git.merge_ff_only(&Rev::new(branch)).await?;
         } else {
             // into_branch is NOT checked out — use `git fetch .` to update the
             // ref directly without needing a checkout.
-            let refspec = format!("{branch}:{into_branch}");
-            let output = Command::new("git")
-                .arg("-C")
-                .arg(repo_root)
-                .arg("fetch")
-                .arg(".")
-                .arg(&refspec)
-                .output()
-                .await
-                .map_err(|error| WorktreeError {
-                    message: error.to_string(),
-                })?;
-            ensure_success(output)
+            git.fetch_local(&Rev::new(branch), &BranchName::new(into_branch))
+                .await?;
         }
+        Ok(())
     }
 
     // r[proto.archive-session.safety-check]
@@ -492,89 +287,26 @@ impl WorktreeOps for GitWorktreeOps {
         base_branch: &str,
         repo_root: &Path,
     ) -> Result<Vec<String>, WorktreeError> {
+        let git = ctx(repo_root)?;
         let range = format!("{base_branch}..{branch_name}");
-        let output = Command::new("git")
-            .arg("-C")
-            .arg(repo_root)
-            .arg("log")
-            .arg("--oneline")
-            .arg(&range)
-            .output()
-            .await
-            .map_err(|error| WorktreeError {
-                message: error.to_string(),
-            })?;
 
-        if !output.status.success() {
-            // Branch may not exist (already deleted) — treat as fully merged.
-            return Ok(Vec::new());
+        // Branch may not exist (already deleted) — treat as fully merged.
+        match git.log_oneline(&range).await {
+            Ok(commits) => Ok(commits),
+            Err(_) => Ok(Vec::new()),
         }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let commits: Vec<String> = stdout
-            .lines()
-            .filter(|l| !l.is_empty())
-            .map(str::to_owned)
-            .collect();
-        Ok(commits)
     }
-}
-
-async fn git_diff_filter_paths(
-    worktree_path: &Path,
-    diff_filter: &str,
-) -> Result<Vec<String>, WorktreeError> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(worktree_path)
-        .arg("diff")
-        .arg("--name-only")
-        .arg(format!("--diff-filter={diff_filter}"))
-        .output()
-        .await
-        .map_err(|error| WorktreeError {
-            message: error.to_string(),
-        })?;
-
-    Ok(ensure_success_stdout(output)?
-        .lines()
-        .filter(|line| !line.is_empty())
-        .map(str::to_owned)
-        .collect())
-}
-
-async fn git_path_exists(worktree_path: &Path, suffix: &str) -> Result<bool, WorktreeError> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(worktree_path)
-        .args(["rev-parse", "--git-path", suffix])
-        .output()
-        .await
-        .map_err(|error| WorktreeError {
-            message: error.to_string(),
-        })?;
-
-    let git_path = ensure_success_stdout(output)?;
-    Ok(fs_err::tokio::metadata(git_path.trim()).await.is_ok())
 }
 
 async fn tracked_conflict_marker_details(
     worktree_path: &Path,
 ) -> Result<Vec<(String, Vec<usize>)>, WorktreeError> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(worktree_path)
-        .args(["ls-files", "-z"])
-        .output()
-        .await
-        .map_err(|error| WorktreeError {
-            message: error.to_string(),
-        })?;
+    let git = ctx(worktree_path)?;
+    let files = git.ls_files().await?;
 
-    let stdout = ensure_success_stdout(output)?;
     let mut details = Vec::new();
-    for relative in stdout.split('\0').filter(|path| !path.is_empty()) {
-        let file_path = worktree_path.join(relative);
+    for relative in files {
+        let file_path = worktree_path.join(relative.as_str());
         let bytes = fs_err::tokio::read(&file_path)
             .await
             .map_err(|error| WorktreeError {
@@ -582,7 +314,7 @@ async fn tracked_conflict_marker_details(
             })?;
         let marker_lines = conflict_marker_line_numbers(&bytes);
         if !marker_lines.is_empty() {
-            details.push((relative.to_owned(), marker_lines));
+            details.push((relative.into_string(), marker_lines));
         }
     }
     Ok(details)
@@ -635,44 +367,11 @@ fn repo_root_for_worktree(path: &Path) -> Result<&Path, WorktreeError> {
     }
 }
 
-fn ensure_success(output: Output) -> Result<(), WorktreeError> {
-    if output.status.success() {
-        return Ok(());
-    }
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    Err(WorktreeError {
-        message: stderr.trim().to_owned(),
-    })
-}
-
-fn ensure_success_stdout(output: Output) -> Result<String, WorktreeError> {
-    if output.status.success() {
-        return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
-    }
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    Err(WorktreeError {
-        message: stderr.trim().to_owned(),
-    })
-}
-
 async fn ensure_valid_base_ref(repo_root: &Path, base_branch: &str) -> Result<(), WorktreeError> {
-    let verify_target = format!("{base_branch}^{{commit}}");
-    let verify_output = Command::new("git")
-        .arg("-C")
-        .arg(repo_root)
-        .arg("rev-parse")
-        .arg("--verify")
-        .arg("--quiet")
-        .arg(&verify_target)
-        .output()
-        .await
-        .map_err(|error| WorktreeError {
-            message: format!("failed to resolve base ref '{base_branch}': {error}"),
-        })?;
+    let git = ctx(repo_root)?;
 
-    if verify_output.status.success() {
+    // Check if the base ref resolves to a commit
+    if git.ref_exists(&Rev::new(base_branch)).await? {
         tracing::debug!(
             base_branch = %base_branch,
             repo_root = %repo_root.display(),
@@ -681,45 +380,15 @@ async fn ensure_valid_base_ref(repo_root: &Path, base_branch: &str) -> Result<()
         return Ok(());
     }
 
-    let head_branch_output = Command::new("git")
-        .arg("-C")
-        .arg(repo_root)
-        .arg("symbolic-ref")
-        .arg("--quiet")
-        .arg("--short")
-        .arg("HEAD")
-        .output()
-        .await
-        .map_err(|error| WorktreeError {
-            message: format!("failed to inspect HEAD while resolving '{base_branch}': {error}"),
-        })?;
-
-    let head_branch = if head_branch_output.status.success() {
-        Some(
-            String::from_utf8_lossy(&head_branch_output.stdout)
-                .trim()
-                .to_owned(),
-        )
-    } else {
-        None
+    // Base ref doesn't resolve — check if it's an unborn branch
+    let head_branch = match git.branch_name().await {
+        Ok(b) => Some(b.into_string()),
+        Err(_) => None,
     };
 
-    let head_commit_output = Command::new("git")
-        .arg("-C")
-        .arg(repo_root)
-        .arg("rev-parse")
-        .arg("--verify")
-        .arg("--quiet")
-        .arg("HEAD^{commit}")
-        .output()
-        .await
-        .map_err(|error| WorktreeError {
-            message: format!(
-                "failed to inspect HEAD commit while resolving '{base_branch}': {error}"
-            ),
-        })?;
+    let head_exists = git.ref_exists(&Rev::new("HEAD")).await?;
 
-    if head_branch.as_deref() == Some(base_branch) && !head_commit_output.status.success() {
+    if head_branch.as_deref() == Some(base_branch) && !head_exists {
         tracing::warn!(
             base_branch = %base_branch,
             repo_root = %repo_root.display(),
@@ -740,14 +409,4 @@ async fn ensure_valid_base_ref(repo_root: &Path, base_branch: &str) -> Result<()
     Err(WorktreeError {
         message: format!("base branch/ref '{base_branch}' does not resolve to a commit"),
     })
-}
-
-fn parse_branch_lines(stdout: &str) -> Vec<String> {
-    stdout
-        .lines()
-        .map(|line| line.trim_start_matches(['*', '+', ' ']))
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(str::to_owned)
-        .collect()
 }
