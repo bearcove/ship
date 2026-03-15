@@ -8319,6 +8319,7 @@ impl Ship for ShipImpl {
                 mate_model_id: mate_model_id.clone(),
                 autonomy_mode: AutonomyMode::HumanInTheLoop,
                 mcp_servers: effective_mcp_servers,
+                workflow: Default::default(),
             },
             worktree_path: None,
             captain_handle: None,

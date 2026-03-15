@@ -68,6 +68,7 @@ impl From<LegacyPersistedSession> for PersistedSession {
                 mate_model_id: None,
                 autonomy_mode: value.config.autonomy_mode,
                 mcp_servers: Vec::new(),
+                workflow: Default::default(),
             },
             captain: value.captain,
             mate: value.mate,

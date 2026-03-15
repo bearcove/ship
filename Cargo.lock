@@ -3580,6 +3580,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ship-github"
+version = "0.1.0"
+dependencies = [
+ "camino",
+ "eyre",
+ "facet",
+ "facet-json",
+ "tokio",
+]
+
+[[package]]
 name = "ship-server"
 version = "0.1.0"
 dependencies = [

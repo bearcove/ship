@@ -43,6 +43,7 @@ struct InsertParams {
     project: String,
     base_branch: String,
     branch_name: String,
+    workflow: String,
     data: String,
 }
 
@@ -156,8 +157,8 @@ impl SqliteSessionStore {
 
         let conn = self.conn.lock().expect("session db mutex poisoned");
         conn.facet_execute_ref(
-            "INSERT OR REPLACE INTO sessions (id, created_at, archived_at, title, is_read, project, base_branch, branch_name, data)
-             VALUES (:id, :created_at, :archived_at, :title, :is_read, :project, :base_branch, :branch_name, :data)",
+            "INSERT OR REPLACE INTO sessions (id, created_at, archived_at, title, is_read, project, base_branch, branch_name, workflow, data)
+             VALUES (:id, :created_at, :archived_at, :title, :is_read, :project, :base_branch, :branch_name, :workflow, :data)",
             &InsertParams {
                 id: session.id.0.clone(),
                 created_at: session.created_at.clone(),
@@ -167,6 +168,7 @@ impl SqliteSessionStore {
                 project: session.config.project.0.clone(),
                 base_branch: session.config.base_branch.clone(),
                 branch_name: session.config.branch_name.clone(),
+                workflow: workflow_to_str(session.config.workflow),
                 data,
             },
         )
@@ -512,6 +514,13 @@ impl SqliteSessionStore {
     }
 }
 
+fn workflow_to_str(w: ship_types::Workflow) -> String {
+    match w {
+        ship_types::Workflow::Merge => "merge".to_owned(),
+        ship_types::Workflow::PullRequest => "pull_request".to_owned(),
+    }
+}
+
 fn deserialize_session(json: &str, display_name: &str) -> Result<PersistedSession, StoreError> {
     facet_json::from_str::<PersistedSession>(json).map_err(|e| StoreError {
         message: format!("failed to deserialize session {display_name}: {e}"),
@@ -556,6 +565,7 @@ mod tests {
                 mate_model_id: None,
                 autonomy_mode: AutonomyMode::HumanInTheLoop,
                 mcp_servers: Vec::new(),
+                workflow: Default::default(),
             },
             captain: AgentSnapshot {
                 role: Role::Captain,

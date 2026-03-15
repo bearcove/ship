@@ -175,6 +175,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                 mate_model_id: None,
                 autonomy_mode: AutonomyMode::HumanInTheLoop,
                 mcp_servers,
+                workflow: Default::default(),
             },
             worktree_path: None,
             captain_handle: None,

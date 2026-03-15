@@ -1,0 +1,14 @@
+[package]
+name = "ship-github"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+camino = { workspace = true }
+eyre = { workspace = true }
+facet = { workspace = true }
+facet-json = { workspace = true }
+tokio = { workspace = true, features = ["process"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }

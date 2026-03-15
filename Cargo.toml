@@ -2,6 +2,7 @@
 members = [
   "crates/ship-acp",
   "crates/ship-git",
+  "crates/ship-github",
   "crates/ship-types",
   "crates/ship-core",
   "crates/ship-service",

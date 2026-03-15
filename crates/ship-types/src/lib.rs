@@ -1192,6 +1192,22 @@ pub mod persistence {
     use crate::session::SessionStartupState;
     use crate::task::TaskRecord;
 
+    /// How a session's work gets landed.
+    #[repr(u8)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, facet::Facet)]
+    pub enum Workflow {
+        /// Merge directly into the base branch (rebase + ff-merge).
+        Merge,
+        /// Push branch and create a GitHub pull request.
+        PullRequest,
+    }
+
+    impl Default for Workflow {
+        fn default() -> Self {
+            Self::Merge
+        }
+    }
+
     #[derive(Debug, Clone, facet::Facet)]
     pub struct SessionConfig {
         pub project: ProjectName,
@@ -1213,6 +1229,8 @@ pub mod persistence {
         pub mate_model_id: Option<String>,
         pub autonomy_mode: AutonomyMode,
         pub mcp_servers: Vec<McpServerConfig>,
+        #[facet(default)]
+        pub workflow: Workflow,
     }
 
     // r[mate.output.persisted]
@@ -1278,7 +1296,7 @@ pub use events::{
 };
 pub use hooks::{HookDef, HookEntryConfig, HooksConfig, ProjectConfig, ResolvedHooks};
 pub use ids::{BlockId, ProjectName, SessionId, TaskId};
-pub use persistence::{CurrentTask, PersistedSession, SessionConfig, TaskContentRecord};
+pub use persistence::{CurrentTask, PersistedSession, SessionConfig, TaskContentRecord, Workflow};
 pub use prompt::PromptContentPart;
 pub use protocol::{
     AgentDiscovery, ArchiveSessionRequest, ArchiveSessionResponse, AutonomyMode, CaptainGitStatus,
