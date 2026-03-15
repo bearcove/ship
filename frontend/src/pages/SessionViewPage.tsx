@@ -44,12 +44,14 @@ export function SessionViewPage({
   debugMode,
   allSessions = [],
   onArchived,
+  onOpenSidebar,
 }: {
   sessionId: string;
   isActive: boolean;
   debugMode: boolean;
   allSessions?: SessionSummary[];
   onArchived?: () => void;
+  onOpenSidebar?: () => void;
 }) {
   const navigate = useNavigate();
   const composerRef = useRef<UnifiedComposerHandle>(null);
@@ -155,6 +157,91 @@ export function SessionViewPage({
     };
     el.addEventListener("transitionend", resetStyle, { once: true });
   }, [navigate, prevSession, nextSession]);
+
+  // Sidebar swipe-open tracking refs
+  const sidebarTouchStartX = useRef(0);
+  const sidebarTouchStartY = useRef(0);
+  const sidebarIsDragging = useRef(false);
+  const sidebarIsVertical = useRef(false);
+  const sidebarDeltaX = useRef(0);
+  const sidebarWidth = 260;
+
+  const onFeedTouchStart = useCallback((e: React.TouchEvent) => {
+    if (window.innerWidth > 700) return;
+    const touch = e.touches[0];
+    sidebarTouchStartX.current = touch.clientX;
+    sidebarTouchStartY.current = touch.clientY;
+    sidebarIsDragging.current = false;
+    sidebarIsVertical.current = false;
+    sidebarDeltaX.current = 0;
+  }, []);
+
+  const onFeedTouchMove = useCallback((e: React.TouchEvent) => {
+    if (window.innerWidth > 700 || sidebarIsVertical.current) return;
+    const touch = e.touches[0];
+    const deltaX = touch.clientX - sidebarTouchStartX.current;
+    const deltaY = touch.clientY - sidebarTouchStartY.current;
+
+    if (!sidebarIsDragging.current) {
+      if (Math.abs(deltaX) < 8 && Math.abs(deltaY) < 8) return;
+      if (Math.abs(deltaY) > Math.abs(deltaX)) {
+        sidebarIsVertical.current = true;
+        return;
+      }
+      // Only track right-swipes (positive deltaX) for sidebar open
+      if (deltaX <= 0) {
+        sidebarIsVertical.current = true;
+        return;
+      }
+      sidebarIsDragging.current = true;
+    }
+
+    e.preventDefault();
+    const clampedDelta = Math.min(deltaX, sidebarWidth);
+    sidebarDeltaX.current = clampedDelta;
+    // Physically slide the sidebar into view
+    const sidebar = document.querySelector<HTMLElement>("[data-open]");
+    if (sidebar) {
+      const offset = sidebarWidth - clampedDelta;
+      sidebar.style.transition = "none";
+      sidebar.style.transform = `translateX(-${offset}px)`;
+      sidebar.style.willChange = "transform";
+    }
+  }, []);
+
+  const onFeedTouchEnd = useCallback(() => {
+    if (window.innerWidth > 700 || !sidebarIsDragging.current) return;
+    sidebarIsDragging.current = false;
+
+    const sidebar = document.querySelector<HTMLElement>("[data-open]");
+    if (!sidebar) return;
+
+    const threshold = sidebarWidth * 0.4;
+    if (sidebarDeltaX.current > threshold) {
+      // Complete the open — animate to fully visible
+      sidebar.style.transition = "transform 200ms ease-out";
+      sidebar.style.transform = "translateX(0)";
+      const handleEnd = () => {
+        sidebar.removeEventListener("transitionend", handleEnd);
+        sidebar.style.transition = "";
+        sidebar.style.transform = "";
+        sidebar.style.willChange = "";
+        onOpenSidebar?.();
+      };
+      sidebar.addEventListener("transitionend", handleEnd, { once: true });
+    } else {
+      // Snap back — animate to hidden
+      sidebar.style.transition = "transform 200ms ease-out";
+      sidebar.style.transform = "translateX(-100%)";
+      const resetStyle = () => {
+        sidebar.removeEventListener("transitionend", resetStyle);
+        sidebar.style.transition = "";
+        sidebar.style.transform = "";
+        sidebar.style.willChange = "";
+      };
+      sidebar.addEventListener("transitionend", resetStyle, { once: true });
+    }
+  }, [onOpenSidebar]);
 
   // r[event.client.hydration-sequence]: Step 1 — structural state
   const { session, error } = useSession(sessionId);
@@ -400,7 +487,13 @@ export function SessionViewPage({
         className={sessionViewRoot}
       >
         <Flex style={{ flex: 1, overflow: "hidden", minHeight: 0 }}>
-          <Box className={sessionFeedColumn} ref={feedColumnRef}>
+          <Box
+            className={sessionFeedColumn}
+            ref={feedColumnRef}
+            onTouchStart={onFeedTouchStart}
+            onTouchMove={onFeedTouchMove}
+            onTouchEnd={onFeedTouchEnd}
+          >
             <SessionHeader
               sessionId={session.id}
               project={session.project}

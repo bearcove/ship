@@ -159,6 +159,7 @@ export function App() {
                 debugMode={debugMode}
                 allSessions={allSessions}
                 onArchived={() => removeVisitedSession(slug)}
+                onOpenSidebar={() => setSidebarOpen(true)}
               />
             </div>
           ))}
