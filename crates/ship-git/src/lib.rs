@@ -274,11 +274,18 @@ impl GitContext {
         parse_numstat(&out)
     }
 
-    /// Show --stat --shortstat for a commit (raw text).
+    /// Show --stat --shortstat for a commit (no commit header).
     pub async fn show_stat(&self, rev: &Rev) -> Result<String> {
-        self.run(&["show", "--stat", "--shortstat", rev.as_str()])
+        self.run(&["show", "--stat", "--shortstat", "--format=", rev.as_str()])
             .await
             .wrap_err_with(|| format!("show --stat {rev}"))
+    }
+
+    /// Get the subject line of a single commit.
+    pub async fn commit_subject(&self, rev: &Rev) -> Result<String> {
+        self.run(&["log", "-1", "--format=%s", rev.as_str()])
+            .await
+            .wrap_err_with(|| format!("log -1 --format=%s {rev}"))
     }
 
     // ── Branch operations ────────────────────────────────────────────

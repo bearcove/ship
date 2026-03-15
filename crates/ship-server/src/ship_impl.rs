@@ -43,7 +43,7 @@ use ship_types::{
     TaskId, TaskRecapStats, TaskRecord, TaskStatus, TextSource, ToolCallKind, ToolTarget,
     TranscribeMessage, TranscribeSegment, WorkflowMilestoneKind, WorktreeDiffStats,
 };
-use ship_git::{GitContext, Rev};
+use ship_git::{BranchName, GitContext, RemoteName, Rev};
 use similar::TextDiff;
 use tokio::process::Command as TokioCommand;
 use tokio::sync::broadcast;
@@ -5237,140 +5237,56 @@ release candidates. Make sure tests pass before calling mate_submit."
         worktree_path: &std::path::Path,
         message: String,
     ) -> Result<Option<AutoCommitResult>, String> {
-        let worktree_path = worktree_path.to_path_buf();
-        tokio::task::spawn_blocking(move || {
-            let add_status = Command::new("git")
-                .arg("-C")
-                .arg(&worktree_path)
-                .args(["add", "-A"])
-                .status()
-                .map_err(|error| format!("git add failed: {error}"))?;
-            if !add_status.success() {
-                return Err("git add -A failed".to_owned());
-            }
+        let utf8 = camino::Utf8Path::from_path(worktree_path)
+            .ok_or_else(|| format!("path is not valid UTF-8: {}", worktree_path.display()))?;
+        let git = GitContext::new(utf8);
 
-            let diff_status = Command::new("git")
-                .arg("-C")
-                .arg(&worktree_path)
-                .args(["diff", "--cached", "--quiet"])
-                .status()
-                .map_err(|error| format!("git diff --cached --quiet failed: {error}"))?;
-            if diff_status.success() {
-                return Ok(None);
-            }
+        git.add_all().await.map_err(|e| format!("{e:#}"))?;
 
-            let commit_output = Command::new("git")
-                .arg("-C")
-                .arg(&worktree_path)
-                .args(["commit", "-m", &message])
-                .output()
-                .map_err(|error| format!("git commit failed: {error}"))?;
-            if !commit_output.status.success() {
-                let stderr = String::from_utf8_lossy(&commit_output.stderr)
-                    .trim()
-                    .to_owned();
-                return Err(if stderr.is_empty() {
-                    "git commit failed".to_owned()
-                } else {
-                    format!("git commit failed: {stderr}")
-                });
-            }
+        let has_staged = git.diff_cached_quiet().await.map_err(|e| format!("{e:#}"))?;
+        if !has_staged {
+            return Ok(None);
+        }
 
-            let commit_hash = Command::new("git")
-                .arg("-C")
-                .arg(&worktree_path)
-                .args(["rev-parse", "HEAD"])
-                .output()
-                .map_err(|error| format!("git rev-parse HEAD failed: {error}"))?;
-            if !commit_hash.status.success() {
-                return Err("git rev-parse HEAD failed".to_owned());
-            }
-            let commit_hash = String::from_utf8_lossy(&commit_hash.stdout)
-                .trim()
-                .to_owned();
+        let info = git.commit(&message).await.map_err(|e| format!("{e:#}"))?;
+        let commit_hash = info.hash.into_string();
 
-            let commit_subject = Command::new("git")
-                .arg("-C")
-                .arg(&worktree_path)
-                .args(["log", "-1", "--format=%s", "HEAD"])
-                .output()
-                .ok()
-                .filter(|o| o.status.success())
-                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned())
-                .unwrap_or_default();
+        let head = Rev::new("HEAD");
+        let commit_subject = git.commit_subject(&head).await.unwrap_or_default();
 
-            let commit_diff = Command::new("git")
-                .arg("-C")
-                .arg(&worktree_path)
-                .args(["show", "--format=", "HEAD"])
-                .output()
-                .ok()
-                .filter(|o| o.status.success())
-                .map(|o| {
-                    let raw = String::from_utf8_lossy(&o.stdout);
-                    let trimmed = raw.trim_start_matches('\n').to_owned();
-                    if trimmed.is_empty() {
-                        None
-                    } else {
-                        Some(trimmed)
-                    }
+        let commit_diff = git
+            .show(&head)
+            .await
+            .ok()
+            .map(|d| d.into_string())
+            .map(|s| {
+                let trimmed = s.trim_start_matches('\n').to_owned();
+                if trimmed.is_empty() { None } else { Some(trimmed) }
+            })
+            .unwrap_or(None);
+
+        let stats = git.show_numstat(&head).await.ok().and_then(|ds| {
+            let fc = ds.files_changed() as u32;
+            if fc == 0 {
+                None
+            } else {
+                Some(TaskRecapStats {
+                    files_changed: fc,
+                    insertions: ds.total_added() as u32,
+                    deletions: ds.total_removed() as u32,
                 })
-                .unwrap_or(None);
-
-            let stats = Command::new("git")
-                .arg("-C")
-                .arg(&worktree_path)
-                .args(["show", "--numstat", "--format=", "HEAD"])
-                .output()
-                .ok()
-                .filter(|o| o.status.success())
-                .and_then(|o| {
-                    let (fc, ins, del) = String::from_utf8_lossy(&o.stdout)
-                        .lines()
-                        .filter(|l| !l.is_empty())
-                        .fold((0u32, 0u32, 0u32), |(fc, ins, del), line| {
-                            let mut parts = line.split('\t');
-                            let i = parts
-                                .next()
-                                .and_then(|s| s.parse::<u32>().ok())
-                                .unwrap_or(0);
-                            let d = parts
-                                .next()
-                                .and_then(|s| s.parse::<u32>().ok())
-                                .unwrap_or(0);
-                            (fc + 1, ins + i, del + d)
-                        });
-                    if fc == 0 {
-                        None
-                    } else {
-                        Some(TaskRecapStats {
-                            files_changed: fc,
-                            insertions: ins,
-                            deletions: del,
-                        })
-                    }
-                });
-
-            let diff_stat = Command::new("git")
-                .arg("-C")
-                .arg(&worktree_path)
-                .args(["show", "--stat", "--format=", "--shortstat", "HEAD"])
-                .output()
-                .map_err(|error| format!("git show --stat failed: {error}"))?;
-            if !diff_stat.status.success() {
-                return Err("git show --stat failed".to_owned());
             }
+        });
 
-            Ok(Some(AutoCommitResult {
-                commit_hash,
-                diff_stat: String::from_utf8_lossy(&diff_stat.stdout).trim().to_owned(),
-                commit_subject,
-                commit_diff,
-                stats,
-            }))
-        })
-        .await
-        .map_err(|error| format!("git auto-commit task failed: {error}"))?
+        let diff_stat = git.show_stat(&head).await.map_err(|e| format!("{e:#}"))?;
+
+        Ok(Some(AutoCommitResult {
+            commit_hash,
+            diff_stat,
+            commit_subject,
+            commit_diff,
+            stats,
+        }))
     }
 
     fn captain_assign_dirty_session_message(discard_blockers: &[String]) -> String {
@@ -5380,62 +5296,30 @@ release candidates. Make sure tests pass before calling mate_submit."
         )
     }
 
-    fn git_command_failure(action: &str, output: &std::process::Output) -> String {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
-        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
-        if !stderr.is_empty() {
-            format!("{action} failed: {stderr}")
-        } else if !stdout.is_empty() {
-            format!("{action} failed: {stdout}")
-        } else {
-            format!("{action} failed")
-        }
-    }
+
 
     async fn git_checkout_new_branch(
         worktree_path: &std::path::Path,
         branch_name: &str,
     ) -> Result<(), String> {
-        let worktree_path = worktree_path.to_path_buf();
-        let branch_name = branch_name.to_owned();
-        tokio::task::spawn_blocking(move || {
-            let output = Command::new("git")
-                .arg("-C")
-                .arg(&worktree_path)
-                .args(["checkout", "-b", &branch_name])
-                .output()
-                .map_err(|error| format!("git checkout -b failed: {error}"))?;
-            if output.status.success() {
-                Ok(())
-            } else {
-                Err(Self::git_command_failure("git checkout -b", &output))
-            }
-        })
-        .await
-        .map_err(|error| format!("git checkout -b task failed: {error}"))?
+        let utf8 = camino::Utf8Path::from_path(worktree_path)
+            .ok_or_else(|| format!("path is not valid UTF-8: {}", worktree_path.display()))?;
+        let git = GitContext::new(utf8);
+        git.checkout_new_branch(&BranchName::new(branch_name))
+            .await
+            .map_err(|e| format!("{e:#}"))
     }
 
     async fn git_checkout_branch(
         worktree_path: &std::path::Path,
         branch_name: &str,
     ) -> Result<(), String> {
-        let worktree_path = worktree_path.to_path_buf();
-        let branch_name = branch_name.to_owned();
-        tokio::task::spawn_blocking(move || {
-            let output = Command::new("git")
-                .arg("-C")
-                .arg(&worktree_path)
-                .args(["checkout", &branch_name])
-                .output()
-                .map_err(|error| format!("git checkout failed: {error}"))?;
-            if output.status.success() {
-                Ok(())
-            } else {
-                Err(Self::git_command_failure("git checkout", &output))
-            }
-        })
-        .await
-        .map_err(|error| format!("git checkout task failed: {error}"))?
+        let utf8 = camino::Utf8Path::from_path(worktree_path)
+            .ok_or_else(|| format!("path is not valid UTF-8: {}", worktree_path.display()))?;
+        let git = GitContext::new(utf8);
+        git.checkout(&BranchName::new(branch_name))
+            .await
+            .map_err(|e| format!("{e:#}"))
     }
 
     async fn save_session_state_to_timestamped_branch(
@@ -5479,60 +5363,42 @@ release candidates. Make sure tests pass before calling mate_submit."
     /// Failures are logged but not propagated — a failed rebase is aborted
     /// and work continues on the un-rebased branch.
     async fn rebase_worktree_on_base(worktree_path: &std::path::Path, base_branch: &str) {
-        let worktree_path = worktree_path.to_path_buf();
-        let base_branch = base_branch.to_owned();
-        let log_path = worktree_path.clone();
-        let log_base = base_branch.clone();
-        let result = tokio::task::spawn_blocking(move || {
-            // Fetch latest base branch from origin first
-            let _ = Command::new("git")
-                .arg("-C")
-                .arg(&worktree_path)
-                .args(["fetch", "origin", &base_branch])
-                .output();
+        let Some(utf8) = camino::Utf8Path::from_path(worktree_path) else {
+            tracing::warn!(
+                worktree = %worktree_path.display(),
+                "worktree path is not valid UTF-8, skipping rebase"
+            );
+            return;
+        };
+        let git = GitContext::new(utf8);
 
-            let rebase = Command::new("git")
-                .arg("-C")
-                .arg(&worktree_path)
-                .args(["rebase", &format!("origin/{base_branch}")])
-                .output()
-                .map_err(|e| format!("git rebase failed to start: {e}"))?;
+        // Fetch latest base branch from origin first
+        let _ = git.fetch(&RemoteName::new("origin"), base_branch).await;
 
-            if rebase.status.success() {
-                Ok(())
-            } else {
-                // Abort the failed rebase so the worktree is clean
-                let _ = Command::new("git")
-                    .arg("-C")
-                    .arg(&worktree_path)
-                    .args(["rebase", "--abort"])
-                    .output();
-                let stderr = String::from_utf8_lossy(&rebase.stderr).trim().to_owned();
-                Err(format!("rebase failed (aborted): {stderr}"))
-            }
-        })
-        .await;
-
-        match result {
-            Ok(Ok(())) => {
+        let onto = Rev::new(format!("origin/{base_branch}"));
+        match git.rebase(&onto).await {
+            Ok(ship_git::RebaseOutcome::Success) => {
                 tracing::info!(
-                    worktree = %log_path.display(),
-                    base = %log_base,
+                    worktree = %worktree_path.display(),
+                    base = %base_branch,
                     "rebased worktree onto base branch"
                 );
             }
-            Ok(Err(err)) => {
+            Ok(ship_git::RebaseOutcome::Conflict { .. }) => {
+                git.rebase_abort_quiet().await;
                 tracing::warn!(
-                    worktree = %log_path.display(),
-                    base = %log_base,
-                    error = %err,
-                    "failed to rebase worktree onto base branch"
+                    worktree = %worktree_path.display(),
+                    base = %base_branch,
+                    "failed to rebase worktree onto base branch: conflicts (aborted)"
                 );
             }
             Err(err) => {
+                git.rebase_abort_quiet().await;
                 tracing::warn!(
+                    worktree = %worktree_path.display(),
+                    base = %base_branch,
                     error = %err,
-                    "rebase task panicked"
+                    "failed to rebase worktree onto base branch"
                 );
             }
         }
@@ -8319,23 +8185,11 @@ impl Ship for ShipImpl {
             return Vec::new();
         };
 
-        let output = Command::new("git")
-            .args(["-C", project_path.as_str(), "branch", "-a"])
-            .output();
-        let Ok(output) = output else {
-            return Vec::new();
-        };
-        if !output.status.success() {
-            return Vec::new();
-        }
-
-        String::from_utf8_lossy(&output.stdout)
-            .lines()
-            .map(str::trim)
-            .map(|line| line.strip_prefix("* ").unwrap_or(line))
-            .filter(|line| !line.is_empty())
-            .map(ToOwned::to_owned)
-            .collect()
+        let git = GitContext::new(project_path);
+        git.branch_list_all()
+            .await
+            .map(|branches| branches.into_iter().map(|b| b.into_string()).collect())
+            .unwrap_or_default()
     }
 
     // r[session.list]
