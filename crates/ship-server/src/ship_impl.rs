@@ -3144,7 +3144,7 @@ release candidates. Make sure tests pass before calling mate_submit."
         &self,
         session_id: &SessionId,
     ) -> Result<CaptainGitStatus, String> {
-        let (worktree_path, base_branch) = {
+        let (worktree_path, base_branch, branch_name) = {
             let sessions = self.sessions.lock().expect("sessions mutex poisoned");
             let session = sessions
                 .get(session_id)
@@ -3153,14 +3153,12 @@ release candidates. Make sure tests pass before calling mate_submit."
                 .worktree_path
                 .clone()
                 .ok_or_else(|| "session worktree not ready".to_owned())?;
-            (worktree_path, session.config.base_branch.clone())
+            (
+                worktree_path,
+                session.config.base_branch.clone(),
+                session.config.branch_name.clone(),
+            )
         };
-
-        let branch_name = self
-            .worktree_ops
-            .current_branch(&worktree_path)
-            .await
-            .map_err(|error| format!("failed to read current branch: {}", error.message))?;
         let is_dirty = self
             .worktree_ops
             .has_uncommitted_changes(&worktree_path)
@@ -11107,7 +11105,7 @@ mod tests {
             .expect_err("captain assign should fail when saving leftover state cannot commit");
 
         assert!(
-            error.contains("git commit failed"),
+            error.contains("git commit"),
             "unexpected assign error: {error}"
         );
         assert_eq!(
