@@ -110,6 +110,7 @@ pub struct ActiveSession {
     pub captain_has_ever_assigned: bool,
     pub captain_delegation_reminded: bool,
     // Runtime-only fields (not persisted)
+    pub snapshot_manager: Option<ship_code::snapshot::SnapshotManager>,
     pub utility_handle: Option<crate::AgentHandle>,
     pub utility_last_task_id: Option<TaskId>,
     pub mate_activity_buffer: Vec<String>,
@@ -228,6 +229,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             is_read: true,
             captain_has_ever_assigned: false,
             captain_delegation_reminded: false,
+            snapshot_manager: None,
             utility_handle: None,
             utility_last_task_id: None,
             mate_activity_buffer: Vec::new(),

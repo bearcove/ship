@@ -7,6 +7,7 @@ use facet::Facet;
 /// Commit) stop the batch on failure. Communication ops (Message) are
 /// fire-and-forget.
 #[derive(Debug, Facet)]
+#[facet(rename_all = "snake_case")]
 #[repr(u8)]
 pub enum Op {
     // ── Read-only ────────────────────────────────────────────────
@@ -131,6 +132,7 @@ pub struct EditOp {
 
 /// A single edit within a file.
 #[derive(Debug, Facet)]
+#[facet(rename_all = "snake_case")]
 #[repr(u8)]
 pub enum Edit {
     /// Replace a range of lines (1-indexed, inclusive) with new content.
@@ -248,6 +250,7 @@ pub struct OpResult {
 }
 
 #[derive(Debug, Facet)]
+#[facet(rename_all = "snake_case")]
 #[repr(u8)]
 pub enum SingleResult {
     Search(SearchResult),

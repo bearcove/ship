@@ -541,6 +541,11 @@ impl<C: EngineCallbacks> Engine<C> {
         Ok(format!("Work submitted for review: {}", op.summary))
     }
 
+    /// Consume the engine and return the snapshot manager for re-use.
+    pub fn into_snapshot_manager(self) -> SnapshotManager {
+        self.snapshots
+    }
+
     // ── Helpers ──────────────────────────────────────────────────
 
     fn check_mutation(&self) -> Result<(), String> {

@@ -6,6 +6,7 @@ use ship_git::{CommitHash, GitContext, Rev};
 /// Every mutation creates a shadow commit. The agent never sees these.
 /// When the agent calls `commit`, shadow commits are squashed into one
 /// clean commit with their message.
+#[derive(Debug, Clone)]
 pub struct SnapshotManager {
     git: GitContext,
     /// Monotonically increasing snapshot counter (per session).

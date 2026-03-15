@@ -33,6 +33,7 @@ reqwest = { workspace = true }
 ulid = { workspace = true }
 roam = { workspace = true }
 roam-websocket = { workspace = true }
+ship-code = { path = "../ship-code" }
 ship-core = { path = "../ship-core" }
 ship-git = { path = "../ship-git" }
 ship-service = { path = "../ship-service" }

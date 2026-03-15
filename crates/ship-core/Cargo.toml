@@ -12,6 +12,7 @@ rustdoc-args = ["--html-in-header", "arborium-header.html"]
 camino = { workspace = true }
 chrono = { workspace = true }
 eyre = { workspace = true }
+ship-code = { path = "../ship-code" }
 ship-git = { path = "../ship-git" }
 ship-types = { path = "../ship-types" }
 agent-client-protocol = { workspace = true }

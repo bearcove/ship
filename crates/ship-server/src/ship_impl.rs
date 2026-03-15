@@ -640,6 +640,7 @@ impl ShipImpl {
                 is_read: persisted.is_read,
                 captain_has_ever_assigned: persisted.captain_has_ever_assigned,
                 captain_delegation_reminded: persisted.captain_delegation_reminded,
+                snapshot_manager: None,
                 utility_handle: None,
                 utility_last_task_id: None,
                 mate_activity_buffer: Vec::new(),
@@ -1633,10 +1634,19 @@ impl ShipImpl {
                 .map_err(|error| error.message)?
         };
 
+        // Initialize snapshot manager for the worktree
+        let snapshot_manager = if let Some(utf8) = camino::Utf8Path::from_path(&worktree_path) {
+            let git = ship_git::GitContext::new(utf8);
+            ship_code::snapshot::SnapshotManager::new(git).await.ok()
+        } else {
+            None
+        };
+
         {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             if let Some(session) = sessions.get_mut(session_id) {
                 session.worktree_path = Some(worktree_path.clone());
+                session.snapshot_manager = snapshot_manager;
             }
         }
         let _ = self.persist_session(session_id).await;
@@ -6112,11 +6122,21 @@ release candidates. Make sure tests pass before calling mate_submit."
             }
         };
         self.log_startup_step_elapsed(&session_id, "create-worktree", step_started_at);
+
+        // Initialize snapshot manager for the worktree
+        let snapshot_manager = if let Some(utf8) = camino::Utf8Path::from_path(&worktree_path) {
+            let git = ship_git::GitContext::new(utf8);
+            ship_code::snapshot::SnapshotManager::new(git).await.ok()
+        } else {
+            None
+        };
+
         {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             if let Some(session) = sessions.get_mut(&session_id) {
                 session.config.branch_name = session_git_names.branch_name.clone();
                 session.worktree_path = Some(worktree_path.clone());
+                session.snapshot_manager = snapshot_manager;
             }
         }
         let _ = self.persist_session(&session_id).await;
@@ -8353,6 +8373,7 @@ impl Ship for ShipImpl {
             is_read: true,
             captain_has_ever_assigned: false,
             captain_delegation_reminded: false,
+            snapshot_manager: None,
             utility_handle: None,
             utility_last_task_id: None,
             mate_activity_buffer: Vec::new(),
@@ -9473,6 +9494,137 @@ impl ShipImpl {
 
         None
     }
+
+    // r[tool.code]
+    /// Unified code tool: parses a JSON array of operations and dispatches
+    /// them through the ship-code engine.
+    async fn tool_code(
+        &self,
+        session_id: &SessionId,
+        role: &str,
+        ops_json: &str,
+    ) -> Result<String, String> {
+        let ops: Vec<ship_code::ops::Op> =
+            facet_json::from_str(ops_json).map_err(|e| format!("failed to parse ops: {e}"))?;
+
+        if ops.is_empty() {
+            return Err("ops array is empty".to_owned());
+        }
+
+        // For captain: check delegation gate if any ops are mutations
+        if role == "captain" && ops.iter().any(|op| op.is_mutation()) {
+            if let Some(resp) = self.check_captain_delegation_gate(session_id).await {
+                return Err(resp.text);
+            }
+        }
+
+        let (worktree_path, snapshot_manager) = {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            let session = sessions
+                .get_mut(session_id)
+                .ok_or_else(|| format!("session not found: {}", session_id.0))?;
+            let worktree_path = Self::current_task_worktree_path(session)?.to_path_buf();
+            let snapshot_manager = session.snapshot_manager.take().ok_or_else(|| {
+                "snapshot manager not initialized (no active task?)".to_owned()
+            })?;
+            (worktree_path, snapshot_manager)
+        };
+
+        let callbacks = ShipEngineCallbacks {
+            ship: self.clone(),
+            session_id: session_id.clone(),
+            role: role.to_owned(),
+        };
+
+        let mut engine =
+            ship_code::engine::Engine::new(worktree_path, snapshot_manager, callbacks);
+
+        let result = engine.execute(&ops).await;
+        let output = result.format();
+        let is_error = result.stopped_early;
+
+        // Put the snapshot manager back (engine consumed it, but we can extract it)
+        let snapshot_manager = engine.into_snapshot_manager();
+        {
+            let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+            if let Some(session) = sessions.get_mut(session_id) {
+                session.snapshot_manager = Some(snapshot_manager);
+            }
+        }
+
+        if is_error {
+            Err(output)
+        } else {
+            Ok(output)
+        }
+    }
+}
+
+/// Callbacks bridging ship-code's engine to ship-server's session infrastructure.
+struct ShipEngineCallbacks {
+    ship: ShipImpl,
+    session_id: SessionId,
+    role: String,
+}
+
+impl ship_code::callbacks::EngineCallbacks for ShipEngineCallbacks {
+    async fn send_message(&self, to: &str, text: &str) -> eyre::Result<()> {
+        match (self.role.as_str(), to) {
+            ("mate", "captain") => {
+                self.ship
+                    .mate_tool_send_update(&self.session_id, text.to_owned())
+                    .await
+                    .map_err(|e| eyre::eyre!("{e}"))?;
+                Ok(())
+            }
+            _ => {
+                eyre::bail!(
+                    "message routing from {} to {} is not yet supported via the code tool",
+                    self.role,
+                    to
+                );
+            }
+        }
+    }
+
+    async fn submit(&self, summary: &str) -> eyre::Result<()> {
+        self.ship
+            .mate_tool_submit(&self.session_id, summary.to_owned())
+            .await
+            .map_err(|e| eyre::eyre!("{e}"))?;
+        Ok(())
+    }
+
+    async fn on_commit(&self, _hash: &str, _message: &str) -> eyre::Result<()> {
+        // The engine already did the git squash. We just need to persist session state.
+        self.ship
+            .persist_session(&self.session_id)
+            .await
+            .map_err(|e| eyre::eyre!("{e}"))?;
+        Ok(())
+    }
+
+    fn check_mutation_allowed(&self) -> eyre::Result<()> {
+        if self.role == "captain" {
+            let sessions = self.ship.sessions.lock().expect("sessions mutex poisoned");
+            if let Some(session) = sessions.get(&self.session_id) {
+                if session.mate_handle.is_some() {
+                    if let Some(ref task) = session.current_task {
+                        if !task.record.status.is_terminal() {
+                            eyre::bail!(
+                                "The mate is currently working. Wait for submission before editing."
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn caller_role(&self) -> &str {
+        &self.role
+    }
 }
 
 #[derive(Clone)]
@@ -9698,6 +9850,15 @@ impl CaptainMcp for CaptainMcpSessionService {
     async fn captain_abort_rebase(&self) -> McpToolCallResponse {
         Self::response(self.ship.captain_tool_abort_rebase(&self.session_id).await)
     }
+
+    // r[captain.tool.code]
+    async fn captain_code(&self, ops_json: String) -> McpToolCallResponse {
+        Self::response(
+            self.ship
+                .tool_code(&self.session_id, "captain", &ops_json)
+                .await,
+        )
+    }
 }
 
 #[derive(Clone)]
@@ -9829,6 +9990,15 @@ impl MateMcp for MateMcpSessionService {
     // r[mate.tool.submit]
     async fn mate_submit(&self, summary: String) -> McpToolCallResponse {
         Self::response(self.ship.mate_tool_submit(&self.session_id, summary).await)
+    }
+
+    // r[mate.tool.code]
+    async fn code(&self, ops_json: String) -> McpToolCallResponse {
+        Self::response(
+            self.ship
+                .tool_code(&self.session_id, "mate", &ops_json)
+                .await,
+        )
     }
 }
 
@@ -10411,6 +10581,7 @@ mod tests {
             captain_has_ever_assigned: false,
             captain_delegation_reminded: false,
             diff_stats: None,
+            snapshot_manager: None,
             utility_handle: None,
             utility_last_task_id: None,
             mate_activity_buffer: Vec::new(),

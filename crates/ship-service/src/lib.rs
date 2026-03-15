@@ -207,6 +207,9 @@ pub trait CaptainMcp {
 
     // r[captain.tool.rebase-abort]
     async fn captain_abort_rebase(&self) -> McpToolCallResponse;
+
+    // r[captain.tool.code]
+    async fn captain_code(&self, ops_json: String) -> McpToolCallResponse;
 }
 
 // r[mate.tool.implementation]
@@ -252,6 +255,9 @@ pub trait MateMcp {
 
     // r[mate.tool.submit]
     async fn mate_submit(&self, summary: String) -> McpToolCallResponse;
+
+    // r[mate.tool.code]
+    async fn code(&self, ops_json: String) -> McpToolCallResponse;
 }
 
 // r[admiral.tool.implementation]

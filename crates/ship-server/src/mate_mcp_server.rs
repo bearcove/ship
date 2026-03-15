@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use super::worktree_tools::{
-    ToolDefinition, commit_tool, edit_confirm_tool, edit_prepare_tool, read_file_tool,
+    ToolDefinition, code_tool, commit_tool, edit_confirm_tool, edit_prepare_tool, read_file_tool,
     run_command_tool, to_sdk_tool, web_search_tool, write_file_tool,
 };
 use async_trait::async_trait;
@@ -212,6 +212,18 @@ impl ServerHandler for MateMcpHandler {
                     .await
                     .map_err(call_tool_rpc_error)?
             }
+            // r[mate.tool.code]
+            "code" => {
+                let Some(ops) = arguments.get("ops").and_then(Value::as_array) else {
+                    return Ok(tool_result("missing required argument: ops", true));
+                };
+                let ops_json = serde_json::to_string(ops)
+                    .map_err(|e| call_tool_rpc_error(format!("failed to serialize ops: {e}")))?;
+                self.client
+                    .code(ops_json)
+                    .await
+                    .map_err(call_tool_rpc_error)?
+            }
             "web_search" => {
                 let Some(query) = arguments.get("query").and_then(Value::as_str) else {
                     return Ok(tool_result("missing required argument: query", true));
@@ -381,6 +393,7 @@ fn tool_definitions() -> Vec<ToolDefinition> {
             }),
         },
         web_search_tool(),
+        code_tool(),
     ]
 }
 
