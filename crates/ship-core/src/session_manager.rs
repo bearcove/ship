@@ -1497,6 +1497,9 @@ pub fn apply_event_to_materialized_state(session: &mut ActiveSession, event: &Se
         // Checks lifecycle events carry no materialized state — subscribers
         // observe them via the live broadcast channel only.
         SessionEvent::ChecksStarted { .. } | SessionEvent::ChecksFinished { .. } => {}
+        // BlockFinalized is an internal event for server-side processing
+        // (e.g. mention detection). No materialized state to update.
+        SessionEvent::BlockFinalized { .. } => {}
     }
 }
 

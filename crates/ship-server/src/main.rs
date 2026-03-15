@@ -549,6 +549,21 @@ fn log_message(started_at: Instant, message: &SubscribeMessage) {
                 } => {
                     format!("checks finished context={context:?} all_passed={all_passed}")
                 }
+                SessionEvent::BlockFinalized {
+                    role,
+                    block_id,
+                    text,
+                } => {
+                    let preview = if text.len() > 80 {
+                        format!("{}...", &text[..80])
+                    } else {
+                        text.clone()
+                    };
+                    format!(
+                        "block finalized role={role:?} block_id={} text={preview:?}",
+                        block_id.0
+                    )
+                }
             };
             println!(
                 "[probe +{:>5}ms] seq={} {}",

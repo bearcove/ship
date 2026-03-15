@@ -769,6 +769,7 @@ impl ShipImpl {
             SessionEvent::AgentAcpInfoChanged { .. } => "AgentAcpInfoChanged",
             SessionEvent::ChecksStarted { .. } => "ChecksStarted",
             SessionEvent::ChecksFinished { .. } => "ChecksFinished",
+            SessionEvent::BlockFinalized { .. } => "BlockFinalized",
         }
     }
 
@@ -776,6 +777,7 @@ impl ShipImpl {
         match event {
             SessionEvent::BlockAppend { role, .. }
             | SessionEvent::BlockPatch { role, .. }
+            | SessionEvent::BlockFinalized { role, .. }
             | SessionEvent::AgentStateChanged { role, .. }
             | SessionEvent::ContextUpdated { role, .. }
             | SessionEvent::AgentModelChanged { role, .. }
@@ -797,7 +799,8 @@ impl ShipImpl {
     fn event_block_id(event: &SessionEvent) -> Option<&str> {
         match event {
             SessionEvent::BlockAppend { block_id, .. }
-            | SessionEvent::BlockPatch { block_id, .. } => Some(&block_id.0),
+            | SessionEvent::BlockPatch { block_id, .. }
+            | SessionEvent::BlockFinalized { block_id, .. } => Some(&block_id.0),
             SessionEvent::AgentStateChanged { .. }
             | SessionEvent::SessionStartupChanged { .. }
             | SessionEvent::TaskStatusChanged { .. }
@@ -822,6 +825,7 @@ impl ShipImpl {
             | SessionEvent::TaskStarted { task_id, .. } => Some(&task_id.0),
             SessionEvent::BlockAppend { .. }
             | SessionEvent::BlockPatch { .. }
+            | SessionEvent::BlockFinalized { .. }
             | SessionEvent::AgentStateChanged { .. }
             | SessionEvent::SessionStartupChanged { .. }
             | SessionEvent::ContextUpdated { .. }
@@ -7305,6 +7309,9 @@ Reply with \"Ready.\" to confirm.";
         };
 
         let mut stream = self.agent_driver.notifications(&handle);
+        // Track the currently-open text block so we can emit BlockFinalized
+        // when streaming is complete (next block arrives or drain loop ends).
+        let mut open_text_block: Option<(BlockId, Role, String)> = None;
         while let Some(event) = stream.next().await {
             let event_seq = {
                 let sessions = self.sessions.lock().expect("sessions mutex poisoned");
@@ -7344,6 +7351,63 @@ Reply with \"Ready.\" to confirm.";
                     }
                 }
                 continue;
+            }
+
+            // --- Text block finalization tracking ---
+            // Finalize the previous open text block when a new block starts or
+            // a non-text block arrives.
+            match &event {
+                SessionEvent::BlockAppend {
+                    block_id,
+                    role: ev_role,
+                    block: ContentBlock::Text { text, .. },
+                } => {
+                    // Finalize any previously-open text block
+                    if let Some((prev_id, prev_role, prev_text)) = open_text_block.take() {
+                        let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                        if let Some(session) = sessions.get_mut(session_id) {
+                            apply_event(
+                                session,
+                                SessionEvent::BlockFinalized {
+                                    block_id: prev_id,
+                                    role: prev_role,
+                                    text: prev_text,
+                                },
+                            );
+                        }
+                    }
+                    // Start tracking the new text block
+                    open_text_block = Some((block_id.clone(), *ev_role, text.clone()));
+                }
+                SessionEvent::BlockAppend { .. } => {
+                    // Non-text block arrived — finalize any open text block
+                    if let Some((prev_id, prev_role, prev_text)) = open_text_block.take() {
+                        let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
+                        if let Some(session) = sessions.get_mut(session_id) {
+                            apply_event(
+                                session,
+                                SessionEvent::BlockFinalized {
+                                    block_id: prev_id,
+                                    role: prev_role,
+                                    text: prev_text,
+                                },
+                            );
+                        }
+                    }
+                }
+                SessionEvent::BlockPatch {
+                    block_id,
+                    patch: BlockPatch::TextAppend { text },
+                    ..
+                } => {
+                    // Append streaming text to the tracked block
+                    if let Some((ref tracked_id, _, ref mut tracked_text)) = open_text_block {
+                        if tracked_id == block_id {
+                            tracked_text.push_str(text);
+                        }
+                    }
+                }
+                _ => {}
             }
 
             // Determine before consuming the event whether it's a mate TextAppend
