@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Box, Flex, IconButton, Text, Tooltip } from "@radix-ui/themes";
+import { Box, Dialog, Flex, Heading, IconButton, Text, Tooltip } from "@radix-ui/themes";
 import {
   Anchor,
   BugIcon,
   FolderSimplePlusIcon,
   NotePencilIcon,
+  QuestionIcon,
 } from "@phosphor-icons/react";
 import type { SessionSummary, TaskStatus } from "../generated/ship";
 import { AddProjectDialog } from "./AddProjectDialog";
@@ -238,7 +239,61 @@ export function SessionSidebar({
           </Box>
         )}
 
-        <Flex justify="end" pt="3" pb="4" px="3" style={{ flexShrink: 0 }}>
+        <Flex justify="end" gap="3" pt="3" pb="4" px="3" style={{ flexShrink: 0 }}>
+          <Dialog.Root>
+            <Tooltip content="Voice commands help">
+              <Dialog.Trigger>
+                <IconButton
+                  variant="ghost"
+                  size="3"
+                  color="gray"
+                  aria-label="Voice commands help"
+                >
+                  <QuestionIcon size={20} />
+                </IconButton>
+              </Dialog.Trigger>
+            </Tooltip>
+            <Dialog.Content maxWidth="420px">
+              <Dialog.Title>Voice Commands</Dialog.Title>
+              <Dialog.Description size="2" color="gray" mb="4">
+                How voice mode and transcription work.
+              </Dialog.Description>
+              <Flex direction="column" gap="3">
+                <Box>
+                  <Heading size="2" mb="1">Activate voice mode</Heading>
+                  <Text size="2" color="gray">
+                    Say <strong>"voice mode"</strong>, <strong>"come alive"</strong>, or{" "}
+                    <strong>"hey ship"</strong> during recording.
+                  </Text>
+                </Box>
+                <Box>
+                  <Heading size="2" mb="1">Submit</Heading>
+                  <Text size="2" color="gray">
+                    End any phrase with <strong>"over"</strong> to submit.
+                  </Text>
+                </Box>
+                <Box>
+                  <Heading size="2" mb="1">Submit + exit voice mode</Heading>
+                  <Text size="2" color="gray">
+                    End with <strong>"over and out"</strong> to submit and leave voice mode.
+                  </Text>
+                </Box>
+                <Box>
+                  <Heading size="2" mb="1">Barge-in</Heading>
+                  <Text size="2" color="gray">
+                    Start speaking while the captain is talking to interrupt.
+                  </Text>
+                </Box>
+              </Flex>
+              <Flex justify="end" mt="4">
+                <Dialog.Close>
+                  <IconButton variant="soft" color="gray">
+                    <Text size="2">Got it</Text>
+                  </IconButton>
+                </Dialog.Close>
+              </Flex>
+            </Dialog.Content>
+          </Dialog.Root>
           <Tooltip content="Add project">
             <IconButton
               variant="ghost"
