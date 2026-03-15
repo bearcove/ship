@@ -6,6 +6,7 @@ use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use crate::message_templates;
 use futures_util::StreamExt;
 use roam::{
     AcceptedConnection, ConnectionAcceptor, ConnectionSettings, Driver, Metadata, MetadataEntry,
