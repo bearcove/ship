@@ -226,6 +226,8 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             captain_prompt_gen: 0,
             mate_prompt_gen: 0,
             is_read: true,
+            captain_has_ever_assigned: false,
+            captain_delegation_reminded: false,
             utility_handle: None,
             utility_last_task_id: None,
             mate_activity_buffer: Vec::new(),
@@ -1145,6 +1147,8 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             captain_acp_session_id: session.captain_acp_session_id.clone(),
             mate_acp_session_id: session.mate_acp_session_id.clone(),
             is_read: session.is_read,
+            captain_has_ever_assigned: session.captain_has_ever_assigned,
+            captain_delegation_reminded: session.captain_delegation_reminded,
         };
 
         self.store
