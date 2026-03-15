@@ -46,6 +46,7 @@ tower = "0.5"
 tower-http = { version = "0.6", features = ["fs"] }
 whisper-cpp-plus = { version = "0.1.4", features = ["metal", "async", "tokio"] }
 dirs-next = "2.0.0"
+sailfish = "0.9"
 cpal = "0.15"
 silero-vad-rust = "6.2.1"
 anyhow = "1"
