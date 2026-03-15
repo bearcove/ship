@@ -4823,6 +4823,7 @@ unless the task explicitly targets a subdirectory inside the current worktree.
         session_id: &SessionId,
         path: String,
         content: String,
+        require_plan: bool,
     ) -> McpToolCallResponse {
         let relative_path = match Self::validate_worktree_path(&path) {
             Ok(p) => p.to_path_buf(),
@@ -4846,14 +4847,16 @@ unless the task explicitly targets a subdirectory inside the current worktree.
                     };
                 }
             };
-            match Self::require_mate_plan(session) {
-                Ok(()) => {}
-                Err(e) => {
-                    return McpToolCallResponse {
-                        text: e,
-                        is_error: true,
-                        diffs: vec![],
-                    };
+            if require_plan {
+                match Self::require_mate_plan(session) {
+                    Ok(()) => {}
+                    Err(e) => {
+                        return McpToolCallResponse {
+                            text: e,
+                            is_error: true,
+                            diffs: vec![],
+                        };
+                    }
                 }
             }
             match Self::current_task_worktree_path(session) {
