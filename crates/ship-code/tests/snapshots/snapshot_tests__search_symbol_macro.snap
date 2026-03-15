@@ -1,0 +1,17 @@
+---
+source: crates/ship-code/tests/snapshot_tests.rs
+expression: format_output(&output)
+---
+═══ Symbol matches ═══
+macro log_debug  src/utils.rs:37-42
+```
+macro_rules! log_debug {
+    ($($arg:tt)*) => {
+        #[cfg(debug_assertions)]
+        eprintln!("[DEBUG] {}", format!($($arg)*));
+    };
+}
+```
+
+═══ Text matches ═══
+src/utils.rs:37: macro_rules! log_debug {

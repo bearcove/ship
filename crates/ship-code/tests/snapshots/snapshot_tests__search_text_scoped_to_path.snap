@@ -1,0 +1,8 @@
+---
+source: crates/ship-code/tests/snapshot_tests.rs
+expression: format_output(&output)
+---
+═══ Text matches ═══
+:2: pub fn retry<F, T, E>(max_retries: u32, mut f: F) -> Result<T, E>
+:17: pub fn truncate(s: &str, max_len: usize) -> String {
+:26: pub fn parse_kv(s: &str) -> Option<(&str, &str)> {

@@ -1,0 +1,8 @@
+---
+source: crates/ship-code/tests/snapshot_tests.rs
+expression: format_output(&output)
+---
+═══ Text matches ═══
+src/server.rs:67:     pub fn add_session(&mut self, session: Session) {
+src/server.rs:71:     pub fn remove_session(&mut self, id: &str) -> Option<Session> {
+src/server.rs:84:     pub fn find_user_sessions(&self, user: &str) -> Vec<&Session> {

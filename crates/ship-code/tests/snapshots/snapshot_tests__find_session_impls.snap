@@ -1,0 +1,38 @@
+---
+source: crates/ship-code/tests/snapshot_tests.rs
+expression: format_output(&output)
+---
+═══ Symbol matches ═══
+impl Session  src/server.rs:39-51
+```
+impl Session {
+    pub fn new(id: &str, user: &str) -> Self {
+        Self {
+            id: id.to_owned(),
+            user: user.to_owned(),
+            created_at: 0,
+        }
+    }
+
+    pub fn age_seconds(&self, now: u64) -> u64 {
+        now.saturating_sub(self.created_at)
+    }
+}
+```
+
+impl SessionValidator for Session  src/server.rs:118-126
+```
+impl SessionValidator for Session {
+    fn is_valid(&self, now: u64) -> bool {
+        self.age_seconds(now) < MAX_SESSION_AGE
+    }
+
+    fn refresh(&mut self) {
+        // Reset the created_at timestamp
+    }
+}
+```
+
+═══ Text matches ═══
+src/server.rs:39: impl Session {
+src/server.rs:118: impl SessionValidator for Session {

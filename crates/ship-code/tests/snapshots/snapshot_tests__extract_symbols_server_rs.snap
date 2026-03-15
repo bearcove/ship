@@ -1,0 +1,32 @@
+---
+source: crates/ship-code/tests/snapshot_tests.rs
+expression: "summary.join(\"\\n\")"
+---
+struct ServerConfig [server.rs:4..9]
+impl ServerConfig [server.rs:11..24]
+fn new [server.rs:12..18] (in ServerConfig)
+fn with_max_connections [server.rs:20..23] (in ServerConfig)
+impl Default for ServerConfig [server.rs:26..30]
+fn default [server.rs:27..29] (in Default for ServerConfig)
+struct Session [server.rs:32..37]
+impl Session [server.rs:39..51]
+fn new [server.rs:40..46] (in Session)
+fn age_seconds [server.rs:48..50] (in Session)
+struct Server [server.rs:53..57]
+impl Server [server.rs:59..90]
+fn new [server.rs:60..65] (in Server)
+fn add_session [server.rs:67..69] (in Server)
+fn remove_session [server.rs:71..73] (in Server)
+fn session_count [server.rs:75..77] (in Server)
+fn is_full [server.rs:79..81] (in Server)
+fn find_user_sessions [server.rs:83..89] (in Server)
+enum ServerError [server.rs:92..98]
+impl std::fmt::Display for ServerError [server.rs:100..108]
+fn fmt [server.rs:101..107] (in std::fmt::Display for ServerError)
+const MAX_SESSION_AGE [server.rs:110..110]
+const DEFAULT_TIMEOUT [server.rs:111..111]
+trait SessionValidator [server.rs:113..116]
+impl SessionValidator for Session [server.rs:118..126]
+fn is_valid [server.rs:119..121] (in SessionValidator for Session)
+fn refresh [server.rs:123..125] (in SessionValidator for Session)
+fn create_test_server [server.rs:128..137]

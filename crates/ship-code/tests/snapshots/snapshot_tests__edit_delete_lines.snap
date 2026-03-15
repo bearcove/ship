@@ -1,0 +1,19 @@
+---
+source: crates/ship-code/tests/snapshot_tests.rs
+expression: diff
+---
+--- a/src/server.rs
++++ b/src/server.rs
+@@ -104,12 +104,6 @@
+             Self::SessionNotFound(id) => write!(f, "session not found: {id}"),
+             Self::MaxConnectionsReached => write!(f, "max connections reached"),
+         }
+-    }
+-}
+-
+-const MAX_SESSION_AGE: u64 = 3600;
+-const DEFAULT_TIMEOUT: u64 = 30;
+-
+ trait SessionValidator {
+     fn is_valid(&self, now: u64) -> bool;
+     fn refresh(&mut self);

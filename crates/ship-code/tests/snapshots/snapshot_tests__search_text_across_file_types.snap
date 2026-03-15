@@ -1,0 +1,10 @@
+---
+source: crates/ship-code/tests/snapshot_tests.rs
+expression: format_output(&output)
+---
+═══ Text matches ═══
+src/api.ts:18:   private token: string | null = null;
+src/api.ts:24:   setToken(token: string): void {
+src/api.ts:25:     this.token = token;
+src/api.ts:63:     if (this.token) {
+src/api.ts:64:       headers["Authorization"] = `Bearer ${this.token}`;

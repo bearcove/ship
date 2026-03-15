@@ -1,0 +1,25 @@
+---
+source: crates/ship-code/tests/snapshot_tests.rs
+expression: format_output(&output)
+---
+═══ Symbol matches ═══
+fn retry  src/utils.rs:1-14
+```
+/// Retry a fallible operation up to `max_retries` times.
+pub fn retry<F, T, E>(max_retries: u32, mut f: F) -> Result<T, E>
+where
+    F: FnMut() -> Result<T, E>,
+{
+    let mut last_err = None;
+    for _ in 0..max_retries {
+        match f() {
+            Ok(val) => return Ok(val),
+            Err(e) => last_err = Some(e),
+        }
+    }
+    Err(last_err.unwrap())
+}
+```
+
+═══ Text matches ═══
+src/utils.rs:2: pub fn retry<F, T, E>(max_retries: u32, mut f: F) -> Result<T, E>

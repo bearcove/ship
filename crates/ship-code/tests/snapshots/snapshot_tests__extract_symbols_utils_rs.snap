@@ -1,0 +1,12 @@
+---
+source: crates/ship-code/tests/snapshot_tests.rs
+expression: "summary.join(\"\\n\")"
+---
+fn retry [1..14]
+fn truncate [16..23]
+fn parse_kv [25..28]
+static VERSION [30..30]
+const MAX_RETRIES [32..32]
+const BUFFER_SIZE [33..33]
+type Result [35..35]
+macro log_debug [37..42]

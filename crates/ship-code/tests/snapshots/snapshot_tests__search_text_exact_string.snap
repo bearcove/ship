@@ -1,0 +1,19 @@
+---
+source: crates/ship-code/tests/snapshot_tests.rs
+expression: format_output(&output)
+---
+═══ Symbol matches ═══
+fn with_max_connections  src/server.rs:20-23  (in ServerConfig)
+```
+pub fn with_max_connections(mut self, max: usize) -> Self {
+        self.max_connections = max;
+        self
+    }
+```
+
+═══ Text matches ═══
+src/server.rs:8:     pub max_connections: usize,
+src/server.rs:16:             max_connections: 100,
+src/server.rs:20:     pub fn with_max_connections(mut self, max: usize) -> Self {
+src/server.rs:21:         self.max_connections = max;
+src/server.rs:80:         self.sessions.len() >= self.config.max_connections

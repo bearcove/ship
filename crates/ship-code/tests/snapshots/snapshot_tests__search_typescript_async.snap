@@ -1,0 +1,9 @@
+---
+source: crates/ship-code/tests/snapshot_tests.rs
+expression: format_output(&output)
+---
+═══ Text matches ═══
+src/api.ts:28:   async getUser(id: string): Promise<ApiResponse<User>> {
+src/api.ts:35:   async listUsers(): Promise<ApiResponse<User[]>> {
+src/api.ts:42:   async createUser(user: Omit<User, "id">): Promise<ApiResponse<User>> {
+src/api.ts:51:   async deleteUser(id: string): Promise<ApiResponse<void>> {

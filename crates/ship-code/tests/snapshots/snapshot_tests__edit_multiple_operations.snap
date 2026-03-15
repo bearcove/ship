@@ -1,0 +1,16 @@
+---
+source: crates/ship-code/tests/snapshot_tests.rs
+expression: diff
+---
+--- a/src/utils.rs
++++ b/src/utils.rs
+@@ -29,8 +29,8 @@
+ 
+ pub static VERSION: &str = "0.1.0";
+ 
+-pub const MAX_RETRIES: u32 = 3;
+-pub const BUFFER_SIZE: usize = 8192;
++pub const MAX_RETRIES: u32 = 5;
++pub const BUFFER_SIZE: usize = 16384;
+ 
+ pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;

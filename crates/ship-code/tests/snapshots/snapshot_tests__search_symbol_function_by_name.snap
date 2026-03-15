@@ -1,0 +1,18 @@
+---
+source: crates/ship-code/tests/snapshot_tests.rs
+expression: format_output(&output)
+---
+═══ Symbol matches ═══
+fn find_user_sessions  src/server.rs:83-89  (in Server)
+```
+/// Find sessions belonging to a specific user.
+    pub fn find_user_sessions(&self, user: &str) -> Vec<&Session> {
+        self.sessions
+            .values()
+            .filter(|s| s.user == user)
+            .collect()
+    }
+```
+
+═══ Text matches ═══
+src/server.rs:84:     pub fn find_user_sessions(&self, user: &str) -> Vec<&Session> {

@@ -1,0 +1,40 @@
+---
+source: crates/ship-code/tests/snapshot_tests.rs
+expression: diff
+---
+--- a/src/server.rs
++++ b/src/server.rs
+@@ -5,7 +5,7 @@
+ pub struct ServerConfig {
+     pub host: String,
+     pub port: u16,
+-    pub max_connections: usize,
++    pub max_conns: usize,
+ }
+ 
+ impl ServerConfig {
+@@ -13,12 +13,12 @@
+         Self {
+             host: host.to_owned(),
+             port,
+-            max_connections: 100,
++            max_conns: 100,
+         }
+     }
+ 
+-    pub fn with_max_connections(mut self, max: usize) -> Self {
+-        self.max_connections = max;
++    pub fn with_max_conns(mut self, max: usize) -> Self {
++        self.max_conns = max;
+         self
+     }
+ }
+@@ -77,7 +77,7 @@
+     }
+ 
+     pub fn is_full(&self) -> bool {
+-        self.sessions.len() >= self.config.max_connections
++        self.sessions.len() >= self.config.max_conns
+     }
+ 
+     /// Find sessions belonging to a specific user.

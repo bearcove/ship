@@ -1,0 +1,34 @@
+---
+source: crates/ship-code/tests/snapshot_tests.rs
+expression: format_output(&output)
+---
+═══ Symbol matches ═══
+enum ServerError  src/server.rs:92-98
+```
+/// Error types for server operations.
+#[derive(Debug)]
+pub enum ServerError {
+    ConnectionRefused(String),
+    SessionNotFound(String),
+    MaxConnectionsReached,
+}
+```
+
+impl std::fmt::Display for ServerError  src/server.rs:100-108
+```
+impl std::fmt::Display for ServerError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ConnectionRefused(reason) => write!(f, "connection refused: {reason}"),
+            Self::SessionNotFound(id) => write!(f, "session not found: {id}"),
+            Self::MaxConnectionsReached => write!(f, "max connections reached"),
+        }
+    }
+}
+```
+
+═══ Text matches ═══
+src/server.rs:92: /// Error types for server operations.
+src/server.rs:94: pub enum ServerError {
+src/server.rs:100: impl std::fmt::Display for ServerError {
+src/utils.rs:35: pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;

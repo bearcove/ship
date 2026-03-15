@@ -1,0 +1,15 @@
+---
+source: crates/ship-code/tests/snapshot_tests.rs
+expression: format_output(&output)
+---
+═══ Symbol matches ═══
+const MAX_RETRIES  src/utils.rs:32-32
+```
+pub const MAX_RETRIES: u32 = 3;
+```
+
+═══ Text matches ═══
+src/utils.rs:1: /// Retry a fallible operation up to `max_retries` times.
+src/utils.rs:2: pub fn retry<F, T, E>(max_retries: u32, mut f: F) -> Result<T, E>
+src/utils.rs:7:     for _ in 0..max_retries {
+src/utils.rs:32: pub const MAX_RETRIES: u32 = 3;

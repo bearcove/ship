@@ -1,0 +1,117 @@
+---
+source: crates/ship-code/tests/snapshot_tests.rs
+expression: format_output(&output)
+---
+═══ Symbol matches ═══
+struct Session  src/server.rs:32-37
+```
+/// A session managed by the server.
+pub struct Session {
+    pub id: String,
+    pub user: String,
+    created_at: u64,
+}
+```
+
+impl Session  src/server.rs:39-51
+```
+impl Session {
+    pub fn new(id: &str, user: &str) -> Self {
+        Self {
+            id: id.to_owned(),
+            user: user.to_owned(),
+            created_at: 0,
+        }
+    }
+
+    pub fn age_seconds(&self, now: u64) -> u64 {
+        now.saturating_sub(self.created_at)
+    }
+}
+```
+
+fn add_session  src/server.rs:67-69  (in Server)
+```
+pub fn add_session(&mut self, session: Session) {
+        self.sessions.insert(session.id.clone(), session);
+    }
+```
+
+fn remove_session  src/server.rs:71-73  (in Server)
+```
+pub fn remove_session(&mut self, id: &str) -> Option<Session> {
+        self.sessions.remove(id)
+    }
+```
+
+fn session_count  src/server.rs:75-77  (in Server)
+```
+pub fn session_count(&self) -> usize {
+        self.sessions.len()
+    }
+```
+
+fn find_user_sessions  src/server.rs:83-89  (in Server)
+```
+/// Find sessions belonging to a specific user.
+    pub fn find_user_sessions(&self, user: &str) -> Vec<&Session> {
+        self.sessions
+            .values()
+            .filter(|s| s.user == user)
+            .collect()
+    }
+```
+
+const MAX_SESSION_AGE  src/server.rs:110-110
+```
+const MAX_SESSION_AGE: u64 = 3600;
+```
+
+trait SessionValidator  src/server.rs:113-116
+```
+trait SessionValidator {
+    fn is_valid(&self, now: u64) -> bool;
+    fn refresh(&mut self);
+}
+```
+
+impl SessionValidator for Session  src/server.rs:118-126
+```
+impl SessionValidator for Session {
+    fn is_valid(&self, now: u64) -> bool {
+        self.age_seconds(now) < MAX_SESSION_AGE
+    }
+
+    fn refresh(&mut self) {
+        // Reset the created_at timestamp
+    }
+}
+```
+
+═══ Text matches ═══
+src/server.rs:32: /// A session managed by the server.
+src/server.rs:33: pub struct Session {
+src/server.rs:39: impl Session {
+src/server.rs:53: /// The main server that handles connections and sessions.
+src/server.rs:56:     sessions: HashMap<String, Session>,
+src/server.rs:63:             sessions: HashMap::new(),
+src/server.rs:67:     pub fn add_session(&mut self, session: Session) {
+src/server.rs:68:         self.sessions.insert(session.id.clone(), session);
+src/server.rs:71:     pub fn remove_session(&mut self, id: &str) -> Option<Session> {
+src/server.rs:72:         self.sessions.remove(id)
+src/server.rs:75:     pub fn session_count(&self) -> usize {
+src/server.rs:76:         self.sessions.len()
+src/server.rs:80:         self.sessions.len() >= self.config.max_connections
+src/server.rs:83:     /// Find sessions belonging to a specific user.
+src/server.rs:84:     pub fn find_user_sessions(&self, user: &str) -> Vec<&Session> {
+src/server.rs:85:         self.sessions
+src/server.rs:96:     SessionNotFound(String),
+src/server.rs:104:             Self::SessionNotFound(id) => write!(f, "session not found: {id}"),
+src/server.rs:110: const MAX_SESSION_AGE: u64 = 3600;
+src/server.rs:113: trait SessionValidator {
+src/server.rs:118: impl SessionValidator for Session {
+src/server.rs:120:         self.age_seconds(now) < MAX_SESSION_AGE
+src/server.rs:128: /// Helper to create a test server with some sessions.
+src/server.rs:133:     server.add_session(Session::new("s1", "alice"));
+src/server.rs:134:     server.add_session(Session::new("s2", "bob"));
+src/server.rs:135:     server.add_session(Session::new("s3", "alice"));

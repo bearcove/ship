@@ -1,0 +1,49 @@
+---
+source: crates/ship-code/tests/snapshot_tests.rs
+expression: format_output(&output)
+---
+═══ Symbol matches ═══
+struct ServerConfig  src/server.rs:4-9
+```
+/// Configuration for the server.
+pub struct ServerConfig {
+    pub host: String,
+    pub port: u16,
+    pub max_connections: usize,
+}
+```
+
+impl ServerConfig  src/server.rs:11-24
+```
+impl ServerConfig {
+    pub fn new(host: &str, port: u16) -> Self {
+        Self {
+            host: host.to_owned(),
+            port,
+            max_connections: 100,
+        }
+    }
+
+    pub fn with_max_connections(mut self, max: usize) -> Self {
+        self.max_connections = max;
+        self
+    }
+}
+```
+
+impl Default for ServerConfig  src/server.rs:26-30
+```
+impl Default for ServerConfig {
+    fn default() -> Self {
+        Self::new("127.0.0.1", 8080)
+    }
+}
+```
+
+═══ Text matches ═══
+src/server.rs:5: pub struct ServerConfig {
+src/server.rs:11: impl ServerConfig {
+src/server.rs:26: impl Default for ServerConfig {
+src/server.rs:55:     config: ServerConfig,
+src/server.rs:60:     pub fn new(config: ServerConfig) -> Self {
+src/server.rs:131:     let config = ServerConfig::new("localhost", 9090);

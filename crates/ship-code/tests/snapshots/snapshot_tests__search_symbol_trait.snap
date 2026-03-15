@@ -1,0 +1,29 @@
+---
+source: crates/ship-code/tests/snapshot_tests.rs
+expression: format_output(&output)
+---
+═══ Symbol matches ═══
+trait SessionValidator  src/server.rs:113-116
+```
+trait SessionValidator {
+    fn is_valid(&self, now: u64) -> bool;
+    fn refresh(&mut self);
+}
+```
+
+impl SessionValidator for Session  src/server.rs:118-126
+```
+impl SessionValidator for Session {
+    fn is_valid(&self, now: u64) -> bool {
+        self.age_seconds(now) < MAX_SESSION_AGE
+    }
+
+    fn refresh(&mut self) {
+        // Reset the created_at timestamp
+    }
+}
+```
+
+═══ Text matches ═══
+src/server.rs:113: trait SessionValidator {
+src/server.rs:118: impl SessionValidator for Session {
