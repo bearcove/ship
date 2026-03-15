@@ -9345,7 +9345,10 @@ impl Ship for ShipImpl {
         let mut transcriber = match crate::transcriber::SpeechTranscriber::new(whisper_ctx)
             .map_err(|e| e.to_string())
         {
-            Ok(t) => t,
+            Ok(t) => {
+                tracing::info!("transcribe_audio: transcriber created");
+                t
+            }
             Err(message) => {
                 tracing::error!("Failed to create transcriber: {message}");
                 let _ = segments_out
@@ -9358,6 +9361,7 @@ impl Ship for ShipImpl {
         };
 
         tokio::spawn(async move {
+            tracing::info!("transcribe_audio: processing loop started");
             let mut feed_count: u64 = 0;
             let mut total_samples: u64 = 0;
 
@@ -9379,7 +9383,7 @@ impl Ship for ShipImpl {
                         let n_samples = samples.len();
                         total_samples += n_samples as u64;
                         feed_count += 1;
-                        tracing::debug!(
+                        tracing::trace!(
                             "transcribe_audio: feed #{feed_count} ({n_samples} samples, {total_samples} total = {:.1}s)",
                             total_samples as f64 / 16000.0
                         );
@@ -9402,13 +9406,24 @@ impl Ship for ShipImpl {
                                         end_ms: (segment.end_sample as f64 / 16.0) as u64,
                                         text: segment.text,
                                     };
-                                    let _ = segments_out.send(TranscribeMessage::Segment(ts)).await;
+                                    if let Err(e) =
+                                        segments_out.send(TranscribeMessage::Segment(ts)).await
+                                    {
+                                        tracing::warn!(
+                                            "transcribe_audio: failed to send segment: {e}"
+                                        );
+                                    }
                                 }
                                 crate::transcriber::SpeechEvent::Error(e) => {
                                     tracing::warn!("transcribe_audio: {e}");
-                                    let _ = segments_out
+                                    if let Err(e) = segments_out
                                         .send(TranscribeMessage::Error { message: e })
-                                        .await;
+                                        .await
+                                    {
+                                        tracing::warn!(
+                                            "transcribe_audio: failed to send error: {e}"
+                                        );
+                                    }
                                 }
                                 crate::transcriber::SpeechEvent::None => {}
                             }
@@ -9433,10 +9448,17 @@ impl Ship for ShipImpl {
                     end_ms: (segment.end_sample as f64 / 16.0) as u64,
                     text: segment.text,
                 };
-                let _ = segments_out.send(TranscribeMessage::Segment(ts)).await;
+                if let Err(e) = segments_out.send(TranscribeMessage::Segment(ts)).await {
+                    tracing::warn!("transcribe_audio: failed to send final segment: {e}");
+                }
+            } else {
+                tracing::info!("transcribe_audio: no in-progress speech to flush");
             }
 
-            let _ = segments_out.close(Default::default()).await;
+            if let Err(e) = segments_out.close(Default::default()).await {
+                tracing::warn!("transcribe_audio: failed to close output channel: {e}");
+            }
+            tracing::info!("transcribe_audio: output channel closed");
         });
     }
 
