@@ -1,0 +1,15 @@
+[package]
+name = "ship-session"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+facet = { workspace = true }
+facet-json = { workspace = true }
+rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite-facet = "1.0.0"
+ship-types = { path = "../ship-types" }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
