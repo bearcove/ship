@@ -604,22 +604,31 @@ export const agentStateChip = style({
   },
 });
 
-const slideInFromRightKf = keyframes({
-  from: { transform: "translateX(100%)" },
-  to: { transform: "translateX(0)" },
+export const pageDotsRow = style({
+  display: "none",
+  "@media": {
+    "(max-width: 700px)": {
+      display: "flex",
+      justifyContent: "center",
+      alignItems: "center",
+      gap: 6,
+      padding: "6px 0",
+    },
+  },
 });
 
-const slideInFromLeftKf = keyframes({
-  from: { transform: "translateX(-100%)" },
-  to: { transform: "translateX(0)" },
+export const pageDot = style({
+  width: 7,
+  height: 7,
+  borderRadius: "50%",
+  background: "var(--gray-a5)",
+  cursor: "pointer",
+  transition: "background 150ms ease",
+  flexShrink: 0,
 });
 
-export const slideInFromRight = style({
-  animation: `${slideInFromRightKf} 220ms ease-out`,
-});
-
-export const slideInFromLeft = style({
-  animation: `${slideInFromLeftKf} 220ms ease-out`,
+export const pageDotActive = style({
+  background: "var(--accent-9)",
 });
 
 export const sessionViewRoot = style({

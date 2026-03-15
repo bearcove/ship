@@ -1,6 +1,5 @@
 import TurndownService from "turndown";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSwipeable } from "react-swipeable";
 import { useNavigate } from "react-router-dom";
 import { Box, Callout, Flex, Spinner, Text } from "@radix-ui/themes";
 import { Warning } from "@phosphor-icons/react";
@@ -18,10 +17,11 @@ import { SessionDebugPanel } from "../components/SessionDebugPanel";
 import {
   agentRail,
   feedContentColumn,
+  pageDot,
+  pageDotActive,
+  pageDotsRow,
   sessionFeedColumn,
   sessionViewRoot,
-  slideInFromLeft,
-  slideInFromRight,
 } from "../styles/session-view.css";
 import { AgentHeader } from "../components/AgentHeader";
 import captainAvatar from "../assets/avatars/captain.png";
@@ -57,8 +57,6 @@ export function SessionViewPage({
   const [archiving, setArchiving] = useState(false);
   const [archiveConfirm, setArchiveConfirm] = useState<string[] | null>(null);
   const [duplicateOpen, setDuplicateOpen] = useState(false);
-  const [slideDirection, setSlideDirection] = useState<"left" | "right" | null>(null);
-
 
   const orderedSessions = useMemo(() => sortSessions(allSessions), [allSessions]);
   const { currentIndex, hasSessionCycle, prevSession, nextSession } = useMemo(() => {
@@ -74,24 +72,89 @@ export function SessionViewPage({
     };
   }, [orderedSessions, sessionId]);
 
-  const handleSwipe = useCallback(
-    (direction: "left" | "right") => {
-      if (!isActive) return;
-      const target = direction === "right" ? prevSession : nextSession;
-      if (!target) return;
-      setSlideDirection(direction);
-    },
-    [isActive, nextSession, prevSession],
-  );
+  // Physical swipe tracking refs
+  const sessionViewRef = useRef<HTMLDivElement>(null);
+  const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
+  const isDragging = useRef(false);
+  const isVerticalGesture = useRef(false);
+  const currentDeltaX = useRef(0);
 
-  const swipeHandlers = useSwipeable({
-    onSwipedLeft: () => handleSwipe("left"),
-    onSwipedRight: () => handleSwipe("right"),
-    delta: 72,
-    preventScrollOnSwipe: true,
-    trackTouch: true,
-    trackMouse: false,
-  });
+  const onTouchStart = useCallback((e: React.TouchEvent) => {
+    if (window.innerWidth > 700) return;
+    const touch = e.touches[0];
+    touchStartX.current = touch.clientX;
+    touchStartY.current = touch.clientY;
+    isDragging.current = false;
+    isVerticalGesture.current = false;
+    currentDeltaX.current = 0;
+  }, []);
+
+  const onTouchMove = useCallback((e: React.TouchEvent) => {
+    if (window.innerWidth > 700 || isVerticalGesture.current) return;
+    const touch = e.touches[0];
+    const deltaX = touch.clientX - touchStartX.current;
+    const deltaY = touch.clientY - touchStartY.current;
+
+    if (!isDragging.current) {
+      // Decide direction on first significant movement
+      if (Math.abs(deltaX) < 8 && Math.abs(deltaY) < 8) return;
+      if (Math.abs(deltaY) > Math.abs(deltaX)) {
+        isVerticalGesture.current = true;
+        return;
+      }
+      isDragging.current = true;
+    }
+
+    e.preventDefault();
+    currentDeltaX.current = deltaX;
+    const el = sessionViewRef.current;
+    if (el) {
+      el.style.transition = "none";
+      el.style.transform = `translateX(${deltaX}px)`;
+      el.style.willChange = "transform";
+    }
+  }, []);
+
+  const onTouchEnd = useCallback(() => {
+    if (window.innerWidth > 700 || !isDragging.current) return;
+    isDragging.current = false;
+    const el = sessionViewRef.current;
+    if (!el) return;
+
+    const threshold = window.innerWidth * 0.3;
+    const deltaX = currentDeltaX.current;
+
+    if (Math.abs(deltaX) > threshold) {
+      // Swipe completed — animate off-screen then navigate
+      const target = deltaX > 0 ? prevSession : nextSession;
+      if (target) {
+        const direction = deltaX > 0 ? 1 : -1;
+        el.style.transition = "transform 200ms ease-out";
+        el.style.transform = `translateX(${direction * window.innerWidth}px)`;
+        const handleEnd = () => {
+          el.removeEventListener("transitionend", handleEnd);
+          el.style.transition = "";
+          el.style.transform = "";
+          el.style.willChange = "";
+          navigate(`/sessions/${target.slug}`);
+        };
+        el.addEventListener("transitionend", handleEnd, { once: true });
+        return;
+      }
+    }
+
+    // Snap back
+    el.style.transition = "transform 200ms ease-out";
+    el.style.transform = "translateX(0)";
+    const resetStyle = () => {
+      el.removeEventListener("transitionend", resetStyle);
+      el.style.transition = "";
+      el.style.transform = "";
+      el.style.willChange = "";
+    };
+    el.addEventListener("transitionend", resetStyle, { once: true });
+  }, [navigate, prevSession, nextSession]);
 
   // r[event.client.hydration-sequence]: Step 1 — structural state
   const { session, error } = useSession(sessionId);
@@ -334,20 +397,11 @@ export function SessionViewPage({
         preselectedMateKind={session.mate.kind}
       />
       <Flex
-        {...swipeHandlers}
-        className={[
-          sessionViewRoot,
-          slideDirection === "right" ? slideInFromLeft : "",
-          slideDirection === "left" ? slideInFromRight : "",
-        ]
-          .filter(Boolean)
-          .join(" ")}
-        onAnimationEnd={(event) => {
-          if (event.target !== event.currentTarget || slideDirection === null) return;
-          const target = slideDirection === "right" ? prevSession : nextSession;
-          setSlideDirection(null);
-          if (target) navigate(`/sessions/${target.slug}`);
-        }}
+        ref={sessionViewRef}
+        className={sessionViewRoot}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
       >
         <Flex style={{ flex: 1, overflow: "hidden", minHeight: 0 }}>
           <Box className={sessionFeedColumn} ref={feedColumnRef}>
@@ -403,6 +457,17 @@ export function SessionViewPage({
                 captainBlocks={eventState.captainBlocks}
               />
             </Box>
+            {orderedSessions.length > 1 && (
+              <div className={pageDotsRow}>
+                {orderedSessions.map((s, i) => (
+                  <div
+                    key={s.slug}
+                    className={`${pageDot} ${i === currentIndex ? pageDotActive : ""}`}
+                    onClick={() => navigate(`/sessions/${s.slug}`)}
+                  />
+                ))}
+              </div>
+            )}
           </Box>
         </Flex>
 
