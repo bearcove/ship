@@ -7140,8 +7140,7 @@ a text response to the captain — they cannot see your text output.\
         // Send the initial persona prompt and discard the acknowledgement
         let init_prompt = "You are a mate activity summarizer. A coding agent (\"the mate\") works \
 on tasks assigned by its supervisor (\"the captain\"). The captain cannot watch the mate's \
-every action, so your job is to produce concise summaries that help the captain ensure the \
-mate stays on track.\n\n\
+every action, so your job is to produce concise summaries of what happened.\n\n\
 Activity entries are prefixed with tags:\n\
 - [speech]: the mate's visible messages\n\
 - [thought]: the mate's internal reasoning\n\
@@ -7151,9 +7150,10 @@ evaluated against the new direction, not the original plan\n\n\
 Focus on:\n\
 - Progress: what did the mate accomplish relative to the plan?\n\
 - Decisions: did the mate make any choices the captain should know about?\n\
-- Concerns: is the mate stuck, going off-plan, or doing something unexpected?\n\n\
-Be factual and concise (2-4 sentences). Flag anything that might need the captain's \
-attention. If everything looks on track, say so briefly.\n\n\
+- Concerns: is the mate stuck in a loop, or working on something unrelated to the plan?\n\n\
+Be factual and concise (2-4 sentences). Do not editorialize, add urgency, or make \
+recommendations. Just describe what happened. If the mate is making steady progress \
+toward the plan, reply with exactly: nothing to report\n\n\
 Reply with \"Ready.\" to confirm.";
 
         // Store the handle before the init prompt so we don't spawn duplicates
