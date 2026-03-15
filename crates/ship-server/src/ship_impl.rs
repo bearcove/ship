@@ -2285,7 +2285,11 @@ You are now active. Wait for messages from captains or the human.\n",
         // Collect recap info now that the merge succeeded.
         let (recap_commits, recap_stats) = if let Some(old_head) = old_base_head {
             let log_output = TokioCommand::new("git")
-                .args(["log", &format!("{}..HEAD", old_head), "--format=%h %s"])
+                .args([
+                    "log",
+                    &format!("{}..{}", old_head, base_branch),
+                    "--format=%h %s",
+                ])
                 .current_dir(&repo_root)
                 .output()
                 .await
@@ -2325,7 +2329,7 @@ You are now active. Wait for messages from captains or the human.\n",
 
             let stats = if !commits.is_empty() {
                 TokioCommand::new("git")
-                    .args(["diff", "--numstat", &old_head, "HEAD"])
+                    .args(["diff", "--numstat", &old_head, &base_branch])
                     .current_dir(&repo_root)
                     .output()
                     .await
