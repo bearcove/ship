@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use crate::context::ToolCtx;
 use crate::protocol::{
-    CallToolResult, Implementation, InitializeResult, ListToolsResult, ServerCapabilities,
-    ToolInfo, ToolsCapability,
+    CallToolResult, ContentBlock, Implementation, InitializeResult, ListToolsResult,
+    ServerCapabilities, ToolInfo, ToolsCapability,
 };
 use crate::transport::{StdioTransport, TransportError};
 
@@ -116,7 +116,15 @@ impl McpServer {
                 };
                 let result = T::call(args, ctx).await;
                 match facet_json::to_string(&result) {
-                    Ok(json) => CallToolResult::text(json),
+                    Ok(json) => CallToolResult {
+                        content: vec![ContentBlock::Text {
+                            text: json.clone(),
+                            annotations: None,
+                        }],
+                        structured_content: Some(facet_json::RawJson::from_owned(json)),
+                        is_error: None,
+                        _meta: None,
+                    },
                     Err(e) => CallToolResult::error(format!(
                         "failed to serialize result for {}: {e}",
                         T::name()

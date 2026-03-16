@@ -26,10 +26,11 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 ulid = "1"
 futures-core = "0.3"
 futures = "0.3"
-facet = { version = "0.44.1", features = ["ulid", "jiff02"] }
+facet = { version = "0.44.2", features = ["ulid", "jiff02"] }
 jiff = "0.2"
 figue = "2.0.0"
-facet-json = "0.44.1"
+facet-json = "0.44.4"
+facet-json-schema = "0.44.3"
 fs-err = { version = "3", features = ["tokio"] }
 roam = "7.3.0"
 roam-codegen = "7.3.0"

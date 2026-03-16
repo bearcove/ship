@@ -875,9 +875,9 @@ dependencies = [
 
 [[package]]
 name = "facet"
-version = "0.44.1"
+version = "0.44.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "98c578b0cf6efa3459c6ff5f9f67ddfa668ba778fdbf301a1ba6bb493bf32aba"
+checksum = "4aa60b7d3d49d30f477f9490b7fc3ce42009b5b626b625b0356742884c493a11"
 dependencies = [
  "autocfg",
  "facet-core",
@@ -917,9 +917,9 @@ dependencies = [
 
 [[package]]
 name = "facet-core"
-version = "0.44.1"
+version = "0.44.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf2c09e5a796b8989e7555cbe097ddd3c3ffa4c02392b9b4ad0d7cd48b1af5c2"
+checksum = "11f9ee47507f15c18243a8cba3b2a85b71176173f0097e9164a54dd4e4e3e4ce"
 dependencies = [
  "autocfg",
  "bytes",
@@ -934,9 +934,9 @@ dependencies = [
 
 [[package]]
 name = "facet-dessert"
-version = "0.44.3"
+version = "0.44.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "40d80b75160e929f810d0901c59a096641144dced0ac930bca547e567f0d99af"
+checksum = "3ffed62499e9764e2a6ebf139b905efb55d41bd8fe0a500024fd60a4b1c98517"
 dependencies = [
  "facet-core",
  "facet-reflect",
@@ -953,9 +953,9 @@ dependencies = [
 
 [[package]]
 name = "facet-format"
-version = "0.44.3"
+version = "0.44.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a34f047087b5bedda8a7e81ab923abd98d4a5def6a35c8a59fa06f1541cb41d"
+checksum = "9013e366eb724ba12cb501363e37a02c077420ee37b997cae21bfb3a76bb5cc0"
 dependencies = [
  "facet-core",
  "facet-dessert",
@@ -966,9 +966,9 @@ dependencies = [
 
 [[package]]
 name = "facet-json"
-version = "0.44.3"
+version = "0.44.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ed06ec09b6193c1514a4cc102c7eb3080254851ea5b2b15cb926919ecc2190e"
+checksum = "67de8c274c53b5a4c186040a086f7172b9962b4862386606229eaefd9009b92c"
 dependencies = [
  "facet",
  "facet-core",
@@ -990,9 +990,9 @@ dependencies = [
 
 [[package]]
 name = "facet-macro-parse"
-version = "0.44.2"
+version = "0.44.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae5f87a75918b10d3b4eb80cfb86e0e4fd5cbaec413464f1426cd886677930a2"
+checksum = "e77becc35b3b3008e7b3ef23356954e46561177316aff0a92c73fc6ddb2a15a0"
 dependencies = [
  "facet-macro-types",
  "proc-macro2",
@@ -1001,9 +1001,9 @@ dependencies = [
 
 [[package]]
 name = "facet-macro-types"
-version = "0.44.2"
+version = "0.44.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ea768aa65eee1cc19868080d2955cc19643a871e9b018f437ed3e4cf621bb3c"
+checksum = "8e600db5983cdad99db3b34adfa20b546d80f21ab8feecd35d40bbbfbcf53b5c"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1012,18 +1012,18 @@ dependencies = [
 
 [[package]]
 name = "facet-macros"
-version = "0.44.2"
+version = "0.44.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1218c5c52f399036c64e113a975415ee4117a0403208e939911491715eb7da9"
+checksum = "a3a7015e119aa043740dc8aee6b1b70e26b6616e1701b329496bf04990f44133"
 dependencies = [
  "facet-macros-impl",
 ]
 
 [[package]]
 name = "facet-macros-impl"
-version = "0.44.2"
+version = "0.44.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "63e93e34cf1c9c84985561dd243c4db9d58a0505828525c4f37268763995e309"
+checksum = "cbb5e6f6cc64210ab12aa625b014db78d34d6a3b63d1011382c141518a1e1f78"
 dependencies = [
  "facet-macro-parse",
  "facet-macro-types",
@@ -1047,9 +1047,9 @@ dependencies = [
 
 [[package]]
 name = "facet-path"
-version = "0.44.1"
+version = "0.44.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34ae380f4553db1a2ab33fb75035e7d86c178f384c4ded2e1681daec58cbbfc2"
+checksum = "77e7b83cb0de7c00d6e76f08d36b047d6cb9efc39e10744dbcf7a4a5a19c4903"
 dependencies = [
  "facet-core",
 ]
@@ -1082,9 +1082,9 @@ dependencies = [
 
 [[package]]
 name = "facet-reflect"
-version = "0.44.1"
+version = "0.44.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2469bdb237a3f3cac3077b784e86be88e379534ff9322d53b3d673e27bcb0988"
+checksum = "e9cc255bd928399489868fdddec09e69073d622432cc2b52cfa3c3a5d811305c"
 dependencies = [
  "facet-core",
  "facet-path",

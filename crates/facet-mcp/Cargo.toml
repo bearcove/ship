@@ -10,8 +10,8 @@ required-features = ["test-server"]
 
 [dependencies]
 facet = { workspace = true }
-facet-json = "0.44.4"
-facet-json-schema = "0.44.3"
+facet-json = { workspace = true }
+facet-json-schema = { workspace = true }
 tokio = { workspace = true, features = ["io-util", "io-std", "sync"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, optional = true }
