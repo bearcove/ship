@@ -75,10 +75,9 @@ pub struct Delivery {
     pub from: String,
     /// Typed content of the delivery.
     pub content: DeliveryContent,
-    /// Where the delivery appears for the recipient.
-    pub channel: Channel,
-    /// How urgently the recipient should see this.
-    pub urgency: Urgency,
+    /// If true: for agents, cancel current prompt and re-prompt.
+    /// For the human, also send a push notification.
+    pub urgent: bool,
 }
 
 /// What's being delivered. Typed so the frontend renders what it's told
@@ -133,27 +132,6 @@ pub enum DeliveryContent {
     },
 }
 
-/// Where a delivery appears for the recipient.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Channel {
-    /// The participant's primary feed (agent prompt / human activity log).
-    Feed,
-    /// A notification that demands attention (human only).
-    Notification,
-    /// A blocking prompt that needs a response before continuing (human only).
-    Blocking,
-}
-
-/// How urgently the recipient should see this.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Urgency {
-    /// Background information, no interruption needed.
-    Informational,
-    /// Demands attention soon — may interrupt current activity.
-    Attention,
-    /// Blocks progress until addressed.
-    Blocking,
-}
 
 // ── Urgent tag parsing ───────────────────────────────────────────────
 
@@ -183,16 +161,9 @@ fn parse_urgent_tag(text: &str) -> (String, bool) {
     (text.to_owned(), false)
 }
 
-/// Check if a message contains `#urgent` and return the cleaned text + urgency.
-/// Public so prompt templates or other policy code can use the same parsing.
-pub fn extract_urgency(text: &str) -> (String, Urgency) {
-    let (clean, is_urgent) = parse_urgent_tag(text);
-    let urgency = if is_urgent {
-        Urgency::Attention
-    } else {
-        Urgency::Informational
-    };
-    (clean, urgency)
+/// Check if a message contains `#urgent` and return the cleaned text + whether it's urgent.
+pub fn extract_urgency(text: &str) -> (String, bool) {
+    parse_urgent_tag(text)
 }
 
 // ── Prompt rendering ─────────────────────────────────────────────────
@@ -398,8 +369,7 @@ fn route_message_sent(
                     reason: format!("Unknown participant: {mention}"),
                     allowed: allowed_mentions(topology, sender),
                 },
-                channel: Channel::Feed,
-                urgency: Urgency::Attention,
+                urgent: true,
             }];
         }
     };
@@ -417,18 +387,12 @@ fn route_message_sent(
                     sender.name, sender.kind, target.name
                 ),
             },
-            channel: Channel::Feed,
-            urgency: Urgency::Attention,
+            urgent: true,
         }];
     }
 
     // Parse #urgent tag from message text
-    let (clean_text, is_urgent) = parse_urgent_tag(text);
-    let urgency = if is_urgent {
-        Urgency::Attention
-    } else {
-        Urgency::Informational
-    };
+    let (clean_text, urgent) = parse_urgent_tag(text);
 
     // Interception: captain says @human → goes to admiral instead
     if matches!(sender.kind, ParticipantKind::Agent(AgentRole::Captain)) && target.is_human() {
@@ -438,8 +402,7 @@ fn route_message_sent(
             content: DeliveryContent::Message {
                 text: clean_text,
             },
-            channel: Channel::Feed,
-            urgency: Urgency::Attention,
+            urgent: true,
         }];
     }
 
@@ -450,8 +413,7 @@ fn route_message_sent(
         content: DeliveryContent::Message {
             text: clean_text,
         },
-        channel: Channel::Feed,
-        urgency,
+        urgent,
     }]
 }
 
@@ -468,8 +430,7 @@ fn route_unaddressed(topology: &Topology, from: &str, _text: &str) -> Vec<Delive
             reason: "Message didn't address anyone.".to_owned(),
             allowed: allowed_mentions(topology, sender),
         },
-        channel: Channel::Feed,
-        urgency: Urgency::Attention,
+        urgent: true,
     }]
 }
 
@@ -501,8 +462,7 @@ fn route_mate_committed(
                 commit_summary: commit_summary.to_owned(),
                 diff_section: diff_section.to_owned(),
             },
-            channel: Channel::Feed,
-            urgency: Urgency::Informational,
+            urgent: false,
         },
         // Human sees it in their activity feed
         Delivery {
@@ -513,8 +473,7 @@ fn route_mate_committed(
                 commit_summary: commit_summary.to_owned(),
                 diff_section: diff_section.to_owned(),
             },
-            channel: Channel::Feed,
-            urgency: Urgency::Informational,
+            urgent: false,
         },
     ];
 
@@ -539,8 +498,7 @@ fn route_mate_submitted(
             content: DeliveryContent::Submitted {
                 summary: summary.to_owned(),
             },
-            channel: Channel::Feed,
-            urgency: Urgency::Attention,
+            urgent: true,
         },
         // Human sees it
         Delivery {
@@ -549,8 +507,7 @@ fn route_mate_submitted(
             content: DeliveryContent::Submitted {
                 summary: summary.to_owned(),
             },
-            channel: Channel::Feed,
-            urgency: Urgency::Informational,
+            urgent: false,
         },
     ]
 }
@@ -571,8 +528,7 @@ fn route_mate_plan_set(
         content: DeliveryContent::PlanSet {
             plan_status: plan_status.to_owned(),
         },
-        channel: Channel::Feed,
-        urgency: Urgency::Informational,
+        urgent: false,
     }]
 }
 
@@ -592,8 +548,7 @@ fn route_mate_question(
         content: DeliveryContent::Question {
             text: question.to_owned(),
         },
-        channel: Channel::Feed,
-        urgency: Urgency::Attention,
+        urgent: true,
     }]
 }
 
@@ -613,8 +568,7 @@ fn route_mate_activity_summary(
         content: DeliveryContent::ActivitySummary {
             summary: summary.to_owned(),
         },
-        channel: Channel::Feed,
-        urgency: Urgency::Informational,
+        urgent: false,
     }]
 }
 
@@ -630,8 +584,7 @@ fn route_mate_forced_submit(topology: &Topology, session: &RoomId) -> Vec<Delive
         content: DeliveryContent::Guidance {
             text: "You stopped without submitting. Call mate_submit with a summary of what you accomplished.".to_owned(),
         },
-        channel: Channel::Feed,
-        urgency: Urgency::Attention,
+        urgent: true,
     }]
 }
 
@@ -655,8 +608,7 @@ fn route_task_assigned(
                 title: title.to_owned(),
                 description: description.to_owned(),
             },
-            channel: Channel::Feed,
-            urgency: Urgency::Informational,
+            urgent: false,
         },
     ]
 }
@@ -679,8 +631,7 @@ fn route_checks_started(
             content: DeliveryContent::ChecksStarted {
                 context: context.to_owned(),
             },
-            channel: Channel::Feed,
-            urgency: Urgency::Informational,
+            urgent: false,
         },
         // Captain sees checks started
         Delivery {
@@ -689,8 +640,7 @@ fn route_checks_started(
             content: DeliveryContent::ChecksStarted {
                 context: context.to_owned(),
             },
-            channel: Channel::Feed,
-            urgency: Urgency::Informational,
+            urgent: false,
         },
     ]
 }
@@ -707,17 +657,7 @@ fn route_checks_finished(
         None => return vec![],
     };
 
-    let urgency = if all_passed {
-        Urgency::Informational
-    } else {
-        Urgency::Attention
-    };
-
-    let human_channel = if all_passed {
-        Channel::Feed
-    } else {
-        Channel::Notification
-    };
+    let urgent = !all_passed;
 
     vec![
         // Captain sees results (always needs to know)
@@ -729,10 +669,9 @@ fn route_checks_finished(
                 all_passed,
                 summary: summary.to_owned(),
             },
-            channel: Channel::Feed,
-            urgency: Urgency::Attention,
+            urgent: true,
         },
-        // Human sees results
+        // Human sees results (urgent if checks failed)
         Delivery {
             to: topology.human.name.clone(),
             from: "system".to_owned(),
@@ -741,8 +680,7 @@ fn route_checks_finished(
                 all_passed,
                 summary: summary.to_owned(),
             },
-            channel: human_channel,
-            urgency,
+            urgent,
         },
     ]
 }

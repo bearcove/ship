@@ -6,7 +6,24 @@ use ship_policy::{
 };
 use ulid::Ulid;
 
+use crate::events::{FrontendEvent, RoomSummary};
 use crate::room::{Feed, Room, RoomState};
+use tokio::sync::broadcast;
+
+const RECENT_BLOCKS_LIMIT: usize = 100;
+
+/// Snapshot of a room's state, sent to the frontend on connect.
+pub struct RoomSnapshot {
+    pub room_id: RoomId,
+    pub current_task: Option<Task>,
+    pub recent_blocks: Vec<Block>,
+}
+
+/// Everything the frontend needs on connect.
+pub struct ConnectSnapshot {
+    pub topology: Topology,
+    pub rooms: Vec<RoomSnapshot>,
+}
 
 /// In-memory room state. Borrowed independently from the db.
 struct Rooms {
@@ -49,6 +66,7 @@ pub struct Runtime {
     db: ShipDb,
     topology: Topology,
     rooms: Rooms,
+    tx: broadcast::Sender<FrontendEvent>,
 }
 
 impl Runtime {
@@ -61,10 +79,12 @@ impl Runtime {
             .flatten()
             .unwrap_or_else(empty_topology);
         let rooms = Rooms::new(&topology);
+        let (tx, _) = broadcast::channel(256);
         Self {
             db,
             topology,
             rooms,
+            tx,
         }
     }
 
@@ -78,6 +98,16 @@ impl Runtime {
 
     pub fn topology(&self) -> &Topology {
         &self.topology
+    }
+
+    /// Subscribe to the frontend event stream.
+    pub fn subscribe(&self) -> broadcast::Receiver<FrontendEvent> {
+        self.tx.subscribe()
+    }
+
+    /// Emit a frontend event (best-effort, no error if nobody is listening).
+    fn emit(&self, event: FrontendEvent) {
+        let _ = self.tx.send(event);
     }
 
     /// Open a new unsealed block in a room. Persists to db immediately.
@@ -97,6 +127,10 @@ impl Runtime {
         let block = feed.open_block(room_id.clone(), from, to, content);
         let block_clone = block.clone();
         self.db.insert_block(&block_clone).map_err(RuntimeError::Db)?;
+        self.emit(FrontendEvent::BlockChanged {
+            room_id: room_id.clone(),
+            block: block_clone.clone(),
+        });
         Ok(block_clone.id)
     }
 
@@ -117,9 +151,14 @@ impl Runtime {
         let sealed_at = block.sealed_at.expect("just sealed");
         let content = block.content.clone();
         let from_name = block.from.as_ref().map(|p| p.to_string());
+        let sealed_block = block.clone();
         self.db
             .seal_block(block_id, sealed_at, &content)
             .map_err(RuntimeError::Db)?;
+        self.emit(FrontendEvent::BlockChanged {
+            room_id: room_id.clone(),
+            block: sealed_block,
+        });
 
         let deliveries = self.route_sealed_block(&content, from_name.as_deref());
         Ok(deliveries)
@@ -219,8 +258,12 @@ impl Runtime {
         self.db
             .set_current_task(room_id, Some(&task.id))
             .map_err(RuntimeError::Db)?;
-
-        Ok(task.id)
+        let task_id = task.id.clone();
+        self.emit(FrontendEvent::TaskChanged {
+            room_id: room_id.clone(),
+            task,
+        });
+        Ok(task_id)
     }
 
     /// Transition a task to a new phase. Validates via policy.
@@ -253,11 +296,21 @@ impl Runtime {
             .update_task_phase(&task.id, new_phase, completed_at)
             .map_err(RuntimeError::Db)?;
 
-        // Clear current_task when the task is terminal.
         if new_phase.is_terminal() {
             self.db
                 .set_current_task(room_id, None)
                 .map_err(RuntimeError::Db)?;
+            self.emit(FrontendEvent::TaskCleared {
+                room_id: room_id.clone(),
+            });
+        } else {
+            // Re-read to get updated task for the event.
+            if let Ok(Some(updated)) = self.db.current_task(room_id) {
+                self.emit(FrontendEvent::TaskChanged {
+                    room_id: room_id.clone(),
+                    task: updated,
+                });
+            }
         }
 
         Ok(())
@@ -336,7 +389,13 @@ impl Runtime {
             .update_block_content(block_id, &content)
             .map_err(RuntimeError::Db)?;
         let feed = self.rooms.ensure_warm(room_id, &self.db)?;
-        feed.update_block(block_id, content);
+        let updated = feed.update_block(block_id, content).cloned();
+        if let Some(block) = updated {
+            self.emit(FrontendEvent::BlockChanged {
+                room_id: room_id.clone(),
+                block,
+            });
+        }
         Ok(())
     }
 

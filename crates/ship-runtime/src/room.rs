@@ -1,22 +1,18 @@
 use jiff::Timestamp;
 use ship_policy::{Block, BlockContent, BlockId, ParticipantName, RoomId};
-use tokio::sync::broadcast;
 use ulid::Ulid;
 
-/// A room's feed: the ordered sequence of blocks, with live subscription support.
+/// A room's feed: the ordered sequence of blocks.
 pub struct Feed {
     blocks: Vec<Block>,
     next_seq: u64,
-    tx: broadcast::Sender<Block>,
 }
 
 impl Feed {
     pub fn new() -> Self {
-        let (tx, _) = broadcast::channel(256);
         Self {
             blocks: Vec::new(),
             next_seq: 0,
-            tx,
         }
     }
 
@@ -54,8 +50,6 @@ impl Feed {
     pub fn seal_block(&mut self, id: &BlockId) -> Option<&Block> {
         let block = self.blocks.iter_mut().find(|b| &b.id == id)?;
         block.sealed_at = Some(Timestamp::now());
-        let sealed = block.clone();
-        let _ = self.tx.send(sealed);
         self.blocks.iter().rfind(|b| &b.id == id)
     }
 
@@ -64,11 +58,6 @@ impl Feed {
         let block = self.blocks.iter_mut().find(|b| &b.id == id && !b.is_sealed())?;
         block.content = content;
         Some(block)
-    }
-
-    /// Subscribe to sealed blocks as they arrive.
-    pub fn subscribe(&self) -> broadcast::Receiver<Block> {
-        self.tx.subscribe()
     }
 
     /// All blocks so far (for replay on connect).

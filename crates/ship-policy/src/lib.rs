@@ -11,8 +11,7 @@ mod transitions;
 pub mod prompts;
 
 pub use delivery::{
-    Action, Channel, Delivery, DeliveryContent, Urgency, extract_urgency, render_for_prompt,
-    route,
+    Action, Delivery, DeliveryContent, extract_urgency, render_for_prompt, route,
 };
 pub use help::{
     ActionHelp, available_actions, full_help, short_hint, tool_help, wrong_tool_help,

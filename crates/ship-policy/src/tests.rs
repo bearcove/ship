@@ -644,7 +644,7 @@ fn delivery_mate_committed_notifies_captain_and_human() {
 
     // Human gets it
     assert_eq!(deliveries[1].to, "Amos");
-    assert_eq!(deliveries[1].urgency, Urgency::Informational);
+    assert_eq!(deliveries[1].urgent, false);
 }
 
 #[test]
@@ -658,11 +658,11 @@ fn delivery_mate_submitted_notifies_captain_and_human() {
     assert_eq!(deliveries.len(), 2);
 
     assert_eq!(deliveries[0].to, "Cedar");
-    assert_eq!(deliveries[0].urgency, Urgency::Attention);
+    assert_eq!(deliveries[0].urgent, true);
     assert!(matches!(&deliveries[0].content, DeliveryContent::Submitted { .. }));
 
     assert_eq!(deliveries[1].to, "Amos");
-    assert_eq!(deliveries[1].urgency, Urgency::Informational);
+    assert_eq!(deliveries[1].urgent, false);
 }
 
 #[test]
@@ -688,7 +688,7 @@ fn delivery_mate_question_notifies_captain_with_attention() {
     let deliveries = route(&action, &topo);
     assert_eq!(deliveries.len(), 1);
     assert_eq!(deliveries[0].to, "Cedar");
-    assert_eq!(deliveries[0].urgency, Urgency::Attention);
+    assert_eq!(deliveries[0].urgent, true);
     assert!(matches!(&deliveries[0].content, DeliveryContent::Question { .. }));
 }
 
@@ -746,12 +746,11 @@ fn delivery_checks_finished_failed_notifies_human() {
 
     // Captain gets attention
     let captain_d = deliveries.iter().find(|d| d.to == "Cedar").unwrap();
-    assert_eq!(captain_d.urgency, Urgency::Attention);
+    assert_eq!(captain_d.urgent, true);
 
-    // Human gets notification channel (not just feed)
+    // Human gets urgent delivery (failed checks)
     let human_d = deliveries.iter().find(|d| d.to == "Amos").unwrap();
-    assert_eq!(human_d.channel, Channel::Notification);
-    assert_eq!(human_d.urgency, Urgency::Attention);
+    assert_eq!(human_d.urgent, true);
 }
 
 #[test]
@@ -765,8 +764,7 @@ fn delivery_checks_finished_passed_is_informational() {
     };
     let deliveries = route(&action, &topo);
     let human_d = deliveries.iter().find(|d| d.to == "Amos").unwrap();
-    assert_eq!(human_d.channel, Channel::Feed);
-    assert_eq!(human_d.urgency, Urgency::Informational);
+    assert_eq!(human_d.urgent, false);
 }
 
 #[test]
@@ -806,7 +804,7 @@ fn delivery_urgent_tag_escalates_urgency() {
     };
     let deliveries = route(&action, &topo);
     assert_eq!(deliveries.len(), 1);
-    assert_eq!(deliveries[0].urgency, Urgency::Attention);
+    assert_eq!(deliveries[0].urgent, true);
     assert!(matches!(
         &deliveries[0].content,
         DeliveryContent::Message { text } if text == "stop deleting files"
@@ -822,7 +820,7 @@ fn delivery_urgent_tag_case_insensitive() {
         text: "fix the tests #URGENT".into(),
     };
     let deliveries = route(&action, &topo);
-    assert_eq!(deliveries[0].urgency, Urgency::Attention);
+    assert_eq!(deliveries[0].urgent, true);
     assert!(matches!(
         &deliveries[0].content,
         DeliveryContent::Message { text } if text == "fix the tests"
@@ -838,7 +836,7 @@ fn delivery_urgent_tag_in_middle() {
         text: "stop #urgent right now".into(),
     };
     let deliveries = route(&action, &topo);
-    assert_eq!(deliveries[0].urgency, Urgency::Attention);
+    assert_eq!(deliveries[0].urgent, true);
     assert!(matches!(
         &deliveries[0].content,
         DeliveryContent::Message { text } if text == "stop right now"
@@ -854,7 +852,7 @@ fn delivery_no_urgent_tag_is_informational() {
         text: "take your time with the refactor".into(),
     };
     let deliveries = route(&action, &topo);
-    assert_eq!(deliveries[0].urgency, Urgency::Informational);
+    assert_eq!(deliveries[0].urgent, false);
 }
 
 #[test]
@@ -867,7 +865,7 @@ fn delivery_urgent_not_part_of_word() {
     };
     let deliveries = route(&action, &topo);
     // #urgently is not #urgent — should not trigger
-    assert_eq!(deliveries[0].urgency, Urgency::Informational);
+    assert_eq!(deliveries[0].urgent, false);
 }
 
 #[test]
@@ -881,7 +879,7 @@ fn delivery_admiral_can_use_urgent_too() {
     let deliveries = route(&action, &topo);
     assert_eq!(deliveries.len(), 1);
     assert_eq!(deliveries[0].to, "Cedar");
-    assert_eq!(deliveries[0].urgency, Urgency::Attention);
+    assert_eq!(deliveries[0].urgent, true);
     assert!(matches!(
         &deliveries[0].content,
         DeliveryContent::Message { text } if text == "pause all work immediately"
@@ -912,8 +910,8 @@ fn render_message_with_routing_hints() {
         content: DeliveryContent::Message {
             text: "work is done".into(),
         },
-        channel: Channel::Feed,
-        urgency: Urgency::Informational,
+        
+        urgent: false,
     };
     let hints = [("Jordan", "mate"), ("Amos", "human")];
     insta::assert_snapshot!("render_message_to_captain", render_for_prompt(&delivery, &hints));
@@ -929,8 +927,8 @@ fn render_committed_with_step() {
             commit_summary: "feat: add error handling".into(),
             diff_section: "\n+42 -3".into(),
         },
-        channel: Channel::Feed,
-        urgency: Urgency::Informational,
+        
+        urgent: false,
     };
     let hints = [("Jordan", "mate"), ("Amos", "human")];
     insta::assert_snapshot!("render_committed_with_step", render_for_prompt(&delivery, &hints));
@@ -946,8 +944,8 @@ fn render_committed_no_step() {
             commit_summary: "fix: typo".into(),
             diff_section: "\n+1 -1".into(),
         },
-        channel: Channel::Feed,
-        urgency: Urgency::Informational,
+        
+        urgent: false,
     };
     let hints = [("Jordan", "mate"), ("Amos", "human")];
     insta::assert_snapshot!("render_committed_no_step", render_for_prompt(&delivery, &hints));
@@ -961,8 +959,8 @@ fn render_submitted() {
         content: DeliveryContent::Submitted {
             summary: "Refactored auth middleware".into(),
         },
-        channel: Channel::Feed,
-        urgency: Urgency::Attention,
+        
+        urgent: true,
     };
     let hints = [("Jordan", "mate"), ("Amos", "human")];
     insta::assert_snapshot!("render_submitted", render_for_prompt(&delivery, &hints));
@@ -976,8 +974,8 @@ fn render_plan_set() {
         content: DeliveryContent::PlanSet {
             plan_status: "Step 1: Tests\nStep 2: Implementation\nStep 3: Docs".into(),
         },
-        channel: Channel::Feed,
-        urgency: Urgency::Informational,
+        
+        urgent: false,
     };
     let hints = [("Jordan", "mate"), ("Amos", "human")];
     insta::assert_snapshot!("render_plan_set", render_for_prompt(&delivery, &hints));
@@ -991,8 +989,8 @@ fn render_question() {
         content: DeliveryContent::Question {
             text: "Should I use async here?".into(),
         },
-        channel: Channel::Feed,
-        urgency: Urgency::Attention,
+        
+        urgent: true,
     };
     let hints = [("Jordan", "mate"), ("Amos", "human")];
     insta::assert_snapshot!("render_question", render_for_prompt(&delivery, &hints));
@@ -1006,8 +1004,8 @@ fn render_activity_summary() {
         content: DeliveryContent::ActivitySummary {
             summary: "Mate edited 3 files, ran tests twice".into(),
         },
-        channel: Channel::Feed,
-        urgency: Urgency::Informational,
+        
+        urgent: false,
     };
     let hints = [("Jordan", "mate"), ("Amos", "human")];
     insta::assert_snapshot!("render_activity_summary", render_for_prompt(&delivery, &hints));
@@ -1022,8 +1020,8 @@ fn render_bounce() {
             reason: "Message didn't address anyone.".into(),
             allowed: vec!["Jordan".into(), "Amos".into()],
         },
-        channel: Channel::Feed,
-        urgency: Urgency::Attention,
+        
+        urgent: true,
     };
     insta::assert_snapshot!("render_bounce", render_for_prompt(&delivery, &[]));
 }
@@ -1037,8 +1035,8 @@ fn render_denied() {
             attempted_target: "Amos".into(),
             reason: "Mate cannot address human directly".into(),
         },
-        channel: Channel::Feed,
-        urgency: Urgency::Attention,
+        
+        urgent: true,
     };
     insta::assert_snapshot!("render_denied", render_for_prompt(&delivery, &[]));
 }
@@ -1051,8 +1049,8 @@ fn render_guidance() {
         content: DeliveryContent::Guidance {
             text: "You stopped without submitting. Call mate_submit with a summary of what you accomplished.".into(),
         },
-        channel: Channel::Feed,
-        urgency: Urgency::Attention,
+        
+        urgent: true,
     };
     insta::assert_snapshot!("render_guidance", render_for_prompt(&delivery, &[]));
 }
@@ -1067,8 +1065,8 @@ fn render_checks_finished_failed() {
             all_passed: false,
             summary: "2 hooks failed".into(),
         },
-        channel: Channel::Feed,
-        urgency: Urgency::Attention,
+        
+        urgent: true,
     };
     let hints = [("Jordan", "mate"), ("Amos", "human")];
     insta::assert_snapshot!("render_checks_failed", render_for_prompt(&delivery, &hints));
@@ -1084,8 +1082,8 @@ fn render_checks_finished_passed() {
             all_passed: true,
             summary: "all green".into(),
         },
-        channel: Channel::Feed,
-        urgency: Urgency::Informational,
+        
+        urgent: false,
     };
     let hints = [("Jordan", "mate"), ("Amos", "human")];
     insta::assert_snapshot!("render_checks_passed", render_for_prompt(&delivery, &hints));
@@ -1099,8 +1097,8 @@ fn render_no_routing_hints() {
         content: DeliveryContent::Message {
             text: "hello human".into(),
         },
-        channel: Channel::Feed,
-        urgency: Urgency::Informational,
+        
+        urgent: false,
     };
     insta::assert_snapshot!("render_no_hints", render_for_prompt(&delivery, &[]));
 }
