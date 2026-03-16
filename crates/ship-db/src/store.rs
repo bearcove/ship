@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use rusqlite::Connection;
 use rusqlite_facet::{ConnectionFacetExt, StatementFacetExt};
-use ship_policy::{AgentRole, Block, BlockContent, BlockId, ParticipantName, Participant, RoomId, Lane, Topology};
+use ship_policy::{AgentRole, Block, BlockContent, BlockId, ParticipantName, Participant, RoomId, Lane, Task, TaskId, TaskPhase, Topology};
 
 use crate::schema;
 use ship_types::{ActivityEntry, PersistedSession, ProjectName, SessionEventEnvelope, SessionId};
@@ -155,6 +155,48 @@ struct BlockSealParams<'a> {
 struct BlockUpdateContentParams<'a> {
     id: &'a BlockId,
     content: &'a str,
+}
+
+// ── Task row/param types ──────────────────────────────────────────────
+
+#[derive(Debug, facet::Facet)]
+struct TaskInsertParams<'a> {
+    id: &'a TaskId,
+    room_id: &'a RoomId,
+    title: &'a str,
+    description: &'a str,
+    phase: &'a str,
+    created_at: jiff::Timestamp,
+    completed_at: Option<jiff::Timestamp>,
+}
+
+#[derive(Debug, facet::Facet)]
+struct TaskRow {
+    id: TaskId,
+    room_id: RoomId,
+    title: String,
+    description: String,
+    phase: String,
+    created_at: jiff::Timestamp,
+    completed_at: Option<jiff::Timestamp>,
+}
+
+#[derive(Debug, facet::Facet)]
+struct TaskPhaseUpdateParams<'a> {
+    id: &'a TaskId,
+    phase: &'a str,
+    completed_at: Option<jiff::Timestamp>,
+}
+
+#[derive(Debug, facet::Facet)]
+struct TaskRoomParams<'a> {
+    room_id: &'a RoomId,
+}
+
+#[derive(Debug, facet::Facet)]
+struct CurrentTaskParams<'a> {
+    current_task_id: Option<&'a TaskId>,
+    id: &'a RoomId,
 }
 
 /// SQLite-backed persistence for all of ship's data.
@@ -633,6 +675,107 @@ impl ShipDb {
         Ok(())
     }
 
+    // ── Tasks ───────────────────────────────────────────────────────────
+
+    /// Insert a new task.
+    pub fn insert_task(&self, task: &Task) -> Result<(), StoreError> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        conn.facet_execute_ref(
+            "INSERT INTO tasks (id, room_id, title, description, phase, created_at, completed_at)
+             VALUES (:id, :room_id, :title, :description, :phase, :created_at, :completed_at)",
+            &TaskInsertParams {
+                id: &task.id,
+                room_id: &task.room_id,
+                title: &task.title,
+                description: &task.description,
+                phase: phase_to_str(task.phase),
+                created_at: task.created_at,
+                completed_at: task.completed_at,
+            },
+        )
+        .map_err(fe)?;
+        Ok(())
+    }
+
+    /// Load a task by id.
+    pub fn load_task(&self, id: &TaskId) -> Result<Option<Task>, StoreError> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        let mut stmt = conn
+            .prepare("SELECT id, room_id, title, description, phase, created_at, completed_at FROM tasks WHERE id = :id")
+            .map_err(se)?;
+        let row: Option<TaskRow> = stmt
+            .facet_query_optional_ref(&BlockIdParam { id: id.as_str() })
+            .map_err(fe)?;
+        row.map(task_from_row).transpose()
+    }
+
+    /// Load the current task for a room (if any).
+    pub fn current_task(&self, room_id: &RoomId) -> Result<Option<Task>, StoreError> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        let mut stmt = conn
+            .prepare(
+                "SELECT t.id, t.room_id, t.title, t.description, t.phase, t.created_at, t.completed_at
+                 FROM tasks t
+                 JOIN rooms r ON r.current_task_id = t.id
+                 WHERE r.id = :room_id",
+            )
+            .map_err(se)?;
+        let row: Option<TaskRow> = stmt
+            .facet_query_optional_ref(&TaskRoomParams { room_id })
+            .map_err(fe)?;
+        row.map(task_from_row).transpose()
+    }
+
+    /// List all tasks for a room, ordered by creation time.
+    pub fn list_tasks(&self, room_id: &RoomId) -> Result<Vec<Task>, StoreError> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        let mut stmt = conn
+            .prepare("SELECT id, room_id, title, description, phase, created_at, completed_at FROM tasks WHERE room_id = :room_id ORDER BY created_at")
+            .map_err(se)?;
+        let rows: Vec<TaskRow> = stmt
+            .facet_query_ref(&TaskRoomParams { room_id })
+            .map_err(fe)?;
+        rows.into_iter().map(task_from_row).collect()
+    }
+
+    /// Update a task's phase. Sets completed_at if the phase is terminal.
+    pub fn update_task_phase(
+        &self,
+        id: &TaskId,
+        phase: TaskPhase,
+        completed_at: Option<jiff::Timestamp>,
+    ) -> Result<(), StoreError> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        conn.facet_execute_ref(
+            "UPDATE tasks SET phase = :phase, completed_at = :completed_at WHERE id = :id",
+            &TaskPhaseUpdateParams {
+                id,
+                phase: phase_to_str(phase),
+                completed_at,
+            },
+        )
+        .map_err(fe)?;
+        Ok(())
+    }
+
+    /// Set the current task for a room. Pass None to clear.
+    pub fn set_current_task(
+        &self,
+        room_id: &RoomId,
+        task_id: Option<&TaskId>,
+    ) -> Result<(), StoreError> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        conn.facet_execute_ref(
+            "UPDATE rooms SET current_task_id = :current_task_id WHERE id = :id",
+            &CurrentTaskParams {
+                current_task_id: task_id,
+                id: room_id,
+            },
+        )
+        .map_err(fe)?;
+        Ok(())
+    }
+
     // ── Topology ────────────────────────────────────────────────────────
 
     /// Persist a full topology, replacing whatever was there before.
@@ -924,6 +1067,49 @@ fn se(e: rusqlite::Error) -> StoreError {
     StoreError {
         message: e.to_string(),
     }
+}
+
+fn task_from_row(row: TaskRow) -> Result<Task, StoreError> {
+    let phase = phase_from_str(&row.phase).ok_or_else(|| StoreError {
+        message: format!("unknown task phase '{}' for task {}", row.phase, row.id),
+    })?;
+    Ok(Task {
+        id: row.id,
+        room_id: row.room_id,
+        title: row.title,
+        description: row.description,
+        phase,
+        created_at: row.created_at,
+        completed_at: row.completed_at,
+    })
+}
+
+fn phase_to_str(phase: TaskPhase) -> &'static str {
+    match phase {
+        TaskPhase::Assigned => "assigned",
+        TaskPhase::Working => "working",
+        TaskPhase::PendingReview => "pending_review",
+        TaskPhase::RebaseConflict => "rebase_conflict",
+        TaskPhase::Accepted => "accepted",
+        TaskPhase::Cancelled => "cancelled",
+    }
+}
+
+fn phase_from_str(s: &str) -> Option<TaskPhase> {
+    match s {
+        "assigned" => Some(TaskPhase::Assigned),
+        "working" => Some(TaskPhase::Working),
+        "pending_review" => Some(TaskPhase::PendingReview),
+        "rebase_conflict" => Some(TaskPhase::RebaseConflict),
+        "accepted" => Some(TaskPhase::Accepted),
+        "cancelled" => Some(TaskPhase::Cancelled),
+        _ => None,
+    }
+}
+
+#[derive(Debug, facet::Facet)]
+struct BlockIdParam<'a> {
+    id: &'a str,
 }
 
 fn fe(e: rusqlite_facet::Error) -> StoreError {

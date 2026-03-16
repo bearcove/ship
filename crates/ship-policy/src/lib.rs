@@ -6,6 +6,7 @@ mod mentions;
 mod names;
 mod room;
 mod sandbox;
+mod task;
 mod transitions;
 pub mod prompts;
 
@@ -22,6 +23,7 @@ pub use sandbox::{
     CodePolicy, CommandNudge, OpKind, RunPolicy, SandboxEnv, SandboxPolicy, code_policy,
     command_nudge, is_op_allowed, op_denied_reason, run_policy, sandbox_policy, sandbox_profile,
 };
+pub use task::{Task, TaskId};
 pub use transitions::{TaskPhase, can_transition, reachable_from};
 
 pub use block::{
