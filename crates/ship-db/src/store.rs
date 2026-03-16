@@ -6,7 +6,7 @@ use rusqlite_facet::{ConnectionFacetExt, StatementFacetExt};
 use ship_policy::{AgentRole, Block, BlockContent, BlockId, ParticipantName, Participant, RoomId, SessionRoom, Topology};
 
 use crate::schema;
-use ship_types::{ActivityEntry, PersistedSession, SessionEventEnvelope};
+use ship_types::{ActivityEntry, PersistedSession, ProjectName, SessionEventEnvelope, SessionId};
 
 /// Error type for database operations.
 #[derive(Debug)]
@@ -30,22 +30,22 @@ struct SessionRow {
 }
 
 #[derive(Debug, facet::Facet)]
-struct IdParam {
-    id: String,
+struct IdParam<'a> {
+    id: &'a str,
 }
 
 #[derive(Debug, facet::Facet)]
-struct InsertParams {
-    id: String,
-    created_at: String,
-    archived_at: Option<String>,
-    title: Option<String>,
+struct InsertParams<'a> {
+    id: &'a SessionId,
+    created_at: &'a str,
+    archived_at: Option<&'a str>,
+    title: Option<&'a str>,
     is_read: i64,
-    project: String,
-    base_branch: String,
-    branch_name: String,
-    workflow: String,
-    data: String,
+    project: &'a ProjectName,
+    base_branch: &'a str,
+    branch_name: &'a str,
+    workflow: &'a str,
+    data: &'a str,
 }
 
 #[derive(Debug, facet::Facet)]
@@ -55,28 +55,28 @@ struct ListRow {
 }
 
 #[derive(Debug, facet::Facet)]
-struct ProjectParam {
-    project: String,
+struct ProjectParam<'a> {
+    project: &'a str,
 }
 
 #[derive(Debug, facet::Facet)]
-struct ArchiveParams {
-    id: String,
-    archived_at: Option<String>,
-    data: String,
+struct ArchiveParams<'a> {
+    id: &'a str,
+    archived_at: Option<&'a str>,
+    data: &'a str,
 }
 
 #[derive(Debug, facet::Facet)]
-struct EventInsertParams {
-    session_id: String,
+struct EventInsertParams<'a> {
+    session_id: &'a str,
     seq: i64,
-    timestamp: String,
-    data: String,
+    timestamp: &'a str,
+    data: &'a str,
 }
 
 #[derive(Debug, facet::Facet)]
-struct SessionIdParam {
-    session_id: String,
+struct SessionIdParam<'a> {
+    session_id: &'a str,
 }
 
 #[derive(Debug, facet::Facet)]
@@ -85,19 +85,19 @@ struct EventRow {
 }
 
 #[derive(Debug, facet::Facet)]
-struct ActivityInsertParams {
-    timestamp: String,
-    session_id: String,
-    session_slug: String,
-    session_title: Option<String>,
-    kind: String,
+struct ActivityInsertParams<'a> {
+    timestamp: &'a str,
+    session_id: &'a SessionId,
+    session_slug: &'a str,
+    session_title: Option<&'a str>,
+    kind: &'a str,
 }
 
 #[derive(Debug, facet::Facet)]
 struct ActivityRow {
     id: i64,
     timestamp: String,
-    session_id: String,
+    session_id: SessionId,
     session_slug: String,
     session_title: Option<String>,
     kind: String,
@@ -205,16 +205,16 @@ impl ShipDb {
             "INSERT OR REPLACE INTO sessions (id, created_at, archived_at, title, is_read, project, base_branch, branch_name, workflow, data)
              VALUES (:id, :created_at, :archived_at, :title, :is_read, :project, :base_branch, :branch_name, :workflow, :data)",
             &InsertParams {
-                id: session.id.0.clone(),
-                created_at: session.created_at.clone(),
-                archived_at: session.archived_at.clone(),
-                title: session.title.clone(),
+                id: &session.id,
+                created_at: &session.created_at,
+                archived_at: session.archived_at.as_deref(),
+                title: session.title.as_deref(),
                 is_read: if session.is_read { 1 } else { 0 },
-                project: session.config.project.0.clone(),
-                base_branch: session.config.base_branch.clone(),
-                branch_name: session.config.branch_name.clone(),
+                project: &session.config.project,
+                base_branch: &session.config.base_branch,
+                branch_name: &session.config.branch_name,
                 workflow: workflow_to_str(session.config.workflow),
-                data,
+                data: &data,
             },
         )
         .map_err(|e| StoreError {
@@ -230,9 +230,7 @@ impl ShipDb {
         let row: Option<SessionRow> = conn
             .facet_query_optional_ref(
                 "SELECT data FROM sessions WHERE id = :id",
-                &IdParam {
-                    id: id.to_owned(),
-                },
+                &IdParam { id },
             )
             .map_err(|e| StoreError {
                 message: format!("failed to load session {id}: {e}"),
@@ -272,7 +270,7 @@ impl ShipDb {
             .facet_query_ref(
                 "SELECT data, archived_at FROM sessions WHERE archived_at IS NULL AND project = :project",
                 &ProjectParam {
-                    project: project.to_owned(),
+                    project,
                 },
             )
             .map_err(|e| StoreError {
@@ -287,9 +285,7 @@ impl ShipDb {
         let conn = self.conn.lock().expect("db mutex poisoned");
         conn.facet_execute_ref(
             "DELETE FROM sessions WHERE id = :id",
-            &IdParam {
-                id: id.to_owned(),
-            },
+            &IdParam { id },
         )
         .map_err(|e| StoreError {
             message: format!("failed to delete session {id}: {e}"),
@@ -307,7 +303,7 @@ impl ShipDb {
         let row: Option<SessionRow> = conn
             .facet_query_optional_ref(
                 "SELECT data FROM sessions WHERE id = :id",
-                &IdParam { id: id.to_owned() },
+                &IdParam { id },
             )
             .map_err(|e| StoreError {
                 message: format!("failed to load session {id} for archive: {e}"),
@@ -327,9 +323,9 @@ impl ShipDb {
         conn.facet_execute_ref(
             "UPDATE sessions SET archived_at = :archived_at, data = :data WHERE id = :id",
             &ArchiveParams {
-                id: id.to_owned(),
-                archived_at: Some(timestamp.to_owned()),
-                data,
+                id,
+                archived_at: Some(timestamp),
+                data: &data,
             },
         )
         .map_err(|e| StoreError {
@@ -347,7 +343,7 @@ impl ShipDb {
         let row: Option<SessionRow> = conn
             .facet_query_optional_ref(
                 "SELECT data FROM sessions WHERE id = :id",
-                &IdParam { id: id.to_owned() },
+                &IdParam { id },
             )
             .map_err(|e| StoreError {
                 message: format!("failed to load session {id} for unarchive: {e}"),
@@ -367,9 +363,9 @@ impl ShipDb {
         conn.facet_execute_ref(
             "UPDATE sessions SET archived_at = :archived_at, data = :data WHERE id = :id",
             &ArchiveParams {
-                id: id.to_owned(),
+                id,
                 archived_at: None,
-                data,
+                data: &data,
             },
         )
         .map_err(|e| StoreError {
@@ -396,10 +392,10 @@ impl ShipDb {
             "INSERT INTO session_events (session_id, seq, timestamp, data)
              VALUES (:session_id, :seq, :timestamp, :data)",
             &EventInsertParams {
-                session_id: session_id.to_owned(),
+                session_id,
                 seq: envelope.seq as i64,
-                timestamp: envelope.timestamp.clone(),
-                data,
+                timestamp: &envelope.timestamp,
+                data: &data,
             },
         )
         .map_err(|e| StoreError {
@@ -421,9 +417,7 @@ impl ShipDb {
         let rows: Vec<EventRow> = conn
             .facet_query_ref(
                 "SELECT data FROM session_events WHERE session_id = :session_id ORDER BY seq ASC",
-                &SessionIdParam {
-                    session_id: session_id.to_owned(),
-                },
+                &SessionIdParam { session_id },
             )
             .map_err(|e| StoreError {
                 message: format!("failed to list events for session {session_id}: {e}"),
@@ -448,9 +442,7 @@ impl ShipDb {
         let row: CountRow = conn
             .facet_query_one_ref(
                 "SELECT COUNT(*) AS count FROM session_events WHERE session_id = :session_id",
-                &SessionIdParam {
-                    session_id: session_id.to_owned(),
-                },
+                &SessionIdParam { session_id },
             )
             .map_err(|e| StoreError {
                 message: format!("failed to count events for session {session_id}: {e}"),
@@ -472,11 +464,11 @@ impl ShipDb {
             "INSERT INTO activity_log (timestamp, session_id, session_slug, session_title, kind)
              VALUES (:timestamp, :session_id, :session_slug, :session_title, :kind)",
             &ActivityInsertParams {
-                timestamp: entry.timestamp.clone(),
-                session_id: entry.session_id.0.clone(),
-                session_slug: entry.session_slug.clone(),
-                session_title: entry.session_title.clone(),
-                kind: kind_json,
+                timestamp: &entry.timestamp,
+                session_id: &entry.session_id,
+                session_slug: &entry.session_slug,
+                session_title: entry.session_title.as_deref(),
+                kind: &kind_json,
             },
         )
         .map_err(|e| StoreError {
@@ -516,7 +508,7 @@ impl ShipDb {
             entries.push(ActivityEntry {
                 id: row.id as u64,
                 timestamp: row.timestamp,
-                session_id: ship_types::SessionId(row.session_id),
+                session_id: row.session_id,
                 session_slug: row.session_slug,
                 session_title: row.session_title,
                 kind,
@@ -940,10 +932,10 @@ fn fe(e: rusqlite_facet::Error) -> StoreError {
     }
 }
 
-fn workflow_to_str(w: ship_types::Workflow) -> String {
+fn workflow_to_str(w: ship_types::Workflow) -> &'static str {
     match w {
-        ship_types::Workflow::Merge => "merge".to_owned(),
-        ship_types::Workflow::PullRequest => "pull_request".to_owned(),
+        ship_types::Workflow::Merge => "merge",
+        ship_types::Workflow::PullRequest => "pull_request",
     }
 }
 
