@@ -1,14 +1,15 @@
 use jiff::Timestamp;
+use strid::braid;
 
 use crate::RoomId;
 
 /// Opaque block identifier, assigned by the system.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, facet::Facet)]
-pub struct BlockId(pub String);
+#[braid(rusqlite)]
+pub struct BlockId;
 
 /// A participant's display name. Links to the participants table.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, facet::Facet)]
-pub struct ParticipantName(pub String);
+#[braid(rusqlite)]
+pub struct ParticipantName;
 
 /// A block in a room's feed. The fundamental unit of content that the
 /// frontend renders. Blocks are created unsealed (still being built by
@@ -20,8 +21,8 @@ pub struct Block {
     pub room_id: RoomId,
     /// Ordering within the room's feed.
     pub seq: u64,
-    /// Who produced this block.
-    pub from: ParticipantName,
+    /// Who produced this block. None for system-generated blocks (errors, milestones).
+    pub from: Option<ParticipantName>,
     /// Explicit recipient, if this is a directed message.
     pub to: Option<ParticipantName>,
     pub created_at: Timestamp,

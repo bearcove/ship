@@ -907,6 +907,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5f0b31fb63f7ce92cb97975e6d6189528f0f7af6decc2b5ba453bf579eba9dae"
 dependencies = [
  "autocfg",
+ "bytes",
  "camino",
  "const-fnv1a-hash",
  "iddqd",
@@ -1971,7 +1972,7 @@ dependencies = [
  "portable-atomic",
  "portable-atomic-util",
  "serde_core",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3665,6 +3666,7 @@ version = "0.1.0"
 dependencies = [
  "facet",
  "facet-json",
+ "jiff",
  "rusqlite",
  "rusqlite-facet",
  "ship-policy",
@@ -3700,7 +3702,9 @@ dependencies = [
  "facet",
  "insta",
  "jiff",
+ "rusqlite",
  "sailfish",
+ "strid",
 ]
 
 [[package]]
@@ -3863,6 +3867,23 @@ name = "streaming-iterator"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b2231b7c3057d5e4ad0156fb3dc807d900806020c5ffa3ee6ff2c8c76fb8520"
+
+[[package]]
+name = "strid"
+version = "9.0.0"
+dependencies = [
+ "facet",
+ "strid-macros",
+]
+
+[[package]]
+name = "strid-macros"
+version = "9.0.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "unsynn",
+]
 
 [[package]]
 name = "strip-ansi-escapes"

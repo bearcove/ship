@@ -6,6 +6,8 @@ edition.workspace = true
 [dependencies]
 facet = { workspace = true }
 jiff = { workspace = true }
+rusqlite = { version = "0.32", features = ["bundled"] }
+strid = { path = "../../../strid/crates/strid" }
 sailfish = "0.9"
 
 [dev-dependencies]

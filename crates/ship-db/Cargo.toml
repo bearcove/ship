@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 facet = { workspace = true }
 facet-json = { workspace = true }
+jiff = { workspace = true }
 rusqlite = { version = "0.32", features = ["bundled"] }
 rusqlite-facet = "1.0.0"
 ship-policy = { path = "../ship-policy" }

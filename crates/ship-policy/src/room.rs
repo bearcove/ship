@@ -1,8 +1,10 @@
+use strid::braid;
+
 use crate::{AgentRole, Participant, ParticipantKind};
 
 /// A named communication space. Participants in a room can see each other's messages.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, facet::Facet)]
-pub struct RoomId(pub String);
+#[braid(rusqlite)]
+pub struct RoomId;
 
 /// The topology of rooms and participants in a Ship instance.
 #[derive(Debug, Clone)]

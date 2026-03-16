@@ -5,6 +5,7 @@ use rusqlite::Connection;
 const MIGRATIONS: &[(&str, &str)] = &[
     ("001_initial", include_str!("../migrations/001_initial.sql")),
     ("002_topology", include_str!("../migrations/002_topology.sql")),
+    ("003_blocks", include_str!("../migrations/003_blocks.sql")),
 ];
 
 const MIGRATIONS_TABLE_SQL: &str = "
@@ -110,7 +111,7 @@ mod tests {
                 .unwrap()
         };
 
-        assert_eq!(names, vec!["001_initial", "002_topology"]);
+        assert_eq!(names, vec!["001_initial", "002_topology", "003_blocks"]);
     }
 
     #[test]

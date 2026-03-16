@@ -3,7 +3,8 @@ use std::sync::{Arc, Mutex};
 
 use rusqlite::Connection;
 use rusqlite_facet::ConnectionFacetExt;
-use ship_policy::{AgentRole, Participant, RoomId, SessionRoom, Topology};
+use jiff::Timestamp;
+use ship_policy::{AgentRole, Block, BlockContent, BlockId, ParticipantName, Participant, RoomId, SessionRoom, Topology};
 
 use crate::schema;
 use ship_types::{ActivityEntry, PersistedSession, SessionEventEnvelope};
@@ -111,6 +112,50 @@ struct CountRow {
 #[derive(Debug, facet::Facet)]
 struct LimitParam {
     limit: i64,
+}
+
+// ── Block row/param types ──────────────────────────────────────────────
+
+#[derive(Debug, facet::Facet)]
+struct BlockInsertParams {
+    id: String,
+    room_id: String,
+    seq: i64,
+    from_participant: Option<String>,
+    to_participant: Option<String>,
+    created_at: String,
+    sealed_at: Option<String>,
+    content: String,
+}
+
+#[derive(Debug, facet::Facet)]
+struct BlockRow {
+    id: String,
+    room_id: String,
+    seq: i64,
+    from_participant: Option<String>,
+    to_participant: Option<String>,
+    created_at: String,
+    sealed_at: Option<String>,
+    content: String,
+}
+
+#[derive(Debug, facet::Facet)]
+struct BlockRoomParams {
+    room_id: String,
+}
+
+#[derive(Debug, facet::Facet)]
+struct BlockSealParams {
+    id: String,
+    sealed_at: String,
+    content: String,
+}
+
+#[derive(Debug, facet::Facet)]
+struct BlockUpdateContentParams {
+    id: String,
+    content: String,
 }
 
 /// SQLite-backed persistence for all of ship's data.
@@ -578,7 +623,7 @@ impl ShipDb {
 
         // Session rooms: captain + mate
         for session in &topology.sessions {
-            let room_id = &session.id.0;
+            let room_id = session.id.as_str();
             let session_id = room_id.strip_prefix("session:");
             insert_room
                 .execute(rusqlite::params![room_id, "session", session_id])
@@ -679,7 +724,7 @@ impl ShipDb {
                 })?;
 
             sessions.push(SessionRoom {
-                id: RoomId(room_id.clone()),
+                id: RoomId::from(room_id.clone()),
                 captain: find_participant(captain_name, "captain")?,
                 mate: find_participant(mate_name, "mate")?,
             });
@@ -709,7 +754,7 @@ impl ShipDb {
         )
         .map_err(se)?;
 
-        let room_id = &session.id.0;
+        let room_id = session.id.as_str();
         let session_id = room_id.strip_prefix("session:");
         conn.execute(
             "INSERT INTO rooms (id, kind, session_id) VALUES (?1, 'session', ?2)",
@@ -748,12 +793,12 @@ impl ShipDb {
             .prepare("SELECT participant_name FROM memberships WHERE room_id = ?1")
             .map_err(se)?;
         let members: Vec<String> = stmt
-            .query_map([&room_id.0], |row| row.get(0))
+            .query_map([room_id.as_str()], |row| row.get(0))
             .map_err(se)?
             .collect::<Result<Vec<_>, _>>()
             .map_err(se)?;
 
-        conn.execute("DELETE FROM rooms WHERE id = ?1", [&room_id.0])
+        conn.execute("DELETE FROM rooms WHERE id = ?1", [room_id.as_str()])
             .map_err(se)?;
 
         for name in &members {
