@@ -963,6 +963,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "facet-json-schema"
+version = "0.44.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fa250ff05d1b9b6dceeb7bb04b81e970b4148a292ed652d180ce2da99e54d65e"
+dependencies = [
+ "facet",
+ "facet-core",
+ "facet-json",
+]
+
+[[package]]
 name = "facet-macro-parse"
 version = "0.44.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1005,6 +1016,17 @@ dependencies = [
  "quote",
  "strsim",
  "unsynn",
+]
+
+[[package]]
+name = "facet-mcp"
+version = "0.1.0"
+dependencies = [
+ "facet",
+ "facet-json",
+ "facet-json-schema",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -3696,6 +3718,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "ship-mcp"
+version = "0.1.0"
+dependencies = [
+ "facet",
+ "facet-json",
+ "facet-json-schema",
+ "facet-mcp",
+ "reqwest",
+ "roam",
+ "roam-websocket",
+ "serde_json",
+ "ship-service",
+ "ship-types",
+ "tokio",
+ "tokio-tungstenite 0.26.2",
+ "tracing",
+]
+
+[[package]]
 name = "ship-policy"
 version = "0.1.0"
 dependencies = [
@@ -3734,6 +3775,7 @@ dependencies = [
  "ship-code",
  "ship-core",
  "ship-git",
+ "ship-mcp",
  "ship-service",
  "ship-types",
  "ship-voice",

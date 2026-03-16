@@ -2,15 +2,18 @@ use std::sync::Arc;
 
 use super::worktree_tools::{ToolDefinition, to_sdk_tool, web_search_tool};
 use async_trait::async_trait;
-use roam::{ConnectionSettings, MetadataEntry, MetadataFlags, MetadataValue, NoopCaller, Parity};
+use roam::{ConnectionSettings, NoopCaller, Parity};
 use rust_mcp_sdk::mcp_server::{McpServerOptions, ServerHandler, server_runtime};
 use rust_mcp_sdk::schema::{
-    CallToolRequestParams, CallToolResult, Implementation, InitializeResult, ListToolsResult,
-    PaginatedRequestParams, ProtocolVersion, RpcError, ServerCapabilities, ServerCapabilitiesTools,
-    TextContent, schema_utils::CallToolError,
+    CallToolRequestParams, CallToolResult, ListToolsResult,
+    PaginatedRequestParams, RpcError,
+    schema_utils::CallToolError,
 };
 use rust_mcp_sdk::{McpServer, StdioTransport, ToMcpServerHandler, TransportOptions};
 use serde_json::{Value, json};
+use ship_mcp::{
+    kagi_web_search, metadata_string, metadata_string_owned, server_details, tool_result,
+};
 use ship_service::AdmiralMcpClient;
 use ship_types::SessionId;
 
@@ -46,6 +49,7 @@ impl ServerHandler for AdmiralMcpHandler {
         params: CallToolRequestParams,
         _runtime: Arc<dyn McpServer>,
     ) -> Result<CallToolResult, CallToolError> {
+        let rpc_err = |e| ship_mcp::call_tool_rpc_error("admiral", e);
         let arguments = params.arguments.map(Value::Object).unwrap_or(Value::Null);
         let result = match params.name.as_str() {
             // r[admiral.tool.list-lanes]
@@ -53,7 +57,7 @@ impl ServerHandler for AdmiralMcpHandler {
                 .client
                 .admiral_list_lanes()
                 .await
-                .map_err(call_tool_rpc_error)?,
+                .map_err(&rpc_err)?,
             // r[admiral.tool.create-lane]
             "admiral_create_lane" => {
                 let Some(project) = arguments.get("project").and_then(Value::as_str) else {
@@ -65,7 +69,7 @@ impl ServerHandler for AdmiralMcpHandler {
                 self.client
                     .admiral_create_lane(project.to_owned(), description.to_owned())
                     .await
-                    .map_err(call_tool_rpc_error)?
+                    .map_err(&rpc_err)?
             }
             // r[admiral.tool.steer-captain]
             "admiral_steer_captain" => {
@@ -78,7 +82,7 @@ impl ServerHandler for AdmiralMcpHandler {
                 self.client
                     .admiral_steer_captain(SessionId(session_id.to_owned()), message.to_owned())
                     .await
-                    .map_err(call_tool_rpc_error)?
+                    .map_err(&rpc_err)?
             }
             // r[admiral.tool.post-to-human]
             "admiral_post_to_human" => {
@@ -88,14 +92,14 @@ impl ServerHandler for AdmiralMcpHandler {
                 self.client
                     .admiral_post_to_human(message.to_owned())
                     .await
-                    .map_err(call_tool_rpc_error)?
+                    .map_err(&rpc_err)?
             }
             // r[admiral.tool.list-projects]
             "admiral_list_projects" => self
                 .client
                 .admiral_list_projects()
                 .await
-                .map_err(call_tool_rpc_error)?,
+                .map_err(&rpc_err)?,
             // r[admiral.tool.read-file]
             "read_file" => {
                 let Some(path) = arguments.get("path").and_then(Value::as_str) else {
@@ -106,7 +110,7 @@ impl ServerHandler for AdmiralMcpHandler {
                 self.client
                     .admiral_read_file(path.to_owned(), offset, limit)
                     .await
-                    .map_err(call_tool_rpc_error)?
+                    .map_err(&rpc_err)?
             }
             // r[admiral.tool.run-command]
             "run_command" => {
@@ -120,7 +124,7 @@ impl ServerHandler for AdmiralMcpHandler {
                 self.client
                     .admiral_run_command(command.to_owned(), cwd)
                     .await
-                    .map_err(call_tool_rpc_error)?
+                    .map_err(&rpc_err)?
             }
             "web_search" => {
                 let Some(query) = arguments.get("query").and_then(Value::as_str) else {
@@ -180,7 +184,7 @@ pub async fn run_stdio_server(args: AdmiralMcpServerArgs) -> Result<(), String> 
     let transport = StdioTransport::new(TransportOptions::default())
         .map_err(|error| format!("failed to create stdio transport: {error}"))?;
     let server = server_runtime::create_server(McpServerOptions {
-        server_details: server_details(),
+        server_details: server_details("Ship admiral MCP server"),
         transport,
         handler: AdmiralMcpHandler {
             client,
@@ -198,28 +202,6 @@ pub async fn run_stdio_server(args: AdmiralMcpServerArgs) -> Result<(), String> 
         .await
         .map_err(|error| format!("admiral MCP server failed: {error}"))?;
     Ok(())
-}
-
-fn server_details() -> InitializeResult {
-    InitializeResult {
-        server_info: Implementation {
-            name: "ship".to_owned(),
-            version: env!("CARGO_PKG_VERSION").to_owned(),
-            title: Some("Ship".to_owned()),
-            description: Some("Ship admiral MCP server".to_owned()),
-            icons: Vec::new(),
-            website_url: None,
-        },
-        capabilities: ServerCapabilities {
-            tools: Some(ServerCapabilitiesTools {
-                list_changed: Some(false),
-            }),
-            ..Default::default()
-        },
-        instructions: None,
-        meta: None,
-        protocol_version: ProtocolVersion::V2025_11_25.into(),
-    }
 }
 
 fn tool_definitions() -> Vec<ToolDefinition> {
@@ -312,96 +294,3 @@ The admiral has no worktree — pass an absolute path via cwd if you need to run
     ]
 }
 
-fn tool_result(text: &str, is_error: bool) -> CallToolResult {
-    CallToolResult {
-        content: vec![TextContent::from(text.to_owned()).into()],
-        is_error: is_error.then_some(true),
-        meta: None,
-        structured_content: None,
-    }
-}
-
-fn call_tool_rpc_error(error: impl std::fmt::Debug) -> CallToolError {
-    CallToolError::from_message(format!("admiral MCP RPC failed: {error:?}"))
-}
-
-fn metadata_string<'a>(key: &'a str, value: &'a str) -> MetadataEntry<'a> {
-    MetadataEntry {
-        key,
-        value: MetadataValue::String(value),
-        flags: MetadataFlags::NONE,
-    }
-}
-
-fn metadata_string_owned(key: &'static str, value: String) -> MetadataEntry<'static> {
-    MetadataEntry {
-        key,
-        value: MetadataValue::String(Box::leak(value.into_boxed_str())),
-        flags: MetadataFlags::NONE,
-    }
-}
-
-async fn kagi_web_search(
-    http_client: &reqwest::Client,
-    api_key: &str,
-    query: &str,
-) -> CallToolResult {
-    let response = match http_client
-        .post("https://kagi.com/api/v0/fastgpt")
-        .header("Authorization", format!("Bot {api_key}"))
-        .json(&json!({ "query": query }))
-        .send()
-        .await
-    {
-        Ok(r) => r,
-        Err(error) => return tool_result(&format!("web_search request failed: {error}"), true),
-    };
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return tool_result(
-            &format!("web_search request failed with status {status}: {body}"),
-            true,
-        );
-    }
-
-    let body: Value = match response.json().await {
-        Ok(v) => v,
-        Err(error) => {
-            return tool_result(
-                &format!("failed to parse web_search response: {error}"),
-                true,
-            );
-        }
-    };
-
-    let output = body
-        .get("data")
-        .and_then(|d| d.get("output"))
-        .and_then(Value::as_str)
-        .unwrap_or("");
-
-    let mut text = output.to_owned();
-
-    if let Some(refs) = body
-        .get("data")
-        .and_then(|d| d.get("references"))
-        .and_then(Value::as_array)
-        && !refs.is_empty()
-    {
-        text.push_str("\n\n## References\n");
-        for r in refs {
-            let title = r.get("title").and_then(Value::as_str).unwrap_or("Untitled");
-            let url = r.get("url").and_then(Value::as_str).unwrap_or("");
-            let snippet = r.get("snippet").and_then(Value::as_str).unwrap_or("");
-            if snippet.is_empty() {
-                text.push_str(&format!("- [{title}]({url})\n"));
-            } else {
-                text.push_str(&format!("- [{title}]({url}): {snippet}\n"));
-            }
-        }
-    }
-
-    tool_result(&text, false)
-}

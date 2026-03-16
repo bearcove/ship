@@ -1,0 +1,19 @@
+[package]
+name = "ship-mcp"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+facet = { workspace = true }
+facet-mcp = { path = "../facet-mcp" }
+facet-json = { workspace = true }
+facet-json-schema = "0.44.1"
+roam = { workspace = true }
+roam-websocket = { workspace = true }
+reqwest = { workspace = true }
+serde_json = "1"
+tokio = { workspace = true }
+tokio-tungstenite = "0.26.2"
+tracing = { workspace = true }
+ship-service = { path = "../ship-service" }
+ship-types = { path = "../ship-types" }

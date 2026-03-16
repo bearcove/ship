@@ -41,6 +41,7 @@ ship-acp = { path = "../ship-acp" }
 ship-code = { path = "../ship-code" }
 ship-core = { path = "../ship-core" }
 ship-git = { path = "../ship-git" }
+ship-mcp = { path = "../ship-mcp" }
 ship-service = { path = "../ship-service" }
 ship-types = { path = "../ship-types" }
 tokio = { workspace = true, features = ["signal", "sync", "process", "time", "net"] }

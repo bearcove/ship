@@ -1,0 +1,11 @@
+[package]
+name = "facet-mcp"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+facet = { workspace = true }
+facet-json = { workspace = true }
+facet-json-schema = "0.44.1"
+tokio = { workspace = true, features = ["io-util", "io-std", "sync"] }
+tracing = { workspace = true }

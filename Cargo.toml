@@ -11,6 +11,8 @@ members = [
   "crates/ship-voice",
   "crates/ship-db",
   "crates/ship-policy",
+  "crates/ship-mcp",
+  "crates/facet-mcp",
 ]
 resolver = "2"
 
