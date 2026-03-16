@@ -10,3 +10,6 @@ facet = { workspace = true }
 facet-core = { workspace = true }
 facet-reflect = { workspace = true }
 rusqlite = { workspace = true }
+
+[dev-dependencies]
+jiff = { workspace = true }

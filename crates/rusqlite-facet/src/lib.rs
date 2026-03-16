@@ -676,6 +676,11 @@ fn peek_to_sql_value(peek: Peek<'_, '_>, field_name: &str) -> Result<SqlValue> {
     if peek.shape() == <Vec<u8>>::SHAPE {
         return Ok(SqlValue::Blob(peek.get::<Vec<u8>>()?.clone()));
     }
+    // Types with Display — serialize as text (e.g. jiff::Timestamp, other opaque scalars).
+    if peek.shape().vtable.has_display() {
+        return Ok(SqlValue::Text(peek.to_string()));
+    }
+
     if let Some(text) = peek.as_str() {
         return Ok(SqlValue::Text(text.to_string()));
     }
@@ -1249,5 +1254,105 @@ mod tests {
                 name: MonkString("teacup".to_string())
             }
         );
+    }
+
+    #[derive(Debug, Facet)]
+    struct TimestampInsert {
+        id: i64,
+        created_at: jiff::Timestamp,
+    }
+
+    #[derive(Debug, Facet, PartialEq)]
+    struct TimestampRow {
+        id: i64,
+        created_at: jiff::Timestamp,
+    }
+
+    #[derive(Debug, Facet)]
+    struct TimestampOptionalInsert {
+        id: i64,
+        sealed_at: Option<jiff::Timestamp>,
+    }
+
+    #[derive(Debug, Facet, PartialEq)]
+    struct TimestampOptionalRow {
+        id: i64,
+        sealed_at: Option<jiff::Timestamp>,
+    }
+
+    #[derive(Debug, Facet)]
+    struct IdParam {
+        id: i64,
+    }
+
+    #[test]
+    fn jiff_timestamp_roundtrip() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute(
+            "CREATE TABLE events (id INTEGER NOT NULL, created_at TEXT NOT NULL)",
+            (),
+        )
+        .unwrap();
+
+        let ts = jiff::Timestamp::from_second(1700000000).unwrap();
+
+        conn.facet_execute_ref(
+            "INSERT INTO events (id, created_at) VALUES (:id, :created_at)",
+            &TimestampInsert {
+                id: 1,
+                created_at: ts,
+            },
+        )
+        .unwrap();
+
+        let row: TimestampRow = conn
+            .prepare("SELECT id, created_at FROM events WHERE id = :id")
+            .unwrap()
+            .facet_query_row(IdParam { id: 1 })
+            .unwrap();
+
+        assert_eq!(row.id, 1);
+        assert_eq!(row.created_at, ts);
+    }
+
+    #[test]
+    fn jiff_timestamp_optional_roundtrip() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute(
+            "CREATE TABLE blocks (id INTEGER NOT NULL, sealed_at TEXT)",
+            (),
+        )
+        .unwrap();
+
+        let ts = jiff::Timestamp::from_second(1700000000).unwrap();
+
+        conn.facet_execute_ref(
+            "INSERT INTO blocks (id, sealed_at) VALUES (:id, :sealed_at)",
+            &TimestampOptionalInsert {
+                id: 1,
+                sealed_at: Some(ts),
+            },
+        )
+        .unwrap();
+
+        conn.facet_execute_ref(
+            "INSERT INTO blocks (id, sealed_at) VALUES (:id, :sealed_at)",
+            &TimestampOptionalInsert {
+                id: 2,
+                sealed_at: None,
+            },
+        )
+        .unwrap();
+
+        let rows: Vec<TimestampOptionalRow> = {
+            let mut stmt = conn
+                .prepare("SELECT id, sealed_at FROM blocks ORDER BY id")
+                .unwrap();
+            stmt.facet_query(()).unwrap()
+        };
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0], TimestampOptionalRow { id: 1, sealed_at: Some(ts) });
+        assert_eq!(rows[1], TimestampOptionalRow { id: 2, sealed_at: None });
     }
 }
