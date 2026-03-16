@@ -1,3 +1,4 @@
+mod block;
 mod delivery;
 mod help;
 mod identity;
@@ -23,6 +24,10 @@ pub use sandbox::{
 };
 pub use transitions::{TaskPhase, can_transition, reachable_from};
 
+pub use block::{
+    Block, BlockContent, BlockId, MilestoneKind, ParticipantName, PermissionResolution, PlanStep,
+    ToolCallLocation, ToolCallStatus,
+};
 pub use identity::*;
 pub use room::*;
 

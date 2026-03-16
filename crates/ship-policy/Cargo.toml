@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 facet = { workspace = true }
+jiff = { workspace = true }
 sailfish = "0.9"
 
 [dev-dependencies]
