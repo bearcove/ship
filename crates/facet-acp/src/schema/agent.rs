@@ -7,14 +7,14 @@ use crate::{ContentBlock, SessionId, ProtocolVersion};
 // ── Initialize ─────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Facet)]
-#[facet(rename_all = "camelCase")]
+#[facet(rename_all = "camelCase", skip_all_unless_truthy)]
 pub struct InitializeRequest {
     pub protocol_version: ProtocolVersion,
     #[facet(default)]
     pub client_capabilities: ClientCapabilities,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub client_info: Option<Implementation>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -40,16 +40,16 @@ impl InitializeRequest {
 }
 
 #[derive(Debug, Clone, Facet)]
-#[facet(rename_all = "camelCase")]
+#[facet(rename_all = "camelCase", skip_all_unless_truthy)]
 pub struct InitializeResponse {
     pub protocol_version: ProtocolVersion,
     #[facet(default)]
     pub agent_capabilities: AgentCapabilities,
     #[facet(default)]
     pub auth_methods: Vec<AuthMethod>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub agent_info: Option<Implementation>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -67,13 +67,13 @@ impl InitializeResponse {
 
 /// Metadata about an implementation.
 #[derive(Debug, Clone, Facet)]
-#[facet(rename_all = "camelCase")]
+#[facet(rename_all = "camelCase", skip_all_unless_truthy)]
 pub struct Implementation {
     pub name: String,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub title: Option<String>,
     pub version: String,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -96,7 +96,7 @@ impl Implementation {
 // ── Capabilities ───────────────────────────────────────────────────
 
 #[derive(Default, Debug, Clone, Facet)]
-#[facet(rename_all = "camelCase")]
+#[facet(rename_all = "camelCase", skip_all_unless_truthy)]
 pub struct AgentCapabilities {
     #[facet(default)]
     pub load_session: bool,
@@ -106,12 +106,12 @@ pub struct AgentCapabilities {
     pub mcp_capabilities: McpCapabilities,
     #[facet(default)]
     pub session_capabilities: SessionCapabilities,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
 #[derive(Default, Debug, Clone, Facet)]
-#[facet(rename_all = "camelCase")]
+#[facet(rename_all = "camelCase", skip_all_unless_truthy)]
 pub struct PromptCapabilities {
     #[facet(default)]
     pub image: bool,
@@ -119,37 +119,40 @@ pub struct PromptCapabilities {
     pub audio: bool,
     #[facet(default)]
     pub embedded_context: bool,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
 #[derive(Default, Debug, Clone, Facet)]
+#[facet(skip_all_unless_truthy)]
 pub struct SessionCapabilities {
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub list: Option<SessionListCapabilities>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub fork: Option<SessionForkCapabilities>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub resume: Option<SessionResumeCapabilities>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
 #[derive(Default, Debug, Clone, Facet)]
+#[facet(skip_all_unless_truthy)]
 pub struct SessionListCapabilities {
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
 #[derive(Default, Debug, Clone, Facet)]
+#[facet(skip_all_unless_truthy)]
 pub struct SessionForkCapabilities {
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
 #[derive(Default, Debug, Clone, Facet)]
 pub struct SessionResumeCapabilities {
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -160,7 +163,7 @@ pub struct McpCapabilities {
     pub http: bool,
     #[facet(default)]
     pub sse: bool,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -171,7 +174,7 @@ pub struct ClientCapabilities {
     pub fs: FileSystemCapability,
     #[facet(default)]
     pub terminal: bool,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -182,7 +185,7 @@ pub struct FileSystemCapability {
     pub read_text_file: bool,
     #[facet(default)]
     pub write_text_file: bool,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -209,9 +212,9 @@ impl From<&str> for AuthMethodId {
 pub struct AuthMethod {
     pub id: AuthMethodId,
     pub name: String,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub description: Option<String>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -219,14 +222,14 @@ pub struct AuthMethod {
 #[facet(rename_all = "camelCase")]
 pub struct AuthenticateRequest {
     pub method_id: AuthMethodId,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
 #[derive(Default, Debug, Clone, Facet)]
 #[facet(rename_all = "camelCase")]
 pub struct AuthenticateResponse {
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -238,7 +241,7 @@ pub struct NewSessionRequest {
     pub cwd: String,
     #[facet(default)]
     pub mcp_servers: Vec<McpServer>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -261,13 +264,13 @@ impl NewSessionRequest {
 #[facet(rename_all = "camelCase")]
 pub struct NewSessionResponse {
     pub session_id: SessionId,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub modes: Option<SessionModeState>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub models: Option<SessionModelState>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub config_options: Option<Vec<SessionConfigOption>>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -290,20 +293,20 @@ pub struct LoadSessionRequest {
     pub mcp_servers: Vec<McpServer>,
     pub cwd: String,
     pub session_id: SessionId,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
 #[derive(Default, Debug, Clone, Facet)]
 #[facet(rename_all = "camelCase")]
 pub struct LoadSessionResponse {
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub modes: Option<SessionModeState>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub models: Option<SessionModelState>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub config_options: Option<Vec<SessionConfigOption>>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -316,7 +319,7 @@ pub struct ForkSessionRequest {
     pub cwd: String,
     #[facet(default)]
     pub mcp_servers: Vec<McpServer>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -324,13 +327,13 @@ pub struct ForkSessionRequest {
 #[facet(rename_all = "camelCase")]
 pub struct ForkSessionResponse {
     pub session_id: SessionId,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub modes: Option<SessionModeState>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub models: Option<SessionModelState>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub config_options: Option<Vec<SessionConfigOption>>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -343,20 +346,20 @@ pub struct ResumeSessionRequest {
     pub cwd: String,
     #[facet(default)]
     pub mcp_servers: Vec<McpServer>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
 #[derive(Default, Debug, Clone, Facet)]
 #[facet(rename_all = "camelCase")]
 pub struct ResumeSessionResponse {
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub modes: Option<SessionModeState>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub models: Option<SessionModelState>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub config_options: Option<Vec<SessionConfigOption>>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -365,11 +368,11 @@ pub struct ResumeSessionResponse {
 #[derive(Default, Debug, Clone, Facet)]
 #[facet(rename_all = "camelCase")]
 pub struct ListSessionsRequest {
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub cwd: Option<String>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub cursor: Option<String>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -377,9 +380,9 @@ pub struct ListSessionsRequest {
 #[facet(rename_all = "camelCase")]
 pub struct ListSessionsResponse {
     pub sessions: Vec<SessionInfo>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub next_cursor: Option<String>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -388,11 +391,11 @@ pub struct ListSessionsResponse {
 pub struct SessionInfo {
     pub session_id: SessionId,
     pub cwd: String,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub title: Option<String>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub updated_at: Option<String>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -403,7 +406,7 @@ pub struct SessionInfo {
 pub struct PromptRequest {
     pub session_id: SessionId,
     pub prompt: Vec<ContentBlock>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -421,9 +424,9 @@ impl PromptRequest {
 #[facet(rename_all = "camelCase")]
 pub struct PromptResponse {
     pub stop_reason: StopReason,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub usage: Option<Usage>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -434,11 +437,11 @@ pub struct Usage {
     pub total_tokens: u64,
     pub input_tokens: u64,
     pub output_tokens: u64,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub thought_tokens: Option<u64>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub cached_read_tokens: Option<u64>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub cached_write_tokens: Option<u64>,
 }
 
@@ -460,7 +463,7 @@ pub enum StopReason {
 #[facet(rename_all = "camelCase")]
 pub struct CancelNotification {
     pub session_id: SessionId,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -496,7 +499,7 @@ impl From<&str> for SessionModeId {
 pub struct SessionModeState {
     pub current_mode_id: SessionModeId,
     pub available_modes: Vec<SessionMode>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -505,9 +508,9 @@ pub struct SessionModeState {
 pub struct SessionMode {
     pub id: SessionModeId,
     pub name: String,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub description: Option<String>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -516,14 +519,14 @@ pub struct SessionMode {
 pub struct SetSessionModeRequest {
     pub session_id: SessionId,
     pub mode_id: SessionModeId,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
 #[derive(Default, Debug, Clone, Facet)]
 #[facet(rename_all = "camelCase")]
 pub struct SetSessionModeResponse {
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -550,7 +553,7 @@ impl From<&str> for ModelId {
 pub struct SessionModelState {
     pub current_model_id: ModelId,
     pub available_models: Vec<ModelInfo>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -559,9 +562,9 @@ pub struct SessionModelState {
 pub struct ModelInfo {
     pub model_id: ModelId,
     pub name: String,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub description: Option<String>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -570,7 +573,7 @@ pub struct ModelInfo {
 pub struct SetSessionModelRequest {
     pub session_id: SessionId,
     pub model_id: ModelId,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -587,7 +590,7 @@ impl SetSessionModelRequest {
 #[derive(Default, Debug, Clone, Facet)]
 #[facet(rename_all = "camelCase")]
 pub struct SetSessionModelResponse {
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -646,12 +649,12 @@ impl From<&str> for SessionConfigGroupId {
 pub struct SessionConfigOption {
     pub id: SessionConfigId,
     pub name: String,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub description: Option<String>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub category: Option<SessionConfigOptionCategory>,
     pub kind: SessionConfigKind,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -682,9 +685,9 @@ pub enum SessionConfigSelectOptions {
 pub struct SessionConfigSelectOption {
     pub value: SessionConfigValueId,
     pub name: String,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub description: Option<String>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -694,7 +697,7 @@ pub struct SessionConfigSelectGroup {
     pub group: SessionConfigGroupId,
     pub name: String,
     pub options: Vec<SessionConfigSelectOption>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -713,7 +716,7 @@ pub struct SetSessionConfigOptionRequest {
     pub session_id: SessionId,
     pub config_id: SessionConfigId,
     pub value: SessionConfigValueId,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -736,7 +739,7 @@ impl SetSessionConfigOptionRequest {
 #[facet(rename_all = "camelCase")]
 pub struct SetSessionConfigOptionResponse {
     pub config_options: Vec<SessionConfigOption>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -758,7 +761,7 @@ pub struct McpServerHttp {
     pub url: String,
     #[facet(default)]
     pub headers: Vec<HttpHeader>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -785,7 +788,7 @@ pub struct McpServerSse {
     pub url: String,
     #[facet(default)]
     pub headers: Vec<HttpHeader>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -814,7 +817,7 @@ pub struct McpServerStdio {
     pub args: Vec<String>,
     #[facet(default)]
     pub env: Vec<EnvVariable>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -845,7 +848,7 @@ impl McpServerStdio {
 pub struct HttpHeader {
     pub name: String,
     pub value: String,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -864,7 +867,7 @@ impl HttpHeader {
 pub struct EnvVariable {
     pub name: String,
     pub value: String,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -885,9 +888,9 @@ impl EnvVariable {
 pub struct UsageUpdate {
     pub used: u64,
     pub size: u64,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub cost: Option<Cost>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 

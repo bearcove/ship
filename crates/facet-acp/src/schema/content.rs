@@ -28,13 +28,13 @@ impl<T: Into<String>> From<T> for ContentBlock {
 #[derive(Debug, Clone, PartialEq, Default, Facet)]
 #[facet(rename_all = "camelCase")]
 pub struct Annotations {
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub audience: Option<Vec<Role>>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub last_modified: Option<String>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub priority: Option<f64>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -42,10 +42,10 @@ pub struct Annotations {
 #[derive(Debug, Clone, PartialEq, Facet)]
 #[facet(rename_all = "camelCase")]
 pub struct TextContent {
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub annotations: Option<Annotations>,
     pub text: String,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -63,13 +63,13 @@ impl TextContent {
 #[derive(Debug, Clone, PartialEq, Facet)]
 #[facet(rename_all = "camelCase")]
 pub struct ImageContent {
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub annotations: Option<Annotations>,
     pub data: String,
     pub mime_type: String,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub uri: Option<String>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -89,11 +89,11 @@ impl ImageContent {
 #[derive(Debug, Clone, PartialEq, Facet)]
 #[facet(rename_all = "camelCase")]
 pub struct AudioContent {
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub annotations: Option<Annotations>,
     pub data: String,
     pub mime_type: String,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -111,10 +111,10 @@ impl AudioContent {
 /// Complete resource contents embedded in a message.
 #[derive(Debug, Clone, PartialEq, Facet)]
 pub struct EmbeddedResource {
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub annotations: Option<Annotations>,
     pub resource: EmbeddedResourceResource,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -141,11 +141,11 @@ pub enum EmbeddedResourceResource {
 #[derive(Debug, Clone, PartialEq, Facet)]
 #[facet(rename_all = "camelCase")]
 pub struct TextResourceContents {
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub mime_type: Option<String>,
     pub text: String,
     pub uri: String,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -165,10 +165,10 @@ impl TextResourceContents {
 #[facet(rename_all = "camelCase")]
 pub struct BlobResourceContents {
     pub blob: String,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub mime_type: Option<String>,
     pub uri: String,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -187,19 +187,19 @@ impl BlobResourceContents {
 #[derive(Debug, Clone, PartialEq, Facet)]
 #[facet(rename_all = "camelCase")]
 pub struct ResourceLink {
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub annotations: Option<Annotations>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub description: Option<String>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub mime_type: Option<String>,
     pub name: String,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub size: Option<i64>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub title: Option<String>,
     pub uri: String,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -232,7 +232,7 @@ pub enum Role {
 #[facet(rename_all = "camelCase")]
 pub struct ContentChunk {
     pub content: ContentBlock,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 

@@ -48,11 +48,11 @@ pub struct ToolCall {
     pub content: Vec<ToolCallContent>,
     #[facet(default)]
     pub locations: Vec<ToolCallLocation>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub raw_input: Option<RawJson<'static>>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub raw_output: Option<RawJson<'static>>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -123,21 +123,21 @@ impl ToolCall {
 pub struct ToolCallUpdate {
     pub tool_call_id: ToolCallId,
     // TODO: facet doesn't support #[facet(flatten)] yet, so we inline the fields
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub kind: Option<ToolKind>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub status: Option<ToolCallStatus>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub title: Option<String>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub content: Option<Vec<ToolCallContent>>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub locations: Option<Vec<ToolCallLocation>>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub raw_input: Option<RawJson<'static>>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub raw_output: Option<RawJson<'static>>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -239,7 +239,7 @@ impl<T: Into<ContentBlock>> From<T> for ToolCallContent {
 #[facet(rename_all = "camelCase")]
 pub struct Content {
     pub content: ContentBlock,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -257,7 +257,7 @@ impl Content {
 #[facet(rename_all = "camelCase")]
 pub struct Terminal {
     pub terminal_id: TerminalId,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -298,10 +298,10 @@ impl From<&str> for TerminalId {
 #[facet(rename_all = "camelCase")]
 pub struct Diff {
     pub path: String,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub old_text: Option<String>,
     pub new_text: String,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -326,9 +326,9 @@ impl Diff {
 #[facet(rename_all = "camelCase")]
 pub struct ToolCallLocation {
     pub path: String,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub line: Option<u32>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 

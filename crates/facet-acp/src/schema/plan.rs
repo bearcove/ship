@@ -6,7 +6,7 @@ use facet_json::RawJson;
 #[facet(rename_all = "camelCase")]
 pub struct Plan {
     pub entries: Vec<PlanEntry>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -26,7 +26,7 @@ pub struct PlanEntry {
     pub content: String,
     pub priority: PlanEntryPriority,
     pub status: PlanEntryStatus,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 

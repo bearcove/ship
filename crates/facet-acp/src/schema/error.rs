@@ -8,7 +8,7 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 pub struct Error {
     pub code: i32,
     pub message: String,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub data: Option<RawJson<'static>>,
 }
 

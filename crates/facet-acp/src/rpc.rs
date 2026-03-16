@@ -12,35 +12,98 @@ pub enum JsonRpcId {
     Str(String),
 }
 
-/// An incoming JSON-RPC message (request or notification).
-#[derive(Debug, Facet)]
-pub struct JsonRpcRequest {
-    pub jsonrpc: String,
-    #[facet(default)]
-    pub id: Option<JsonRpcId>,
-    pub method: String,
-    #[facet(default)]
-    pub params: Option<RawJson<'static>>,
-}
-
-/// An outgoing JSON-RPC response.
+/// A JSON-RPC 2.0 message — can be a request, notification, or response.
+///
+/// Routing rules:
+/// - Has `method` + `id` → request (expects a response)
+/// - Has `method`, no `id` → notification (fire-and-forget)
+/// - Has `id` + (`result` or `error`), no `method` → response
 #[derive(Debug, Facet)]
 #[facet(skip_all_unless_truthy)]
-pub struct JsonRpcResponse {
+pub struct JsonRpcMessage {
     pub jsonrpc: String,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub id: Option<JsonRpcId>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
+    pub method: Option<String>,
+    #[facet(default, skip_unless_truthy)]
+    pub params: Option<RawJson<'static>>,
+    #[facet(default, skip_unless_truthy)]
     pub result: Option<RawJson<'static>>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub error: Option<JsonRpcError>,
+}
+
+impl JsonRpcMessage {
+    /// Build an outgoing request (has method + id).
+    pub fn request(id: i64, method: impl Into<String>, params: RawJson<'static>) -> Self {
+        Self {
+            jsonrpc: "2.0".to_owned(),
+            id: Some(JsonRpcId::Number(id)),
+            method: Some(method.into()),
+            params: Some(params),
+            result: None,
+            error: None,
+        }
+    }
+
+    /// Build an outgoing notification (has method, no id).
+    pub fn notification(method: impl Into<String>, params: RawJson<'static>) -> Self {
+        Self {
+            jsonrpc: "2.0".to_owned(),
+            id: None,
+            method: Some(method.into()),
+            params: Some(params),
+            result: None,
+            error: None,
+        }
+    }
+
+    /// Build an outgoing success response.
+    pub fn response_ok(id: JsonRpcId, result: RawJson<'static>) -> Self {
+        Self {
+            jsonrpc: "2.0".to_owned(),
+            id: Some(id),
+            method: None,
+            params: None,
+            result: Some(result),
+            error: None,
+        }
+    }
+
+    /// Build an outgoing error response.
+    pub fn response_err(id: JsonRpcId, error: JsonRpcError) -> Self {
+        Self {
+            jsonrpc: "2.0".to_owned(),
+            id: Some(id),
+            method: None,
+            params: None,
+            result: None,
+            error: Some(error),
+        }
+    }
+
+    /// Is this a response? (has result or error, no method)
+    pub fn is_response(&self) -> bool {
+        self.method.is_none() && (self.result.is_some() || self.error.is_some())
+    }
+
+    /// Is this a request? (has method and id)
+    pub fn is_request(&self) -> bool {
+        self.method.is_some() && self.id.is_some()
+    }
+
+    /// Is this a notification? (has method, no id)
+    pub fn is_notification(&self) -> bool {
+        self.method.is_some() && self.id.is_none()
+    }
 }
 
 #[derive(Debug, Facet)]
 pub struct JsonRpcError {
     pub code: i32,
     pub message: String,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub data: Option<RawJson<'static>>,
 }
 

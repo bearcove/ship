@@ -271,9 +271,10 @@ fn error_serialization() {
 #[test]
 fn jsonrpc_request_parse() {
     let raw = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}"#;
-    let req: JsonRpcRequest = facet_json::from_str(raw).unwrap();
-    assert_eq!(req.method, "initialize");
-    match req.id {
+    let msg: JsonRpcMessage = facet_json::from_str(raw).unwrap();
+    assert_eq!(msg.method.as_deref(), Some("initialize"));
+    assert!(msg.is_request());
+    match msg.id {
         Some(JsonRpcId::Number(n)) => assert_eq!(n, 1),
         other => panic!("expected Number(1), got {other:?}"),
     }
@@ -282,8 +283,9 @@ fn jsonrpc_request_parse() {
 #[test]
 fn jsonrpc_request_string_id() {
     let raw = r#"{"jsonrpc":"2.0","id":"abc-123","method":"test"}"#;
-    let req: JsonRpcRequest = facet_json::from_str(raw).unwrap();
-    match req.id {
+    let msg: JsonRpcMessage = facet_json::from_str(raw).unwrap();
+    assert!(msg.is_request());
+    match msg.id {
         Some(JsonRpcId::Str(ref s)) => assert_eq!(s, "abc-123"),
         other => panic!("expected Str, got {other:?}"),
     }
@@ -292,23 +294,42 @@ fn jsonrpc_request_string_id() {
 #[test]
 fn jsonrpc_notification_no_id() {
     let raw = r#"{"jsonrpc":"2.0","method":"session/cancel","params":{"sessionId":"sess-1"}}"#;
-    let req: JsonRpcRequest = facet_json::from_str(raw).unwrap();
-    assert!(req.id.is_none());
-    assert_eq!(req.method, "session/cancel");
+    let msg: JsonRpcMessage = facet_json::from_str(raw).unwrap();
+    assert!(msg.is_notification());
+    assert!(msg.id.is_none());
+    assert_eq!(msg.method.as_deref(), Some("session/cancel"));
+}
+
+#[test]
+fn jsonrpc_response_parse() {
+    let raw = r#"{"jsonrpc":"2.0","id":42,"result":{"ok":true}}"#;
+    let msg: JsonRpcMessage = facet_json::from_str(raw).unwrap();
+    assert!(msg.is_response());
+    assert!(msg.result.is_some());
+    assert!(msg.method.is_none());
 }
 
 #[test]
 fn jsonrpc_response_roundtrip() {
-    let resp = JsonRpcResponse {
-        jsonrpc: "2.0".to_owned(),
-        id: Some(JsonRpcId::Number(42)),
-        result: Some(facet_json::RawJson::from_owned(r#"{"ok":true}"#.to_owned())),
-        error: None,
-    };
-    let json = facet_json::to_string(&resp).unwrap();
+    let msg = JsonRpcMessage::response_ok(
+        JsonRpcId::Number(42),
+        facet_json::RawJson::from_owned(r#"{"ok":true}"#.to_owned()),
+    );
+    let json = facet_json::to_string(&msg).unwrap();
     assert!(json.contains(r#""jsonrpc":"2.0""#), "missing jsonrpc: {json}");
     assert!(json.contains(r#""id":42"#), "missing id: {json}");
     assert!(json.contains(r#""ok":true"#), "missing result: {json}");
+    // method should NOT be present in a response
+    assert!(!json.contains(r#""method""#), "response should not have method: {json}");
+}
+
+#[test]
+fn jsonrpc_error_response() {
+    let raw = r#"{"jsonrpc":"2.0","id":5,"error":{"code":-32603,"message":"Internal error"}}"#;
+    let msg: JsonRpcMessage = facet_json::from_str(raw).unwrap();
+    assert!(msg.is_response());
+    assert!(msg.error.is_some());
+    assert!(msg.result.is_none());
 }
 
 // ── Model/config types ─────────────────────────────────────────────

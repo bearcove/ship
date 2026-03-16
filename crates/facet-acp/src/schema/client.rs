@@ -15,7 +15,7 @@ use crate::{
 pub struct SessionNotification {
     pub session_id: SessionId,
     pub update: SessionUpdate,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -51,7 +51,7 @@ pub enum SessionUpdate {
 #[facet(rename_all = "camelCase")]
 pub struct CurrentModeUpdate {
     pub current_mode_id: SessionModeId,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -68,7 +68,7 @@ impl CurrentModeUpdate {
 #[facet(rename_all = "camelCase")]
 pub struct ConfigOptionUpdate {
     pub config_options: Vec<SessionConfigOption>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -85,11 +85,11 @@ impl ConfigOptionUpdate {
 #[derive(Default, Debug, Clone, Facet)]
 #[facet(rename_all = "camelCase")]
 pub struct SessionInfoUpdate {
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub title: Option<String>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub updated_at: Option<String>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -97,7 +97,7 @@ pub struct SessionInfoUpdate {
 #[facet(rename_all = "camelCase")]
 pub struct AvailableCommandsUpdate {
     pub available_commands: Vec<AvailableCommand>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -106,9 +106,9 @@ pub struct AvailableCommandsUpdate {
 pub struct AvailableCommand {
     pub name: String,
     pub description: String,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub input: Option<AvailableCommandInput>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -134,7 +134,7 @@ pub enum AvailableCommandInput {
 #[facet(rename_all = "camelCase")]
 pub struct UnstructuredCommandInput {
     pub hint: String,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -169,7 +169,7 @@ pub struct RequestPermissionRequest {
     pub tool_call: ToolCallUpdate,
     #[facet(default)]
     pub options: Vec<PermissionOption>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -179,7 +179,7 @@ pub struct PermissionOption {
     pub option_id: PermissionOptionId,
     pub name: String,
     pub kind: PermissionOptionKind,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -197,7 +197,7 @@ pub enum PermissionOptionKind {
 #[facet(rename_all = "camelCase")]
 pub struct RequestPermissionResponse {
     pub outcome: RequestPermissionOutcome,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -222,7 +222,7 @@ pub enum RequestPermissionOutcome {
 #[facet(rename_all = "camelCase")]
 pub struct SelectedPermissionOutcome {
     pub option_id: PermissionOptionId,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -242,11 +242,11 @@ impl SelectedPermissionOutcome {
 pub struct ReadTextFileRequest {
     pub session_id: SessionId,
     pub path: String,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub line: Option<u32>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub limit: Option<u32>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -254,7 +254,7 @@ pub struct ReadTextFileRequest {
 #[facet(rename_all = "camelCase")]
 pub struct ReadTextFileResponse {
     pub content: String,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -264,14 +264,14 @@ pub struct WriteTextFileRequest {
     pub session_id: SessionId,
     pub path: String,
     pub content: String,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
 #[derive(Default, Debug, Clone, Facet)]
 #[facet(rename_all = "camelCase")]
 pub struct WriteTextFileResponse {
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -286,11 +286,11 @@ pub struct CreateTerminalRequest {
     pub args: Vec<String>,
     #[facet(default)]
     pub env: Vec<crate::EnvVariable>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub cwd: Option<String>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub output_byte_limit: Option<u64>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -298,7 +298,7 @@ pub struct CreateTerminalRequest {
 #[facet(rename_all = "camelCase")]
 pub struct CreateTerminalResponse {
     pub terminal_id: TerminalId,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -307,7 +307,7 @@ pub struct CreateTerminalResponse {
 pub struct TerminalOutputRequest {
     pub session_id: SessionId,
     pub terminal_id: TerminalId,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -316,9 +316,9 @@ pub struct TerminalOutputRequest {
 pub struct TerminalOutputResponse {
     pub output: String,
     pub truncated: bool,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub exit_status: Option<TerminalExitStatus>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -327,14 +327,14 @@ pub struct TerminalOutputResponse {
 pub struct KillTerminalCommandRequest {
     pub session_id: SessionId,
     pub terminal_id: TerminalId,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
 #[derive(Default, Debug, Clone, Facet)]
 #[facet(rename_all = "camelCase")]
 pub struct KillTerminalCommandResponse {
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -343,14 +343,14 @@ pub struct KillTerminalCommandResponse {
 pub struct ReleaseTerminalRequest {
     pub session_id: SessionId,
     pub terminal_id: TerminalId,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
 #[derive(Default, Debug, Clone, Facet)]
 #[facet(rename_all = "camelCase")]
 pub struct ReleaseTerminalResponse {
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -359,7 +359,7 @@ pub struct ReleaseTerminalResponse {
 pub struct WaitForTerminalExitRequest {
     pub session_id: SessionId,
     pub terminal_id: TerminalId,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
@@ -369,18 +369,18 @@ pub struct WaitForTerminalExitResponse {
     // In the reference this is #[serde(flatten)], but facet doesn't support flatten,
     // so we keep the nested struct.
     pub exit_status: TerminalExitStatus,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
 #[derive(Default, Debug, Clone, Facet)]
 #[facet(rename_all = "camelCase")]
 pub struct TerminalExitStatus {
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub exit_code: Option<u32>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub signal: Option<String>,
-    #[facet(default, rename = "_meta")]
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
     pub meta: Option<RawJson<'static>>,
 }
 
