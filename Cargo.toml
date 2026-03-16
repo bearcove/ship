@@ -9,7 +9,7 @@ members = [
   "crates/ship-server",
   "xtask", "crates/ship-code",
   "crates/ship-voice",
-  "crates/ship-session",
+  "crates/ship-db",
   "crates/ship-policy",
 ]
 resolver = "2"

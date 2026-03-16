@@ -3618,6 +3618,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "ship-db"
+version = "0.1.0"
+dependencies = [
+ "facet",
+ "facet-json",
+ "rusqlite",
+ "rusqlite-facet",
+ "ship-types",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "ship-git"
 version = "0.1.0"
 dependencies = [
@@ -3693,19 +3706,6 @@ version = "0.1.0"
 dependencies = [
  "roam",
  "ship-types",
-]
-
-[[package]]
-name = "ship-session"
-version = "0.1.0"
-dependencies = [
- "facet",
- "facet-json",
- "rusqlite",
- "rusqlite-facet",
- "ship-types",
- "tokio",
- "tracing",
 ]
 
 [[package]]
