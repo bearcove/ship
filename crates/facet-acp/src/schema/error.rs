@@ -1,4 +1,5 @@
 use facet::Facet;
+use facet_json::RawJson;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -8,7 +9,7 @@ pub struct Error {
     pub code: i32,
     pub message: String,
     #[facet(default)]
-    pub data: Option<String>,
+    pub data: Option<RawJson<'static>>,
 }
 
 impl Error {
@@ -21,7 +22,9 @@ impl Error {
     }
 
     pub fn data(mut self, data: impl Into<String>) -> Self {
-        self.data = Some(data.into());
+        let s = data.into();
+        let json_string = facet_json::to_string(&s).unwrap_or_else(|_| format!("\"{}\"", s));
+        self.data = Some(RawJson::from_owned(json_string));
         self
     }
 
@@ -43,6 +46,10 @@ impl Error {
 
     pub fn internal_error() -> Self {
         Self::new(-32603, "Internal error")
+    }
+
+    pub fn request_cancelled() -> Self {
+        Self::new(-32800, "Request cancelled")
     }
 
     pub fn auth_required() -> Self {
@@ -67,7 +74,7 @@ impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.message)?;
         if let Some(data) = &self.data {
-            write!(f, ": {data}")?;
+            write!(f, ": {}", data.as_ref())?;
         }
         Ok(())
     }

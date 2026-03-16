@@ -223,7 +223,7 @@ fn mcp_server_stdio_tagged() {
         .args(vec!["--flag".to_owned()])
         .env(vec![EnvVariable::new("KEY", "VAL")]));
     let json = facet_json::to_string(&server).unwrap();
-    assert!(json.contains(r#""transport":"stdio""#), "missing transport tag: {json}");
+    assert!(json.contains(r#""type":"stdio""#), "missing type tag: {json}");
     assert!(json.contains(r#""name":"my-server""#), "missing name: {json}");
 }
 
@@ -232,7 +232,7 @@ fn mcp_server_http_tagged() {
     let server = McpServer::Http(McpServerHttp::new("api", "https://example.com")
         .headers(vec![HttpHeader::new("Authorization", "Bearer xyz")]));
     let json = facet_json::to_string(&server).unwrap();
-    assert!(json.contains(r#""transport":"http""#), "missing transport tag: {json}");
+    assert!(json.contains(r#""type":"http""#), "missing type tag: {json}");
 }
 
 // ── Permission types ───────────────────────────────────────────────
@@ -248,12 +248,12 @@ fn permission_option_kind_snake_case() {
 fn permission_outcome_tagged() {
     let outcome = RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new("opt-1"));
     let json = facet_json::to_string(&outcome).unwrap();
-    assert!(json.contains(r#""type":"selected""#), "missing type tag: {json}");
+    assert!(json.contains(r#""outcome":"selected""#), "missing outcome tag: {json}");
     assert!(json.contains(r#""optionId":"opt-1""#), "missing camelCase optionId: {json}");
 
     let cancelled = RequestPermissionOutcome::Cancelled {};
     let json = facet_json::to_string(&cancelled).unwrap();
-    assert!(json.contains(r#""type":"cancelled""#), "missing type tag: {json}");
+    assert!(json.contains(r#""outcome":"cancelled""#), "missing outcome tag: {json}");
 }
 
 // ── Error ──────────────────────────────────────────────────────────
@@ -326,7 +326,7 @@ fn set_session_config_option_request_camel_case() {
     let req = SetSessionConfigOptionRequest::new("sess-1", SessionConfigId::new("effort"), SessionConfigValueId::new("high"));
     let json = facet_json::to_string(&req).unwrap();
     assert!(json.contains(r#""configId":"effort""#), "missing camelCase configId: {json}");
-    assert!(json.contains(r#""valueId":"high""#), "missing camelCase valueId: {json}");
+    assert!(json.contains(r#""value":"high""#), "missing value field: {json}");
 }
 
 // ── Deserialization from realistic agent output ────────────────────
@@ -417,10 +417,10 @@ fn parse_realistic_new_session_response() {
             "kind": {
                 "type": "select",
                 "options": [
-                    {"id": "off", "name": "Off"},
-                    {"id": "on", "name": "On"}
+                    {"value": "off", "name": "Off"},
+                    {"value": "on", "name": "On"}
                 ],
-                "currentValueId": "on"
+                "currentValue": "on"
             }
         }]
     }"#;

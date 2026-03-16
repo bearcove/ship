@@ -52,6 +52,8 @@ pub struct ToolCall {
     pub raw_input: Option<RawJson<'static>>,
     #[facet(default)]
     pub raw_output: Option<RawJson<'static>>,
+    #[facet(default, rename = "_meta")]
+    pub meta: Option<RawJson<'static>>,
 }
 
 impl ToolCall {
@@ -65,6 +67,7 @@ impl ToolCall {
             locations: Vec::new(),
             raw_input: None,
             raw_output: None,
+            meta: None,
         }
     }
 
@@ -134,6 +137,8 @@ pub struct ToolCallUpdate {
     pub raw_input: Option<RawJson<'static>>,
     #[facet(default)]
     pub raw_output: Option<RawJson<'static>>,
+    #[facet(default, rename = "_meta")]
+    pub meta: Option<RawJson<'static>>,
 }
 
 impl ToolCallUpdate {
@@ -147,6 +152,7 @@ impl ToolCallUpdate {
             locations: fields.locations,
             raw_input: fields.raw_input,
             raw_output: fields.raw_output,
+            meta: None,
         }
     }
 
@@ -233,12 +239,15 @@ impl<T: Into<ContentBlock>> From<T> for ToolCallContent {
 #[facet(rename_all = "camelCase")]
 pub struct Content {
     pub content: ContentBlock,
+    #[facet(default, rename = "_meta")]
+    pub meta: Option<RawJson<'static>>,
 }
 
 impl Content {
     pub fn new(content: impl Into<ContentBlock>) -> Self {
         Self {
             content: content.into(),
+            meta: None,
         }
     }
 }
@@ -248,12 +257,15 @@ impl Content {
 #[facet(rename_all = "camelCase")]
 pub struct Terminal {
     pub terminal_id: TerminalId,
+    #[facet(default, rename = "_meta")]
+    pub meta: Option<RawJson<'static>>,
 }
 
 impl Terminal {
     pub fn new(terminal_id: impl Into<TerminalId>) -> Self {
         Self {
             terminal_id: terminal_id.into(),
+            meta: None,
         }
     }
 }
@@ -289,6 +301,8 @@ pub struct Diff {
     #[facet(default)]
     pub old_text: Option<String>,
     pub new_text: String,
+    #[facet(default, rename = "_meta")]
+    pub meta: Option<RawJson<'static>>,
 }
 
 impl Diff {
@@ -297,6 +311,7 @@ impl Diff {
             path: path.into(),
             old_text: None,
             new_text: new_text.into(),
+            meta: None,
         }
     }
 
@@ -313,6 +328,8 @@ pub struct ToolCallLocation {
     pub path: String,
     #[facet(default)]
     pub line: Option<u32>,
+    #[facet(default, rename = "_meta")]
+    pub meta: Option<RawJson<'static>>,
 }
 
 impl ToolCallLocation {
@@ -320,6 +337,7 @@ impl ToolCallLocation {
         Self {
             path: path.into(),
             line: None,
+            meta: None,
         }
     }
 

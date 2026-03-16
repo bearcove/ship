@@ -7,6 +7,7 @@ use facet_json::RawJson;
 #[facet(untagged)]
 #[repr(u8)]
 pub enum JsonRpcId {
+    Null {},
     Number(i64),
     Str(String),
 }
@@ -40,7 +41,7 @@ pub struct JsonRpcError {
     pub code: i32,
     pub message: String,
     #[facet(default)]
-    pub data: Option<String>,
+    pub data: Option<RawJson<'static>>,
 }
 
 impl From<crate::Error> for JsonRpcError {

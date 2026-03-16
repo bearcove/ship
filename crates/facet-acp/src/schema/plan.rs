@@ -1,15 +1,21 @@
 use facet::Facet;
+use facet_json::RawJson;
 
 /// An execution plan for complex tasks.
 #[derive(Debug, Clone, PartialEq, Eq, Facet)]
 #[facet(rename_all = "camelCase")]
 pub struct Plan {
     pub entries: Vec<PlanEntry>,
+    #[facet(default, rename = "_meta")]
+    pub meta: Option<RawJson<'static>>,
 }
 
 impl Plan {
     pub fn new(entries: Vec<PlanEntry>) -> Self {
-        Self { entries }
+        Self {
+            entries,
+            meta: None,
+        }
     }
 }
 
@@ -20,6 +26,8 @@ pub struct PlanEntry {
     pub content: String,
     pub priority: PlanEntryPriority,
     pub status: PlanEntryStatus,
+    #[facet(default, rename = "_meta")]
+    pub meta: Option<RawJson<'static>>,
 }
 
 impl PlanEntry {
@@ -32,6 +40,7 @@ impl PlanEntry {
             content: content.into(),
             priority,
             status,
+            meta: None,
         }
     }
 }
