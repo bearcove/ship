@@ -154,6 +154,46 @@ pub enum Urgency {
     Blocking,
 }
 
+// ── Urgent tag parsing ───────────────────────────────────────────────
+
+/// Parse `#urgent` from message text. Returns the cleaned text (tag stripped)
+/// and whether the tag was present. Case-insensitive, strips leading/trailing
+/// whitespace left behind by removal.
+fn parse_urgent_tag(text: &str) -> (String, bool) {
+    // Case-insensitive search for #urgent as a standalone token
+    let lower = text.to_lowercase();
+    if let Some(pos) = lower.find("#urgent") {
+        // Check it's a standalone token (not part of a longer word)
+        let before_ok = pos == 0 || text.as_bytes()[pos - 1].is_ascii_whitespace();
+        let end = pos + "#urgent".len();
+        let after_ok = end == text.len() || text.as_bytes()[end].is_ascii_whitespace();
+
+        if before_ok && after_ok {
+            let mut clean = String::with_capacity(text.len());
+            clean.push_str(text[..pos].trim_end());
+            let rest = text[end..].trim_start();
+            if !clean.is_empty() && !rest.is_empty() {
+                clean.push(' ');
+            }
+            clean.push_str(rest);
+            return (clean, true);
+        }
+    }
+    (text.to_owned(), false)
+}
+
+/// Check if a message contains `#urgent` and return the cleaned text + urgency.
+/// Public so prompt templates or other policy code can use the same parsing.
+pub fn extract_urgency(text: &str) -> (String, Urgency) {
+    let (clean, is_urgent) = parse_urgent_tag(text);
+    let urgency = if is_urgent {
+        Urgency::Attention
+    } else {
+        Urgency::Informational
+    };
+    (clean, urgency)
+}
+
 // ── The unified routing function ─────────────────────────────────────
 
 /// Route an action through the topology, producing typed deliveries.
@@ -264,13 +304,21 @@ fn route_message_sent(
         }];
     }
 
+    // Parse #urgent tag from message text
+    let (clean_text, is_urgent) = parse_urgent_tag(text);
+    let urgency = if is_urgent {
+        Urgency::Attention
+    } else {
+        Urgency::Informational
+    };
+
     // Interception: captain says @human → goes to admiral instead
     if matches!(sender.kind, ParticipantKind::Agent(AgentRole::Captain)) && target.is_human() {
         return vec![Delivery {
             to: topology.admiral.name.clone(),
             from: from.to_owned(),
             content: DeliveryContent::Message {
-                text: text.to_owned(),
+                text: clean_text,
             },
             channel: Channel::Feed,
             urgency: Urgency::Attention,
@@ -282,10 +330,10 @@ fn route_message_sent(
         to: mention.to_owned(),
         from: from.to_owned(),
         content: DeliveryContent::Message {
-            text: text.to_owned(),
+            text: clean_text,
         },
         channel: Channel::Feed,
-        urgency: Urgency::Informational,
+        urgency,
     }]
 }
 

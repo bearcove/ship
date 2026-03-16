@@ -797,6 +797,98 @@ fn delivery_both_captains_human_intercepted() {
 }
 
 #[test]
+fn delivery_urgent_tag_escalates_urgency() {
+    let topo = test_topology();
+    let action = Action::MessageSent {
+        from: "Cedar".into(),
+        mention: "Jordan".into(),
+        text: "#urgent stop deleting files".into(),
+    };
+    let deliveries = route(&action, &topo);
+    assert_eq!(deliveries.len(), 1);
+    assert_eq!(deliveries[0].urgency, Urgency::Attention);
+    assert!(matches!(
+        &deliveries[0].content,
+        DeliveryContent::Message { text } if text == "stop deleting files"
+    ));
+}
+
+#[test]
+fn delivery_urgent_tag_case_insensitive() {
+    let topo = test_topology();
+    let action = Action::MessageSent {
+        from: "Cedar".into(),
+        mention: "Jordan".into(),
+        text: "fix the tests #URGENT".into(),
+    };
+    let deliveries = route(&action, &topo);
+    assert_eq!(deliveries[0].urgency, Urgency::Attention);
+    assert!(matches!(
+        &deliveries[0].content,
+        DeliveryContent::Message { text } if text == "fix the tests"
+    ));
+}
+
+#[test]
+fn delivery_urgent_tag_in_middle() {
+    let topo = test_topology();
+    let action = Action::MessageSent {
+        from: "Cedar".into(),
+        mention: "Jordan".into(),
+        text: "stop #urgent right now".into(),
+    };
+    let deliveries = route(&action, &topo);
+    assert_eq!(deliveries[0].urgency, Urgency::Attention);
+    assert!(matches!(
+        &deliveries[0].content,
+        DeliveryContent::Message { text } if text == "stop right now"
+    ));
+}
+
+#[test]
+fn delivery_no_urgent_tag_is_informational() {
+    let topo = test_topology();
+    let action = Action::MessageSent {
+        from: "Cedar".into(),
+        mention: "Jordan".into(),
+        text: "take your time with the refactor".into(),
+    };
+    let deliveries = route(&action, &topo);
+    assert_eq!(deliveries[0].urgency, Urgency::Informational);
+}
+
+#[test]
+fn delivery_urgent_not_part_of_word() {
+    let topo = test_topology();
+    let action = Action::MessageSent {
+        from: "Cedar".into(),
+        mention: "Jordan".into(),
+        text: "check #urgently please".into(),
+    };
+    let deliveries = route(&action, &topo);
+    // #urgently is not #urgent — should not trigger
+    assert_eq!(deliveries[0].urgency, Urgency::Informational);
+}
+
+#[test]
+fn delivery_admiral_can_use_urgent_too() {
+    let topo = test_topology();
+    let action = Action::MessageSent {
+        from: "Morgan".into(),
+        mention: "Cedar".into(),
+        text: "#urgent pause all work immediately".into(),
+    };
+    let deliveries = route(&action, &topo);
+    assert_eq!(deliveries.len(), 1);
+    assert_eq!(deliveries[0].to, "Cedar");
+    assert_eq!(deliveries[0].urgency, Urgency::Attention);
+    assert!(matches!(
+        &deliveries[0].content,
+        DeliveryContent::Message { text } if text == "pause all work immediately"
+    ));
+}
+
+#[test]
 fn delivery_lane2_commit_goes_to_lane2_captain() {
     let topo = test_topology();
     let action = Action::MateCommitted {
