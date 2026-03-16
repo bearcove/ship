@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use facet::Facet;
@@ -197,7 +196,7 @@ impl SelectedPermissionOutcome {
 #[derive(Debug, Clone, Facet)]
 #[facet(rename_all = "camelCase")]
 pub struct ReadTextFileRequest {
-    pub path: PathBuf,
+    pub path: String,
 }
 
 #[derive(Debug, Clone, Facet)]
@@ -209,7 +208,7 @@ pub struct ReadTextFileResponse {
 #[derive(Debug, Clone, Facet)]
 #[facet(rename_all = "camelCase")]
 pub struct WriteTextFileRequest {
-    pub path: PathBuf,
+    pub path: String,
     pub content: String,
 }
 
@@ -226,7 +225,7 @@ pub struct CreateTerminalRequest {
     #[facet(default)]
     pub args: Vec<String>,
     #[facet(default)]
-    pub cwd: Option<PathBuf>,
+    pub cwd: Option<String>,
     #[facet(default)]
     pub env: Option<Vec<crate::EnvVariable>>,
     #[facet(default)]

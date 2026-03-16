@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use facet::Facet;
@@ -193,13 +192,13 @@ pub struct AuthenticateResponse {}
 #[derive(Debug, Clone, Facet)]
 #[facet(rename_all = "camelCase")]
 pub struct NewSessionRequest {
-    pub cwd: PathBuf,
+    pub cwd: String,
     #[facet(default)]
     pub mcp_servers: Vec<McpServer>,
 }
 
 impl NewSessionRequest {
-    pub fn new(cwd: impl Into<PathBuf>) -> Self {
+    pub fn new(cwd: impl Into<String>) -> Self {
         Self {
             cwd: cwd.into(),
             mcp_servers: vec![],
@@ -239,7 +238,7 @@ impl NewSessionResponse {
 #[facet(rename_all = "camelCase")]
 pub struct LoadSessionRequest {
     pub session_id: SessionId,
-    pub cwd: PathBuf,
+    pub cwd: String,
 }
 
 #[derive(Default, Debug, Clone, Facet)]
@@ -250,7 +249,7 @@ pub struct LoadSessionResponse {}
 #[facet(rename_all = "camelCase")]
 pub struct ResumeSessionRequest {
     pub session_id: SessionId,
-    pub cwd: PathBuf,
+    pub cwd: String,
 }
 
 #[derive(Default, Debug, Clone, Facet)]
@@ -596,7 +595,7 @@ impl McpServerSse {
 #[facet(rename_all = "camelCase")]
 pub struct McpServerStdio {
     pub name: String,
-    pub command: PathBuf,
+    pub command: String,
     #[facet(default)]
     pub args: Vec<String>,
     #[facet(default)]
@@ -604,7 +603,7 @@ pub struct McpServerStdio {
 }
 
 impl McpServerStdio {
-    pub fn new(name: impl Into<String>, command: impl Into<PathBuf>) -> Self {
+    pub fn new(name: impl Into<String>, command: impl Into<String>) -> Self {
         Self {
             name: name.into(),
             command: command.into(),

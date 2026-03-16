@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use facet::Facet;
@@ -286,14 +285,14 @@ impl From<&str> for TerminalId {
 #[derive(Debug, Clone, PartialEq, Eq, Facet)]
 #[facet(rename_all = "camelCase")]
 pub struct Diff {
-    pub path: PathBuf,
+    pub path: String,
     #[facet(default)]
     pub old_text: Option<String>,
     pub new_text: String,
 }
 
 impl Diff {
-    pub fn new(path: impl Into<PathBuf>, new_text: impl Into<String>) -> Self {
+    pub fn new(path: impl Into<String>, new_text: impl Into<String>) -> Self {
         Self {
             path: path.into(),
             old_text: None,
@@ -311,13 +310,13 @@ impl Diff {
 #[derive(Clone, Debug, PartialEq, Eq, Facet)]
 #[facet(rename_all = "camelCase")]
 pub struct ToolCallLocation {
-    pub path: PathBuf,
+    pub path: String,
     #[facet(default)]
     pub line: Option<u32>,
 }
 
 impl ToolCallLocation {
-    pub fn new(path: impl Into<PathBuf>) -> Self {
+    pub fn new(path: impl Into<String>) -> Self {
         Self {
             path: path.into(),
             line: None,
