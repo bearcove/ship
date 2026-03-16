@@ -1,8 +1,10 @@
 use ship_db::ShipDb;
+use jiff::Timestamp;
 use ship_policy::{
     AgentRole, Block, BlockContent, BlockId, Delivery, Participant, ParticipantName, RoomId,
-    Topology,
+    Task, TaskId, TaskPhase, Topology,
 };
+use ulid::Ulid;
 
 use crate::room::{Feed, Room, RoomState};
 
@@ -183,6 +185,94 @@ impl Runtime {
         Ok(delivered)
     }
 
+    // ── Task lifecycle ───────────────────────────────────────────────
+
+    /// Assign a new task to a lane. The lane must not have an active task.
+    pub fn assign_task(
+        &mut self,
+        room_id: &RoomId,
+        title: String,
+        description: String,
+    ) -> Result<TaskId, RuntimeError> {
+        // Check there's no active task.
+        let existing = self.db.current_task(room_id).map_err(RuntimeError::Db)?;
+        if let Some(existing) = existing {
+            if !existing.phase.is_terminal() {
+                return Err(RuntimeError::TaskAlreadyActive {
+                    room: room_id.clone(),
+                    task: existing.id,
+                });
+            }
+        }
+
+        let task = Task {
+            id: TaskId::new(Ulid::new().to_string()),
+            room_id: room_id.clone(),
+            title,
+            description,
+            phase: TaskPhase::Assigned,
+            created_at: Timestamp::now(),
+            completed_at: None,
+        };
+
+        self.db.insert_task(&task).map_err(RuntimeError::Db)?;
+        self.db
+            .set_current_task(room_id, Some(&task.id))
+            .map_err(RuntimeError::Db)?;
+
+        Ok(task.id)
+    }
+
+    /// Transition a task to a new phase. Validates via policy.
+    pub fn transition_task(
+        &mut self,
+        room_id: &RoomId,
+        new_phase: TaskPhase,
+    ) -> Result<(), RuntimeError> {
+        let task = self
+            .db
+            .current_task(room_id)
+            .map_err(RuntimeError::Db)?
+            .ok_or_else(|| RuntimeError::NoActiveTask(room_id.clone()))?;
+
+        if !ship_policy::can_transition(task.phase, new_phase) {
+            return Err(RuntimeError::InvalidTransition {
+                task: task.id,
+                from: task.phase,
+                to: new_phase,
+            });
+        }
+
+        let completed_at = if new_phase.is_terminal() {
+            Some(Timestamp::now())
+        } else {
+            None
+        };
+
+        self.db
+            .update_task_phase(&task.id, new_phase, completed_at)
+            .map_err(RuntimeError::Db)?;
+
+        // Clear current_task when the task is terminal.
+        if new_phase.is_terminal() {
+            self.db
+                .set_current_task(room_id, None)
+                .map_err(RuntimeError::Db)?;
+        }
+
+        Ok(())
+    }
+
+    /// Get the current task for a room (if any).
+    pub fn current_task(&self, room_id: &RoomId) -> Result<Option<Task>, RuntimeError> {
+        self.db.current_task(room_id).map_err(RuntimeError::Db)
+    }
+
+    /// Get the current task phase for a room (None if no active task).
+    pub fn current_phase(&self, room_id: &RoomId) -> Result<Option<TaskPhase>, RuntimeError> {
+        Ok(self.current_task(room_id)?.map(|t| t.phase))
+    }
+
     /// Find which room a participant belongs to.
     fn room_for_participant(&self, name: &str) -> Option<RoomId> {
         self.topology
@@ -266,6 +356,16 @@ pub enum RuntimeError {
         participant: ParticipantName,
         room: RoomId,
     },
+    TaskAlreadyActive {
+        room: RoomId,
+        task: TaskId,
+    },
+    NoActiveTask(RoomId),
+    InvalidTransition {
+        task: TaskId,
+        from: TaskPhase,
+        to: TaskPhase,
+    },
 }
 
 impl std::fmt::Display for RuntimeError {
@@ -276,6 +376,13 @@ impl std::fmt::Display for RuntimeError {
             Self::BlockNotFound(id) => write!(f, "block not found: {id}"),
             Self::NotAMember { participant, room } => {
                 write!(f, "{participant} is not a member of room {room}")
+            }
+            Self::TaskAlreadyActive { room, task } => {
+                write!(f, "room {room} already has active task {task}")
+            }
+            Self::NoActiveTask(room) => write!(f, "room {room} has no active task"),
+            Self::InvalidTransition { task, from, to } => {
+                write!(f, "invalid transition for task {task}: {from:?} → {to:?}")
             }
         }
     }

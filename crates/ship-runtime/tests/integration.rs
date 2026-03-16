@@ -1,6 +1,6 @@
 use ship_db::ShipDb;
 use ship_policy::{
-    AgentRole, BlockContent, Participant, ParticipantName, RoomId, Lane, Topology,
+    AgentRole, BlockContent, Lane, Participant, ParticipantName, RoomId, TaskPhase, Topology,
 };
 use ship_runtime::Runtime;
 
@@ -295,4 +295,127 @@ fn mention_produces_deliveries() {
     );
     // And it should be sealed (deliveries are complete).
     assert!(delivered_block.unwrap().is_sealed());
+}
+
+// ── Task lifecycle tests ──────────────────────────────────────────
+
+#[test]
+fn task_happy_path() {
+    let mut rt = test_runtime();
+    let room_id = RoomId::from_static("session:s1");
+
+    // No task initially.
+    assert!(rt.current_task(&room_id).unwrap().is_none());
+
+    // Assign a task.
+    let task_id = rt
+        .assign_task(&room_id, "Fix the bug".to_owned(), "It's broken".to_owned())
+        .unwrap();
+
+    // Task should be Assigned.
+    let task = rt.current_task(&room_id).unwrap().unwrap();
+    assert_eq!(task.id, task_id);
+    assert_eq!(task.phase, TaskPhase::Assigned);
+    assert_eq!(task.title, "Fix the bug");
+
+    // Transition: Assigned → Working
+    rt.transition_task(&room_id, TaskPhase::Working).unwrap();
+    assert_eq!(
+        rt.current_phase(&room_id).unwrap(),
+        Some(TaskPhase::Working)
+    );
+
+    // Transition: Working → PendingReview
+    rt.transition_task(&room_id, TaskPhase::PendingReview).unwrap();
+    assert_eq!(
+        rt.current_phase(&room_id).unwrap(),
+        Some(TaskPhase::PendingReview)
+    );
+
+    // Transition: PendingReview → Accepted (terminal)
+    rt.transition_task(&room_id, TaskPhase::Accepted).unwrap();
+
+    // Task is now terminal — current_task should be None.
+    assert!(rt.current_task(&room_id).unwrap().is_none());
+}
+
+#[test]
+fn task_steer_sends_back_to_working() {
+    let mut rt = test_runtime();
+    let room_id = RoomId::from_static("session:s1");
+
+    rt.assign_task(&room_id, "Task".to_owned(), "Desc".to_owned())
+        .unwrap();
+    rt.transition_task(&room_id, TaskPhase::Working).unwrap();
+    rt.transition_task(&room_id, TaskPhase::PendingReview).unwrap();
+
+    // Captain steers: PendingReview → Working
+    rt.transition_task(&room_id, TaskPhase::Working).unwrap();
+    assert_eq!(
+        rt.current_phase(&room_id).unwrap(),
+        Some(TaskPhase::Working)
+    );
+}
+
+#[test]
+fn task_invalid_transition_rejected() {
+    let mut rt = test_runtime();
+    let room_id = RoomId::from_static("session:s1");
+
+    rt.assign_task(&room_id, "Task".to_owned(), "Desc".to_owned())
+        .unwrap();
+
+    // Assigned → Accepted is valid (early accept).
+    // But Assigned → PendingReview is NOT valid.
+    let result = rt.transition_task(&room_id, TaskPhase::PendingReview);
+    assert!(result.is_err());
+}
+
+#[test]
+fn task_cancel_from_any_phase() {
+    let mut rt = test_runtime();
+    let room_id = RoomId::from_static("session:s1");
+
+    rt.assign_task(&room_id, "Task".to_owned(), "Desc".to_owned())
+        .unwrap();
+    rt.transition_task(&room_id, TaskPhase::Working).unwrap();
+
+    // Cancel from Working.
+    rt.transition_task(&room_id, TaskPhase::Cancelled).unwrap();
+    assert!(rt.current_task(&room_id).unwrap().is_none());
+}
+
+#[test]
+fn cannot_assign_task_while_one_is_active() {
+    let mut rt = test_runtime();
+    let room_id = RoomId::from_static("session:s1");
+
+    rt.assign_task(&room_id, "Task 1".to_owned(), "Desc".to_owned())
+        .unwrap();
+
+    let result = rt.assign_task(&room_id, "Task 2".to_owned(), "Desc".to_owned());
+    assert!(result.is_err());
+}
+
+#[test]
+fn can_assign_new_task_after_previous_completes() {
+    let mut rt = test_runtime();
+    let room_id = RoomId::from_static("session:s1");
+
+    // First task.
+    rt.assign_task(&room_id, "Task 1".to_owned(), "Desc".to_owned())
+        .unwrap();
+    rt.transition_task(&room_id, TaskPhase::Working).unwrap();
+    rt.transition_task(&room_id, TaskPhase::PendingReview).unwrap();
+    rt.transition_task(&room_id, TaskPhase::Accepted).unwrap();
+
+    // Lane is idle now — second task.
+    let task_id = rt
+        .assign_task(&room_id, "Task 2".to_owned(), "More work".to_owned())
+        .unwrap();
+
+    let task = rt.current_task(&room_id).unwrap().unwrap();
+    assert_eq!(task.id, task_id);
+    assert_eq!(task.title, "Task 2");
+    assert_eq!(task.phase, TaskPhase::Assigned);
 }
