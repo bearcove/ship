@@ -131,182 +131,6 @@ fn human_can_mention_admiral_and_captains() {
     assert!(!allowed.contains(&"Jordan".to_string()));
 }
 
-// ── Routing ───────────────────────────────────────────────────────────
-
-#[test]
-fn mate_message_to_captain_delivers() {
-    let topo = test_topology();
-    let msg = Message {
-        from: "Jordan".into(),
-        mention: "Cedar".into(),
-        text: "work is done".into(),
-    };
-
-    let result = route_message(&topo, &msg);
-    assert_eq!(
-        result,
-        RouteResult::Deliver {
-            to: "Cedar".into(),
-            text: "work is done".into(),
-        }
-    );
-}
-
-#[test]
-fn mate_cannot_mention_human() {
-    let topo = test_topology();
-    let msg = Message {
-        from: "Jordan".into(),
-        mention: "Amos".into(),
-        text: "hey human".into(),
-    };
-
-    let result = route_message(&topo, &msg);
-    assert!(matches!(result, RouteResult::Denied { .. }));
-}
-
-#[test]
-fn mate_cannot_mention_admiral() {
-    let topo = test_topology();
-    let msg = Message {
-        from: "Jordan".into(),
-        mention: "Morgan".into(),
-        text: "hey admiral".into(),
-    };
-
-    let result = route_message(&topo, &msg);
-    assert!(matches!(result, RouteResult::Denied { .. }));
-}
-
-#[test]
-fn mate_cannot_mention_other_sessions_captain() {
-    let topo = test_topology();
-    let msg = Message {
-        from: "Jordan".into(),
-        mention: "Birch".into(),
-        text: "hey other captain".into(),
-    };
-
-    let result = route_message(&topo, &msg);
-    assert!(matches!(result, RouteResult::Denied { .. }));
-}
-
-#[test]
-fn captain_mentioning_human_gets_intercepted_to_admiral() {
-    let topo = test_topology();
-    let msg = Message {
-        from: "Cedar".into(),
-        mention: "Amos".into(),
-        text: "task is done, ready for review".into(),
-    };
-
-    let result = route_message(&topo, &msg);
-    assert_eq!(
-        result,
-        RouteResult::InterceptForAdmiral {
-            original_target: "Amos".into(),
-            to_admiral: "Morgan".into(),
-            from_captain: "Cedar".into(),
-            text: "task is done, ready for review".into(),
-        }
-    );
-}
-
-#[test]
-fn captain_to_mate_delivers_normally() {
-    let topo = test_topology();
-    let msg = Message {
-        from: "Cedar".into(),
-        mention: "Jordan".into(),
-        text: "fix the tests".into(),
-    };
-
-    let result = route_message(&topo, &msg);
-    assert_eq!(
-        result,
-        RouteResult::Deliver {
-            to: "Jordan".into(),
-            text: "fix the tests".into(),
-        }
-    );
-}
-
-#[test]
-fn admiral_to_captain_delivers() {
-    let topo = test_topology();
-    let msg = Message {
-        from: "Morgan".into(),
-        mention: "Cedar".into(),
-        text: "proceed to next step".into(),
-    };
-
-    let result = route_message(&topo, &msg);
-    assert_eq!(
-        result,
-        RouteResult::Deliver {
-            to: "Cedar".into(),
-            text: "proceed to next step".into(),
-        }
-    );
-}
-
-#[test]
-fn human_to_admiral_delivers() {
-    let topo = test_topology();
-    let msg = Message {
-        from: "Amos".into(),
-        mention: "Morgan".into(),
-        text: "pause lane 2".into(),
-    };
-
-    let result = route_message(&topo, &msg);
-    assert_eq!(
-        result,
-        RouteResult::Deliver {
-            to: "Morgan".into(),
-            text: "pause lane 2".into(),
-        }
-    );
-}
-
-#[test]
-fn unaddressed_message_bounces() {
-    let topo = test_topology();
-    let msg = Message {
-        from: "Cedar".into(),
-        mention: "".into(),
-        text: "thinking out loud".into(),
-    };
-
-    let result = route_message(&topo, &msg);
-    assert_eq!(
-        result,
-        RouteResult::Unaddressed {
-            from: "Cedar".into(),
-            text: "thinking out loud".into(),
-        }
-    );
-}
-
-#[test]
-fn unknown_target() {
-    let topo = test_topology();
-    let msg = Message {
-        from: "Cedar".into(),
-        mention: "Nobody".into(),
-        text: "hello?".into(),
-    };
-
-    let result = route_message(&topo, &msg);
-    assert_eq!(
-        result,
-        RouteResult::UnknownTarget {
-            from: "Cedar".into(),
-            attempted_target: "Nobody".into(),
-        }
-    );
-}
-
 // ── Prompt snapshots ─────────────────────────────────────────────────
 
 #[test]
@@ -401,134 +225,6 @@ fn snapshot_bounce_for_mate() {
     insta::assert_snapshot!("bounce_mate", bounce);
 }
 
-// ── Routing failure conditions ──────────────────────────────────────
-
-#[test]
-fn unknown_sender_returns_unknown_target() {
-    let topo = test_topology();
-    let msg = Message {
-        from: "Ghost".into(),
-        mention: "Cedar".into(),
-        text: "hello".into(),
-    };
-    let result = route_message(&topo, &msg);
-    // Unknown sender gets treated as unknown target (sender not found in topology)
-    assert!(matches!(result, RouteResult::UnknownTarget { .. }));
-}
-
-#[test]
-fn captain_cannot_mention_other_sessions_mate() {
-    let topo = test_topology();
-    let msg = Message {
-        from: "Cedar".into(),
-        mention: "Riley".into(),
-        text: "hey other mate".into(),
-    };
-    let result = route_message(&topo, &msg);
-    assert!(matches!(result, RouteResult::Denied { .. }));
-}
-
-#[test]
-fn captain_cannot_mention_other_sessions_captain() {
-    let topo = test_topology();
-    let msg = Message {
-        from: "Cedar".into(),
-        mention: "Birch".into(),
-        text: "hey other captain".into(),
-    };
-    let result = route_message(&topo, &msg);
-    assert!(matches!(result, RouteResult::Denied { .. }));
-}
-
-#[test]
-fn captain_cannot_mention_admiral_directly() {
-    let topo = test_topology();
-    let msg = Message {
-        from: "Cedar".into(),
-        mention: "Morgan".into(),
-        text: "admiral please help".into(),
-    };
-    let result = route_message(&topo, &msg);
-    assert!(matches!(result, RouteResult::Denied { .. }));
-}
-
-#[test]
-fn admiral_cannot_mention_mate() {
-    let topo = test_topology();
-    let msg = Message {
-        from: "Morgan".into(),
-        mention: "Jordan".into(),
-        text: "direct to mate".into(),
-    };
-    let result = route_message(&topo, &msg);
-    assert!(matches!(result, RouteResult::Denied { .. }));
-}
-
-#[test]
-fn human_cannot_mention_mate_directly() {
-    let topo = test_topology();
-    let msg = Message {
-        from: "Amos".into(),
-        mention: "Jordan".into(),
-        text: "hey mate".into(),
-    };
-    let result = route_message(&topo, &msg);
-    assert!(matches!(result, RouteResult::Denied { .. }));
-}
-
-#[test]
-fn mate_cannot_mention_other_mate() {
-    let topo = test_topology();
-    let msg = Message {
-        from: "Jordan".into(),
-        mention: "Riley".into(),
-        text: "cross-session chat".into(),
-    };
-    let result = route_message(&topo, &msg);
-    assert!(matches!(result, RouteResult::Denied { .. }));
-}
-
-#[test]
-fn self_mention_denied_for_mate() {
-    let topo = test_topology();
-    let msg = Message {
-        from: "Jordan".into(),
-        mention: "Jordan".into(),
-        text: "talking to myself".into(),
-    };
-    let result = route_message(&topo, &msg);
-    assert!(matches!(result, RouteResult::Denied { .. }));
-}
-
-#[test]
-fn self_mention_denied_for_captain() {
-    let topo = test_topology();
-    let msg = Message {
-        from: "Cedar".into(),
-        mention: "Cedar".into(),
-        text: "talking to myself".into(),
-    };
-    let result = route_message(&topo, &msg);
-    assert!(matches!(result, RouteResult::Denied { .. }));
-}
-
-#[test]
-fn both_captains_messages_to_human_intercepted() {
-    let topo = test_topology();
-    for captain in ["Cedar", "Birch"] {
-        let msg = Message {
-            from: captain.into(),
-            mention: "Amos".into(),
-            text: "status update".into(),
-        };
-        let result = route_message(&topo, &msg);
-        assert!(
-            matches!(result, RouteResult::InterceptForAdmiral { .. }),
-            "{captain}'s @human should be intercepted"
-        );
-    }
-}
-
 // ── Topology edge cases ─────────────────────────────────────────────
 
 #[test]
@@ -544,12 +240,14 @@ fn empty_topology_no_sessions() {
     assert_eq!(members[0].name, "Morgan");
 
     // Human mentions admiral — delivers.
-    let msg = Message {
+    let action = Action::MessageSent {
         from: "Amos".into(),
         mention: "Morgan".into(),
         text: "hello".into(),
     };
-    assert!(matches!(route_message(&topo, &msg), RouteResult::Deliver { .. }));
+    let deliveries = route(&action, &topo);
+    assert_eq!(deliveries.len(), 1);
+    assert!(matches!(&deliveries[0].content, DeliveryContent::Message { .. }));
 
     // Human has no captains to mention.
     let amos = topo.find_participant("Amos").unwrap();
@@ -852,7 +550,7 @@ fn delivery_mate_message_to_captain() {
 }
 
 #[test]
-fn delivery_captain_to_mate_is_steer() {
+fn delivery_captain_to_mate_is_message() {
     let topo = test_topology();
     let action = Action::MessageSent {
         from: "Cedar".into(),
@@ -864,7 +562,7 @@ fn delivery_captain_to_mate_is_steer() {
     assert_eq!(deliveries[0].to, "Jordan");
     assert!(matches!(
         &deliveries[0].content,
-        DeliveryContent::Steer { text } if text == "fix the tests"
+        DeliveryContent::Message { text } if text == "fix the tests"
     ));
 }
 

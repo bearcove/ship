@@ -4,7 +4,6 @@ mod identity;
 mod mentions;
 mod names;
 mod room;
-mod routing;
 mod sandbox;
 mod transitions;
 pub mod prompts;
@@ -25,7 +24,6 @@ pub use transitions::{TaskPhase, can_transition, reachable_from};
 
 pub use identity::*;
 pub use room::*;
-pub use routing::*;
 
 #[cfg(test)]
 mod tests;

@@ -87,9 +87,6 @@ pub enum DeliveryContent {
     /// A direct message from one participant to another.
     Message { text: String },
 
-    /// Captain steering the mate (correction/direction).
-    Steer { text: String },
-
     /// Mate committed code.
     Committed {
         step: Option<String>,
@@ -273,21 +270,6 @@ fn route_message_sent(
             to: topology.admiral.name.clone(),
             from: from.to_owned(),
             content: DeliveryContent::Message {
-                text: text.to_owned(),
-            },
-            channel: Channel::Feed,
-            urgency: Urgency::Attention,
-        }];
-    }
-
-    // Captain → Mate is a steer
-    if matches!(sender.kind, ParticipantKind::Agent(AgentRole::Captain))
-        && matches!(target.kind, ParticipantKind::Agent(AgentRole::Mate))
-    {
-        return vec![Delivery {
-            to: mention.to_owned(),
-            from: from.to_owned(),
-            content: DeliveryContent::Steer {
                 text: text.to_owned(),
             },
             channel: Channel::Feed,
