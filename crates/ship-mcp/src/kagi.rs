@@ -1,36 +1,31 @@
-use facet_mcp::CallToolResult;
+use facet_mcp::ToolError;
 use serde_json::{Value, json};
 
 pub async fn kagi_web_search(
     http_client: &reqwest::Client,
     api_key: &str,
     query: &str,
-) -> CallToolResult {
-    let response = match http_client
+) -> Result<String, ToolError> {
+    let response = http_client
         .post("https://kagi.com/api/v0/fastgpt")
         .header("Authorization", format!("Bot {api_key}"))
         .json(&json!({ "query": query }))
         .send()
         .await
-    {
-        Ok(r) => r,
-        Err(e) => return CallToolResult::error(format!("web_search request failed: {e}")),
-    };
+        .map_err(|e| ToolError::new(format!("web_search request failed: {e}")))?;
 
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        return CallToolResult::error(format!(
+        return Err(ToolError::new(format!(
             "web_search request failed with status {status}: {body}"
-        ));
+        )));
     }
 
-    let body: Value = match response.json().await {
-        Ok(v) => v,
-        Err(e) => {
-            return CallToolResult::error(format!("failed to parse web_search response: {e}"));
-        }
-    };
+    let body: Value = response
+        .json()
+        .await
+        .map_err(|e| ToolError::new(format!("failed to parse web_search response: {e}")))?;
 
     let output = body
         .get("data")
@@ -59,5 +54,5 @@ pub async fn kagi_web_search(
         }
     }
 
-    CallToolResult::text(text)
+    Ok(text)
 }

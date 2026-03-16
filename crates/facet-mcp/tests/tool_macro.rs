@@ -23,7 +23,7 @@ facet_mcp::tool! {
     /// Add two numbers together and return the sum.
     async fn add(args: AddArgs, ctx: &ToolCtx) -> AddResult {
         let _ = ctx;
-        AddResult { sum: args.a + args.b }
+        Ok(AddResult { sum: args.a + args.b })
     }
 }
 
@@ -59,7 +59,7 @@ fn tool_output_schema_has_fields() {
 #[tokio::test]
 async fn call_directly() {
     let ctx = ToolCtx::new();
-    let result = add::call(AddArgs { a: 10, b: 20 }, &ctx).await;
+    let result = add::call(AddArgs { a: 10, b: 20 }, &ctx).await.unwrap();
     assert_eq!(result.sum, 30);
 }
 
@@ -81,9 +81,9 @@ facet_mcp::tool! {
     /// Greet someone by name.
     async fn greet(args: GreetArgs, ctx: &ToolCtx) -> GreetResult {
         let greeting = ctx.get::<Greeting>();
-        GreetResult {
+        Ok(GreetResult {
             message: format!("{} {}", greeting.0, args.name),
-        }
+        })
     }
 }
 

@@ -14,6 +14,44 @@ use crate::transport::{StdioTransport, TransportError};
 /// A tool's result: either success text or error text.
 pub type ToolResult = CallToolResult;
 
+/// Error type returned by tool handlers.
+///
+/// Wraps a string message. In the MCP response, this becomes a
+/// `CallToolResult` with `is_error: true`.
+pub struct ToolError(pub String);
+
+impl ToolError {
+    pub fn new(msg: impl Into<String>) -> Self {
+        Self(msg.into())
+    }
+}
+
+impl fmt::Debug for ToolError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.0, f)
+    }
+}
+
+impl fmt::Display for ToolError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for ToolError {}
+
+impl From<String> for ToolError {
+    fn from(s: String) -> Self {
+        Self(s)
+    }
+}
+
+impl From<&str> for ToolError {
+    fn from(s: &str) -> Self {
+        Self(s.to_owned())
+    }
+}
+
 /// The core trait for tools. Implemented by the `tool!` macro.
 pub trait Tool: 'static {
     type Args: for<'a> facet::Facet<'a>;
@@ -24,7 +62,7 @@ pub trait Tool: 'static {
     fn call(
         args: Self::Args,
         ctx: &ToolCtx,
-    ) -> impl Future<Output = Self::Result> + Send;
+    ) -> impl Future<Output = Result<Self::Result, ToolError>> + Send;
 }
 
 /// Type-erased dispatch function.
@@ -114,21 +152,23 @@ impl McpServer {
                         ))
                     }
                 };
-                let result = T::call(args, ctx).await;
-                match facet_json::to_string(&result) {
-                    Ok(json) => CallToolResult {
-                        content: vec![ContentBlock::Text {
-                            text: json.clone(),
-                            annotations: None,
-                        }],
-                        structured_content: Some(facet_json::RawJson::from_owned(json)),
-                        is_error: None,
-                        _meta: None,
+                match T::call(args, ctx).await {
+                    Ok(result) => match facet_json::to_string(&result) {
+                        Ok(json) => CallToolResult {
+                            content: vec![ContentBlock::Text {
+                                text: json.clone(),
+                                annotations: None,
+                            }],
+                            structured_content: Some(facet_json::RawJson::from_owned(json)),
+                            is_error: None,
+                            _meta: None,
+                        },
+                        Err(e) => CallToolResult::error(format!(
+                            "failed to serialize result for {}: {e}",
+                            T::name()
+                        )),
                     },
-                    Err(e) => CallToolResult::error(format!(
-                        "failed to serialize result for {}: {e}",
-                        T::name()
-                    )),
+                    Err(e) => CallToolResult::error(e.to_string()),
                 }
             })
         });

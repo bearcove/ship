@@ -33,7 +33,7 @@ facet_mcp::tool! {
     /// Add two numbers together and return the sum.
     async fn add(args: AddArgs, ctx: &ToolCtx) -> AddResult {
         let _ = ctx;
-        AddResult { sum: args.a + args.b }
+        Ok(AddResult { sum: args.a + args.b })
     }
 }
 
@@ -41,9 +41,9 @@ facet_mcp::tool! {
     /// Reverse a string.
     async fn reverse(args: ReverseArgs, ctx: &ToolCtx) -> ReverseResult {
         let _ = ctx;
-        ReverseResult {
+        Ok(ReverseResult {
             output: args.input.chars().rev().collect(),
-        }
+        })
     }
 }
 

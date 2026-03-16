@@ -4,7 +4,7 @@
 /// tool! {
 ///     /// Add two numbers together.
 ///     async fn add(args: AddArgs, ctx: &ToolCtx) -> AddResult {
-///         AddResult { sum: args.a + args.b }
+///         Ok(AddResult { sum: args.a + args.b })
 ///     }
 /// }
 /// ```
@@ -17,11 +17,11 @@
 macro_rules! tool {
     (
         $(#[doc = $doc:literal])*
-        async fn $name:ident($args_name:ident: $args:ty, $ctx_name:ident: &ToolCtx) -> $result:ty
+        $vis:vis async fn $name:ident($args_name:ident: $args:ty, $ctx_name:ident: &ToolCtx) -> $result:ty
         $body:block
     ) => {
         #[allow(non_camel_case_types)]
-        struct $name;
+        $vis struct $name;
 
         impl $crate::Tool for $name {
             type Args = $args;
@@ -35,7 +35,7 @@ macro_rules! tool {
                 concat!($($doc, "\n",)*)
             }
 
-            async fn call($args_name: $args, $ctx_name: &$crate::ToolCtx) -> $result
+            async fn call($args_name: $args, $ctx_name: &$crate::ToolCtx) -> ::std::result::Result<$result, $crate::ToolError>
             $body
         }
     };
