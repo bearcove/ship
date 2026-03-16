@@ -78,7 +78,7 @@ fn install(workspace_root: &Path) {
 
     println!("Building ship binaries...");
     let status = Command::new("cargo")
-        .args(["build", "--release"])
+        .args(["build", "--release", "--features", "ship-server/voice"])
         .current_dir(workspace_root)
         .status()
         .expect("Failed to run cargo build");

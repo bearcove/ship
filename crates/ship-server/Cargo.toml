@@ -18,6 +18,10 @@ rustdoc-args = ["--html-in-header", "arborium-header.html"]
 name = "ship"
 path = "src/main.rs"
 
+[features]
+default = []
+voice = ["ship-voice/whisper"]
+
 [dependencies]
 async-trait = "0.1"
 camino = { workspace = true }
@@ -48,7 +52,7 @@ rust-mcp-sdk = { version = "0.8.3", default-features = false, features = ["serve
 similar = "2"
 tower = "0.5"
 tower-http = { version = "0.6", features = ["fs"] }
-ship-voice = { path = "../ship-voice", features = ["whisper"] }
+ship-voice = { path = "../ship-voice" }
 dirs-next = "2.0.0"
 sailfish = "0.9"
 cpal = "0.15"
