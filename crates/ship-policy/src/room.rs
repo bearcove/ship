@@ -6,17 +6,22 @@ use crate::{AgentRole, Participant, ParticipantKind};
 #[braid(rusqlite)]
 pub struct RoomId;
 
+/// A lane identifier. Lanes are long-lived work tracks (formerly "sessions").
+#[braid(rusqlite)]
+pub struct LaneId;
+
 /// The topology of rooms and participants in a Ship instance.
 #[derive(Debug, Clone)]
 pub struct Topology {
     pub human: Participant,
     pub admiral: Participant,
-    pub sessions: Vec<SessionRoom>,
+    pub lanes: Vec<Lane>,
 }
 
-/// A single session room: one captain, one mate, working on a lane.
+/// A lane: one captain, one mate, working together in a room.
+/// Lanes are long-lived — tasks flow through them.
 #[derive(Debug, Clone)]
-pub struct SessionRoom {
+pub struct Lane {
     pub id: RoomId,
     pub captain: Participant,
     pub mate: Participant,
@@ -24,29 +29,29 @@ pub struct SessionRoom {
 
 impl Topology {
     /// All participants visible in the admiral room:
-    /// the admiral itself, plus all captains from all sessions.
+    /// the admiral itself, plus all captains from all lanes.
     pub fn admiral_room_members(&self) -> Vec<&Participant> {
         let mut members: Vec<&Participant> = vec![&self.admiral];
-        for session in &self.sessions {
-            members.push(&session.captain);
+        for lane in &self.lanes {
+            members.push(&lane.captain);
         }
         members
     }
 
-    /// All participants visible in a session room:
+    /// All participants visible in a lane's room:
     /// the captain and the mate.
-    pub fn session_room_members(&self, room: &RoomId) -> Option<Vec<&Participant>> {
-        self.sessions
+    pub fn lane_members(&self, room: &RoomId) -> Option<Vec<&Participant>> {
+        self.lanes
             .iter()
-            .find(|s| &s.id == room)
-            .map(|s| vec![&s.captain, &s.mate])
+            .find(|l| &l.id == room)
+            .map(|l| vec![&l.captain, &l.mate])
     }
 
-    /// Find which session room a participant belongs to (by name).
-    pub fn session_for_participant(&self, name: &str) -> Option<&SessionRoom> {
-        self.sessions
+    /// Find which lane a participant belongs to (by name).
+    pub fn lane_for_participant(&self, name: &str) -> Option<&Lane> {
+        self.lanes
             .iter()
-            .find(|s| s.captain.name == name || s.mate.name == name)
+            .find(|l| l.captain.name == name || l.mate.name == name)
     }
 
     /// Find a participant by name across the entire topology (exact match).
@@ -73,9 +78,9 @@ impl Topology {
         std::iter::once(&self.human)
             .chain(std::iter::once(&self.admiral))
             .chain(
-                self.sessions
+                self.lanes
                     .iter()
-                    .flat_map(|s| [&s.captain, &s.mate]),
+                    .flat_map(|l| [&l.captain, &l.mate]),
             )
     }
 }
@@ -85,36 +90,31 @@ impl Topology {
 pub fn allowed_mentions(topology: &Topology, sender: &Participant) -> Vec<String> {
     match sender.kind {
         ParticipantKind::Human => {
-            // Human can talk to the admiral directly, and to any captain
             let mut names = vec![topology.admiral.name.clone()];
-            for session in &topology.sessions {
-                names.push(session.captain.name.clone());
+            for lane in &topology.lanes {
+                names.push(lane.captain.name.clone());
             }
             names
         }
         ParticipantKind::Agent(AgentRole::Admiral) => {
-            // Admiral can mention any captain
             topology
-                .sessions
+                .lanes
                 .iter()
-                .map(|s| s.captain.name.clone())
+                .map(|l| l.captain.name.clone())
                 .collect()
         }
         ParticipantKind::Agent(AgentRole::Captain) => {
-            // Captain can mention their mate and "@human" (which routes to admiral)
             let mut names = vec![];
-            if let Some(session) = topology.session_for_participant(&sender.name) {
-                names.push(session.mate.name.clone());
+            if let Some(lane) = topology.lane_for_participant(&sender.name) {
+                names.push(lane.mate.name.clone());
             }
-            // Captain thinks they're talking to the human, but it routes to admiral
             names.push(topology.human.name.clone());
             names
         }
         ParticipantKind::Agent(AgentRole::Mate) => {
-            // Mate can only mention their captain
             let mut names = vec![];
-            if let Some(session) = topology.session_for_participant(&sender.name) {
-                names.push(session.captain.name.clone());
+            if let Some(lane) = topology.lane_for_participant(&sender.name) {
+                names.push(lane.captain.name.clone());
             }
             names
         }

@@ -6,13 +6,13 @@ fn test_topology() -> Topology {
     Topology {
         human: Participant::human("Amos"),
         admiral: Participant::agent("Morgan", AgentRole::Admiral),
-        sessions: vec![
-            SessionRoom {
+        lanes: vec![
+            Lane {
                 id: RoomId::from_static("lane-1"),
                 captain: Participant::agent("Cedar", AgentRole::Captain),
                 mate: Participant::agent("Jordan", AgentRole::Mate),
             },
-            SessionRoom {
+            Lane {
                 id: RoomId::from_static("lane-2"),
                 captain: Participant::agent("Birch", AgentRole::Captain),
                 mate: Participant::agent("Riley", AgentRole::Mate),
@@ -72,7 +72,7 @@ fn admiral_room_contains_admiral_and_all_captains() {
 #[test]
 fn session_room_contains_captain_and_mate() {
     let topo = test_topology();
-    let members = topo.session_room_members(&RoomId::from_static("lane-1")).unwrap();
+    let members = topo.lane_members(&RoomId::from_static("lane-1")).unwrap();
     let names: Vec<&str> = members.iter().map(|p| p.name.as_str()).collect();
 
     assert_eq!(names, vec!["Cedar", "Jordan"]);
@@ -81,7 +81,7 @@ fn session_room_contains_captain_and_mate() {
 #[test]
 fn session_room_not_found() {
     let topo = test_topology();
-    assert!(topo.session_room_members(&RoomId::from_static("nope")).is_none());
+    assert!(topo.lane_members(&RoomId::from_static("nope")).is_none());
 }
 
 // ── Allowed mentions ──────────────────────────────────────────────────
@@ -232,7 +232,7 @@ fn empty_topology_no_sessions() {
     let topo = Topology {
         human: Participant::human("Amos"),
         admiral: Participant::agent("Morgan", AgentRole::Admiral),
-        sessions: vec![],
+        lanes: vec![],
     };
     // Admiral room has just the admiral (no captains).
     let members = topo.admiral_room_members();
@@ -265,16 +265,16 @@ fn find_participant_ci_works() {
 }
 
 #[test]
-fn session_for_participant_finds_by_captain_or_mate() {
+fn lane_for_participant_finds_by_captain_or_mate() {
     let topo = test_topology();
-    let session = topo.session_for_participant("Cedar").unwrap();
+    let session = topo.lane_for_participant("Cedar").unwrap();
     assert_eq!(session.id, RoomId::from_static("lane-1"));
 
-    let session = topo.session_for_participant("Jordan").unwrap();
+    let session = topo.lane_for_participant("Jordan").unwrap();
     assert_eq!(session.id, RoomId::from_static("lane-1"));
 
-    assert!(topo.session_for_participant("Morgan").is_none());
-    assert!(topo.session_for_participant("Amos").is_none());
+    assert!(topo.lane_for_participant("Morgan").is_none());
+    assert!(topo.lane_for_participant("Amos").is_none());
 }
 
 // ── Names edge cases ────────────────────────────────────────────────

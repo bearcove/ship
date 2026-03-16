@@ -1,4 +1,4 @@
-use crate::{AgentRole, ParticipantKind, RoomId, SessionRoom, Topology, allowed_mentions};
+use crate::{AgentRole, Lane, ParticipantKind, RoomId, Topology, allowed_mentions};
 use std::fmt::Write as _;
 
 // ── Actions: everything that can happen in the system ────────────────
@@ -475,8 +475,8 @@ fn route_unaddressed(topology: &Topology, from: &str, _text: &str) -> Vec<Delive
 
 // ── Session event routing ────────────────────────────────────────────
 
-fn find_session<'a>(topology: &'a Topology, session: &RoomId) -> Option<&'a SessionRoom> {
-    topology.sessions.iter().find(|s| s.id == *session)
+fn find_lane<'a>(topology: &'a Topology, room: &RoomId) -> Option<&'a Lane> {
+    topology.lanes.iter().find(|l| l.id == *room)
 }
 
 fn route_mate_committed(
@@ -486,7 +486,7 @@ fn route_mate_committed(
     commit_summary: &str,
     diff_section: &str,
 ) -> Vec<Delivery> {
-    let room = match find_session(topology, session) {
+    let room = match find_lane(topology, session) {
         Some(r) => r,
         None => return vec![],
     };
@@ -526,7 +526,7 @@ fn route_mate_submitted(
     session: &RoomId,
     summary: &str,
 ) -> Vec<Delivery> {
-    let room = match find_session(topology, session) {
+    let room = match find_lane(topology, session) {
         Some(r) => r,
         None => return vec![],
     };
@@ -560,7 +560,7 @@ fn route_mate_plan_set(
     session: &RoomId,
     plan_status: &str,
 ) -> Vec<Delivery> {
-    let room = match find_session(topology, session) {
+    let room = match find_lane(topology, session) {
         Some(r) => r,
         None => return vec![],
     };
@@ -581,7 +581,7 @@ fn route_mate_question(
     session: &RoomId,
     question: &str,
 ) -> Vec<Delivery> {
-    let room = match find_session(topology, session) {
+    let room = match find_lane(topology, session) {
         Some(r) => r,
         None => return vec![],
     };
@@ -602,7 +602,7 @@ fn route_mate_activity_summary(
     session: &RoomId,
     summary: &str,
 ) -> Vec<Delivery> {
-    let room = match find_session(topology, session) {
+    let room = match find_lane(topology, session) {
         Some(r) => r,
         None => return vec![],
     };
@@ -619,7 +619,7 @@ fn route_mate_activity_summary(
 }
 
 fn route_mate_forced_submit(topology: &Topology, session: &RoomId) -> Vec<Delivery> {
-    let room = match find_session(topology, session) {
+    let room = match find_lane(topology, session) {
         Some(r) => r,
         None => return vec![],
     };
@@ -641,7 +641,7 @@ fn route_task_assigned(
     title: &str,
     description: &str,
 ) -> Vec<Delivery> {
-    let room = match find_session(topology, session) {
+    let room = match find_lane(topology, session) {
         Some(r) => r,
         None => return vec![],
     };
@@ -666,7 +666,7 @@ fn route_checks_started(
     session: &RoomId,
     context: &str,
 ) -> Vec<Delivery> {
-    let room = match find_session(topology, session) {
+    let room = match find_lane(topology, session) {
         Some(r) => r,
         None => return vec![],
     };
@@ -702,7 +702,7 @@ fn route_checks_finished(
     all_passed: bool,
     summary: &str,
 ) -> Vec<Delivery> {
-    let room = match find_session(topology, session) {
+    let room = match find_lane(topology, session) {
         Some(r) => r,
         None => return vec![],
     };

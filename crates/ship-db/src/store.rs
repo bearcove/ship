@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use rusqlite::Connection;
 use rusqlite_facet::{ConnectionFacetExt, StatementFacetExt};
-use ship_policy::{AgentRole, Block, BlockContent, BlockId, ParticipantName, Participant, RoomId, SessionRoom, Topology};
+use ship_policy::{AgentRole, Block, BlockContent, BlockId, ParticipantName, Participant, RoomId, Lane, Topology};
 
 use crate::schema;
 use ship_types::{ActivityEntry, PersistedSession, ProjectName, SessionEventEnvelope, SessionId};
@@ -661,7 +661,7 @@ impl ShipDb {
             .execute(rusqlite::params![topology.admiral.name, "admiral"])
             .map_err(se)?;
 
-        for session in &topology.sessions {
+        for session in &topology.lanes {
             insert_participant
                 .execute(rusqlite::params![session.captain.name, "captain"])
                 .map_err(se)?;
@@ -689,14 +689,14 @@ impl ShipDb {
         insert_membership
             .execute(rusqlite::params!["admiral", topology.admiral.name])
             .map_err(se)?;
-        for session in &topology.sessions {
+        for session in &topology.lanes {
             insert_membership
                 .execute(rusqlite::params!["admiral", session.captain.name])
                 .map_err(se)?;
         }
 
         // Session rooms: captain + mate
-        for session in &topology.sessions {
+        for session in &topology.lanes {
             let room_id = session.id.as_str();
             let session_id = room_id.strip_prefix("session:");
             insert_room
@@ -797,7 +797,7 @@ impl ShipDb {
                     message: format!("session room '{room_id}' has no mate"),
                 })?;
 
-            sessions.push(SessionRoom {
+            sessions.push(Lane {
                 id: RoomId::from(room_id.clone()),
                 captain: find_participant(captain_name, "captain")?,
                 mate: find_participant(mate_name, "mate")?,
@@ -807,13 +807,13 @@ impl ShipDb {
         Ok(Some(Topology {
             human,
             admiral,
-            sessions,
+            lanes: sessions,
         }))
     }
 
     /// Add a single session room to the existing topology.
     /// Inserts the captain + mate as participants, creates the room, and wires up memberships.
-    pub fn add_session_room(&self, session: &SessionRoom) -> Result<(), StoreError> {
+    pub fn add_lane(&self, session: &Lane) -> Result<(), StoreError> {
         let conn = self.conn.lock().expect("db mutex poisoned");
         conn.execute_batch("BEGIN").map_err(se)?;
 
@@ -859,7 +859,7 @@ impl ShipDb {
 
     /// Remove a session room and its participants from the topology.
     /// Cascading deletes handle memberships.
-    pub fn remove_session_room(&self, room_id: &RoomId) -> Result<(), StoreError> {
+    pub fn remove_lane(&self, room_id: &RoomId) -> Result<(), StoreError> {
         let conn = self.conn.lock().expect("db mutex poisoned");
         conn.execute_batch("BEGIN").map_err(se)?;
 
@@ -1057,13 +1057,13 @@ mod tests {
         Topology {
             human: Participant::human("Amos"),
             admiral: Participant::agent("Admiral", AgentRole::Admiral),
-            sessions: vec![
-                SessionRoom {
+            lanes: vec![
+                Lane {
                     id: RoomId::from_static("session:s1"),
                     captain: Participant::agent("Alex", AgentRole::Captain),
                     mate: Participant::agent("Jordan", AgentRole::Mate),
                 },
-                SessionRoom {
+                Lane {
                     id: RoomId::from_static("session:s2"),
                     captain: Participant::agent("Morgan", AgentRole::Captain),
                     mate: Participant::agent("Riley", AgentRole::Mate),
@@ -1388,11 +1388,11 @@ mod tests {
 
         assert_eq!(loaded.human, topo.human);
         assert_eq!(loaded.admiral, topo.admiral);
-        assert_eq!(loaded.sessions.len(), 2);
+        assert_eq!(loaded.lanes.len(), 2);
 
-        for expected in &topo.sessions {
+        for expected in &topo.lanes {
             let found = loaded
-                .sessions
+                .lanes
                 .iter()
                 .find(|s| s.id == expected.id)
                 .expect("session room not found");
@@ -1417,55 +1417,55 @@ mod tests {
         let topo2 = Topology {
             human: Participant::human("Bob"),
             admiral: Participant::agent("Fleet", AgentRole::Admiral),
-            sessions: vec![],
+            lanes: vec![],
         };
         db.save_topology(&topo2).unwrap();
 
         let loaded = db.load_topology().unwrap().unwrap();
         assert_eq!(loaded.human.name, "Bob");
         assert_eq!(loaded.admiral.name, "Fleet");
-        assert!(loaded.sessions.is_empty());
+        assert!(loaded.lanes.is_empty());
     }
 
     #[test]
-    fn topology_add_session_room() {
+    fn topology_add_lane() {
         let db = ShipDb::open_in_memory().unwrap();
 
         let topo = Topology {
             human: Participant::human("Amos"),
             admiral: Participant::agent("Admiral", AgentRole::Admiral),
-            sessions: vec![],
+            lanes: vec![],
         };
         db.save_topology(&topo).unwrap();
 
         db.save_session(&make_test_session("s1", "proj")).unwrap();
-        let session = SessionRoom {
+        let session = Lane {
             id: RoomId::from_static("session:s1"),
             captain: Participant::agent("Alex", AgentRole::Captain),
             mate: Participant::agent("Jordan", AgentRole::Mate),
         };
-        db.add_session_room(&session).unwrap();
+        db.add_lane(&session).unwrap();
 
         let loaded = db.load_topology().unwrap().unwrap();
-        assert_eq!(loaded.sessions.len(), 1);
-        assert_eq!(loaded.sessions[0].captain.name, "Alex");
-        assert_eq!(loaded.sessions[0].mate.name, "Jordan");
+        assert_eq!(loaded.lanes.len(), 1);
+        assert_eq!(loaded.lanes[0].captain.name, "Alex");
+        assert_eq!(loaded.lanes[0].mate.name, "Jordan");
 
         let admiral_members = loaded.admiral_room_members();
         assert!(admiral_members.iter().any(|p| p.name == "Alex"));
     }
 
     #[test]
-    fn topology_remove_session_room() {
+    fn topology_remove_lane() {
         let db = ShipDb::open_in_memory().unwrap();
         let topo = sample_topology(&db);
         db.save_topology(&topo).unwrap();
 
-        db.remove_session_room(&RoomId::from_static("session:s1")).unwrap();
+        db.remove_lane(&RoomId::from_static("session:s1")).unwrap();
 
         let loaded = db.load_topology().unwrap().unwrap();
-        assert_eq!(loaded.sessions.len(), 1);
-        assert_eq!(loaded.sessions[0].id, RoomId::from_static("session:s2"));
+        assert_eq!(loaded.lanes.len(), 1);
+        assert_eq!(loaded.lanes[0].id, RoomId::from_static("session:s2"));
 
         let all_names: Vec<&str> = loaded
             .admiral_room_members()
@@ -1482,13 +1482,13 @@ mod tests {
         let topo = Topology {
             human: Participant::human("Amos"),
             admiral: Participant::agent("Admiral", AgentRole::Admiral),
-            sessions: vec![],
+            lanes: vec![],
         };
         db.save_topology(&topo).unwrap();
 
         for i in 0..3 {
             db.save_session(&make_test_session(&format!("s{i}"), "proj")).unwrap();
-            db.add_session_room(&SessionRoom {
+            db.add_lane(&Lane {
                 id: RoomId::new(format!("session:s{i}")),
                 captain: Participant::agent(format!("Captain{i}"), AgentRole::Captain),
                 mate: Participant::agent(format!("Mate{i}"), AgentRole::Mate),
@@ -1497,7 +1497,7 @@ mod tests {
         }
 
         let loaded = db.load_topology().unwrap().unwrap();
-        assert_eq!(loaded.sessions.len(), 3);
+        assert_eq!(loaded.lanes.len(), 3);
 
         let admiral_members = loaded.admiral_room_members();
         assert_eq!(admiral_members.len(), 4); // admiral + 3 captains

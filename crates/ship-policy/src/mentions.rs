@@ -82,7 +82,7 @@ mod tests {
         Topology {
             human: Participant::human("Amos"),
             admiral: Participant::agent("Morgan", AgentRole::Admiral),
-            sessions: vec![SessionRoom {
+            lanes: vec![Lane {
                 id: RoomId::from_static("lane-1"),
                 captain: Participant::agent("Cedar", AgentRole::Captain),
                 mate: Participant::agent("Jordan", AgentRole::Mate),

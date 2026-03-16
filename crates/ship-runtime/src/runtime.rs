@@ -14,7 +14,7 @@ struct Rooms {
 impl Rooms {
     fn new(topology: &Topology) -> Self {
         let rooms = topology
-            .sessions
+            .lanes
             .iter()
             .map(|s| Room::cold(s.id.clone()))
             .collect();
@@ -129,7 +129,7 @@ impl Runtime {
         room_id: &RoomId,
         sender: &ParticipantName,
     ) -> Result<(), RuntimeError> {
-        let members = self.topology.session_room_members(room_id);
+        let members = self.topology.lane_members(room_id);
         let is_member = members
             .as_ref()
             .is_some_and(|m| m.iter().any(|p| p.name == sender.as_str()));
@@ -186,7 +186,7 @@ impl Runtime {
     /// Find which room a participant belongs to.
     fn room_for_participant(&self, name: &str) -> Option<RoomId> {
         self.topology
-            .session_for_participant(name)
+            .lane_for_participant(name)
             .map(|s| s.id.clone())
     }
 
@@ -358,6 +358,6 @@ fn empty_topology() -> Topology {
     Topology {
         human: Participant::human("Human"),
         admiral: Participant::agent("Admiral", AgentRole::Admiral),
-        sessions: vec![],
+        lanes: vec![],
     }
 }

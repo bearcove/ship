@@ -29,7 +29,7 @@ pub use block::{
     ToolCallLocation, ToolCallStatus,
 };
 pub use identity::*;
-pub use room::*;
+pub use room::{Lane, LaneId, RoomId, Topology, allowed_mentions};
 
 #[cfg(test)]
 mod tests;

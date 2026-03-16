@@ -1,6 +1,6 @@
 use ship_db::ShipDb;
 use ship_policy::{
-    AgentRole, BlockContent, Participant, ParticipantName, RoomId, SessionRoom, Topology,
+    AgentRole, BlockContent, Participant, ParticipantName, RoomId, Lane, Topology,
 };
 use ship_runtime::Runtime;
 
@@ -8,7 +8,7 @@ fn test_topology() -> Topology {
     Topology {
         human: Participant::human("Amos"),
         admiral: Participant::agent("Admiral", AgentRole::Admiral),
-        sessions: vec![SessionRoom {
+        lanes: vec![Lane {
             id: RoomId::from_static("session:s1"),
             captain: Participant::agent("Alex", AgentRole::Captain),
             mate: Participant::agent("Jordan", AgentRole::Mate),
