@@ -211,19 +211,19 @@ fn walk_dir_recursive(dir: &Path, file_glob: Option<&str>, f: &mut dyn FnMut(&Pa
         let path = entry.path();
 
         // Skip hidden files/dirs and common non-source dirs
-        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-            if name.starts_with('.') || name == "target" || name == "node_modules" {
-                continue;
-            }
+        if let Some(name) = path.file_name().and_then(|n| n.to_str())
+            && (name.starts_with('.') || name == "target" || name == "node_modules")
+        {
+            continue;
         }
 
         if path.is_dir() {
             walk_dir_recursive(&path, file_glob, f);
         } else if path.is_file() {
-            if let Some(glob) = file_glob {
-                if !matches_glob(&path, glob) {
-                    continue;
-                }
+            if let Some(glob) = file_glob
+                && !matches_glob(&path, glob)
+            {
+                continue;
             }
             f(&path);
         }

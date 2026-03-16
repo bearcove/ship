@@ -387,7 +387,7 @@ pub fn op_denied_reason(role: AgentRole, phase: Option<TaskPhase>, op: OpKind) -
             }
         }
     } else if op == OpKind::Submit && role != AgentRole::Mate {
-        format!("Only the mate can submit work for review.")
+        "Only the mate can submit work for review.".to_string()
     } else {
         format!("`{op:?}` is not available to {role_desc} during {phase_desc}.")
     }

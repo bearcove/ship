@@ -453,7 +453,7 @@ impl GitContext {
         Ok(out
             .lines()
             .filter(|l| !l.is_empty())
-            .map(|l| Utf8PathBuf::from(l))
+            .map(Utf8PathBuf::from)
             .collect())
     }
 

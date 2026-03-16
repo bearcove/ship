@@ -491,33 +491,32 @@ fn route_mate_committed(
         None => return vec![],
     };
 
-    let mut deliveries = vec![];
-
-    // Captain gets notified of commit
-    deliveries.push(Delivery {
-        to: room.captain.name.clone(),
-        from: room.mate.name.clone(),
-        content: DeliveryContent::Committed {
-            step: step_description.map(String::from),
-            commit_summary: commit_summary.to_owned(),
-            diff_section: diff_section.to_owned(),
+    let deliveries = vec![
+        // Captain gets notified of commit
+        Delivery {
+            to: room.captain.name.clone(),
+            from: room.mate.name.clone(),
+            content: DeliveryContent::Committed {
+                step: step_description.map(String::from),
+                commit_summary: commit_summary.to_owned(),
+                diff_section: diff_section.to_owned(),
+            },
+            channel: Channel::Feed,
+            urgency: Urgency::Informational,
         },
-        channel: Channel::Feed,
-        urgency: Urgency::Informational,
-    });
-
-    // Human sees it in their activity feed
-    deliveries.push(Delivery {
-        to: topology.human.name.clone(),
-        from: room.mate.name.clone(),
-        content: DeliveryContent::Committed {
-            step: step_description.map(String::from),
-            commit_summary: commit_summary.to_owned(),
-            diff_section: diff_section.to_owned(),
+        // Human sees it in their activity feed
+        Delivery {
+            to: topology.human.name.clone(),
+            from: room.mate.name.clone(),
+            content: DeliveryContent::Committed {
+                step: step_description.map(String::from),
+                commit_summary: commit_summary.to_owned(),
+                diff_section: diff_section.to_owned(),
+            },
+            channel: Channel::Feed,
+            urgency: Urgency::Informational,
         },
-        channel: Channel::Feed,
-        urgency: Urgency::Informational,
-    });
+    ];
 
     deliveries
 }

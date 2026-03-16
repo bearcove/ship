@@ -179,10 +179,10 @@ pub fn find_symbols<'a>(symbols: &'a [Symbol], query: &str) -> Vec<&'a Symbol> {
         .iter()
         .filter(|s| {
             // Apply kind filter if specified
-            if let Some(kind) = kind_filter {
-                if s.kind != kind {
-                    return false;
-                }
+            if let Some(kind) = kind_filter
+                && s.kind != kind
+            {
+                return false;
             }
 
             // Match against symbol name

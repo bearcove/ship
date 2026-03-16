@@ -1,9 +1,8 @@
-/// Centralized message templates for captain↔mate communication.
-///
-/// Every injected message uses `<message from="...">` for attribution
-/// and `<routing>` for reply instructions, so agents always know
-/// who is speaking and how to respond.
-
+// Centralized message templates for captain↔mate communication.
+//
+// Every injected message uses `<message from="...">` for attribution
+// and `<routing>` for reply instructions, so agents always know
+// who is speaking and how to respond.
 // ---------------------------------------------------------------------------
 // Routing hints (appended to messages so agents know how to reply)
 // ---------------------------------------------------------------------------
@@ -106,10 +105,9 @@ pub fn captain_steer(text: &str) -> String {
 }
 
 pub fn mate_forced_submit_nudge() -> String {
-    format!(
-        "<routing>You stopped without submitting. \
+    "<routing>You stopped without submitting. \
          Call mate_submit with a summary of what you accomplished.</routing>"
-    )
+        .to_string()
 }
 
 pub fn mate_unaddressed_bounce() -> String {

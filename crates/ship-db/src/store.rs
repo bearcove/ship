@@ -3,8 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use rusqlite::Connection;
 use rusqlite_facet::ConnectionFacetExt;
-use jiff::Timestamp;
-use ship_policy::{AgentRole, Block, BlockContent, BlockId, ParticipantName, Participant, RoomId, SessionRoom, Topology};
+use ship_policy::{AgentRole, Participant, RoomId, SessionRoom, Topology};
 
 use crate::schema;
 use ship_types::{ActivityEntry, PersistedSession, SessionEventEnvelope};

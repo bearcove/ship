@@ -39,7 +39,7 @@ fn participant_role() {
 fn find_participant_across_topology() {
     let topo = test_topology();
 
-    assert_eq!(topo.find_participant("Amos").unwrap().is_human(), true);
+    assert!(topo.find_participant("Amos").unwrap().is_human());
     assert_eq!(
         topo.find_participant("Morgan").unwrap().role(),
         Some(AgentRole::Admiral)

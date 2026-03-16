@@ -354,7 +354,7 @@ fn parse_mention(text: &str) -> Option<(&'static str, &str)> {
                     || trimmed
                         .as_bytes()
                         .get(prefix.len())
-                        .map_or(true, |&b| b.is_ascii_whitespace()));
+                        .is_none_or(|&b| b.is_ascii_whitespace()));
             if matches {
                 // Strip the @mention prefix and any following whitespace
                 let rest = trimmed[prefix.len()..].trim_start();
@@ -7051,10 +7051,10 @@ release candidates. Make sure tests pass before calling mate_submit."
                     ..
                 } => {
                     // Append streaming text to the tracked block
-                    if let Some((ref tracked_id, _, _, ref mut tracked_text)) = open_text_block {
-                        if tracked_id == block_id {
-                            tracked_text.push_str(text);
-                        }
+                    if let Some((ref tracked_id, _, _, ref mut tracked_text)) = open_text_block
+                        && tracked_id == block_id
+                    {
+                        tracked_text.push_str(text);
                     }
                 }
                 _ => {}
@@ -9509,10 +9509,11 @@ impl ShipImpl {
         }
 
         // For captain: check delegation gate if any ops are mutations
-        if role == "captain" && ops.iter().any(|op| op.is_mutation()) {
-            if let Some(resp) = self.check_captain_delegation_gate(session_id).await {
-                return Err(resp.text);
-            }
+        if role == "captain"
+            && ops.iter().any(|op| op.is_mutation())
+            && let Some(resp) = self.check_captain_delegation_gate(session_id).await
+        {
+            return Err(resp.text);
         }
 
         let (worktree_path, snapshot_manager) = {
@@ -9604,16 +9605,14 @@ impl ship_code::callbacks::EngineCallbacks for ShipEngineCallbacks {
     fn check_mutation_allowed(&self) -> eyre::Result<()> {
         if self.role == "captain" {
             let sessions = self.ship.sessions.lock().expect("sessions mutex poisoned");
-            if let Some(session) = sessions.get(&self.session_id) {
-                if session.mate_handle.is_some() {
-                    if let Some(ref task) = session.current_task {
-                        if !task.record.status.is_terminal() {
-                            eyre::bail!(
-                                "The mate is currently working. Wait for submission before editing."
-                            );
-                        }
-                    }
-                }
+            if let Some(session) = sessions.get(&self.session_id)
+                && session.mate_handle.is_some()
+                && let Some(ref task) = session.current_task
+                && !task.record.status.is_terminal()
+            {
+                eyre::bail!(
+                    "The mate is currently working. Wait for submission before editing."
+                );
             }
         }
         Ok(())

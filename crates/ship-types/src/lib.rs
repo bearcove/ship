@@ -1181,18 +1181,13 @@ pub mod persistence {
 
     /// How a session's work gets landed.
     #[repr(u8)]
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, facet::Facet)]
+    #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, facet::Facet)]
     pub enum Workflow {
         /// Merge directly into the base branch (rebase + ff-merge).
+        #[default]
         Merge,
         /// Push branch and create a GitHub pull request.
         PullRequest,
-    }
-
-    impl Default for Workflow {
-        fn default() -> Self {
-            Self::Merge
-        }
     }
 
     #[derive(Debug, Clone, facet::Facet)]
