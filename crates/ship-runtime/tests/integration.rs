@@ -113,16 +113,14 @@ fn open_and_seal_block_roundtrips_through_db() {
         panic!("expected Text block");
     }
 
-    // Seal it.
-    rt.seal_block(&room_id, &block_id).unwrap();
+    // Seal it — no mention, so deliveries come from unaddressed routing.
+    let deliveries = rt.seal_block(&room_id, &block_id).unwrap();
+    // Unaddressed message from captain in a session room — policy decides what happens.
+    let _ = deliveries;
 
     let blocks = rt.blocks(&room_id).unwrap();
     assert_eq!(blocks.len(), 1);
     assert!(blocks[0].is_sealed());
-
-    // Create a fresh runtime from the same db to verify persistence.
-    // (We can't easily do this with in-memory db, so instead verify
-    // the block count is correct after the operations.)
 }
 
 #[test]
@@ -175,7 +173,7 @@ fn multiple_blocks_in_sequence() {
             },
         )
         .unwrap();
-    rt.seal_block(&room_id, &b1).unwrap();
+    let _ = rt.seal_block(&room_id, &b1).unwrap();
 
     let b2 = rt
         .open_block(
@@ -187,7 +185,7 @@ fn multiple_blocks_in_sequence() {
             },
         )
         .unwrap();
-    rt.seal_block(&room_id, &b2).unwrap();
+    let _ = rt.seal_block(&room_id, &b2).unwrap();
 
     let b3 = rt
         .open_block(
@@ -201,7 +199,7 @@ fn multiple_blocks_in_sequence() {
             },
         )
         .unwrap();
-    rt.seal_block(&room_id, &b3).unwrap();
+    let _ = rt.seal_block(&room_id, &b3).unwrap();
 
     let blocks = rt.blocks(&room_id).unwrap();
     assert_eq!(blocks.len(), 3);
@@ -227,4 +225,52 @@ fn nonexistent_room_returns_error() {
     let bogus = RoomId::from_static("session:nope");
     let result = rt.blocks(&bogus);
     assert!(result.is_err());
+}
+
+// ── Policy tests ──────────────────────────────────────────────────
+
+#[test]
+fn non_member_cannot_post() {
+    let mut rt = test_runtime();
+    let room_id = RoomId::from_static("session:s1");
+
+    // Admiral is not a member of session:s1.
+    let result = rt.open_block(
+        &room_id,
+        Some(ParticipantName::new("Admiral".to_owned())),
+        None,
+        BlockContent::Text {
+            text: "I shouldn't be here".to_owned(),
+        },
+    );
+    assert!(result.is_err());
+}
+
+#[test]
+fn mention_produces_deliveries() {
+    let mut rt = test_runtime();
+    let room_id = RoomId::from_static("session:s1");
+
+    // Alex (captain) mentions Jordan (mate) — this is allowed.
+    let block_id = rt
+        .open_block(
+            &room_id,
+            Some(ParticipantName::new("Alex".to_owned())),
+            None,
+            BlockContent::Text {
+                text: "@Jordan please fix the tests".to_owned(),
+            },
+        )
+        .unwrap();
+
+    let deliveries = rt.seal_block(&room_id, &block_id).unwrap();
+    // Should produce at least one delivery to Jordan.
+    assert!(
+        !deliveries.is_empty(),
+        "mention of mate by captain should produce deliveries"
+    );
+    assert!(
+        deliveries.iter().any(|d| d.to == "Jordan"),
+        "should have a delivery to Jordan, got: {deliveries:?}"
+    );
 }
