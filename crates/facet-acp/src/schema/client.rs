@@ -210,7 +210,7 @@ impl RequestPermissionResponse {
     }
 }
 
-#[derive(Debug, Clone, Facet)]
+#[derive(Debug, Clone, PartialEq, Eq, Facet)]
 #[facet(tag = "outcome", rename_all = "snake_case")]
 #[repr(u8)]
 pub enum RequestPermissionOutcome {
@@ -218,7 +218,7 @@ pub enum RequestPermissionOutcome {
     Selected(SelectedPermissionOutcome),
 }
 
-#[derive(Debug, Clone, Facet)]
+#[derive(Debug, Clone, PartialEq, Eq, Facet)]
 #[facet(rename_all = "camelCase")]
 pub struct SelectedPermissionOutcome {
     pub option_id: PermissionOptionId,

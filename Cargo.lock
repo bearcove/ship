@@ -1151,9 +1151,9 @@ dependencies = [
 
 [[package]]
 name = "facet-value"
-version = "0.44.1"
+version = "0.44.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21f4cd189eca0104bff26ba3ebb45a33ff6d01288c289293efb4133c1d6feb4f"
+checksum = "5edd5a4a2cb835ea6e0fc5a896a105505ddbde1bc1fa1e7e7f38bcc639eec5d8"
 dependencies = [
  "facet-core",
  "facet-format",
@@ -3594,19 +3594,19 @@ dependencies = [
 name = "ship-acp"
 version = "0.1.0"
 dependencies = [
- "agent-client-protocol",
  "async-trait",
  "base64",
  "chrono",
+ "facet-acp",
+ "facet-json",
+ "facet-value",
  "fs-err",
  "futures",
  "futures-core",
  "futures-util",
- "serde_json",
  "ship-types",
  "similar",
  "tokio",
- "tokio-util",
  "tracing",
 ]
 

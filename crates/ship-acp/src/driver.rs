@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use agent_client_protocol::{
+use facet_acp::{
     Agent, CancelNotification, ClientCapabilities, ClientSideConnection, ContentBlock, Error,
     FileSystemCapability, ImageContent, Implementation, InitializeRequest, LoadSessionRequest,
     NewSessionRequest, NewSessionResponse, PromptRequest, ProtocolVersion, ResumeSessionRequest,
@@ -15,7 +15,6 @@ use futures::{Stream, stream};
 use ship_types::{EffortValue, Role, SessionEvent};
 use tokio::process::Command;
 use tokio::sync::{mpsc, oneshot};
-use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 use crate::client::ShipAcpClient;
 use crate::mcp::to_acp_mcp_server;
@@ -479,9 +478,9 @@ async fn run_acp_worker(
     ));
 
     let (connection, io_task) = ClientSideConnection::new(
-        client.clone(),
-        child_stdin.compat_write(),
-        child_stdout.compat(),
+        crate::client::RcShipAcpClient(client.clone()),
+        child_stdin,
+        child_stdout,
         |future| {
             tokio::task::spawn_local(future);
         },
@@ -510,11 +509,7 @@ async fn run_acp_worker(
     let agent_supports_load = init_response.agent_capabilities.load_session;
 
     let acp_caps = AcpCapabilities {
-        protocol_version: init_response
-            .protocol_version
-            .to_string()
-            .parse::<u16>()
-            .unwrap_or(0),
+        protocol_version: init_response.protocol_version.0,
         agent_name: init_response.agent_info.as_ref().map(|i| i.name.clone()),
         agent_version: init_response.agent_info.as_ref().map(|i| i.version.clone()),
         cap_load_session: init_response.agent_capabilities.load_session,
@@ -547,8 +542,9 @@ async fn run_acp_worker(
     let (session_id, model_id, available_models, effort_info, was_resumed) = if let Some(prev_id) =
         resume_id.filter(|_| can_reconnect)
     {
-        let acp_session_id = agent_client_protocol::SessionId::new(Arc::from(prev_id.as_str()));
+        let acp_session_id = facet_acp::SessionId::new(Arc::from(prev_id.as_str()));
         let mcp_servers: Vec<_> = config.mcp_servers.iter().map(to_acp_mcp_server).collect();
+        let cwd_str = config.worktree_path.to_string_lossy().to_string();
 
         // Prefer resume (lightweight, in-process) over load (re-reads from disk).
         let reconnect_result = if agent_supports_resume {
@@ -556,17 +552,24 @@ async fn run_acp_worker(
                 role = ?role, kind = ?kind, prev_session_id = %prev_id,
                 "resuming ACP session"
             );
-            let resume_req =
-                ResumeSessionRequest::new(acp_session_id.clone(), &config.worktree_path)
-                    .mcp_servers(mcp_servers);
+            let resume_req = ResumeSessionRequest {
+                session_id: acp_session_id.clone(),
+                cwd: cwd_str.clone(),
+                mcp_servers: mcp_servers.clone(),
+                meta: None,
+            };
             connection.resume_session(resume_req).await.map(|_| ())
         } else {
             tracing::info!(
                 role = ?role, kind = ?kind, prev_session_id = %prev_id,
                 "loading ACP session"
             );
-            let load_req = LoadSessionRequest::new(acp_session_id.clone(), &config.worktree_path)
-                .mcp_servers(mcp_servers);
+            let load_req = LoadSessionRequest {
+                session_id: acp_session_id.clone(),
+                cwd: cwd_str,
+                mcp_servers,
+                meta: None,
+            };
             connection.load_session(load_req).await.map(|_| ())
         };
 
@@ -683,7 +686,7 @@ async fn run_acp_worker(
                 let _ = response.send(result);
             }
             DriverCommand::SetModel { model_id, response } => {
-                use agent_client_protocol::{ModelId, SetSessionModelRequest};
+                use facet_acp::{ModelId, SetSessionModelRequest};
                 let result = connection
                     .set_session_model(SetSessionModelRequest::new(
                         session_id.clone(),
@@ -699,7 +702,7 @@ async fn run_acp_worker(
                 value_id,
                 response,
             } => {
-                use agent_client_protocol::{
+                use facet_acp::{
                     SessionConfigId, SessionConfigValueId, SetSessionConfigOptionRequest,
                 };
                 let result = connection
@@ -745,20 +748,17 @@ fn extract_model_info(resp: &NewSessionResponse) -> (Option<String>, Vec<String>
 }
 
 fn parse_effort_from_config_options(
-    config_options: &[agent_client_protocol::SessionConfigOption],
+    config_options: &[facet_acp::SessionConfigOption],
 ) -> EffortInfo {
-    use agent_client_protocol::{
-        SessionConfigKind, SessionConfigOptionCategory, SessionConfigSelectOptions,
-    };
+    use facet_acp::{SessionConfigOptionCategory, SessionConfigSelectOptions};
     for option in config_options {
         if matches!(
             option.category,
             Some(SessionConfigOptionCategory::ThoughtLevel)
-        ) && let SessionConfigKind::Select(select) = &option.kind
-        {
+        ) {
             let config_id = option.id.0.as_ref().to_owned();
-            let value_id = select.current_value.0.as_ref().to_owned();
-            let available = match &select.options {
+            let value_id = option.current_value.0.as_ref().to_owned();
+            let available = match &option.options {
                 SessionConfigSelectOptions::Ungrouped(options) => options
                     .iter()
                     .map(|opt| EffortValue {
@@ -774,7 +774,6 @@ fn parse_effort_from_config_options(
                         name: opt.name.clone(),
                     })
                     .collect(),
-                _ => Vec::new(),
             };
             return (Some(config_id), Some(value_id), available);
         }
@@ -794,19 +793,27 @@ fn build_initialize_request(role: Role) -> InitializeRequest {
 }
 
 fn captain_client_capabilities() -> ClientCapabilities {
-    ClientCapabilities::new()
-        .terminal(true)
-        .fs(FileSystemCapability::new()
-            .read_text_file(true)
-            .write_text_file(true))
+    ClientCapabilities {
+        fs: FileSystemCapability {
+            read_text_file: true,
+            write_text_file: true,
+            meta: None,
+        },
+        terminal: true,
+        meta: None,
+    }
 }
 
 fn mate_client_capabilities() -> ClientCapabilities {
-    ClientCapabilities::new()
-        .terminal(true)
-        .fs(FileSystemCapability::new()
-            .read_text_file(true)
-            .write_text_file(true))
+    ClientCapabilities {
+        fs: FileSystemCapability {
+            read_text_file: true,
+            write_text_file: true,
+            meta: None,
+        },
+        terminal: true,
+        meta: None,
+    }
 }
 
 // r[acp.sandbox]
@@ -898,7 +905,7 @@ fn command_for_launcher(
 
 // r[acp.mcp.passthrough]
 fn build_new_session_request(config: &AgentSessionConfig) -> NewSessionRequest {
-    NewSessionRequest::new(config.worktree_path.clone())
+    NewSessionRequest::new(config.worktree_path.to_string_lossy().to_string())
         .mcp_servers(config.mcp_servers.iter().map(to_acp_mcp_server).collect())
 }
 
@@ -917,7 +924,7 @@ fn parts_to_content_blocks(parts: Vec<ship_types::PromptContentPart>) -> Vec<Con
         .collect()
 }
 
-fn map_prompt_response(response: agent_client_protocol::PromptResponse) -> PromptResponse {
+fn map_prompt_response(response: facet_acp::PromptResponse) -> PromptResponse {
     PromptResponse {
         stop_reason: match response.stop_reason {
             AcpStopReason::EndTurn => StopReason::EndTurn,
@@ -926,7 +933,6 @@ fn map_prompt_response(response: agent_client_protocol::PromptResponse) -> Promp
                 StopReason::ContextExhausted
             }
             AcpStopReason::Refusal => StopReason::EndTurn,
-            _ => StopReason::EndTurn,
         },
     }
 }
@@ -944,7 +950,7 @@ mod tests {
     use std::sync::atomic::AtomicU64;
     use std::sync::{Arc, Mutex};
 
-    use agent_client_protocol::McpServer;
+    use facet_acp::McpServer;
     use ship_types::{
         AgentKind, McpEnvVar, McpHeader, McpHttpServerConfig, McpServerConfig, McpSseServerConfig,
         McpStdioServerConfig, Role,
@@ -1144,7 +1150,7 @@ mod tests {
 
         let request = build_new_session_request(&config);
 
-        assert_eq!(request.cwd, PathBuf::from("/repo/worktree"));
+        assert_eq!(request.cwd, "/repo/worktree");
         assert_eq!(request.mcp_servers.len(), 3);
         assert!(matches!(
             &request.mcp_servers[0],
@@ -1164,7 +1170,7 @@ mod tests {
             &request.mcp_servers[2],
             McpServer::Stdio(server)
                 if server.name == "filesystem"
-                    && server.command == Path::new("/usr/bin/fs-mcp")
+                    && server.command == "/usr/bin/fs-mcp"
                     && server.args == vec!["--root".to_owned(), "/repo".to_owned()]
                     && server.env.len() == 1
                     && server.env[0].name == "HOME"

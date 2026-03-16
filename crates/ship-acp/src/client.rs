@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use agent_client_protocol::{
+use facet_acp::{
     Client, ContentBlock, CreateTerminalRequest, CreateTerminalResponse, Error,
     KillTerminalCommandRequest, KillTerminalCommandResponse, PermissionOptionKind,
     ReadTextFileRequest, ReadTextFileResponse, ReleaseTerminalRequest, ReleaseTerminalResponse,
@@ -14,6 +14,7 @@ use agent_client_protocol::{
     ToolCallStatus, ToolKind, WaitForTerminalExitRequest, WaitForTerminalExitResponse,
     WriteTextFileRequest, WriteTextFileResponse,
 };
+use facet_json::RawJson;
 use ship_types::{
     AgentState, BlockId, BlockPatch, ContentBlock as ShipContentBlock, JsonEntry,
     JsonValue as ShipJsonValue, PermissionOption, PermissionOptionKind as ShipPermissionOptionKind,
@@ -32,7 +33,7 @@ pub struct ShipAcpClient {
     notifications_tx: mpsc::UnboundedSender<SessionEvent>,
     active_text_block: Rc<RefCell<Option<(BlockId, TextSource)>>>,
     tool_call_blocks: Rc<RefCell<HashMap<String, BlockId>>>,
-    tool_calls: Rc<RefCell<HashMap<String, agent_client_protocol::ToolCall>>>,
+    tool_calls: Rc<RefCell<HashMap<String, facet_acp::ToolCall>>>,
     pending_permissions: Rc<RefCell<HashMap<String, oneshot::Sender<String>>>>,
     terminals: Rc<RefCell<HashMap<String, TerminalState>>>,
     last_plan: Rc<RefCell<Option<Vec<PlanStep>>>>,
@@ -127,7 +128,7 @@ impl ShipAcpClient {
 
     // r[acp.content-blocks]
     // r[acp.terminals]
-    fn upsert_tool_call(&self, tool_call: agent_client_protocol::ToolCall) -> Vec<SessionEvent> {
+    fn upsert_tool_call(&self, tool_call: facet_acp::ToolCall) -> Vec<SessionEvent> {
         let tool_call_id = tool_call.tool_call_id.0.to_string();
         self.tool_calls
             .borrow_mut()
@@ -157,19 +158,18 @@ impl ShipAcpClient {
 
     fn apply_tool_call_update(
         &self,
-        update: agent_client_protocol::ToolCallUpdate,
+        update: facet_acp::ToolCallUpdate,
     ) -> Vec<SessionEvent> {
         let tool_call_id = update.tool_call_id.0.to_string();
         let mut tool_calls = self.tool_calls.borrow_mut();
         let tool_call = tool_calls.entry(tool_call_id).or_insert_with(|| {
             let title = update
-                .fields
                 .title
                 .clone()
                 .unwrap_or_else(|| "ACP tool call".to_owned());
-            agent_client_protocol::ToolCall::new(update.tool_call_id.clone(), title)
+            facet_acp::ToolCall::new(update.tool_call_id.clone(), title)
         });
-        tool_call.update(update.fields);
+        tool_call.update(update.into_fields());
         let ship_block = self.map_tool_call_block(tool_call);
         drop(tool_calls);
 
@@ -195,28 +195,35 @@ impl ShipAcpClient {
         }
     }
 
-    fn map_tool_call_block(&self, tool_call: &agent_client_protocol::ToolCall) -> ShipContentBlock {
+    fn map_tool_call_block(&self, tool_call: &facet_acp::ToolCall) -> ShipContentBlock {
         let tool_call_id = tool_call.tool_call_id.0.to_string();
-        let raw_input = tool_call.raw_input.as_ref().map(map_json_value);
-        let raw_output = tool_call.raw_output.as_ref().map(map_json_value);
+        let raw_input_value = tool_call.raw_input.as_ref().and_then(raw_json_to_value);
+        let raw_output_value = tool_call.raw_output.as_ref().and_then(raw_json_to_value);
+        let raw_input = raw_input_value.as_ref().map(map_json_value);
+        let raw_output = raw_output_value.as_ref().map(map_json_value);
 
         let mut content =
             map_tool_call_contents(&self.worktree_path, &self.terminals, &tool_call.content);
 
         // Extract diffs from raw_output (injected by mate MCP server via structured_content)
-        if let Some(raw) = &tool_call.raw_output
-            && let Some(diffs) = raw.get("diffs").and_then(|v| v.as_array())
+        if let Some(raw) = &raw_output_value
+            && let Some(diffs) = raw.as_object().and_then(|o| o.get("diffs")).and_then(|v| v.as_array())
         {
             for diff in diffs {
-                if diff.get("type").and_then(|t| t.as_str()) != Some("diff") {
+                let obj = match diff.as_object() {
+                    Some(o) => o,
+                    None => continue,
+                };
+                if obj.get("type").and_then(|t| t.as_string()).map(|s| s.as_str()) != Some("diff") {
                     continue;
                 }
-                let Some(path) = diff.get("path").and_then(|p| p.as_str()) else {
+                let Some(path) = obj.get("path").and_then(|p| p.as_string()).map(|s| s.as_str()) else {
                     continue;
                 };
-                let unified_diff = diff
+                let unified_diff = obj
                     .get("unified_diff")
-                    .and_then(|t| t.as_str())
+                    .and_then(|t| t.as_string())
+                    .map(|s| s.as_str())
                     .unwrap_or("")
                     .to_owned();
                 content.push(ShipToolCallContent::Diff {
@@ -239,7 +246,7 @@ impl ShipAcpClient {
             target: map_tool_target(
                 &self.worktree_path,
                 tool_call.kind,
-                tool_call.raw_input.as_ref(),
+                raw_input_value.as_ref(),
                 &tool_call.locations,
             ),
             raw_input,
@@ -247,7 +254,7 @@ impl ShipAcpClient {
             locations: map_tool_call_locations(&self.worktree_path, &tool_call.locations),
             status: map_tool_status(tool_call.status),
             content,
-            error: map_tool_error(tool_call),
+            error: map_tool_error(tool_call, raw_output_value.as_ref()),
         }
     }
 
@@ -282,7 +289,7 @@ impl ShipAcpClient {
                     .map(|entry| {
                         let started_at = if matches!(
                             entry.status,
-                            agent_client_protocol::PlanEntryStatus::InProgress
+                            facet_acp::PlanEntryStatus::InProgress
                         ) {
                             Some(chrono::Utc::now().to_rfc3339())
                         } else {
@@ -346,7 +353,7 @@ impl Client for ShipAcpClient {
         if let Some(option_id) = self.blocked_permission_option_id(&args) {
             tracing::warn!(role = ?self.role, "auto-rejected ACP built-in tool permission request");
             return Ok(RequestPermissionResponse::new(
-                RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(option_id)),
+                RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(option_id.as_str())),
             ));
         }
 
@@ -354,26 +361,25 @@ impl Client for ShipAcpClient {
         let tool_call_id = args.tool_call.tool_call_id.0.to_string();
         let tool_name = args
             .tool_call
-            .fields
             .title
             .clone()
             .unwrap_or_else(|| "ACP permission request".to_owned());
         let arguments = args
             .tool_call
-            .fields
             .raw_input
             .as_ref()
             .map(ToString::to_string)
             .unwrap_or_default();
         let description = tool_name.clone();
-        let kind = args.tool_call.fields.kind.map(map_tool_kind);
+        let kind = args.tool_call.kind.map(map_tool_kind);
+        let raw_input_value = args.tool_call.raw_input.as_ref().and_then(raw_json_to_value);
         let target = map_tool_target(
             &self.worktree_path,
-            args.tool_call.fields.kind.unwrap_or(ToolKind::Other),
-            args.tool_call.fields.raw_input.as_ref(),
+            args.tool_call.kind.unwrap_or(ToolKind::Other),
+            raw_input_value.as_ref(),
             &[],
         );
-        let raw_input = args.tool_call.fields.raw_input.as_ref().map(map_json_value);
+        let raw_input = raw_input_value.as_ref().map(map_json_value);
         let options = Some(map_permission_options(&args.options));
         let block_id = BlockId::new();
 
@@ -427,9 +433,9 @@ impl Client for ShipAcpClient {
 
         let outcome = match selected_option_id {
             Some(option_id) => {
-                RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(option_id))
+                RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(option_id.as_str()))
             }
-            None => RequestPermissionOutcome::Cancelled,
+            None => RequestPermissionOutcome::Cancelled {},
         };
 
         Ok(RequestPermissionResponse::new(outcome))
@@ -453,15 +459,15 @@ impl Client for ShipAcpClient {
         &self,
         args: WriteTextFileRequest,
     ) -> AcpResult<WriteTextFileResponse> {
-        let ext = args.path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        let ext = Path::new(&args.path).extension().and_then(|e| e.to_str()).unwrap_or("");
         if matches!(ext, "rs" | "ts" | "tsx" | "js" | "jsx") {
-            tracing::warn!(role = ?self.role, path = %args.path.display(), "rejected ACP built-in write_text_file for code file");
+            tracing::warn!(role = ?self.role, path = %args.path, "rejected ACP built-in write_text_file for code file");
             return Err(Error::invalid_params().data(
                 "Built-in file writing is disabled for code files. Use the write_file MCP tool instead (it validates Rust files with rustfmt).",
             ));
         }
-        tracing::info!(role = ?self.role, path = %args.path.display(), "allowing ACP built-in write_text_file");
-        Ok(WriteTextFileResponse::new())
+        tracing::info!(role = ?self.role, path = %args.path, "allowing ACP built-in write_text_file");
+        Ok(WriteTextFileResponse::default())
     }
 
     // read_text_file and create_terminal capabilities are set to false,
@@ -491,11 +497,12 @@ impl Client for ShipAcpClient {
             .get(&terminal_id)
             .ok_or_else(Error::invalid_params)?;
 
-        let mut response = TerminalOutputResponse::new(terminal.output.borrow().clone(), false);
-        if let Some(exit_status) = terminal.exit_status.borrow().clone() {
-            response = response.exit_status(exit_status);
-        }
-        Ok(response)
+        Ok(TerminalOutputResponse {
+            output: terminal.output.borrow().clone(),
+            truncated: false,
+            exit_status: terminal.exit_status.borrow().clone(),
+            meta: None,
+        })
     }
 
     // r[acp.client.terminal-wait]
@@ -510,14 +517,14 @@ impl Client for ShipAcpClient {
                 .get(&terminal_id)
                 .ok_or_else(Error::invalid_params)?;
             if let Some(exit_status) = terminal.exit_status.borrow().clone() {
-                return Ok(WaitForTerminalExitResponse::new(exit_status));
+                return Ok(WaitForTerminalExitResponse { exit_status, meta: None });
             }
             terminal.exit_status_rx.clone()
         };
 
         loop {
             if let Some(exit_status) = exit_status_rx.borrow().clone() {
-                return Ok(WaitForTerminalExitResponse::new(exit_status));
+                return Ok(WaitForTerminalExitResponse { exit_status, meta: None });
             }
             if exit_status_rx.changed().await.is_err() {
                 return Err(Error::internal_error());
@@ -536,7 +543,7 @@ impl Client for ShipAcpClient {
             .get(&terminal_id)
             .ok_or_else(Error::invalid_params)?;
         kill_if_running(&terminal.child).map_err(|_| Error::internal_error())?;
-        Ok(KillTerminalCommandResponse::new())
+        Ok(KillTerminalCommandResponse::default())
     }
 
     // r[acp.client.terminal-release]
@@ -551,7 +558,62 @@ impl Client for ShipAcpClient {
             .remove(&terminal_id)
             .ok_or_else(Error::invalid_params)?;
         let _ = kill_if_running(&terminal.child);
-        Ok(ReleaseTerminalResponse::new())
+        Ok(ReleaseTerminalResponse::default())
+    }
+
+    async fn ext_method(&self, _args: facet_acp::ExtRequest) -> AcpResult<facet_acp::ExtResponse> {
+        Err(Error::method_not_found())
+    }
+
+    async fn ext_notification(&self, _args: facet_acp::ExtNotification) -> AcpResult<()> {
+        Ok(())
+    }
+}
+
+/// Newtype wrapper to implement `Client` for `Rc<ShipAcpClient>` (orphan rule).
+pub struct RcShipAcpClient(pub Rc<ShipAcpClient>);
+
+impl std::ops::Deref for RcShipAcpClient {
+    type Target = ShipAcpClient;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[async_trait::async_trait(?Send)]
+impl Client for RcShipAcpClient {
+    async fn request_permission(&self, args: RequestPermissionRequest) -> AcpResult<RequestPermissionResponse> {
+        (**self).request_permission(args).await
+    }
+    async fn session_notification(&self, args: SessionNotification) -> AcpResult<()> {
+        (**self).session_notification(args).await
+    }
+    async fn write_text_file(&self, args: WriteTextFileRequest) -> AcpResult<WriteTextFileResponse> {
+        (**self).write_text_file(args).await
+    }
+    async fn read_text_file(&self, args: ReadTextFileRequest) -> AcpResult<ReadTextFileResponse> {
+        (**self).read_text_file(args).await
+    }
+    async fn create_terminal(&self, args: CreateTerminalRequest) -> AcpResult<CreateTerminalResponse> {
+        (**self).create_terminal(args).await
+    }
+    async fn terminal_output(&self, args: TerminalOutputRequest) -> AcpResult<TerminalOutputResponse> {
+        (**self).terminal_output(args).await
+    }
+    async fn release_terminal(&self, args: ReleaseTerminalRequest) -> AcpResult<ReleaseTerminalResponse> {
+        (**self).release_terminal(args).await
+    }
+    async fn wait_for_terminal_exit(&self, args: WaitForTerminalExitRequest) -> AcpResult<WaitForTerminalExitResponse> {
+        (**self).wait_for_terminal_exit(args).await
+    }
+    async fn kill_terminal_command(&self, args: KillTerminalCommandRequest) -> AcpResult<KillTerminalCommandResponse> {
+        (**self).kill_terminal_command(args).await
+    }
+    async fn ext_method(&self, args: facet_acp::ExtRequest) -> AcpResult<facet_acp::ExtResponse> {
+        (**self).ext_method(args).await
+    }
+    async fn ext_notification(&self, args: facet_acp::ExtNotification) -> AcpResult<()> {
+        (**self).ext_notification(args).await
     }
 }
 
@@ -572,15 +634,13 @@ fn format_content_block(block: ContentBlock) -> String {
         ContentBlock::Audio(audio) => format!("[audio {}]", audio.mime_type),
         ContentBlock::ResourceLink(link) => link.title.unwrap_or(link.name),
         ContentBlock::Resource(resource) => match resource.resource {
-            agent_client_protocol::EmbeddedResourceResource::TextResourceContents(text) => {
+            facet_acp::EmbeddedResourceResource::TextResourceContents(text) => {
                 text.text
             }
-            agent_client_protocol::EmbeddedResourceResource::BlobResourceContents(blob) => {
+            facet_acp::EmbeddedResourceResource::BlobResourceContents(blob) => {
                 format!("[resource {}]", blob.uri)
             }
-            _ => "[resource]".to_owned(),
         },
-        _ => "[unsupported content]".to_owned(),
     }
 }
 
@@ -621,13 +681,13 @@ fn map_tool_call_patch(block: &ShipContentBlock) -> BlockPatch {
 
 fn map_tool_call_locations(
     worktree_path: &Path,
-    locations: &[agent_client_protocol::ToolCallLocation],
+    locations: &[facet_acp::ToolCallLocation],
 ) -> Vec<ShipToolCallLocation> {
     locations
         .iter()
         .map(|location| ShipToolCallLocation {
-            path: location.path.display().to_string(),
-            display_path: display_path_for_path(worktree_path, &location.path),
+            path: location.path.clone(),
+            display_path: display_path_for_string(worktree_path, &location.path),
             line: location.line,
         })
         .collect()
@@ -655,13 +715,11 @@ fn map_tool_call_content(
                 text: text.text.clone(),
             },
             other => ShipToolCallContent::Raw {
-                data: map_json_value(
-                    &serde_json::to_value(other).unwrap_or(serde_json::Value::Null),
-                ),
+                data: content_block_to_ship_json(other),
             },
         },
         ToolCallContent::Diff(diff) => {
-            let path_str = diff.path.display().to_string();
+            let path_str = &diff.path;
             let old = diff.old_text.as_deref().unwrap_or("");
             let unified_diff = TextDiff::from_lines(old, &diff.new_text)
                 .unified_diff()
@@ -669,17 +727,14 @@ fn map_tool_call_content(
                 .header(&format!("a/{path_str}"), &format!("b/{path_str}"))
                 .to_string();
             ShipToolCallContent::Diff {
-                path: path_str,
-                display_path: display_path_for_path(worktree_path, &diff.path),
+                path: path_str.clone(),
+                display_path: display_path_for_string(worktree_path, path_str),
                 unified_diff,
             }
         }
         ToolCallContent::Terminal(terminal) => ShipToolCallContent::Terminal {
             terminal_id: terminal.terminal_id.0.to_string(),
             snapshot: map_terminal_snapshot(terminals, &terminal.terminal_id.0),
-        },
-        _ => ShipToolCallContent::Raw {
-            data: map_json_value(&serde_json::to_value(content).unwrap_or(serde_json::Value::Null)),
         },
     }
 }
@@ -689,7 +744,6 @@ fn map_tool_status(status: ToolCallStatus) -> ShipToolCallStatus {
         ToolCallStatus::Pending | ToolCallStatus::InProgress => ShipToolCallStatus::Running,
         ToolCallStatus::Completed => ShipToolCallStatus::Success,
         ToolCallStatus::Failed => ShipToolCallStatus::Failure,
-        _ => ShipToolCallStatus::Running,
     }
 }
 
@@ -704,15 +758,15 @@ fn map_tool_kind(kind: ToolKind) -> ShipToolCallKind {
         ToolKind::Think => ShipToolCallKind::Think,
         ToolKind::Fetch => ShipToolCallKind::Fetch,
         ToolKind::SwitchMode => ShipToolCallKind::SwitchMode,
-        _ => ShipToolCallKind::Other,
+        ToolKind::Other => ShipToolCallKind::Other,
     }
 }
 
 fn map_tool_target(
     worktree_path: &Path,
     kind: ToolKind,
-    raw_input: Option<&serde_json::Value>,
-    locations: &[agent_client_protocol::ToolCallLocation],
+    raw_input: Option<&facet_value::Value>,
+    locations: &[facet_acp::ToolCallLocation],
 ) -> Option<ShipToolTarget> {
     match kind {
         ToolKind::Read | ToolKind::Edit | ToolKind::Delete => {
@@ -729,8 +783,8 @@ fn map_tool_target(
 
 fn map_file_target(
     worktree_path: &Path,
-    raw_input: Option<&serde_json::Value>,
-    locations: &[agent_client_protocol::ToolCallLocation],
+    raw_input: Option<&facet_value::Value>,
+    locations: &[facet_acp::ToolCallLocation],
 ) -> Option<ShipToolTarget> {
     if let Some(path) = raw_input
         .and_then(|value| extract_string(value, &["path", "file_path", "file", "filepath"]))
@@ -744,15 +798,15 @@ fn map_file_target(
     }
 
     locations.first().map(|location| ShipToolTarget::File {
-        path: location.path.display().to_string(),
-        display_path: display_path_for_path(worktree_path, &location.path),
+        path: location.path.clone(),
+        display_path: display_path_for_string(worktree_path, &location.path),
         line: location.line,
     })
 }
 
 fn map_move_target(
     worktree_path: &Path,
-    raw_input: Option<&serde_json::Value>,
+    raw_input: Option<&facet_value::Value>,
 ) -> Option<ShipToolTarget> {
     let raw_input = raw_input?;
     let source_path = extract_string(raw_input, &["source", "src", "from", "old_path"])?;
@@ -770,7 +824,7 @@ fn map_move_target(
 
 fn map_search_target(
     worktree_path: &Path,
-    raw_input: Option<&serde_json::Value>,
+    raw_input: Option<&facet_value::Value>,
 ) -> Option<ShipToolTarget> {
     let raw_input = raw_input?;
     let query = extract_string(raw_input, &["pattern", "query", "search", "regex", "term"]);
@@ -793,7 +847,7 @@ fn map_search_target(
 
 fn map_command_target(
     worktree_path: &Path,
-    raw_input: Option<&serde_json::Value>,
+    raw_input: Option<&facet_value::Value>,
 ) -> Option<ShipToolTarget> {
     let raw_input = raw_input?;
     let command = build_command(raw_input)?;
@@ -808,7 +862,7 @@ fn map_command_target(
     })
 }
 
-fn build_command(raw_input: &serde_json::Value) -> Option<String> {
+fn build_command(raw_input: &facet_value::Value) -> Option<String> {
     if let Some(command) = extract_string(raw_input, &["command", "cmd"]) {
         let args = extract_string_array(raw_input, &["args", "argv"]).unwrap_or_default();
         if args.is_empty() {
@@ -828,37 +882,36 @@ fn build_command(raw_input: &serde_json::Value) -> Option<String> {
     })
 }
 
-fn map_tool_error(tool_call: &agent_client_protocol::ToolCall) -> Option<ShipToolCallError> {
+fn map_tool_error(tool_call: &facet_acp::ToolCall, raw_output_value: Option<&facet_value::Value>) -> Option<ShipToolCallError> {
     if !matches!(tool_call.status, ToolCallStatus::Failed) {
         return None;
     }
 
-    let details = tool_call.raw_output.as_ref().map(map_json_value);
-    let message = tool_call
-        .raw_output
-        .as_ref()
+    let details = raw_output_value.map(map_json_value);
+    let message = raw_output_value
         .and_then(extract_error_message)
         .unwrap_or_else(|| format!("{} failed", tool_call.title));
 
     Some(ShipToolCallError { message, details })
 }
 
-fn extract_error_message(value: &serde_json::Value) -> Option<String> {
-    match value {
-        serde_json::Value::String(text) => Some(text.clone()),
-        serde_json::Value::Array(items) => items.iter().find_map(extract_error_message),
-        serde_json::Value::Object(map) => {
-            for key in ["error", "message", "stderr", "text", "detail", "content"] {
-                if let Some(value) = map.get(key)
-                    && let Some(message) = extract_error_message(value)
-                {
-                    return Some(message);
-                }
-            }
-            None
-        }
-        _ => None,
+fn extract_error_message(value: &facet_value::Value) -> Option<String> {
+    if let Some(text) = value.as_string() {
+        return Some(text.as_str().to_owned());
     }
+    if let Some(items) = value.as_array() {
+        return items.into_iter().find_map(extract_error_message);
+    }
+    if let Some(obj) = value.as_object() {
+        for key in ["error", "message", "stderr", "text", "detail", "content"] {
+            if let Some(value) = obj.get(key)
+                && let Some(message) = extract_error_message(value)
+            {
+                return Some(message);
+            }
+        }
+    }
+    None
 }
 
 fn map_terminal_snapshot(
@@ -885,40 +938,51 @@ fn map_terminal_exit_status(exit_status: &TerminalExitStatus) -> ShipTerminalExi
     }
 }
 
-fn map_json_value(value: &serde_json::Value) -> ShipJsonValue {
-    match value {
-        serde_json::Value::Null => ShipJsonValue::Null,
-        serde_json::Value::Bool(value) => ShipJsonValue::Bool { value: *value },
-        serde_json::Value::Number(value) => ShipJsonValue::Number {
-            value: value.to_string(),
-        },
-        serde_json::Value::String(value) => ShipJsonValue::String {
-            value: value.clone(),
-        },
-        serde_json::Value::Array(items) => ShipJsonValue::Array {
-            items: items.iter().map(map_json_value).collect(),
-        },
-        serde_json::Value::Object(entries) => ShipJsonValue::Object {
-            entries: entries
+fn map_json_value(value: &facet_value::Value) -> ShipJsonValue {
+    if value.is_null() {
+        return ShipJsonValue::Null;
+    }
+    if let Some(b) = value.as_bool() {
+        return ShipJsonValue::Bool { value: b };
+    }
+    if let Some(n) = value.as_number() {
+        return ShipJsonValue::Number {
+            value: format!("{n:?}"),
+        };
+    }
+    if let Some(s) = value.as_string() {
+        return ShipJsonValue::String {
+            value: s.as_str().to_owned(),
+        };
+    }
+    if let Some(items) = value.as_array() {
+        return ShipJsonValue::Array {
+            items: items.into_iter().map(map_json_value).collect(),
+        };
+    }
+    if let Some(obj) = value.as_object() {
+        return ShipJsonValue::Object {
+            entries: obj
                 .iter()
                 .map(|(key, value)| JsonEntry {
-                    key: key.clone(),
+                    key: key.as_str().to_owned(),
                     value: map_json_value(value),
                 })
                 .collect(),
-        },
+        };
     }
+    ShipJsonValue::Null
 }
 
 fn map_permission_options(
-    options: &[agent_client_protocol::PermissionOption],
+    options: &[facet_acp::PermissionOption],
 ) -> Vec<PermissionOption> {
     options
         .iter()
         .map(|option| PermissionOption {
             option_id: option.option_id.0.to_string(),
             label: option.name.clone(),
-            kind: map_permission_option_kind(option.kind),
+            kind: map_permission_option_kind(option.kind.clone()),
         })
         .collect()
 }
@@ -929,7 +993,6 @@ fn map_permission_option_kind(kind: PermissionOptionKind) -> ShipPermissionOptio
         PermissionOptionKind::AllowAlways => ShipPermissionOptionKind::AllowAlways,
         PermissionOptionKind::RejectOnce => ShipPermissionOptionKind::RejectOnce,
         PermissionOptionKind::RejectAlways => ShipPermissionOptionKind::RejectAlways,
-        _ => ShipPermissionOptionKind::Other,
     }
 }
 
@@ -952,42 +1015,47 @@ fn display_path_for_string(worktree_path: &Path, path: &str) -> Option<String> {
     Some(display_path_for_path(worktree_path, Path::new(path)).unwrap_or_else(|| path.to_owned()))
 }
 
-fn extract_string(value: &serde_json::Value, keys: &[&str]) -> Option<String> {
+fn extract_string(value: &facet_value::Value, keys: &[&str]) -> Option<String> {
     let candidate = extract_value(value, keys)?;
-    match candidate {
-        serde_json::Value::String(text) => Some(text.clone()),
-        _ => None,
-    }
+    candidate.as_string().map(|s| s.as_str().to_owned())
 }
 
-fn extract_string_array(value: &serde_json::Value, keys: &[&str]) -> Option<Vec<String>> {
+fn extract_string_array(value: &facet_value::Value, keys: &[&str]) -> Option<Vec<String>> {
     let candidate = extract_value(value, keys)?;
     let items = candidate
         .as_array()?
-        .iter()
-        .map(|item| item.as_str().map(ToOwned::to_owned))
+        .into_iter()
+        .map(|item| item.as_string().map(|s| s.as_str().to_owned()))
         .collect::<Option<Vec<_>>>()?;
     Some(items)
 }
 
-fn extract_u32(value: &serde_json::Value, keys: &[&str]) -> Option<u32> {
+fn extract_u32(value: &facet_value::Value, keys: &[&str]) -> Option<u32> {
     let candidate = extract_value(value, keys)?;
-    candidate
-        .as_u64()
-        .and_then(|value| u32::try_from(value).ok())
+    candidate.as_number()?.to_u32()
 }
 
-fn extract_value<'a>(value: &'a serde_json::Value, keys: &[&str]) -> Option<&'a serde_json::Value> {
+fn extract_value<'a>(value: &'a facet_value::Value, keys: &[&str]) -> Option<&'a facet_value::Value> {
     let object = value.as_object()?;
-    keys.iter().find_map(|key| object.get(*key))
+    keys.iter().find_map(|key| object.get(key))
 }
 
-fn map_plan_status(status: agent_client_protocol::PlanEntryStatus) -> PlanStepStatus {
+fn raw_json_to_value(raw: &RawJson<'static>) -> Option<facet_value::Value> {
+    facet_json::from_str::<facet_value::Value>(raw.as_str()).ok()
+}
+
+fn content_block_to_ship_json(block: &ContentBlock) -> ShipJsonValue {
+    match facet_value::to_value(block) {
+        Ok(v) => map_json_value(&v),
+        Err(_) => ShipJsonValue::Null,
+    }
+}
+
+fn map_plan_status(status: facet_acp::PlanEntryStatus) -> PlanStepStatus {
     match status {
-        agent_client_protocol::PlanEntryStatus::Pending => PlanStepStatus::Pending,
-        agent_client_protocol::PlanEntryStatus::InProgress => PlanStepStatus::InProgress,
-        agent_client_protocol::PlanEntryStatus::Completed => PlanStepStatus::Completed,
-        _ => PlanStepStatus::Failed,
+        facet_acp::PlanEntryStatus::Pending => PlanStepStatus::Pending,
+        facet_acp::PlanEntryStatus::InProgress => PlanStepStatus::InProgress,
+        facet_acp::PlanEntryStatus::Completed => PlanStepStatus::Completed,
     }
 }
 
@@ -1004,10 +1072,11 @@ fn remaining_context_percent(used: u64, size: u64) -> Option<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use agent_client_protocol::{
-        ContentChunk, PermissionOption as AcpPermissionOption, Plan, PlanEntry, PlanEntryPriority,
-        PlanEntryStatus, RequestPermissionRequest, SessionNotification, Terminal, TextContent,
+    use facet_acp::{
+        ContentChunk, Plan, PlanEntry, PlanEntryPriority,
+        PlanEntryStatus, SessionNotification, Terminal, TextContent,
         ToolCallLocation, ToolCallUpdate, ToolCallUpdateFields, UsageUpdate,
+        PermissionOptionId,
     };
     use std::process::Stdio;
     use tokio::process::Command;
@@ -1017,11 +1086,32 @@ mod tests {
         ShipAcpClient::new(Role::Mate, PathBuf::from("/tmp/worktree"), tx)
     }
 
+    fn make_permission_request(
+        session_id: &str,
+        tool_call: ToolCallUpdate,
+        options: Vec<(& str, &str, PermissionOptionKind)>,
+    ) -> RequestPermissionRequest {
+        RequestPermissionRequest {
+            session_id: facet_acp::SessionId::new(session_id),
+            tool_call,
+            options: options
+                .into_iter()
+                .map(|(id, name, kind)| facet_acp::PermissionOption {
+                    option_id: PermissionOptionId::new(id),
+                    name: name.to_owned(),
+                    kind,
+                    meta: None,
+                })
+                .collect(),
+            meta: None,
+        }
+    }
+
     // r[verify acp.client.session-notification]
     // r[verify event.context-updated]
     #[test]
     fn usage_update_json_decodes_and_maps_to_context_updated() {
-        let notification: SessionNotification = serde_json::from_str(
+        let notification: SessionNotification = facet_json::from_str(
             r#"{
                 "sessionId":"01J00000000000000000000000",
                 "update":{"sessionUpdate":"usage_update","used":25,"size":100}
@@ -1107,15 +1197,15 @@ mod tests {
         let tool_call_id = "toolu_123".to_owned();
 
         let first = client.map_session_update(SessionUpdate::ToolCall(
-            agent_client_protocol::ToolCall::new(
-                agent_client_protocol::ToolCallId::new(tool_call_id.clone()),
+            facet_acp::ToolCall::new(
+                facet_acp::ToolCallId::new(tool_call_id.clone()),
                 "Read File",
             )
             .status(ToolCallStatus::InProgress),
         ));
         let second = client.map_session_update(SessionUpdate::ToolCall(
-            agent_client_protocol::ToolCall::new(
-                agent_client_protocol::ToolCallId::new(tool_call_id.clone()),
+            facet_acp::ToolCall::new(
+                facet_acp::ToolCallId::new(tool_call_id.clone()),
                 "Read File",
             )
             .status(ToolCallStatus::Completed),
@@ -1176,7 +1266,7 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .expect("test process should spawn");
-        let exit_status = TerminalExitStatus::new().exit_code(0_u32);
+        let exit_status = TerminalExitStatus { exit_code: Some(0), signal: None, meta: None };
         let (_tx, exit_status_rx) = watch::channel(Some(exit_status.clone()));
         client.terminals.borrow_mut().insert(
             terminal_id.clone(),
@@ -1188,20 +1278,17 @@ mod tests {
             },
         );
 
-        let events = client.map_session_update(SessionUpdate::ToolCall(
-            agent_client_protocol::ToolCall::new(
-                agent_client_protocol::ToolCallId::new("toolu_exec"),
+        let mut tool_call = facet_acp::ToolCall::new(
+                facet_acp::ToolCallId::new("toolu_exec"),
                 "Bash",
             )
             .kind(ToolKind::Execute)
             .status(ToolCallStatus::Completed)
-            .raw_input(serde_json::json!({
-                "command": "rg",
-                "args": ["PermissionBlock", "frontend/src"],
-                "cwd": "/tmp/worktree/frontend",
-            }))
-            .content(vec![ToolCallContent::Terminal(Terminal::new(terminal_id))]),
+            .content(vec![ToolCallContent::Terminal(Terminal::new(terminal_id))]);
+        tool_call.raw_input = Some(RawJson::from_owned(
+            r#"{"command":"rg","args":["PermissionBlock","frontend/src"],"cwd":"/tmp/worktree/frontend"}"#.to_owned(),
         ));
+        let events = client.map_session_update(SessionUpdate::ToolCall(tool_call));
 
         let [SessionEvent::BlockAppend { block, .. }] = events.as_slice() else {
             panic!("unexpected events: {events:?}");
@@ -1257,29 +1344,21 @@ mod tests {
                 ));
 
                 // Edit on a code file → blocked
-                let request = RequestPermissionRequest::new(
+                let request = make_permission_request(
                     "session-1",
                     ToolCallUpdate::new(
                         "toolu_perm",
-                        ToolCallUpdateFields::new()
-                            .title("Write File".to_owned())
-                            .kind(ToolKind::Edit)
-                            .locations(vec![ToolCallLocation::new("/tmp/worktree/src/lib.rs")])
-                            .raw_input(serde_json::json!({
-                                "path": "/tmp/worktree/src/lib.rs",
-                            })),
+                        ToolCallUpdateFields {
+                            title: Some("Write File".to_owned()),
+                            kind: Some(ToolKind::Edit),
+                            locations: Some(vec![ToolCallLocation::new("/tmp/worktree/src/lib.rs")]),
+                            raw_input: Some(RawJson::from_owned(r#"{"path":"/tmp/worktree/src/lib.rs"}"#.to_owned())),
+                            ..Default::default()
+                        },
                     ),
                     vec![
-                        AcpPermissionOption::new(
-                            "allow-always",
-                            "Allow always",
-                            PermissionOptionKind::AllowAlways,
-                        ),
-                        AcpPermissionOption::new(
-                            "reject-once",
-                            "Reject once",
-                            PermissionOptionKind::RejectOnce,
-                        ),
+                        ("allow-always", "Allow always", PermissionOptionKind::AllowAlways),
+                        ("reject-once", "Reject once", PermissionOptionKind::RejectOnce),
                     ],
                 );
 
@@ -1315,29 +1394,21 @@ mod tests {
                 ));
 
                 // Edit on a code file → blocked
-                let request = RequestPermissionRequest::new(
+                let request = make_permission_request(
                     "session-1",
                     ToolCallUpdate::new(
                         "toolu_perm_blocked",
-                        ToolCallUpdateFields::new()
-                            .title("Write File".to_owned())
-                            .kind(ToolKind::Edit)
-                            .locations(vec![ToolCallLocation::new("/tmp/worktree/src/lib.rs")])
-                            .raw_input(serde_json::json!({
-                                "path": "/tmp/worktree/src/lib.rs",
-                            })),
+                        ToolCallUpdateFields {
+                            title: Some("Write File".to_owned()),
+                            kind: Some(ToolKind::Edit),
+                            locations: Some(vec![ToolCallLocation::new("/tmp/worktree/src/lib.rs")]),
+                            raw_input: Some(RawJson::from_owned(r#"{"path":"/tmp/worktree/src/lib.rs"}"#.to_owned())),
+                            ..Default::default()
+                        },
                     ),
                     vec![
-                        AcpPermissionOption::new(
-                            "allow-once",
-                            "Allow once",
-                            PermissionOptionKind::AllowOnce,
-                        ),
-                        AcpPermissionOption::new(
-                            "reject-once",
-                            "Reject once",
-                            PermissionOptionKind::RejectOnce,
-                        ),
+                        ("allow-once", "Allow once", PermissionOptionKind::AllowOnce),
+                        ("reject-once", "Reject once", PermissionOptionKind::RejectOnce),
                     ],
                 );
 
@@ -1371,25 +1442,19 @@ mod tests {
                     tx,
                 ));
 
-                let request = RequestPermissionRequest::new(
+                let request = make_permission_request(
                     "session-1",
                     ToolCallUpdate::new(
                         "toolu_plan",
-                        ToolCallUpdateFields::new()
-                            .title("ExitPlanMode".to_owned())
-                            .kind(ToolKind::Think),
+                        ToolCallUpdateFields {
+                            title: Some("ExitPlanMode".to_owned()),
+                            kind: Some(ToolKind::Think),
+                            ..Default::default()
+                        },
                     ),
                     vec![
-                        AcpPermissionOption::new(
-                            "allow-once",
-                            "Allow once",
-                            PermissionOptionKind::AllowOnce,
-                        ),
-                        AcpPermissionOption::new(
-                            "reject-once",
-                            "Reject once",
-                            PermissionOptionKind::RejectOnce,
-                        ),
+                        ("allow-once", "Allow once", PermissionOptionKind::AllowOnce),
+                        ("reject-once", "Reject once", PermissionOptionKind::RejectOnce),
                     ],
                 );
 
@@ -1423,28 +1488,20 @@ mod tests {
                     tx,
                 ));
 
-                let request = RequestPermissionRequest::new(
+                let request = make_permission_request(
                     "session-1",
                     ToolCallUpdate::new(
                         "toolu_read",
-                        ToolCallUpdateFields::new()
-                            .title("Read File".to_owned())
-                            .kind(ToolKind::Read)
-                            .raw_input(serde_json::json!({
-                                "path": "/tmp/worktree/src/lib.rs",
-                            })),
+                        ToolCallUpdateFields {
+                            title: Some("Read File".to_owned()),
+                            kind: Some(ToolKind::Read),
+                            raw_input: Some(RawJson::from_owned(r#"{"path":"/tmp/worktree/src/lib.rs"}"#.to_owned())),
+                            ..Default::default()
+                        },
                     ),
                     vec![
-                        AcpPermissionOption::new(
-                            "allow-once",
-                            "Allow once",
-                            PermissionOptionKind::AllowOnce,
-                        ),
-                        AcpPermissionOption::new(
-                            "reject-once",
-                            "Reject once",
-                            PermissionOptionKind::RejectOnce,
-                        ),
+                        ("allow-once", "Allow once", PermissionOptionKind::AllowOnce),
+                        ("reject-once", "Reject once", PermissionOptionKind::RejectOnce),
                     ],
                 );
 

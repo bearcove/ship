@@ -1,7 +1,7 @@
 use std::io;
 use std::path::Path;
 
-use agent_client_protocol::{
+use facet_acp::{
     EnvVariable, HttpHeader, McpServer, McpServerHttp, McpServerSse, McpServerStdio,
 };
 use fs_err::tokio as fs;
@@ -78,11 +78,10 @@ fn to_ship_mcp_server(mcp_server: McpServer) -> McpServerConfig {
         }),
         McpServer::Stdio(config) => McpServerConfig::Stdio(McpStdioServerConfig {
             name: config.name,
-            command: config.command.to_string_lossy().into_owned(),
+            command: config.command,
             args: config.args,
             env: config.env.into_iter().map(to_ship_env_var).collect(),
         }),
-        _ => unreachable!("unsupported MCP server transport"),
     }
 }
 
@@ -127,8 +126,12 @@ async fn load_mcp_servers_file(
         }
     };
 
-    let mcp_servers =
-        serde_json::from_slice::<Vec<McpServer>>(&bytes).map_err(|error| McpConfigError {
+    let json_str = String::from_utf8(bytes).map_err(|error| McpConfigError {
+        message: format!("invalid UTF-8 in {}: {error}", path.display()),
+    })?;
+
+    let mcp_servers: Vec<McpServer> =
+        facet_json::from_str(&json_str).map_err(|error| McpConfigError {
             message: format!("failed to parse {}: {error}", path.display()),
         })?;
 

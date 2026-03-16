@@ -31,6 +31,7 @@ jiff = "0.2"
 figue = "2.0.0"
 facet-json = "0.44.5"
 facet-json-schema = "0.44.3"
+facet-value = "0.44.5"
 fs-err = { version = "3", features = ["tokio"] }
 roam = "7.3.0"
 roam-codegen = "7.3.0"
