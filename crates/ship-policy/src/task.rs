@@ -23,4 +23,10 @@ pub struct Task {
     pub created_at: Timestamp,
     /// Set when the task reaches a terminal phase (Accepted/Cancelled).
     pub completed_at: Option<Timestamp>,
+    /// Cumulative lines added across all commits in this task.
+    pub lines_added: u64,
+    /// Cumulative lines removed across all commits in this task.
+    pub lines_removed: u64,
+    /// Number of commits made for this task.
+    pub commit_count: u32,
 }

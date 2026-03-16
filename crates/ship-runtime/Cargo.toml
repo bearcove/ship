@@ -13,7 +13,9 @@ ship-agent = { path = "../ship-agent" }
 ship-code = { path = "../ship-code" }
 ship-db = { path = "../ship-db" }
 ship-policy = { path = "../ship-policy" }
+ship-git = { path = "../ship-git" }
 ship-types = { path = "../ship-types" }
+camino = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
 tracing = { workspace = true }
 

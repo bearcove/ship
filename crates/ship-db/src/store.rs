@@ -168,6 +168,9 @@ struct TaskInsertParams<'a> {
     phase: &'a str,
     created_at: jiff::Timestamp,
     completed_at: Option<jiff::Timestamp>,
+    lines_added: i64,
+    lines_removed: i64,
+    commit_count: i64,
 }
 
 #[derive(Debug, facet::Facet)]
@@ -179,6 +182,9 @@ struct TaskRow {
     phase: String,
     created_at: jiff::Timestamp,
     completed_at: Option<jiff::Timestamp>,
+    lines_added: i64,
+    lines_removed: i64,
+    commit_count: i64,
 }
 
 #[derive(Debug, facet::Facet)]
@@ -681,8 +687,8 @@ impl ShipDb {
     pub fn insert_task(&self, task: &Task) -> Result<(), StoreError> {
         let conn = self.conn.lock().expect("db mutex poisoned");
         conn.facet_execute_ref(
-            "INSERT INTO tasks (id, room_id, title, description, phase, created_at, completed_at)
-             VALUES (:id, :room_id, :title, :description, :phase, :created_at, :completed_at)",
+            "INSERT INTO tasks (id, room_id, title, description, phase, created_at, completed_at, lines_added, lines_removed, commit_count)
+             VALUES (:id, :room_id, :title, :description, :phase, :created_at, :completed_at, :lines_added, :lines_removed, :commit_count)",
             &TaskInsertParams {
                 id: &task.id,
                 room_id: &task.room_id,
@@ -691,6 +697,9 @@ impl ShipDb {
                 phase: phase_to_str(task.phase),
                 created_at: task.created_at,
                 completed_at: task.completed_at,
+                lines_added: task.lines_added as i64,
+                lines_removed: task.lines_removed as i64,
+                commit_count: task.commit_count as i64,
             },
         )
         .map_err(fe)?;
@@ -701,7 +710,7 @@ impl ShipDb {
     pub fn load_task(&self, id: &TaskId) -> Result<Option<Task>, StoreError> {
         let conn = self.conn.lock().expect("db mutex poisoned");
         let mut stmt = conn
-            .prepare("SELECT id, room_id, title, description, phase, created_at, completed_at FROM tasks WHERE id = :id")
+            .prepare("SELECT id, room_id, title, description, phase, created_at, completed_at, lines_added, lines_removed, commit_count FROM tasks WHERE id = :id")
             .map_err(se)?;
         let row: Option<TaskRow> = stmt
             .facet_query_optional_ref(&BlockIdParam { id: id.as_str() })
@@ -714,7 +723,7 @@ impl ShipDb {
         let conn = self.conn.lock().expect("db mutex poisoned");
         let mut stmt = conn
             .prepare(
-                "SELECT t.id, t.room_id, t.title, t.description, t.phase, t.created_at, t.completed_at
+                "SELECT t.id, t.room_id, t.title, t.description, t.phase, t.created_at, t.completed_at, t.lines_added, t.lines_removed, t.commit_count
                  FROM tasks t
                  JOIN rooms r ON r.current_task_id = t.id
                  WHERE r.id = :room_id",
@@ -730,7 +739,7 @@ impl ShipDb {
     pub fn list_tasks(&self, room_id: &RoomId) -> Result<Vec<Task>, StoreError> {
         let conn = self.conn.lock().expect("db mutex poisoned");
         let mut stmt = conn
-            .prepare("SELECT id, room_id, title, description, phase, created_at, completed_at FROM tasks WHERE room_id = :room_id ORDER BY created_at")
+            .prepare("SELECT id, room_id, title, description, phase, created_at, completed_at, lines_added, lines_removed, commit_count FROM tasks WHERE room_id = :room_id ORDER BY created_at")
             .map_err(se)?;
         let rows: Vec<TaskRow> = stmt
             .facet_query_ref(&TaskRoomParams { room_id })
@@ -773,6 +782,22 @@ impl ShipDb {
             },
         )
         .map_err(fe)?;
+        Ok(())
+    }
+
+    /// Record stats from a commit against the active task for a room.
+    /// Increments lines_added, lines_removed, and commit_count.
+    pub fn record_commit_stats(
+        &self,
+        task_id: &TaskId,
+        lines_added: u64,
+        lines_removed: u64,
+    ) -> Result<(), StoreError> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        conn.execute(
+            "UPDATE tasks SET lines_added = lines_added + ?1, lines_removed = lines_removed + ?2, commit_count = commit_count + 1 WHERE id = ?3",
+            rusqlite::params![lines_added as i64, lines_removed as i64, task_id.as_str()],
+        ).map_err(se)?;
         Ok(())
     }
 
@@ -1081,6 +1106,9 @@ fn task_from_row(row: TaskRow) -> Result<Task, StoreError> {
         phase,
         created_at: row.created_at,
         completed_at: row.completed_at,
+        lines_added: row.lines_added as u64,
+        lines_removed: row.lines_removed as u64,
+        commit_count: row.commit_count as u32,
     })
 }
 

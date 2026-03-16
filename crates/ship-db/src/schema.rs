@@ -7,6 +7,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ("002_topology", include_str!("../migrations/002_topology.sql")),
     ("003_blocks", include_str!("../migrations/003_blocks.sql")),
     ("004_tasks", include_str!("../migrations/004_tasks.sql")),
+    ("005_task_stats", include_str!("../migrations/005_task_stats.sql")),
 ];
 
 const MIGRATIONS_TABLE_SQL: &str = "

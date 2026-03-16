@@ -1,9 +1,11 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use camino::Utf8PathBuf;
 use ship_acp::AgentDriver;
 use ship_agent::{AgentChannels, AgentConfig, AgentInput, AgentOutput};
 use ship_db::ShipDb;
+use ship_git::GitContext;
 use jiff::Timestamp;
 use ship_policy::{
     AgentRole, Block, BlockContent, BlockId, Delivery, Participant, ParticipantName, RoomId,
@@ -17,6 +19,14 @@ use crate::room::{Feed, Room, RoomState};
 use tokio::sync::broadcast;
 
 const RECENT_BLOCKS_LIMIT: usize = 100;
+
+/// Statistics from a commit's diff (lines added/removed, files changed).
+#[derive(Debug, Clone)]
+pub struct CommitStats {
+    pub lines_added: u64,
+    pub lines_removed: u64,
+    pub files_changed: usize,
+}
 
 /// Snapshot of a room's state, sent to the frontend on connect.
 pub struct RoomSnapshot {
@@ -77,6 +87,8 @@ pub struct Runtime {
     agents: HashMap<ParticipantName, AgentChannels>,
     /// Shared room reader for agents that need conversation history.
     room_reader: Arc<RuntimeRoomReader>,
+    /// Git context per lane, keyed by room id.
+    git_contexts: HashMap<RoomId, GitContext>,
 }
 
 impl Runtime {
@@ -99,6 +111,7 @@ impl Runtime {
             tx,
             agents: HashMap::new(),
             room_reader,
+            git_contexts: HashMap::new(),
         }
     }
 
@@ -117,6 +130,20 @@ impl Runtime {
     /// Subscribe to the frontend event stream.
     pub fn subscribe(&self) -> broadcast::Receiver<FrontendEvent> {
         self.tx.subscribe()
+    }
+
+    // ── Git context per lane ─────────────────────────────────────────
+
+    /// Register a git worktree for a lane. Creates a `GitContext` and
+    /// stores it keyed by the lane's room id.
+    pub fn register_worktree(&mut self, room_id: &RoomId, worktree: Utf8PathBuf) {
+        self.git_contexts
+            .insert(room_id.clone(), GitContext::new(worktree));
+    }
+
+    /// Get the git context for a lane (if one has been registered).
+    pub fn git_context(&self, room_id: &RoomId) -> Option<&GitContext> {
+        self.git_contexts.get(room_id)
     }
 
     /// Emit a frontend event (best-effort, no error if nobody is listening).
@@ -266,6 +293,9 @@ impl Runtime {
             phase: TaskPhase::Assigned,
             created_at: Timestamp::now(),
             completed_at: None,
+            lines_added: 0,
+            lines_removed: 0,
+            commit_count: 0,
         };
 
         self.db.insert_task(&task).map_err(RuntimeError::Db)?;

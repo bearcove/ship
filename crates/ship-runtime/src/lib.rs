@@ -6,7 +6,10 @@ mod runtime;
 pub use agent::RuntimeRoomReader;
 pub use events::{FrontendEvent, RoomSummary};
 pub use room::{Feed, Room, RoomState};
-pub use runtime::{ConnectSnapshot, Runtime, RuntimeError, RoomSnapshot};
+pub use runtime::{CommitStats, ConnectSnapshot, Runtime, RuntimeError, RoomSnapshot};
 
 // Re-export agent types that runtime consumers need.
 pub use ship_agent::{AgentChannels, AgentConfig, AgentInput, AgentOutput, AgentStatus, ModelSpec};
+
+// Re-export git types that runtime consumers need.
+pub use ship_git::GitContext;
