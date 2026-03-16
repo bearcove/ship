@@ -1,0 +1,8 @@
+---
+source: crates/ship-policy/src/tests.rs
+expression: "render_for_prompt(&delivery, &hints)"
+---
+<message from="Jordan">
+Should I use async here?
+</message>
+<routing>Reply to mate: @Jordan · Reply to human: @Amos</routing>

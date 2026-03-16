@@ -1,0 +1,5 @@
+---
+source: crates/ship-policy/src/tests.rs
+expression: "render_for_prompt(&delivery, &[])"
+---
+<routing>Cannot address @Amos: Mate cannot address human directly</routing>

@@ -1,0 +1,14 @@
+---
+source: crates/ship-policy/src/tests.rs
+expression: "render_for_prompt(&delivery, &hints)"
+---
+<message from="Jordan">
+I've set my plan.
+
+Step 1: Tests
+Step 2: Implementation
+Step 3: Docs
+
+I'll keep you posted as I progress.
+</message>
+<routing>Reply to mate: @Jordan · Reply to human: @Amos</routing>

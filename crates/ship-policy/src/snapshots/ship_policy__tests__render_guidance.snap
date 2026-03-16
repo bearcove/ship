@@ -1,0 +1,5 @@
+---
+source: crates/ship-policy/src/tests.rs
+expression: "render_for_prompt(&delivery, &[])"
+---
+<routing>You stopped without submitting. Call mate_submit with a summary of what you accomplished.</routing>

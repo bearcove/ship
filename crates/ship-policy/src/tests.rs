@@ -901,3 +901,224 @@ fn delivery_lane2_commit_goes_to_lane2_captain() {
     assert_eq!(deliveries[0].to, "Birch");
     assert_eq!(deliveries[0].from, "Riley");
 }
+
+// ── Render for prompt ───────────────────────────────────────────────
+
+#[test]
+fn render_message_with_routing_hints() {
+    let delivery = Delivery {
+        to: "Cedar".into(),
+        from: "Jordan".into(),
+        content: DeliveryContent::Message {
+            text: "work is done".into(),
+        },
+        channel: Channel::Feed,
+        urgency: Urgency::Informational,
+    };
+    let hints = [("Jordan", "mate"), ("Amos", "human")];
+    insta::assert_snapshot!("render_message_to_captain", render_for_prompt(&delivery, &hints));
+}
+
+#[test]
+fn render_committed_with_step() {
+    let delivery = Delivery {
+        to: "Cedar".into(),
+        from: "Jordan".into(),
+        content: DeliveryContent::Committed {
+            step: Some("Add error handling".into()),
+            commit_summary: "feat: add error handling".into(),
+            diff_section: "\n+42 -3".into(),
+        },
+        channel: Channel::Feed,
+        urgency: Urgency::Informational,
+    };
+    let hints = [("Jordan", "mate"), ("Amos", "human")];
+    insta::assert_snapshot!("render_committed_with_step", render_for_prompt(&delivery, &hints));
+}
+
+#[test]
+fn render_committed_no_step() {
+    let delivery = Delivery {
+        to: "Cedar".into(),
+        from: "Jordan".into(),
+        content: DeliveryContent::Committed {
+            step: None,
+            commit_summary: "fix: typo".into(),
+            diff_section: "\n+1 -1".into(),
+        },
+        channel: Channel::Feed,
+        urgency: Urgency::Informational,
+    };
+    let hints = [("Jordan", "mate"), ("Amos", "human")];
+    insta::assert_snapshot!("render_committed_no_step", render_for_prompt(&delivery, &hints));
+}
+
+#[test]
+fn render_submitted() {
+    let delivery = Delivery {
+        to: "Cedar".into(),
+        from: "Jordan".into(),
+        content: DeliveryContent::Submitted {
+            summary: "Refactored auth middleware".into(),
+        },
+        channel: Channel::Feed,
+        urgency: Urgency::Attention,
+    };
+    let hints = [("Jordan", "mate"), ("Amos", "human")];
+    insta::assert_snapshot!("render_submitted", render_for_prompt(&delivery, &hints));
+}
+
+#[test]
+fn render_plan_set() {
+    let delivery = Delivery {
+        to: "Cedar".into(),
+        from: "Jordan".into(),
+        content: DeliveryContent::PlanSet {
+            plan_status: "Step 1: Tests\nStep 2: Implementation\nStep 3: Docs".into(),
+        },
+        channel: Channel::Feed,
+        urgency: Urgency::Informational,
+    };
+    let hints = [("Jordan", "mate"), ("Amos", "human")];
+    insta::assert_snapshot!("render_plan_set", render_for_prompt(&delivery, &hints));
+}
+
+#[test]
+fn render_question() {
+    let delivery = Delivery {
+        to: "Cedar".into(),
+        from: "Jordan".into(),
+        content: DeliveryContent::Question {
+            text: "Should I use async here?".into(),
+        },
+        channel: Channel::Feed,
+        urgency: Urgency::Attention,
+    };
+    let hints = [("Jordan", "mate"), ("Amos", "human")];
+    insta::assert_snapshot!("render_question", render_for_prompt(&delivery, &hints));
+}
+
+#[test]
+fn render_activity_summary() {
+    let delivery = Delivery {
+        to: "Cedar".into(),
+        from: "summarizer".into(),
+        content: DeliveryContent::ActivitySummary {
+            summary: "Mate edited 3 files, ran tests twice".into(),
+        },
+        channel: Channel::Feed,
+        urgency: Urgency::Informational,
+    };
+    let hints = [("Jordan", "mate"), ("Amos", "human")];
+    insta::assert_snapshot!("render_activity_summary", render_for_prompt(&delivery, &hints));
+}
+
+#[test]
+fn render_bounce() {
+    let delivery = Delivery {
+        to: "Cedar".into(),
+        from: "system".into(),
+        content: DeliveryContent::Bounce {
+            reason: "Message didn't address anyone.".into(),
+            allowed: vec!["Jordan".into(), "Amos".into()],
+        },
+        channel: Channel::Feed,
+        urgency: Urgency::Attention,
+    };
+    insta::assert_snapshot!("render_bounce", render_for_prompt(&delivery, &[]));
+}
+
+#[test]
+fn render_denied() {
+    let delivery = Delivery {
+        to: "Jordan".into(),
+        from: "system".into(),
+        content: DeliveryContent::Denied {
+            attempted_target: "Amos".into(),
+            reason: "Mate cannot address human directly".into(),
+        },
+        channel: Channel::Feed,
+        urgency: Urgency::Attention,
+    };
+    insta::assert_snapshot!("render_denied", render_for_prompt(&delivery, &[]));
+}
+
+#[test]
+fn render_guidance() {
+    let delivery = Delivery {
+        to: "Jordan".into(),
+        from: "system".into(),
+        content: DeliveryContent::Guidance {
+            text: "You stopped without submitting. Call mate_submit with a summary of what you accomplished.".into(),
+        },
+        channel: Channel::Feed,
+        urgency: Urgency::Attention,
+    };
+    insta::assert_snapshot!("render_guidance", render_for_prompt(&delivery, &[]));
+}
+
+#[test]
+fn render_checks_finished_failed() {
+    let delivery = Delivery {
+        to: "Cedar".into(),
+        from: "system".into(),
+        content: DeliveryContent::ChecksFinished {
+            context: "pre-merge".into(),
+            all_passed: false,
+            summary: "2 hooks failed".into(),
+        },
+        channel: Channel::Feed,
+        urgency: Urgency::Attention,
+    };
+    let hints = [("Jordan", "mate"), ("Amos", "human")];
+    insta::assert_snapshot!("render_checks_failed", render_for_prompt(&delivery, &hints));
+}
+
+#[test]
+fn render_checks_finished_passed() {
+    let delivery = Delivery {
+        to: "Cedar".into(),
+        from: "system".into(),
+        content: DeliveryContent::ChecksFinished {
+            context: "post-commit".into(),
+            all_passed: true,
+            summary: "all green".into(),
+        },
+        channel: Channel::Feed,
+        urgency: Urgency::Informational,
+    };
+    let hints = [("Jordan", "mate"), ("Amos", "human")];
+    insta::assert_snapshot!("render_checks_passed", render_for_prompt(&delivery, &hints));
+}
+
+#[test]
+fn render_no_routing_hints() {
+    let delivery = Delivery {
+        to: "Amos".into(),
+        from: "Jordan".into(),
+        content: DeliveryContent::Message {
+            text: "hello human".into(),
+        },
+        channel: Channel::Feed,
+        urgency: Urgency::Informational,
+    };
+    insta::assert_snapshot!("render_no_hints", render_for_prompt(&delivery, &[]));
+}
+
+// ── Help: mate_set_plan ─────────────────────────────────────────────
+
+#[test]
+fn mate_assigned_has_set_plan() {
+    let actions = available_actions(AgentRole::Mate, Some(TaskPhase::Assigned));
+    let names: Vec<&str> = actions.iter().map(|a| a.name).collect();
+    assert!(names.contains(&"mate_set_plan"));
+    assert!(!names.contains(&"mate_submit"));
+}
+
+#[test]
+fn mate_working_has_set_plan() {
+    let actions = available_actions(AgentRole::Mate, Some(TaskPhase::Working));
+    let names: Vec<&str> = actions.iter().map(|a| a.name).collect();
+    assert!(names.contains(&"mate_set_plan"));
+    assert!(names.contains(&"mate_submit"));
+}

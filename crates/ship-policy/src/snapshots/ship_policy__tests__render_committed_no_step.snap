@@ -1,0 +1,11 @@
+---
+source: crates/ship-policy/src/tests.rs
+expression: "render_for_prompt(&delivery, &hints)"
+---
+<message from="Jordan">
+Committed:
+
+fix: typo
++1 -1
+</message>
+<routing>Reply to mate: @Jordan · Reply to human: @Amos</routing>

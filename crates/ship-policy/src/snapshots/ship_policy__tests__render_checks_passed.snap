@@ -1,0 +1,8 @@
+---
+source: crates/ship-policy/src/tests.rs
+expression: "render_for_prompt(&delivery, &hints)"
+---
+<message from="system">
+Checks passed (post-commit): all green
+</message>
+<routing>Reply to mate: @Jordan · Reply to human: @Amos</routing>

@@ -1,0 +1,8 @@
+---
+source: crates/ship-policy/src/tests.rs
+expression: "render_for_prompt(&delivery, &hints)"
+---
+<message from="Jordan">
+I've submitted my work for review: Refactored auth middleware
+</message>
+<routing>Reply to mate: @Jordan · Reply to human: @Amos</routing>

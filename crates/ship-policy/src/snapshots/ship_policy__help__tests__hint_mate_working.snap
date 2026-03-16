@@ -4,5 +4,6 @@ expression: "short_hint(AgentRole::Mate, Some(TaskPhase::Working))"
 ---
 Available actions:
 - `code` — Read, search, edit files, run commands, commit
+- `mate_set_plan` — Set or update the work plan
 - `mate_submit` — Submit work for captain review (blocks)
 - `mate_ask_captain` — Ask the captain a blocking question

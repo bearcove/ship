@@ -1,0 +1,11 @@
+---
+source: crates/ship-policy/src/tests.rs
+expression: "render_for_prompt(&delivery, &hints)"
+---
+<message from="Jordan">
+Completed step: Add error handling
+
+feat: add error handling
++42 -3
+</message>
+<routing>Reply to mate: @Jordan · Reply to human: @Amos</routing>

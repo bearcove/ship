@@ -1,4 +1,5 @@
 use crate::{AgentRole, ParticipantKind, RoomId, SessionRoom, Topology, allowed_mentions};
+use std::fmt::Write as _;
 
 // ── Actions: everything that can happen in the system ────────────────
 
@@ -192,6 +193,123 @@ pub fn extract_urgency(text: &str) -> (String, Urgency) {
         Urgency::Informational
     };
     (clean, urgency)
+}
+
+// ── Prompt rendering ─────────────────────────────────────────────────
+
+/// Render a delivery for injection into an agent's prompt.
+///
+/// Human recipients consume typed `DeliveryContent` directly via the frontend —
+/// this function is only for producing the XML-wrapped text that agents see.
+///
+/// `mention_hints` are `(name, role_label)` pairs the recipient can address,
+/// e.g. `[("Jordan", "mate"), ("Amos", "human")]`.
+pub fn render_for_prompt(delivery: &Delivery, mention_hints: &[(&str, &str)]) -> String {
+    match &delivery.content {
+        DeliveryContent::Message { text } => {
+            wrap_message(&delivery.from, text, mention_hints)
+        }
+
+        DeliveryContent::Committed {
+            step,
+            commit_summary,
+            diff_section,
+        } => {
+            let body = match step {
+                Some(desc) => format!("Completed step: {desc}\n\n{commit_summary}{diff_section}"),
+                None => format!("Committed:\n\n{commit_summary}{diff_section}"),
+            };
+            wrap_message(&delivery.from, &body, mention_hints)
+        }
+
+        DeliveryContent::Submitted { summary } => {
+            let body = format!("I've submitted my work for review: {summary}");
+            wrap_message(&delivery.from, &body, mention_hints)
+        }
+
+        DeliveryContent::PlanSet { plan_status } => {
+            let body = format!(
+                "I've set my plan.\n\n{plan_status}\n\nI'll keep you posted as I progress."
+            );
+            wrap_message(&delivery.from, &body, mention_hints)
+        }
+
+        DeliveryContent::Question { text } => {
+            wrap_message(&delivery.from, text, mention_hints)
+        }
+
+        DeliveryContent::ActivitySummary { summary } => {
+            // Summarizer is a system process, not a participant — attributed separately
+            wrap_message(&delivery.from, summary, mention_hints)
+        }
+
+        DeliveryContent::Bounce { reason, allowed } => {
+            let allowed_str = allowed
+                .iter()
+                .map(|n| format!("@{n}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("<routing>{reason} You can mention: {allowed_str}</routing>")
+        }
+
+        DeliveryContent::Denied {
+            attempted_target,
+            reason,
+        } => {
+            format!("<routing>Cannot address @{attempted_target}: {reason}</routing>")
+        }
+
+        DeliveryContent::Guidance { text } => {
+            format!("<routing>{text}</routing>")
+        }
+
+        DeliveryContent::TaskAssigned { title, description } => {
+            let body = format!("Task assigned: {title}\n\n{description}");
+            wrap_message(&delivery.from, &body, mention_hints)
+        }
+
+        DeliveryContent::ChecksStarted { context } => {
+            let body = format!("Checks started: {context}");
+            wrap_message("system", &body, mention_hints)
+        }
+
+        DeliveryContent::ChecksFinished {
+            context,
+            all_passed,
+            summary,
+        } => {
+            let status = if *all_passed { "passed" } else { "FAILED" };
+            let body = format!("Checks {status} ({context}): {summary}");
+            wrap_message("system", &body, mention_hints)
+        }
+    }
+}
+
+/// Wrap content in a `<message>` tag with routing hints for agent prompt injection.
+fn wrap_message(from: &str, body: &str, mention_hints: &[(&str, &str)]) -> String {
+    let mut out = String::new();
+    let _ = write!(out, "<message from=\"{from}\">\n{body}\n</message>");
+    let routing = format_routing_hint(mention_hints);
+    if !routing.is_empty() {
+        out.push('\n');
+        out.push_str(&routing);
+    }
+    out
+}
+
+/// Format routing hints into a `<routing>` tag.
+fn format_routing_hint(mention_hints: &[(&str, &str)]) -> String {
+    if mention_hints.is_empty() {
+        return String::new();
+    }
+    let mut parts = String::new();
+    for (i, (name, label)) in mention_hints.iter().enumerate() {
+        if i > 0 {
+            parts.push_str(" · ");
+        }
+        let _ = write!(parts, "Reply to {label}: @{name}");
+    }
+    format!("<routing>{parts}</routing>")
 }
 
 // ── The unified routing function ─────────────────────────────────────

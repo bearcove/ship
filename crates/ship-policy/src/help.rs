@@ -130,7 +130,7 @@ fn mate_actions(phase: Option<TaskPhase>) -> Vec<&'static ActionHelp> {
     match phase {
         Some(TaskPhase::Working) => MATE_ACTIONS.iter().collect(),
         Some(TaskPhase::Assigned) => {
-            // Mate is about to start — code + ask available
+            // Mate is about to start — code + set_plan + ask available, no submit yet
             MATE_ACTIONS
                 .iter()
                 .filter(|a| a.name != "mate_submit")
@@ -253,6 +253,21 @@ static MATE_ACTIONS: &[ActionHelp] = &[
                ```json\n\
                {\"ops\": [{\"edit\": {\"file\": \"src/lib.rs\", \
                \"edits\": [{\"find_replace\": {\"find\": \"old\", \"replace\": \"new\"}}]}}]}\n\
+               ```",
+    },
+    ActionHelp {
+        name: "mate_set_plan",
+        short: "Set or update the work plan",
+        long: "Declares the steps you'll take to complete the task. Call early to align \
+               with the captain. Update if the plan changes during implementation.\n\
+               \n\
+               Example:\n\
+               ```\n\
+               mate_set_plan(steps: [\n\
+                 \"Add delivery types to ship-policy\",\n\
+                 \"Wire routing into ship-server\",\n\
+                 \"Update frontend codegen\"\n\
+               ])\n\
                ```",
     },
     ActionHelp {
