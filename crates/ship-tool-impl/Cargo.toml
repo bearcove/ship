@@ -1,0 +1,15 @@
+[package]
+name = "ship-tool-impl"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ship-tool-service = { path = "../ship-tool-service" }
+ship-runtime = { path = "../ship-runtime" }
+ship-policy = { path = "../ship-policy" }
+ship-git = { path = "../ship-git" }
+ship-code = { path = "../ship-code" }
+roam = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
+tracing = { workspace = true }
+camino = { workspace = true }

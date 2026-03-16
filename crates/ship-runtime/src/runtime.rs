@@ -542,6 +542,11 @@ impl Runtime {
         self.agents.contains_key(participant)
     }
 
+    /// Access the agent channels map (for sending control messages).
+    pub fn agents(&self) -> &HashMap<ParticipantName, AgentChannels> {
+        &self.agents
+    }
+
     /// Find which room a participant belongs to.
     fn room_for_participant(&self, name: &str) -> Option<RoomId> {
         self.topology

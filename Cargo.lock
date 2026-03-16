@@ -3688,6 +3688,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "ship-frontend-impl"
+version = "0.1.0"
+dependencies = [
+ "roam",
+ "ship-agent",
+ "ship-frontend-service",
+ "ship-policy",
+ "ship-runtime",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "ship-frontend-service"
 version = "0.1.0"
 dependencies = [
@@ -3814,6 +3827,21 @@ version = "0.1.0"
 dependencies = [
  "roam",
  "ship-types",
+]
+
+[[package]]
+name = "ship-tool-impl"
+version = "0.1.0"
+dependencies = [
+ "camino",
+ "roam",
+ "ship-code",
+ "ship-git",
+ "ship-policy",
+ "ship-runtime",
+ "ship-tool-service",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

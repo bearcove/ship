@@ -1,0 +1,13 @@
+[package]
+name = "ship-frontend-impl"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ship-frontend-service = { path = "../ship-frontend-service" }
+ship-runtime = { path = "../ship-runtime" }
+ship-policy = { path = "../ship-policy" }
+ship-agent = { path = "../ship-agent" }
+roam = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
+tracing = { workspace = true }

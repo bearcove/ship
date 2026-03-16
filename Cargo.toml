@@ -19,6 +19,8 @@ members = [
   "crates/rusqlite-facet",
   "crates/ship-frontend-service",
   "crates/ship-tool-service",
+  "crates/ship-frontend-impl",
+  "crates/ship-tool-impl",
 ]
 resolver = "2"
 
