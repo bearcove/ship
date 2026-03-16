@@ -1,0 +1,17 @@
+[package]
+name = "facet-acp"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+facet = { workspace = true }
+facet-json = { workspace = true }
+tokio = { workspace = true, features = ["io-util", "sync", "rt", "macros"] }
+tokio-util = { workspace = true }
+futures = { workspace = true }
+futures-core = { workspace = true }
+tracing = { workspace = true }
+async-trait = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

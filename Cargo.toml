@@ -13,6 +13,7 @@ members = [
   "crates/ship-policy",
   "crates/ship-mcp",
   "crates/facet-mcp",
+  "crates/facet-acp",
 ]
 resolver = "2"
 

@@ -886,6 +886,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "facet-acp"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "facet",
+ "facet-json",
+ "futures",
+ "futures-core",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "facet-cargo-toml"
 version = "0.44.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
