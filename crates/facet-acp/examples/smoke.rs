@@ -222,13 +222,23 @@ async fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     let cwd = std::env::current_dir()?;
 
-    let mut child = tokio::process::Command::new(&program)
-        .args(&extra_args)
+    let mut cmd = tokio::process::Command::new(&program);
+    cmd.args(&extra_args)
         .current_dir(&cwd)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true)
+        .kill_on_drop(true);
+
+    // The claude-agent-acp adapter needs CLAUDE_CODE_EXECUTABLE to find the
+    // claude binary. If not already set, look it up in PATH.
+    if std::env::var("CLAUDE_CODE_EXECUTABLE").is_err() {
+        if let Some(path) = which_path("claude") {
+            cmd.env("CLAUDE_CODE_EXECUTABLE", path);
+        }
+    }
+
+    let mut child = cmd
         .spawn()
         .map_err(|e| format!("failed to spawn '{program}': {e}"))?;
 
@@ -369,10 +379,18 @@ async fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
 }
 
 fn which_exists(name: &str) -> bool {
-    std::process::Command::new("which")
+    which_path(name).is_some()
+}
+
+fn which_path(name: &str) -> Option<String> {
+    let output = std::process::Command::new("which")
         .arg(name)
-        .stdout(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .status()
-        .is_ok_and(|s| s.success())
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&output.stdout).trim().to_owned())
 }
