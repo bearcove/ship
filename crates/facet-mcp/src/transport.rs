@@ -2,6 +2,8 @@ use std::fmt;
 
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
+use facet_json::RawJson;
+
 use crate::protocol::{JsonRpcId, JsonRpcRequest, JsonRpcResponse};
 
 #[derive(Debug)]
@@ -60,7 +62,7 @@ impl StdioTransport {
         let response = JsonRpcResponse {
             jsonrpc: "2.0".to_owned(),
             id: Some(id),
-            result: Some(result),
+            result: Some(RawJson::from_owned(result)),
             error: None,
         };
         let json = facet_json::to_string(&response)

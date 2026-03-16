@@ -23,11 +23,11 @@ pub trait ToolHandler: Send + Sync + 'static {
     /// Return the list of tools this handler provides.
     fn tool_defs(&self) -> &[ToolDef];
 
-    /// Dispatch a tool call. `arguments` is the raw JSON string of the arguments object.
+    /// Dispatch a tool call. `arguments` is the raw JSON of the arguments object.
     fn call_tool(
         &self,
         name: &str,
-        arguments: Option<&str>,
+        arguments: Option<&facet_json::RawJson<'static>>,
     ) -> impl std::future::Future<Output = CallToolResult> + Send;
 }
 
@@ -117,10 +117,12 @@ impl<H: ToolHandler> McpServer<H> {
                 "tools/call" => {
                     let result = match &request.params {
                         Some(p) => {
-                            match facet_json::from_str::<crate::protocol::CallToolParams>(p) {
+                            match facet_json::from_str::<crate::protocol::CallToolParams>(
+                                p.as_ref(),
+                            ) {
                                 Ok(params) => {
                                     self.handler
-                                        .call_tool(&params.name, params.arguments.as_deref())
+                                        .call_tool(&params.name, params.arguments.as_ref())
                                         .await
                                 }
                                 Err(e) => CallToolResult::error(format!(
