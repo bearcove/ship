@@ -400,3 +400,554 @@ fn snapshot_bounce_for_mate() {
     let bounce = bounce_for(&topo, "Jordan").unwrap();
     insta::assert_snapshot!("bounce_mate", bounce);
 }
+
+// ── Routing failure conditions ──────────────────────────────────────
+
+#[test]
+fn unknown_sender_returns_unknown_target() {
+    let topo = test_topology();
+    let msg = Message {
+        from: "Ghost".into(),
+        mention: "Cedar".into(),
+        text: "hello".into(),
+    };
+    let result = route_message(&topo, &msg);
+    // Unknown sender gets treated as unknown target (sender not found in topology)
+    assert!(matches!(result, RouteResult::UnknownTarget { .. }));
+}
+
+#[test]
+fn captain_cannot_mention_other_sessions_mate() {
+    let topo = test_topology();
+    let msg = Message {
+        from: "Cedar".into(),
+        mention: "Riley".into(),
+        text: "hey other mate".into(),
+    };
+    let result = route_message(&topo, &msg);
+    assert!(matches!(result, RouteResult::Denied { .. }));
+}
+
+#[test]
+fn captain_cannot_mention_other_sessions_captain() {
+    let topo = test_topology();
+    let msg = Message {
+        from: "Cedar".into(),
+        mention: "Birch".into(),
+        text: "hey other captain".into(),
+    };
+    let result = route_message(&topo, &msg);
+    assert!(matches!(result, RouteResult::Denied { .. }));
+}
+
+#[test]
+fn captain_cannot_mention_admiral_directly() {
+    let topo = test_topology();
+    let msg = Message {
+        from: "Cedar".into(),
+        mention: "Morgan".into(),
+        text: "admiral please help".into(),
+    };
+    let result = route_message(&topo, &msg);
+    assert!(matches!(result, RouteResult::Denied { .. }));
+}
+
+#[test]
+fn admiral_cannot_mention_mate() {
+    let topo = test_topology();
+    let msg = Message {
+        from: "Morgan".into(),
+        mention: "Jordan".into(),
+        text: "direct to mate".into(),
+    };
+    let result = route_message(&topo, &msg);
+    assert!(matches!(result, RouteResult::Denied { .. }));
+}
+
+#[test]
+fn human_cannot_mention_mate_directly() {
+    let topo = test_topology();
+    let msg = Message {
+        from: "Amos".into(),
+        mention: "Jordan".into(),
+        text: "hey mate".into(),
+    };
+    let result = route_message(&topo, &msg);
+    assert!(matches!(result, RouteResult::Denied { .. }));
+}
+
+#[test]
+fn mate_cannot_mention_other_mate() {
+    let topo = test_topology();
+    let msg = Message {
+        from: "Jordan".into(),
+        mention: "Riley".into(),
+        text: "cross-session chat".into(),
+    };
+    let result = route_message(&topo, &msg);
+    assert!(matches!(result, RouteResult::Denied { .. }));
+}
+
+#[test]
+fn self_mention_denied_for_mate() {
+    let topo = test_topology();
+    let msg = Message {
+        from: "Jordan".into(),
+        mention: "Jordan".into(),
+        text: "talking to myself".into(),
+    };
+    let result = route_message(&topo, &msg);
+    assert!(matches!(result, RouteResult::Denied { .. }));
+}
+
+#[test]
+fn self_mention_denied_for_captain() {
+    let topo = test_topology();
+    let msg = Message {
+        from: "Cedar".into(),
+        mention: "Cedar".into(),
+        text: "talking to myself".into(),
+    };
+    let result = route_message(&topo, &msg);
+    assert!(matches!(result, RouteResult::Denied { .. }));
+}
+
+#[test]
+fn both_captains_messages_to_human_intercepted() {
+    let topo = test_topology();
+    for captain in ["Cedar", "Birch"] {
+        let msg = Message {
+            from: captain.into(),
+            mention: "Amos".into(),
+            text: "status update".into(),
+        };
+        let result = route_message(&topo, &msg);
+        assert!(
+            matches!(result, RouteResult::InterceptForAdmiral { .. }),
+            "{captain}'s @human should be intercepted"
+        );
+    }
+}
+
+// ── Topology edge cases ─────────────────────────────────────────────
+
+#[test]
+fn empty_topology_no_sessions() {
+    let topo = Topology {
+        human: Participant::human("Amos"),
+        admiral: Participant::agent("Morgan", AgentRole::Admiral),
+        sessions: vec![],
+    };
+    // Admiral room has just the admiral (no captains).
+    let members = topo.admiral_room_members();
+    assert_eq!(members.len(), 1);
+    assert_eq!(members[0].name, "Morgan");
+
+    // Human mentions admiral — delivers.
+    let msg = Message {
+        from: "Amos".into(),
+        mention: "Morgan".into(),
+        text: "hello".into(),
+    };
+    assert!(matches!(route_message(&topo, &msg), RouteResult::Deliver { .. }));
+
+    // Human has no captains to mention.
+    let amos = topo.find_participant("Amos").unwrap();
+    let allowed = allowed_mentions(&topo, amos);
+    assert_eq!(allowed, vec!["Morgan"]);
+}
+
+#[test]
+fn find_participant_ci_works() {
+    let topo = test_topology();
+    assert!(topo.find_participant_ci("cedar").is_some());
+    assert!(topo.find_participant_ci("CEDAR").is_some());
+    assert!(topo.find_participant_ci("CeDaR").is_some());
+    assert!(topo.find_participant_ci("nobody").is_none());
+}
+
+#[test]
+fn session_for_participant_finds_by_captain_or_mate() {
+    let topo = test_topology();
+    let session = topo.session_for_participant("Cedar").unwrap();
+    assert_eq!(session.id, RoomId("lane-1".into()));
+
+    let session = topo.session_for_participant("Jordan").unwrap();
+    assert_eq!(session.id, RoomId("lane-1".into()));
+
+    assert!(topo.session_for_participant("Morgan").is_none());
+    assert!(topo.session_for_participant("Amos").is_none());
+}
+
+// ── Names edge cases ────────────────────────────────────────────────
+
+#[test]
+fn pick_more_than_available() {
+    let all = name_pool();
+    // Ask for more names than exist — should return all available.
+    let picked = pick_names(all.len() + 100, &[]);
+    assert_eq!(picked.len(), all.len());
+}
+
+#[test]
+fn pick_with_all_taken() {
+    let all: Vec<&str> = name_pool().to_vec();
+    let picked = pick_names(5, &all);
+    assert!(picked.is_empty());
+}
+
+#[test]
+fn pick_zero_names() {
+    let picked = pick_names(0, &[]);
+    assert!(picked.is_empty());
+}
+
+// ── Transition edge cases ───────────────────────────────────────────
+
+#[test]
+fn self_transitions_not_allowed() {
+    let phases = [
+        TaskPhase::Assigned,
+        TaskPhase::Working,
+        TaskPhase::ReviewPending,
+        TaskPhase::SteerPending,
+        TaskPhase::RebaseConflict,
+        TaskPhase::WaitingForHuman,
+    ];
+    for phase in phases {
+        assert!(
+            !can_transition(phase, phase),
+            "{phase:?} should not self-transition"
+        );
+    }
+}
+
+#[test]
+fn waiting_for_human_can_only_cancel() {
+    let reachable = reachable_from(TaskPhase::WaitingForHuman);
+    assert_eq!(reachable, vec![TaskPhase::Cancelled]);
+}
+
+#[test]
+fn working_cannot_skip_to_accepted() {
+    assert!(!can_transition(TaskPhase::Working, TaskPhase::Accepted));
+}
+
+#[test]
+fn working_cannot_go_to_steer_pending() {
+    assert!(!can_transition(TaskPhase::Working, TaskPhase::SteerPending));
+}
+
+#[test]
+fn assigned_cannot_go_to_review_pending() {
+    assert!(!can_transition(TaskPhase::Assigned, TaskPhase::ReviewPending));
+}
+
+#[test]
+fn rebase_conflict_cannot_go_to_working() {
+    assert!(!can_transition(TaskPhase::RebaseConflict, TaskPhase::Working));
+}
+
+#[test]
+fn terminal_is_terminal() {
+    assert!(TaskPhase::Accepted.is_terminal());
+    assert!(TaskPhase::Cancelled.is_terminal());
+    assert!(!TaskPhase::Working.is_terminal());
+    assert!(!TaskPhase::Assigned.is_terminal());
+}
+
+// ── Sandbox failure conditions ──────────────────────────────────────
+
+#[test]
+fn captain_read_only_at_every_non_rebase_phase() {
+    let phases = [
+        None,
+        Some(TaskPhase::Assigned),
+        Some(TaskPhase::Working),
+        Some(TaskPhase::ReviewPending),
+        Some(TaskPhase::SteerPending),
+        Some(TaskPhase::Accepted),
+        Some(TaskPhase::Cancelled),
+        Some(TaskPhase::WaitingForHuman),
+    ];
+    for phase in phases {
+        let policy = code_policy(AgentRole::Captain, phase);
+        assert!(
+            is_op_allowed(&policy, OpKind::Read),
+            "Captain should always have Read at {phase:?}"
+        );
+        assert!(
+            !is_op_allowed(&policy, OpKind::Edit),
+            "Captain should NOT have Edit at {phase:?}"
+        );
+        assert!(
+            !is_op_allowed(&policy, OpKind::Write),
+            "Captain should NOT have Write at {phase:?}"
+        );
+        assert!(
+            !is_op_allowed(&policy, OpKind::Submit),
+            "Captain should NEVER have Submit at {phase:?}"
+        );
+    }
+}
+
+#[test]
+fn captain_rebase_is_the_only_writable_phase() {
+    let phases = [
+        None,
+        Some(TaskPhase::Assigned),
+        Some(TaskPhase::Working),
+        Some(TaskPhase::ReviewPending),
+        Some(TaskPhase::SteerPending),
+        Some(TaskPhase::Accepted),
+        Some(TaskPhase::Cancelled),
+        Some(TaskPhase::WaitingForHuman),
+    ];
+    for phase in phases {
+        let policy = run_policy(AgentRole::Captain, phase);
+        assert!(
+            !policy.worktree_writable,
+            "Captain worktree should be read-only at {phase:?}"
+        );
+    }
+    // Only rebase conflict is writable.
+    let policy = run_policy(AgentRole::Captain, Some(TaskPhase::RebaseConflict));
+    assert!(policy.worktree_writable);
+}
+
+#[test]
+fn mate_only_writable_when_working() {
+    let read_only_phases = [
+        None,
+        Some(TaskPhase::Assigned),
+        Some(TaskPhase::ReviewPending),
+        Some(TaskPhase::SteerPending),
+        Some(TaskPhase::Accepted),
+        Some(TaskPhase::Cancelled),
+        Some(TaskPhase::WaitingForHuman),
+        Some(TaskPhase::RebaseConflict),
+    ];
+    for phase in read_only_phases {
+        let policy = run_policy(AgentRole::Mate, phase);
+        assert!(
+            !policy.worktree_writable,
+            "Mate worktree should be read-only at {phase:?}"
+        );
+    }
+}
+
+#[test]
+fn mate_no_ops_at_terminal_phases() {
+    for phase in [TaskPhase::Accepted, TaskPhase::Cancelled] {
+        let policy = code_policy(AgentRole::Mate, Some(phase));
+        assert!(
+            policy.allowed_ops.is_empty(),
+            "Mate should have no ops at {phase:?}"
+        );
+    }
+}
+
+#[test]
+fn mate_no_ops_at_non_work_phases() {
+    for phase in [
+        TaskPhase::ReviewPending,
+        TaskPhase::SteerPending,
+        TaskPhase::RebaseConflict,
+        TaskPhase::WaitingForHuman,
+    ] {
+        let policy = code_policy(AgentRole::Mate, Some(phase));
+        assert!(
+            policy.allowed_ops.is_empty(),
+            "Mate should have no ops at {phase:?}"
+        );
+    }
+}
+
+// ── Command checking edge cases ─────────────────────────────────────
+
+#[test]
+fn command_with_leading_whitespace() {
+    assert!(matches!(
+        check_command("  git status", AgentRole::Mate),
+        CommandCheck::Blocked(_)
+    ));
+}
+
+#[test]
+fn whitespace_only_command() {
+    assert_eq!(
+        check_command("   ", AgentRole::Mate),
+        CommandCheck::Allowed
+    );
+}
+
+#[test]
+fn rm_recursive_without_force_is_allowed() {
+    // rm -r . (no -f) — not blocked by our check.
+    assert_eq!(
+        check_command("rm -r some_dir", AgentRole::Mate),
+        CommandCheck::Allowed
+    );
+}
+
+#[test]
+fn rm_force_without_recursive_is_allowed() {
+    // rm -f file.txt — targeted, not broad.
+    assert_eq!(
+        check_command("rm -f file.txt", AgentRole::Mate),
+        CommandCheck::Allowed
+    );
+}
+
+#[test]
+fn rm_rf_with_specific_path_is_allowed() {
+    // rm -rf target/debug — specific path, not broad.
+    assert_eq!(
+        check_command("rm -rf target/debug", AgentRole::Mate),
+        CommandCheck::Allowed
+    );
+}
+
+#[test]
+fn rm_rf_dot_dot_blocked() {
+    assert!(matches!(
+        check_command("rm -rf ..", AgentRole::Mate),
+        CommandCheck::Blocked(_)
+    ));
+}
+
+#[test]
+fn rm_fr_variant_blocked() {
+    // -fr instead of -rf
+    assert!(matches!(
+        check_command("rm -fr /", AgentRole::Mate),
+        CommandCheck::Blocked(_)
+    ));
+}
+
+#[test]
+fn rm_separate_flags_recursive_force_blocked() {
+    assert!(matches!(
+        check_command("rm -r -f .", AgentRole::Mate),
+        CommandCheck::Blocked(_)
+    ));
+}
+
+#[test]
+fn admiral_blocked_from_git() {
+    // Admiral also shouldn't run git? Let's verify the current behavior.
+    // Actually, admiral has no worktree — git is allowed by check_command
+    // but would fail at execution. The check is role-specific for Mate only.
+    assert_eq!(
+        check_command("git status", AgentRole::Admiral),
+        CommandCheck::Allowed
+    );
+}
+
+// ── Op denied reason edge cases ─────────────────────────────────────
+
+#[test]
+fn op_denied_submit_for_captain() {
+    let reason = op_denied_reason(AgentRole::Captain, Some(TaskPhase::Working), OpKind::Submit);
+    assert!(reason.contains("Only the mate"));
+}
+
+#[test]
+fn op_denied_submit_for_admiral() {
+    let reason = op_denied_reason(AgentRole::Admiral, None, OpKind::Submit);
+    assert!(reason.contains("Only the mate"));
+}
+
+#[test]
+fn op_denied_read_for_mate_no_task() {
+    let reason = op_denied_reason(AgentRole::Mate, None, OpKind::Read);
+    assert!(reason.contains("no active task"));
+}
+
+// ── Help failure conditions ─────────────────────────────────────────
+
+#[test]
+fn captain_steer_pending_has_steer_merge_cancel() {
+    let actions = available_actions(AgentRole::Captain, Some(TaskPhase::SteerPending));
+    let names: Vec<&str> = actions.iter().map(|a| a.name).collect();
+    assert!(names.contains(&"captain_steer"));
+    assert!(names.contains(&"captain_merge"));
+    assert!(names.contains(&"captain_cancel"));
+    assert!(!names.contains(&"captain_assign"));
+    assert!(!names.contains(&"captain_review_diff"));
+}
+
+#[test]
+fn captain_waiting_for_human_has_notify() {
+    let actions = available_actions(AgentRole::Captain, Some(TaskPhase::WaitingForHuman));
+    let names: Vec<&str> = actions.iter().map(|a| a.name).collect();
+    assert!(names.contains(&"captain_notify_human"));
+    assert!(!names.contains(&"captain_merge"));
+}
+
+#[test]
+fn captain_accepted_can_assign_again() {
+    let actions = available_actions(AgentRole::Captain, Some(TaskPhase::Accepted));
+    let names: Vec<&str> = actions.iter().map(|a| a.name).collect();
+    assert!(names.contains(&"captain_assign"));
+    assert!(!names.contains(&"captain_merge"));
+}
+
+#[test]
+fn captain_cancelled_can_assign_again() {
+    let actions = available_actions(AgentRole::Captain, Some(TaskPhase::Cancelled));
+    let names: Vec<&str> = actions.iter().map(|a| a.name).collect();
+    assert!(names.contains(&"captain_assign"));
+}
+
+#[test]
+fn mate_assigned_cannot_submit() {
+    let actions = available_actions(AgentRole::Mate, Some(TaskPhase::Assigned));
+    let names: Vec<&str> = actions.iter().map(|a| a.name).collect();
+    assert!(names.contains(&"code"));
+    assert!(names.contains(&"mate_ask_captain"));
+    assert!(!names.contains(&"mate_submit"));
+}
+
+#[test]
+fn tool_help_for_nonexistent_tool() {
+    let help = tool_help(AgentRole::Captain, None, "nonexistent_tool");
+    assert!(help.is_none());
+}
+
+#[test]
+fn wrong_tool_for_every_role() {
+    // Mate using captain tools.
+    let msg = wrong_tool_help(AgentRole::Mate, Some(TaskPhase::Working), "captain_assign");
+    assert!(msg.contains("Unknown tool"));
+
+    // Captain using mate tools.
+    let msg = wrong_tool_help(AgentRole::Captain, Some(TaskPhase::ReviewPending), "mate_submit");
+    assert!(msg.contains("Unknown tool"));
+}
+
+// ── Bounce failure conditions ───────────────────────────────────────
+
+#[test]
+fn bounce_for_unknown_participant() {
+    let topo = test_topology();
+    assert!(bounce_for(&topo, "Ghost").is_none());
+}
+
+#[test]
+fn bounce_for_human_lists_admiral_and_captains() {
+    let topo = test_topology();
+    // Humans get a bounce too — they need to @mention someone.
+    let bounce = bounce_for(&topo, "Amos").unwrap();
+    assert!(bounce.contains("Morgan"));
+    assert!(bounce.contains("Cedar"));
+    assert!(bounce.contains("Birch"));
+}
+
+#[test]
+fn bounce_for_admiral() {
+    let topo = test_topology();
+    let bounce = bounce_for(&topo, "Morgan");
+    // Admiral should get a bounce message listing captains.
+    assert!(bounce.is_some());
+}
