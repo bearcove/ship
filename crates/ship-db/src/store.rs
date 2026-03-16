@@ -2,8 +2,8 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use rusqlite::Connection;
-use rusqlite_facet::ConnectionFacetExt;
-use ship_policy::{AgentRole, Participant, RoomId, SessionRoom, Topology};
+use rusqlite_facet::{ConnectionFacetExt, StatementFacetExt};
+use ship_policy::{AgentRole, Block, BlockContent, BlockId, ParticipantName, Participant, RoomId, SessionRoom, Topology};
 
 use crate::schema;
 use ship_types::{ActivityEntry, PersistedSession, SessionEventEnvelope};
@@ -116,45 +116,45 @@ struct LimitParam {
 // ── Block row/param types ──────────────────────────────────────────────
 
 #[derive(Debug, facet::Facet)]
-struct BlockInsertParams {
-    id: String,
-    room_id: String,
+struct BlockInsertParams<'a> {
+    id: &'a BlockId,
+    room_id: &'a RoomId,
     seq: i64,
-    from_participant: Option<String>,
-    to_participant: Option<String>,
-    created_at: String,
-    sealed_at: Option<String>,
-    content: String,
+    from_participant: Option<&'a ParticipantName>,
+    to_participant: Option<&'a ParticipantName>,
+    created_at: jiff::Timestamp,
+    sealed_at: Option<jiff::Timestamp>,
+    content: &'a str,
 }
 
 #[derive(Debug, facet::Facet)]
 struct BlockRow {
-    id: String,
-    room_id: String,
+    id: BlockId,
+    room_id: RoomId,
     seq: i64,
-    from_participant: Option<String>,
-    to_participant: Option<String>,
-    created_at: String,
-    sealed_at: Option<String>,
+    from_participant: Option<ParticipantName>,
+    to_participant: Option<ParticipantName>,
+    created_at: jiff::Timestamp,
+    sealed_at: Option<jiff::Timestamp>,
     content: String,
 }
 
 #[derive(Debug, facet::Facet)]
-struct BlockRoomParams {
-    room_id: String,
+struct BlockRoomParams<'a> {
+    room_id: &'a RoomId,
 }
 
 #[derive(Debug, facet::Facet)]
-struct BlockSealParams {
-    id: String,
-    sealed_at: String,
-    content: String,
+struct BlockSealParams<'a> {
+    id: &'a BlockId,
+    sealed_at: jiff::Timestamp,
+    content: &'a str,
 }
 
 #[derive(Debug, facet::Facet)]
-struct BlockUpdateContentParams {
-    id: String,
-    content: String,
+struct BlockUpdateContentParams<'a> {
+    id: &'a BlockId,
+    content: &'a str,
 }
 
 /// SQLite-backed persistence for all of ship's data.
@@ -558,6 +558,89 @@ impl ShipDb {
         Ok(to_delete)
     }
 
+    // ── Blocks ──────────────────────────────────────────────────────────
+
+    /// Insert a block into the database.
+    pub fn insert_block(&self, block: &Block) -> Result<(), StoreError> {
+        let content = facet_json::to_string(&block.content).map_err(|e| StoreError {
+            message: format!("failed to serialize block content: {e}"),
+        })?;
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        conn.facet_execute_ref(
+            "INSERT INTO blocks (id, room_id, seq, from_participant, to_participant, created_at, sealed_at, content)
+             VALUES (:id, :room_id, :seq, :from_participant, :to_participant, :created_at, :sealed_at, :content)",
+            &BlockInsertParams {
+                id: &block.id,
+                room_id: &block.room_id,
+                seq: block.seq as i64,
+                from_participant: block.from.as_ref(),
+                to_participant: block.to.as_ref(),
+                created_at: block.created_at,
+                sealed_at: block.sealed_at,
+                content: &content,
+            },
+        )
+        .map_err(fe)?;
+        Ok(())
+    }
+
+    /// Load all blocks for a room, ordered by seq.
+    pub fn list_blocks(&self, room_id: &RoomId) -> Result<Vec<Block>, StoreError> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        let mut stmt = conn
+            .prepare("SELECT id, room_id, seq, from_participant, to_participant, created_at, sealed_at, content FROM blocks WHERE room_id = :room_id ORDER BY seq")
+            .map_err(se)?;
+        let rows: Vec<BlockRow> = stmt
+            .facet_query_ref(&BlockRoomParams { room_id })
+            .map_err(fe)?;
+
+        rows.into_iter().map(block_from_row).collect()
+    }
+
+    /// Seal a block: set sealed_at and update content.
+    pub fn seal_block(
+        &self,
+        id: &BlockId,
+        sealed_at: jiff::Timestamp,
+        content: &BlockContent,
+    ) -> Result<(), StoreError> {
+        let content_json = facet_json::to_string(content).map_err(|e| StoreError {
+            message: format!("failed to serialize block content: {e}"),
+        })?;
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        conn.facet_execute_ref(
+            "UPDATE blocks SET sealed_at = :sealed_at, content = :content WHERE id = :id",
+            &BlockSealParams {
+                id,
+                sealed_at,
+                content: &content_json,
+            },
+        )
+        .map_err(fe)?;
+        Ok(())
+    }
+
+    /// Update an unsealed block's content (e.g. text append during streaming).
+    pub fn update_block_content(
+        &self,
+        id: &BlockId,
+        content: &BlockContent,
+    ) -> Result<(), StoreError> {
+        let content_json = facet_json::to_string(content).map_err(|e| StoreError {
+            message: format!("failed to serialize block content: {e}"),
+        })?;
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        conn.facet_execute_ref(
+            "UPDATE blocks SET content = :content WHERE id = :id AND sealed_at IS NULL",
+            &BlockUpdateContentParams {
+                id,
+                content: &content_json,
+            },
+        )
+        .map_err(fe)?;
+        Ok(())
+    }
+
     // ── Topology ────────────────────────────────────────────────────────
 
     /// Persist a full topology, replacing whatever was there before.
@@ -829,7 +912,29 @@ fn to_participant(name: &str, kind: &str) -> Participant {
     }
 }
 
+fn block_from_row(row: BlockRow) -> Result<Block, StoreError> {
+    let content: BlockContent = facet_json::from_str(&row.content).map_err(|e| StoreError {
+        message: format!("failed to deserialize block content for {}: {e}", row.id),
+    })?;
+    Ok(Block {
+        id: row.id,
+        room_id: row.room_id,
+        seq: row.seq as u64,
+        from: row.from_participant,
+        to: row.to_participant,
+        created_at: row.created_at,
+        sealed_at: row.sealed_at,
+        content,
+    })
+}
+
 fn se(e: rusqlite::Error) -> StoreError {
+    StoreError {
+        message: e.to_string(),
+    }
+}
+
+fn fe(e: rusqlite_facet::Error) -> StoreError {
     StoreError {
         message: e.to_string(),
     }

@@ -131,7 +131,7 @@ mod tests {
         )
         .unwrap();
 
-        // Now run init — should only apply migration 002
+        // Now run init — should apply migrations 002 and 003
         init(&conn).unwrap();
 
         // Topology tables should exist
@@ -140,9 +140,15 @@ mod tests {
             .unwrap();
         assert_eq!(count, 0);
 
+        // Blocks table should exist
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM blocks", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+
         let count: i64 = conn
             .query_row("SELECT COUNT(*) FROM __migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(count, 2);
+        assert_eq!(count, MIGRATIONS.len() as i64);
     }
 }
