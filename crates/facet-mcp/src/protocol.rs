@@ -91,12 +91,14 @@ pub struct ListToolsResult {
     pub tools: Vec<ToolInfo>,
 }
 
-#[derive(Debug, Facet)]
+#[derive(Debug, Clone, Facet)]
 pub struct ToolInfo {
     pub name: String,
     pub description: String,
     #[facet(rename = "inputSchema")]
     pub input_schema: JsonSchema,
+    #[facet(rename = "outputSchema")]
+    pub output_schema: JsonSchema,
 }
 
 #[derive(Debug, Facet)]
@@ -239,6 +241,7 @@ mod tests {
                 name: "web_search".to_owned(),
                 description: "Search the web".to_owned(),
                 input_schema: facet_json_schema::schema_for::<WebSearchArgs>(),
+                output_schema: facet_json_schema::schema_for::<WebSearchArgs>(),
             }],
         };
         let json = facet_json::to_string(&result).unwrap();

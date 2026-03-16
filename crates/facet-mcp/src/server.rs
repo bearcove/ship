@@ -1,20 +1,10 @@
 use std::fmt;
 
-use facet_json_schema::JsonSchema;
-
 use crate::protocol::{
     CallToolResult, InitializeResult, ListToolsResult, ServerCapabilities, ServerInfo,
     ToolInfo, ToolsCapability,
 };
 use crate::transport::{StdioTransport, TransportError};
-
-/// Static definition of a tool: name, description, and JSON Schemas for input/output.
-pub struct ToolDef {
-    pub name: &'static str,
-    pub description: String,
-    pub input_schema: JsonSchema,
-    pub output_schema: JsonSchema,
-}
 
 /// A tool's result: either success text or error text.
 pub type ToolResult = CallToolResult;
@@ -22,7 +12,7 @@ pub type ToolResult = CallToolResult;
 /// Implement this to handle tool calls.
 pub trait ToolHandler: Send + Sync + 'static {
     /// Return the list of tools this handler provides.
-    fn tool_defs(&self) -> &[ToolDef];
+    fn tools(&self) -> &[ToolInfo];
 
     /// Dispatch a tool call. `arguments` is the raw JSON of the arguments object.
     fn call_tool(
@@ -102,17 +92,9 @@ impl<H: ToolHandler> McpServer<H> {
                 }
                 "notifications/initialized" => None,
                 "tools/list" => {
-                    let tools: Vec<ToolInfo> = self
-                        .handler
-                        .tool_defs()
-                        .iter()
-                        .map(|t| ToolInfo {
-                            name: t.name.to_owned(),
-                            description: t.description.clone(),
-                            input_schema: t.input_schema.clone(),
-                        })
-                        .collect();
-                    let result = ListToolsResult { tools };
+                    let result = ListToolsResult {
+                        tools: self.handler.tools().to_vec(),
+                    };
                     Some(self.serialize(&result)?)
                 }
                 "tools/call" => {

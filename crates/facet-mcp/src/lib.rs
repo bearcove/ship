@@ -7,5 +7,5 @@ mod transport;
 pub use context::ToolCtx;
 pub use facet_json_schema::{JsonSchema, schema_for};
 pub use protocol::*;
-pub use server::{McpServer, McpServerInfo, ServerError, ToolDef, ToolHandler, ToolResult};
+pub use server::{McpServer, McpServerInfo, ServerError, ToolHandler, ToolResult};
 pub use transport::{StdioTransport, TransportError};

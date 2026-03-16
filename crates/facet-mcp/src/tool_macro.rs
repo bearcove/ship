@@ -15,7 +15,7 @@
 ///
 /// Expands to a module containing:
 /// - `pub async fn call(args, ctx) -> Result` — the handler
-/// - `pub fn def() -> ToolDef` — schema + name + description
+/// - `pub fn def() -> ToolInfo` — schema + name + description
 /// - `pub async fn dispatch(raw, ctx) -> CallToolResult` — deserialize, call, serialize
 #[macro_export]
 macro_rules! tool {
@@ -29,15 +29,15 @@ macro_rules! tool {
             pub async fn call($args_name: $args, $ctx_name: &$crate::ToolCtx) -> $result
             $body
 
-            pub fn def() -> $crate::ToolDef {
+            pub fn def() -> $crate::ToolInfo {
                 let shape = <$args as facet::Facet>::SHAPE;
                 let description = if shape.doc.is_empty() {
                     String::new()
                 } else {
                     shape.doc.join("\n").trim().to_owned()
                 };
-                $crate::ToolDef {
-                    name: stringify!($name),
+                $crate::ToolInfo {
+                    name: stringify!($name).to_owned(),
                     description,
                     input_schema: $crate::schema_for::<$args>(),
                     output_schema: $crate::schema_for::<$result>(),
