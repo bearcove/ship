@@ -1,0 +1,12 @@
+[package]
+name = "rusqlite-facet"
+description = "Rusqlite integration for the facet reflection framework"
+version = "1.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+facet = { workspace = true }
+facet-core = { workspace = true }
+facet-reflect = { workspace = true }
+rusqlite = { workspace = true }

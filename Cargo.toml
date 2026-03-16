@@ -14,6 +14,8 @@ members = [
   "crates/ship-mcp",
   "crates/facet-mcp",
   "crates/facet-acp",
+  "crates/ship-runtime",
+  "crates/rusqlite-facet",
 ]
 resolver = "2"
 
@@ -45,3 +47,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 hyper-tungstenite = "0.17"
 eyre = "0.6"
+rusqlite = { version = "0.39.0", features = ["bundled", "jiff"] }
+rusqlite-facet = { path = "crates/rusqlite-facet" }
+facet-core = "0.44.3"
+facet-reflect = "0.44.3"

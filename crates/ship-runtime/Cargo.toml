@@ -1,0 +1,21 @@
+[package]
+name = "ship-runtime"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+facet = { workspace = true }
+facet-json = { workspace = true }
+jiff = { workspace = true }
+ulid = { workspace = true }
+ship-acp = { path = "../ship-acp" }
+ship-code = { path = "../ship-code" }
+ship-db = { path = "../ship-db" }
+ship-policy = { path = "../ship-policy" }
+ship-types = { path = "../ship-types" }
+tokio = { workspace = true, features = ["sync"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+insta = { version = "1.46.3", features = ["redactions"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
