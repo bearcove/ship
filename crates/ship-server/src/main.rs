@@ -1493,40 +1493,9 @@ async fn run_speak(args: SpeakArgs) -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-    let host = cpal::default_host();
-    let device = host.default_output_device().ok_or("no output device")?;
-    let config = cpal::StreamConfig {
-        channels: 1,
-        sample_rate: cpal::SampleRate(24_000),
-        buffer_size: cpal::BufferSize::Default,
-    };
-
-    let samples = Arc::new(samples);
-    let pos = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let (done_tx, done_rx) = tokio::sync::oneshot::channel::<()>();
-    let done_tx = std::sync::Mutex::new(Some(done_tx));
-
-    let samples2 = Arc::clone(&samples);
-    let pos2 = Arc::clone(&pos);
-    let stream = device.build_output_stream(
-        &config,
-        move |data: &mut [f32], _| {
-            let p = pos2.load(std::sync::atomic::Ordering::Relaxed);
-            let n = data.len().min(samples2.len().saturating_sub(p));
-            data[..n].copy_from_slice(&samples2[p..p + n]);
-            data[n..].fill(0.0);
-            pos2.fetch_add(n, std::sync::atomic::Ordering::Relaxed);
-            if p + n >= samples2.len()
-                && let Some(tx) = done_tx.lock().expect("done_tx mutex poisoned").take()
-            {
-                let _ = tx.send(());
-            }
-        },
-        |err| tracing::error!("cpal output error: {err}"),
-        None,
-    )?;
-    stream.play()?;
+    let audio = ship_voice::default_audio_host();
+    let samples: Arc<[f32]> = samples.into();
+    let (_stream, done_rx) = audio.play_samples(samples, 24_000)?;
     let _ = done_rx.await;
     tokio::time::sleep(Duration::from_millis(200)).await;
 
@@ -1550,76 +1519,8 @@ async fn run_listen(args: ListenArgs) -> Result<(), Box<dyn std::error::Error>> 
         .create()
         .map_err(|e| format!("failed to create transcriber: {e}"))?;
 
-    // Set up mic capture via cpal
-    use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-    let host = cpal::default_host();
-    let device = host
-        .default_input_device()
-        .ok_or("no default input device")?;
-    tracing::info!(
-        device = device.name().unwrap_or_default(),
-        "using input device"
-    );
-
-    // Use the device's default config — the mic may not support 1ch/16kHz directly.
-    let default_config = device.default_input_config()?;
-    let native_sample_rate = default_config.sample_rate().0;
-    let native_channels = default_config.channels();
-    tracing::info!(
-        sample_rate = native_sample_rate,
-        channels = native_channels,
-        "native input config"
-    );
-
-    let config = cpal::StreamConfig {
-        channels: native_channels,
-        sample_rate: default_config.sample_rate(),
-        buffer_size: cpal::BufferSize::Default,
-    };
-
-    let (audio_tx, mut audio_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<f32>>();
-
-    let stream = device.build_input_stream(
-        &config,
-        move |data: &[f32], _: &cpal::InputCallbackInfo| {
-            // Downmix to mono if needed
-            let mono: Vec<f32> = if native_channels == 1 {
-                data.to_vec()
-            } else {
-                data.chunks_exact(native_channels as usize)
-                    .map(|frame| frame.iter().sum::<f32>() / native_channels as f32)
-                    .collect()
-            };
-
-            // Resample to 16kHz if needed
-            if native_sample_rate == 16000 {
-                let _ = audio_tx.send(mono);
-            } else {
-                let ratio = 16000.0 / native_sample_rate as f64;
-                let out_len = (mono.len() as f64 * ratio) as usize;
-                let mut resampled = Vec::with_capacity(out_len);
-                for i in 0..out_len {
-                    let src_idx = i as f64 / ratio;
-                    let idx = src_idx as usize;
-                    let frac = src_idx - idx as f64;
-                    let sample = if idx + 1 < mono.len() {
-                        mono[idx] as f64 * (1.0 - frac) + mono[idx + 1] as f64 * frac
-                    } else if idx < mono.len() {
-                        mono[idx] as f64
-                    } else {
-                        0.0
-                    };
-                    resampled.push(sample as f32);
-                }
-                let _ = audio_tx.send(resampled);
-            }
-        },
-        |err| {
-            tracing::error!("audio input error: {err}");
-        },
-        None,
-    )?;
-    stream.play()?;
+    let audio = ship_voice::default_audio_host();
+    let (_stream, mut audio_rx) = audio.capture_mic()?;
     tracing::info!("listening... press Ctrl-C to stop");
 
     let mut transcribed_segments: Vec<String> = Vec::new();

@@ -3716,7 +3716,6 @@ dependencies = [
  "axum",
  "camino",
  "chrono",
- "cpal",
  "dirs-next",
  "eyre",
  "facet",
@@ -3770,8 +3769,10 @@ name = "ship-voice"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "cpal",
  "dirs-next",
  "silero-vad-rust",
+ "tokio",
  "tracing",
  "whisper-cpp-plus",
 ]

@@ -6,12 +6,17 @@ edition = "2024"
 [features]
 default = []
 whisper = ["dep:whisper-cpp-plus", "dep:silero-vad-rust"]
+audio = ["dep:cpal"]
 
 [dependencies]
 anyhow = "1"
 tracing = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
 dirs-next = "2.0.0"
 
 # Optional heavy dependencies for speech transcription
 whisper-cpp-plus = { version = "0.1.4", features = ["metal", "async", "tokio"], optional = true }
 silero-vad-rust = { version = "6.2.1", optional = true }
+
+# Optional audio I/O
+cpal = { version = "0.15", optional = true }
