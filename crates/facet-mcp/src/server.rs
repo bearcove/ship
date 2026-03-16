@@ -8,11 +8,12 @@ use crate::protocol::{
 };
 use crate::transport::{StdioTransport, TransportError};
 
-/// Static definition of a tool: name, description, and JSON Schema for its input.
+/// Static definition of a tool: name, description, and JSON Schemas for input/output.
 pub struct ToolDef {
     pub name: &'static str,
-    pub description: &'static str,
+    pub description: String,
     pub input_schema: JsonSchema,
+    pub output_schema: JsonSchema,
 }
 
 /// A tool's result: either success text or error text.
@@ -107,7 +108,7 @@ impl<H: ToolHandler> McpServer<H> {
                         .iter()
                         .map(|t| ToolInfo {
                             name: t.name.to_owned(),
-                            description: t.description.to_owned(),
+                            description: t.description.clone(),
                             input_schema: t.input_schema.clone(),
                         })
                         .collect();
