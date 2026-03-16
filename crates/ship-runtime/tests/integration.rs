@@ -264,7 +264,6 @@ fn mention_produces_deliveries() {
         .unwrap();
 
     let deliveries = rt.seal_block(&room_id, &block_id).unwrap();
-    // Should produce at least one delivery to Jordan.
     assert!(
         !deliveries.is_empty(),
         "mention of mate by captain should produce deliveries"
@@ -273,4 +272,27 @@ fn mention_produces_deliveries() {
         deliveries.iter().any(|d| d.to == "Jordan"),
         "should have a delivery to Jordan, got: {deliveries:?}"
     );
+
+    // Process the deliveries — they should land as blocks in the room.
+    let delivered = rt.process_deliveries(deliveries).unwrap();
+    assert!(delivered > 0, "at least one delivery should be processed");
+
+    // The room should now have more blocks: the original + the delivered ones.
+    let blocks = rt.blocks(&room_id).unwrap();
+    assert!(
+        blocks.len() > 1,
+        "room should have original block + delivered block(s), got {}",
+        blocks.len()
+    );
+
+    // The delivered block should be addressed to Jordan.
+    let delivered_block = blocks.iter().find(|b| {
+        b.to.as_ref().is_some_and(|to| to.as_str() == "Jordan")
+    });
+    assert!(
+        delivered_block.is_some(),
+        "should have a block addressed to Jordan"
+    );
+    // And it should be sealed (deliveries are complete).
+    assert!(delivered_block.unwrap().is_sealed());
 }
