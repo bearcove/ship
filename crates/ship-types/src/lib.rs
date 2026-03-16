@@ -351,25 +351,8 @@ pub mod task {
     use crate::ids::TaskId;
 
     // r[task.status.enum]
-    #[repr(u8)]
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, facet::Facet)]
-    pub enum TaskStatus {
-        Assigned,
-        Working,
-        ReviewPending,
-        SteerPending,
-        RebaseConflict,
-        Accepted,
-        Cancelled,
-        WaitingForHuman,
-    }
-
-    // r[task.status.terminal]
-    impl TaskStatus {
-        pub fn is_terminal(&self) -> bool {
-            matches!(self, Self::Accepted | Self::Cancelled)
-        }
-    }
+    // Canonical definition lives in ship-policy. Re-exported here for backward compat.
+    pub use ship_policy::TaskPhase as TaskStatus;
 
     #[derive(Debug, Clone, PartialEq, Eq, facet::Facet)]
     pub struct TaskRecord {
@@ -963,6 +946,10 @@ pub mod protocol {
         pub current_task_title: Option<String>,
         pub current_task_description: Option<String>,
         pub task_status: Option<TaskStatus>,
+        /// Whether the session is blocked waiting for a human response.
+        /// Orthogonal to task_status — any phase can have this overlay.
+        #[facet(default)]
+        pub pending_human_review: bool,
         pub diff_stats: Option<WorktreeDiffStats>,
         pub tasks_done: u32,
         pub tasks_total: u32,

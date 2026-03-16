@@ -1,3 +1,4 @@
+mod delivery;
 mod help;
 mod identity;
 mod mentions;
@@ -8,6 +9,9 @@ mod sandbox;
 mod transitions;
 pub mod prompts;
 
+pub use delivery::{
+    Action, Channel, Delivery, DeliveryContent, Urgency, route,
+};
 pub use help::{
     ActionHelp, available_actions, full_help, short_hint, tool_help, wrong_tool_help,
 };

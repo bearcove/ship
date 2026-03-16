@@ -15,6 +15,7 @@ eyre = { workspace = true }
 ship-code = { path = "../ship-code" }
 ship-git = { path = "../ship-git" }
 ship-acp = { path = "../ship-acp" }
+ship-policy = { path = "../ship-policy" }
 ship-types = { path = "../ship-types" }
 futures = { workspace = true }
 futures-core = { workspace = true }

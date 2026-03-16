@@ -729,11 +729,8 @@ impl ShipImpl {
                 .current_task
                 .as_ref()
                 .map(|task| task.record.description.clone()),
-            task_status: if session.pending_human_review.is_some() {
-                Some(TaskStatus::WaitingForHuman)
-            } else {
-                session.current_task.as_ref().map(|task| task.record.status)
-            },
+            task_status: session.current_task.as_ref().map(|task| task.record.status),
+            pending_human_review: session.pending_human_review.is_some(),
             diff_stats: session.diff_stats.clone(),
             tasks_done,
             tasks_total,
@@ -2005,8 +2002,7 @@ Continue where you left off — wait for captain messages or human input."
 
             let status = current_task_status(active).map_err(|error| error.to_string())?;
             if status != TaskStatus::Assigned
-                && status != TaskStatus::ReviewPending
-                && status != TaskStatus::SteerPending
+                && status != TaskStatus::PendingReview
                 && status != TaskStatus::Working
             {
                 return Err("invalid task transition".to_owned());
@@ -2091,8 +2087,7 @@ Continue where you left off — wait for captain messages or human input."
                 .ok_or_else(|| format!("session not found: {}", session_id.0))?;
             let status = current_task_status(active).map_err(|error| error.to_string())?;
             if status != TaskStatus::Assigned
-                && status != TaskStatus::ReviewPending
-                && status != TaskStatus::SteerPending
+                && status != TaskStatus::PendingReview
                 && status != TaskStatus::RebaseConflict
             {
                 return Err("invalid task transition".to_owned());
@@ -3265,9 +3260,9 @@ release candidates. Make sure tests pass before calling mate_submit."
             return Ok(());
         };
         match task.record.status {
-            TaskStatus::ReviewPending | TaskStatus::RebaseConflict => Ok(()),
+            TaskStatus::PendingReview | TaskStatus::RebaseConflict => Ok(()),
             status => Err(format!(
-                "captain_review_diff is only valid after `mate_submit` (ReviewPending) or while resolving review conflicts (RebaseConflict). Current task status: {status:?}."
+                "captain_review_diff is only valid after `mate_submit` (PendingReview) or while resolving review conflicts (RebaseConflict). Current task status: {status:?}."
             )),
         }
     }
@@ -3361,7 +3356,7 @@ release candidates. Make sure tests pass before calling mate_submit."
                 if status != TaskStatus::RebaseConflict {
                     false
                 } else {
-                    transition_task(session, TaskStatus::ReviewPending)
+                    transition_task(session, TaskStatus::PendingReview)
                         .map_err(|error| error.to_string())?;
                     Self::invalidate_mate_activity_summary_state(session);
                     true
@@ -5885,7 +5880,7 @@ release candidates. Make sure tests pass before calling mate_submit."
                 .as_mut()
                 .ok_or_else(|| "session has no active task".to_owned())?;
             match task.record.status {
-                TaskStatus::ReviewPending | TaskStatus::RebaseConflict => {
+                TaskStatus::PendingReview | TaskStatus::RebaseConflict => {
                     return Err(
                         "Review is already in progress. Wait for captain accept/steer/cancel; do not resubmit or commit until review finishes.".to_owned()
                     );
@@ -5982,7 +5977,7 @@ release candidates. Make sure tests pass before calling mate_submit."
                 if current_status == Some(TaskStatus::Assigned) {
                     let _ = transition_task(active, TaskStatus::Working);
                 }
-                let _ = transition_task(active, TaskStatus::ReviewPending);
+                let _ = transition_task(active, TaskStatus::PendingReview);
                 Self::append_workflow_milestone(
                     active,
                     WorkflowMilestoneKind::ReviewSubmitted,
@@ -7580,11 +7575,11 @@ release candidates. Make sure tests pass before calling mate_submit."
                 let session = sessions
                     .get_mut(session_id)
                     .ok_or_else(|| format!("session not found: {}", session_id.0))?;
-                // mate_submit may have already transitioned to ReviewPending; only transition
+                // mate_submit may have already transitioned to PendingReview; only transition
                 // if it hasn't (avoids double-transition error)
                 let status = current_task_status(session).map_err(|e| e.to_string())?;
-                if status != TaskStatus::ReviewPending {
-                    transition_task(session, TaskStatus::ReviewPending)
+                if status != TaskStatus::PendingReview {
+                    transition_task(session, TaskStatus::PendingReview)
                         .map_err(|error| error.to_string())?;
                 }
                 Self::invalidate_mate_activity_summary_state(session);
@@ -7701,7 +7696,7 @@ release candidates. Make sure tests pass before calling mate_submit."
     }
 
     /// Performs a forced mate submission when the mate stopped without calling `mate_submit`.
-    /// Sets up the review channel, transitions to ReviewPending, and prompts the captain.
+    /// Sets up the review channel, transitions to PendingReview, and prompts the captain.
     async fn force_mate_submit(
         &self,
         session_id: &SessionId,
@@ -7737,7 +7732,7 @@ release candidates. Make sure tests pass before calling mate_submit."
         {
             let mut sessions = self.sessions.lock().expect("sessions mutex poisoned");
             if let Some(active) = sessions.get_mut(session_id) {
-                let _ = transition_task(active, TaskStatus::ReviewPending);
+                let _ = transition_task(active, TaskStatus::PendingReview);
                 Self::invalidate_mate_activity_summary_state(active);
             }
         }
@@ -7855,7 +7850,7 @@ release candidates. Make sure tests pass before calling mate_submit."
                                 let Some(task) = s.current_task.as_ref() else {
                                     return true;
                                 };
-                                task.record.status == TaskStatus::ReviewPending
+                                task.record.status == TaskStatus::PendingReview
                                     || task.record.status.is_terminal()
                             })
                             .unwrap_or(false)
@@ -7965,6 +7960,7 @@ release candidates. Make sure tests pass before calling mate_submit."
             current_task_title: None,
             current_task_description: None,
             task_status: None,
+            pending_human_review: false,
             diff_stats: None,
             tasks_done: 0,
             tasks_total: 0,
@@ -10742,7 +10738,7 @@ mod tests {
             let session = sessions.get_mut(&session_id).expect("session should exist");
             super::transition_task(session, TaskStatus::Working)
                 .expect("task should move to working before review");
-            super::transition_task(session, TaskStatus::ReviewPending)
+            super::transition_task(session, TaskStatus::PendingReview)
                 .expect("task should move into review before review_diff");
         }
 
@@ -10786,7 +10782,7 @@ mod tests {
             let session = sessions.get_mut(&session_id).expect("session should exist");
             super::transition_task(session, TaskStatus::Working)
                 .expect("task should move to working before review");
-            super::transition_task(session, TaskStatus::ReviewPending)
+            super::transition_task(session, TaskStatus::PendingReview)
                 .expect("task should move into review before review_diff");
         }
 
@@ -13110,7 +13106,7 @@ agent_presets {
                 .as_mut()
                 .expect("task should exist")
                 .record
-                .status = TaskStatus::SteerPending;
+                .status = TaskStatus::PendingReview;
             session.pending_steer = Some("Old captain steer".to_owned());
         }
 
@@ -13298,7 +13294,7 @@ agent_presets {
             let session = sessions.get_mut(&session_id).expect("session should exist");
             let task = session.current_task.as_mut().expect("task should exist");
             task.record.steps.clear();
-            super::transition_task(session, TaskStatus::ReviewPending)
+            super::transition_task(session, TaskStatus::PendingReview)
                 .expect("task status should transition");
         }
 
@@ -13464,7 +13460,7 @@ agent_presets {
                     let sessions = ship.sessions.lock().expect("sessions mutex poisoned");
                     let session = sessions.get(&session_id).expect("session should exist");
                     let task = session.current_task.as_ref().expect("task should exist");
-                    task.record.status == TaskStatus::ReviewPending
+                    task.record.status == TaskStatus::PendingReview
                         && task.content_history.iter().any(|entry| {
                             matches!(
                                 &entry.block,
@@ -14420,7 +14416,7 @@ hooks {
                 .as_ref()
                 .expect("task should exist")
                 .status,
-            TaskStatus::ReviewPending
+            TaskStatus::PendingReview
         );
 
         let continue_error = ship
@@ -14428,7 +14424,7 @@ hooks {
             .await
             .expect_err("continue_rebase should be rejected after abort resets task state");
         assert!(
-            continue_error.contains("current: ReviewPending"),
+            continue_error.contains("current: PendingReview"),
             "unexpected continue error: {continue_error}"
         );
 
@@ -14451,7 +14447,7 @@ hooks {
         {
             let mut sessions = ship.sessions.lock().expect("sessions mutex poisoned");
             let session = sessions.get_mut(&session_id).expect("session should exist");
-            super::transition_task(session, TaskStatus::ReviewPending)
+            super::transition_task(session, TaskStatus::PendingReview)
                 .expect("status should be set to review pending");
         }
 

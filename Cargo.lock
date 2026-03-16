@@ -3610,6 +3610,7 @@ dependencies = [
  "ship-acp",
  "ship-code",
  "ship-git",
+ "ship-policy",
  "ship-types",
  "tokio",
  "tracing",
@@ -3640,6 +3641,7 @@ dependencies = [
 name = "ship-policy"
 version = "0.1.0"
 dependencies = [
+ "facet",
  "insta",
  "sailfish",
 ]
@@ -3711,6 +3713,7 @@ name = "ship-types"
 version = "0.1.0"
 dependencies = [
  "facet",
+ "ship-policy",
  "ulid",
 ]
 

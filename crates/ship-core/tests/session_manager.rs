@@ -278,7 +278,7 @@ async fn test_task_lifecycle() {
             .id
             .clone()
     );
-    assert_eq!(second_status, TaskStatus::ReviewPending);
+    assert_eq!(second_status, TaskStatus::PendingReview);
 
     manager
         .accept(&session_id)
@@ -589,7 +589,7 @@ async fn test_autonomy_modes() {
             .expect("task exists")
             .record
             .status,
-        TaskStatus::SteerPending
+        TaskStatus::Working
     );
     assert_eq!(prompts_before, prompts_after);
 
@@ -615,7 +615,7 @@ async fn test_autonomy_modes() {
             .expect("task exists")
             .record
             .status,
-        TaskStatus::ReviewPending
+        TaskStatus::PendingReview
     );
     assert_eq!(
         prompts_after_autonomous,

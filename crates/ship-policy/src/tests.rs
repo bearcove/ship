@@ -830,3 +830,284 @@ fn bounce_for_admiral() {
     // Admiral should get a bounce message listing captains.
     assert!(bounce.is_some());
 }
+
+// ── Delivery routing ─────────────────────────────────────────────────
+
+#[test]
+fn delivery_mate_message_to_captain() {
+    let topo = test_topology();
+    let action = Action::MessageSent {
+        from: "Jordan".into(),
+        mention: "Cedar".into(),
+        text: "work is done".into(),
+    };
+    let deliveries = route(&action, &topo);
+    assert_eq!(deliveries.len(), 1);
+    assert_eq!(deliveries[0].to, "Cedar");
+    assert_eq!(deliveries[0].from, "Jordan");
+    assert!(matches!(
+        &deliveries[0].content,
+        DeliveryContent::Message { text } if text == "work is done"
+    ));
+}
+
+#[test]
+fn delivery_captain_to_mate_is_steer() {
+    let topo = test_topology();
+    let action = Action::MessageSent {
+        from: "Cedar".into(),
+        mention: "Jordan".into(),
+        text: "fix the tests".into(),
+    };
+    let deliveries = route(&action, &topo);
+    assert_eq!(deliveries.len(), 1);
+    assert_eq!(deliveries[0].to, "Jordan");
+    assert!(matches!(
+        &deliveries[0].content,
+        DeliveryContent::Steer { text } if text == "fix the tests"
+    ));
+}
+
+#[test]
+fn delivery_captain_human_intercepted_to_admiral() {
+    let topo = test_topology();
+    let action = Action::MessageSent {
+        from: "Cedar".into(),
+        mention: "Amos".into(),
+        text: "task is done".into(),
+    };
+    let deliveries = route(&action, &topo);
+    assert_eq!(deliveries.len(), 1);
+    assert_eq!(deliveries[0].to, "Morgan");
+    assert_eq!(deliveries[0].from, "Cedar");
+    assert!(matches!(&deliveries[0].content, DeliveryContent::Message { .. }));
+}
+
+#[test]
+fn delivery_denied_bounces_to_sender() {
+    let topo = test_topology();
+    let action = Action::MessageSent {
+        from: "Jordan".into(),
+        mention: "Amos".into(),
+        text: "hey human".into(),
+    };
+    let deliveries = route(&action, &topo);
+    assert_eq!(deliveries.len(), 1);
+    assert_eq!(deliveries[0].to, "Jordan");
+    assert!(matches!(&deliveries[0].content, DeliveryContent::Denied { .. }));
+}
+
+#[test]
+fn delivery_unknown_target_bounces() {
+    let topo = test_topology();
+    let action = Action::MessageSent {
+        from: "Cedar".into(),
+        mention: "Nobody".into(),
+        text: "hello?".into(),
+    };
+    let deliveries = route(&action, &topo);
+    assert_eq!(deliveries.len(), 1);
+    assert_eq!(deliveries[0].to, "Cedar");
+    assert!(matches!(&deliveries[0].content, DeliveryContent::Bounce { .. }));
+}
+
+#[test]
+fn delivery_unaddressed_bounces() {
+    let topo = test_topology();
+    let action = Action::UnaddressedMessage {
+        from: "Cedar".into(),
+        text: "thinking out loud".into(),
+    };
+    let deliveries = route(&action, &topo);
+    assert_eq!(deliveries.len(), 1);
+    assert_eq!(deliveries[0].to, "Cedar");
+    assert!(matches!(&deliveries[0].content, DeliveryContent::Bounce { .. }));
+}
+
+#[test]
+fn delivery_mate_committed_notifies_captain_and_human() {
+    let topo = test_topology();
+    let action = Action::MateCommitted {
+        session: RoomId("lane-1".into()),
+        step_description: Some("Add error handling".into()),
+        commit_summary: "feat: add error handling".into(),
+        diff_section: "+42 -3".into(),
+    };
+    let deliveries = route(&action, &topo);
+    assert_eq!(deliveries.len(), 2);
+
+    // Captain gets it
+    assert_eq!(deliveries[0].to, "Cedar");
+    assert_eq!(deliveries[0].from, "Jordan");
+    assert!(matches!(
+        &deliveries[0].content,
+        DeliveryContent::Committed { step: Some(s), .. } if s == "Add error handling"
+    ));
+
+    // Human gets it
+    assert_eq!(deliveries[1].to, "Amos");
+    assert_eq!(deliveries[1].urgency, Urgency::Informational);
+}
+
+#[test]
+fn delivery_mate_submitted_notifies_captain_and_human() {
+    let topo = test_topology();
+    let action = Action::MateSubmitted {
+        session: RoomId("lane-1".into()),
+        summary: "Refactored auth middleware".into(),
+    };
+    let deliveries = route(&action, &topo);
+    assert_eq!(deliveries.len(), 2);
+
+    assert_eq!(deliveries[0].to, "Cedar");
+    assert_eq!(deliveries[0].urgency, Urgency::Attention);
+    assert!(matches!(&deliveries[0].content, DeliveryContent::Submitted { .. }));
+
+    assert_eq!(deliveries[1].to, "Amos");
+    assert_eq!(deliveries[1].urgency, Urgency::Informational);
+}
+
+#[test]
+fn delivery_mate_plan_set_notifies_captain() {
+    let topo = test_topology();
+    let action = Action::MatePlanSet {
+        session: RoomId("lane-1".into()),
+        plan_status: "3 steps, starting with tests".into(),
+    };
+    let deliveries = route(&action, &topo);
+    assert_eq!(deliveries.len(), 1);
+    assert_eq!(deliveries[0].to, "Cedar");
+    assert!(matches!(&deliveries[0].content, DeliveryContent::PlanSet { .. }));
+}
+
+#[test]
+fn delivery_mate_question_notifies_captain_with_attention() {
+    let topo = test_topology();
+    let action = Action::MateQuestion {
+        session: RoomId("lane-1".into()),
+        question: "Should I use async here?".into(),
+    };
+    let deliveries = route(&action, &topo);
+    assert_eq!(deliveries.len(), 1);
+    assert_eq!(deliveries[0].to, "Cedar");
+    assert_eq!(deliveries[0].urgency, Urgency::Attention);
+    assert!(matches!(&deliveries[0].content, DeliveryContent::Question { .. }));
+}
+
+#[test]
+fn delivery_activity_summary_from_summarizer() {
+    let topo = test_topology();
+    let action = Action::MateActivitySummary {
+        session: RoomId("lane-1".into()),
+        summary: "Mate edited 3 files".into(),
+    };
+    let deliveries = route(&action, &topo);
+    assert_eq!(deliveries.len(), 1);
+    assert_eq!(deliveries[0].to, "Cedar");
+    assert_eq!(deliveries[0].from, "summarizer");
+    assert!(matches!(&deliveries[0].content, DeliveryContent::ActivitySummary { .. }));
+}
+
+#[test]
+fn delivery_forced_submit_nudges_mate() {
+    let topo = test_topology();
+    let action = Action::MateForcedSubmit {
+        session: RoomId("lane-1".into()),
+    };
+    let deliveries = route(&action, &topo);
+    assert_eq!(deliveries.len(), 1);
+    assert_eq!(deliveries[0].to, "Jordan");
+    assert!(matches!(&deliveries[0].content, DeliveryContent::Guidance { .. }));
+}
+
+#[test]
+fn delivery_task_assigned_notifies_human() {
+    let topo = test_topology();
+    let action = Action::TaskAssigned {
+        session: RoomId("lane-1".into()),
+        title: "Fix auth bug".into(),
+        description: "The login flow is broken".into(),
+    };
+    let deliveries = route(&action, &topo);
+    assert_eq!(deliveries.len(), 1);
+    assert_eq!(deliveries[0].to, "Amos");
+    assert!(matches!(&deliveries[0].content, DeliveryContent::TaskAssigned { .. }));
+}
+
+#[test]
+fn delivery_checks_finished_failed_notifies_human() {
+    let topo = test_topology();
+    let action = Action::ChecksFinished {
+        session: RoomId("lane-1".into()),
+        context: "pre-merge".into(),
+        all_passed: false,
+        summary: "2 hooks failed".into(),
+    };
+    let deliveries = route(&action, &topo);
+    assert_eq!(deliveries.len(), 2);
+
+    // Captain gets attention
+    let captain_d = deliveries.iter().find(|d| d.to == "Cedar").unwrap();
+    assert_eq!(captain_d.urgency, Urgency::Attention);
+
+    // Human gets notification channel (not just feed)
+    let human_d = deliveries.iter().find(|d| d.to == "Amos").unwrap();
+    assert_eq!(human_d.channel, Channel::Notification);
+    assert_eq!(human_d.urgency, Urgency::Attention);
+}
+
+#[test]
+fn delivery_checks_finished_passed_is_informational() {
+    let topo = test_topology();
+    let action = Action::ChecksFinished {
+        session: RoomId("lane-1".into()),
+        context: "post-commit".into(),
+        all_passed: true,
+        summary: "all green".into(),
+    };
+    let deliveries = route(&action, &topo);
+    let human_d = deliveries.iter().find(|d| d.to == "Amos").unwrap();
+    assert_eq!(human_d.channel, Channel::Feed);
+    assert_eq!(human_d.urgency, Urgency::Informational);
+}
+
+#[test]
+fn delivery_unknown_session_returns_empty() {
+    let topo = test_topology();
+    let action = Action::MateCommitted {
+        session: RoomId("nonexistent".into()),
+        step_description: None,
+        commit_summary: "oops".into(),
+        diff_section: "".into(),
+    };
+    assert!(route(&action, &topo).is_empty());
+}
+
+#[test]
+fn delivery_both_captains_human_intercepted() {
+    let topo = test_topology();
+    for (captain, admiral) in [("Cedar", "Morgan"), ("Birch", "Morgan")] {
+        let action = Action::MessageSent {
+            from: captain.into(),
+            mention: "Amos".into(),
+            text: "status update".into(),
+        };
+        let deliveries = route(&action, &topo);
+        assert_eq!(deliveries.len(), 1);
+        assert_eq!(deliveries[0].to, admiral);
+    }
+}
+
+#[test]
+fn delivery_lane2_commit_goes_to_lane2_captain() {
+    let topo = test_topology();
+    let action = Action::MateCommitted {
+        session: RoomId("lane-2".into()),
+        step_description: None,
+        commit_summary: "fix: typo".into(),
+        diff_section: "+1 -1".into(),
+    };
+    let deliveries = route(&action, &topo);
+    assert_eq!(deliveries[0].to, "Birch");
+    assert_eq!(deliveries[0].from, "Riley");
+}

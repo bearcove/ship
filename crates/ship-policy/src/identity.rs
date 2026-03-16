@@ -1,5 +1,6 @@
 /// The role an agent plays. Determines tool access and behavioral constraints.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, facet::Facet)]
 pub enum AgentRole {
     /// Coordinates work, reviews, merges. Present in both session and admiral rooms.
     Captain,
@@ -10,7 +11,7 @@ pub enum AgentRole {
 }
 
 /// A participant in the system. Could be an agent or the human.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, facet::Facet)]
 pub struct Participant {
     /// Display name, e.g. "Alex", "Jordan", "Morgan", "Amos"
     pub name: String,
@@ -19,7 +20,8 @@ pub struct Participant {
 }
 
 /// Whether a participant is an agent (with a role) or the human.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, facet::Facet)]
 pub enum ParticipantKind {
     Agent(AgentRole),
     Human,

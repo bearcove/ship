@@ -6,7 +6,8 @@ use crate::{AgentRole, TaskPhase};
 
 /// Categories of code-tool operations. Mirrors ship-code's Op variants
 /// but without any dependency on that crate.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, facet::Facet)]
 pub enum OpKind {
     // Read-only
     Search,

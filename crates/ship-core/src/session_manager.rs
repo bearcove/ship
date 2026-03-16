@@ -513,6 +513,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                         .as_ref()
                         .map(|task| task.record.description.clone()),
                     task_status: session.current_task.as_ref().map(|task| task.record.status),
+                    pending_human_review: session.pending_human_review.is_some(),
                     diff_stats: session.diff_stats.clone(),
                     tasks_done,
                     tasks_total,
@@ -690,12 +691,11 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
 
             let status = current_task_status(session)?;
             if status != TaskStatus::Assigned
-                && status != TaskStatus::ReviewPending
-                && status != TaskStatus::SteerPending
+                && status != TaskStatus::PendingReview
             {
                 return Err(SessionManagerError::InvalidTaskTransition {
                     from: status,
-                    to: TaskStatus::SteerPending,
+                    to: TaskStatus::Working,
                 });
             }
 
@@ -714,6 +714,9 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
             session.config.autonomy_mode
         };
 
+        // Steering always transitions to Working — the captain's feedback goes
+        // to the mate as a message. In autonomous mode we prompt immediately;
+        // in human-in-the-loop mode we store it for the next mate prompt.
         if mode == AutonomyMode::Autonomous {
             {
                 let session = self
@@ -733,7 +736,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                 .sessions
                 .get_mut(session_id)
                 .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
-            transition_task(session, TaskStatus::SteerPending)?;
+            transition_task(session, TaskStatus::Working)?;
             session.pending_steer = Some(message);
         }
 
@@ -750,8 +753,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                 .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
             let status = current_task_status(session)?;
             if status != TaskStatus::Assigned
-                && status != TaskStatus::ReviewPending
-                && status != TaskStatus::SteerPending
+                && status != TaskStatus::PendingReview
             {
                 return Err(SessionManagerError::InvalidTaskTransition {
                     from: status,
@@ -1063,7 +1065,7 @@ impl<A: AgentDriver, W: WorktreeOps, S: SessionStore> SessionManager<A, W, S> {
                     .sessions
                     .get_mut(session_id)
                     .ok_or_else(|| SessionManagerError::SessionNotFound(session_id.clone()))?;
-                transition_task(session, TaskStatus::ReviewPending)?;
+                transition_task(session, TaskStatus::PendingReview)?;
             }
             StopReason::Cancelled => {
                 let session = self
@@ -1650,32 +1652,9 @@ pub fn transition_task(
 }
 
 // r[task.completion]
+/// Delegates to ship-policy's canonical transition logic.
 pub fn is_valid_transition(from: TaskStatus, to: TaskStatus) -> bool {
-    if from.is_terminal() {
-        return false;
-    }
-
-    if to == TaskStatus::Cancelled {
-        return true;
-    }
-
-    matches!(
-        (from, to),
-        (TaskStatus::Assigned, TaskStatus::Working)
-            | (TaskStatus::Assigned, TaskStatus::SteerPending)
-            | (TaskStatus::Assigned, TaskStatus::Accepted)
-            | (TaskStatus::Working, TaskStatus::ReviewPending)
-            | (TaskStatus::ReviewPending, TaskStatus::SteerPending)
-            | (TaskStatus::ReviewPending, TaskStatus::Working)
-            | (TaskStatus::ReviewPending, TaskStatus::Accepted)
-            | (TaskStatus::SteerPending, TaskStatus::Working)
-            | (TaskStatus::SteerPending, TaskStatus::Accepted)
-            | (TaskStatus::Assigned, TaskStatus::RebaseConflict)
-            | (TaskStatus::ReviewPending, TaskStatus::RebaseConflict)
-            | (TaskStatus::SteerPending, TaskStatus::RebaseConflict)
-            | (TaskStatus::RebaseConflict, TaskStatus::ReviewPending)
-            | (TaskStatus::RebaseConflict, TaskStatus::Accepted)
-    )
+    ship_policy::can_transition(from, to)
 }
 
 pub fn archive_terminal_task(session: &mut ActiveSession) {

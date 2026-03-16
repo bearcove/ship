@@ -9,7 +9,8 @@
 /// Note: Steering is NOT a phase. The captain steers by @mentioning the mate
 /// with feedback — this sends the task back to Working directly. There is no
 /// intermediate "steer pending" state.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, facet::Facet)]
 pub enum TaskPhase {
     Assigned,
     Working,
