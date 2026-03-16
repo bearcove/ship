@@ -1,0 +1,10 @@
+[package]
+name = "ship-frontend-service"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+facet = { workspace = true }
+ship-policy = { path = "../ship-policy" }
+ship-types = { path = "../ship-types" }
+roam = { workspace = true }

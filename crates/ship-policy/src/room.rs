@@ -11,7 +11,7 @@ pub struct RoomId;
 pub struct LaneId;
 
 /// The topology of rooms and participants in a Ship instance.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, facet::Facet)]
 pub struct Topology {
     pub human: Participant,
     pub admiral: Participant,
@@ -20,7 +20,7 @@ pub struct Topology {
 
 /// A lane: one captain, one mate, working together in a room.
 /// Lanes are long-lived — tasks flow through them.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, facet::Facet)]
 pub struct Lane {
     pub id: RoomId,
     pub captain: Participant,

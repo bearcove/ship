@@ -3688,6 +3688,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ship-frontend-service"
+version = "0.1.0"
+dependencies = [
+ "facet",
+ "roam",
+ "ship-policy",
+ "ship-types",
+]
+
+[[package]]
 name = "ship-git"
 version = "0.1.0"
 dependencies = [
@@ -3803,6 +3813,16 @@ name = "ship-service"
 version = "0.1.0"
 dependencies = [
  "roam",
+ "ship-types",
+]
+
+[[package]]
+name = "ship-tool-service"
+version = "0.1.0"
+dependencies = [
+ "facet",
+ "roam",
+ "ship-policy",
  "ship-types",
 ]
 
