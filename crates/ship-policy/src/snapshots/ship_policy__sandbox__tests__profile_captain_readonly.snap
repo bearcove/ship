@@ -1,0 +1,17 @@
+---
+source: crates/ship-policy/src/sandbox.rs
+expression: "sandbox_profile(&policy, Path::new(\"/Users/amos/worktrees/lane-1\"), &env)"
+---
+(version 1)
+(allow default)
+(deny file-write* (subpath "/"))
+(allow file-write* (subpath "/private/tmp"))
+(allow file-write* (subpath "/tmp"))
+(allow file-write* (subpath "/var/folders"))
+(allow file-write* (subpath "/private/var/folders"))
+(allow file-write* (subpath "/var/folders/xx/tmp"))
+(allow file-write* (subpath "/Users/amos/Library/Caches"))
+(allow file-write* (subpath "/Users/amos/Library/pnpm"))
+(allow file-write* (subpath "/Users/amos/.npm"))
+(allow file-write* (subpath "/Users/amos/.pnpm-store"))
+(allow file-write* (literal "/dev/null"))

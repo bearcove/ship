@@ -1,0 +1,13 @@
+---
+source: crates/ship-policy/src/help.rs
+expression: "short_hint(AgentRole::Captain, Some(TaskPhase::ReviewPending))"
+---
+Available actions:
+- `captain_steer` — Send course-correction to the mate
+- `captain_merge` — Accept the mate's work and merge
+- `captain_cancel` — Cancel the current task
+- `captain_review_diff` — See the diff of the mate's work
+- `captain_git_status` — Check git status of the session worktree
+- `captain_rebase_status` — Check the state of an in-progress rebase
+- `code` — Read, search, edit files, run commands, commit
+- `web_search` — Search the web

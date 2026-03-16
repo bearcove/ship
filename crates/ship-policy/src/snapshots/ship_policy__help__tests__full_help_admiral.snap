@@ -1,0 +1,51 @@
+---
+source: crates/ship-policy/src/help.rs
+expression: "full_help(AgentRole::Admiral, None)"
+---
+## `admiral_list_lanes`
+
+See all active sessions and their status
+
+Lists every active lane with captain name, task status, and progress.
+
+## `admiral_create_lane`
+
+Create a new session/lane
+
+Starts a new session for a project. Picks agents and creates the worktree.
+
+## `admiral_steer_captain`
+
+Send a message to a captain
+
+Delivers a message to a specific captain. Use to give direction, approve work, or coordinate between lanes.
+
+## `admiral_post_to_human`
+
+Surface a message to the human
+
+Posts to the human's activity feed. Only use for decisions that genuinely require human judgment. You are the buffer — handle what you can.
+
+## `admiral_list_projects`
+
+List registered projects
+
+Shows all projects the system knows about.
+
+## `read_file`
+
+Read any file by absolute path
+
+Read-only file access. You cannot edit files — go through a captain for that.
+
+## `run_command`
+
+Run a shell command
+
+Execute a command with an absolute cwd path. Read-only — no destructive operations.
+
+## `web_search`
+
+Search the web
+
+Search the web for documentation or information.

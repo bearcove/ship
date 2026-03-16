@@ -47,23 +47,34 @@ impl Topology {
             .find(|s| s.captain.name == name || s.mate.name == name)
     }
 
-    /// Find a participant by name across the entire topology.
+    /// Find a participant by name across the entire topology (exact match).
     pub fn find_participant(&self, name: &str) -> Option<&Participant> {
-        if self.human.name == name {
-            return Some(&self.human);
-        }
-        if self.admiral.name == name {
-            return Some(&self.admiral);
-        }
-        for session in &self.sessions {
-            if session.captain.name == name {
-                return Some(&session.captain);
-            }
-            if session.mate.name == name {
-                return Some(&session.mate);
-            }
-        }
-        None
+        self.all_participants().find(|p| p.name == name)
+    }
+
+    /// Find a participant by name, case-insensitive.
+    pub fn find_participant_ci(&self, name: &str) -> Option<&Participant> {
+        self.all_participants()
+            .find(|p| p.name.eq_ignore_ascii_case(name))
+    }
+
+    /// Check if any participant's name starts with the given prefix (case-insensitive).
+    /// Used to detect incomplete mentions during streaming.
+    pub fn any_name_starts_with(&self, prefix: &str) -> bool {
+        let prefix_lower = prefix.to_ascii_lowercase();
+        self.all_participants()
+            .any(|p| p.name.to_ascii_lowercase().starts_with(&prefix_lower))
+    }
+
+    /// Iterate over all participants in the topology.
+    fn all_participants(&self) -> impl Iterator<Item = &Participant> {
+        std::iter::once(&self.human)
+            .chain(std::iter::once(&self.admiral))
+            .chain(
+                self.sessions
+                    .iter()
+                    .flat_map(|s| [&s.captain, &s.mate]),
+            )
     }
 }
 

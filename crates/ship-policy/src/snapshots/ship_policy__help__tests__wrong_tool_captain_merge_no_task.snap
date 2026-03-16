@@ -1,0 +1,11 @@
+---
+source: crates/ship-policy/src/help.rs
+expression: "wrong_tool_help(AgentRole::Captain, None, \"captain_merge\")"
+---
+`captain_merge` is not available during no active task. Accept the mate's work and merge
+
+Available actions:
+- `captain_assign` — Assign a task to your mate
+- `captain_git_status` — Check git status of the session worktree
+- `code` — Read, search, edit files, run commands, commit
+- `web_search` — Search the web

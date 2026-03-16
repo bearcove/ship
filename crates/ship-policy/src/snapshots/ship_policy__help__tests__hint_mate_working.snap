@@ -1,0 +1,8 @@
+---
+source: crates/ship-policy/src/help.rs
+expression: "short_hint(AgentRole::Mate, Some(TaskPhase::Working))"
+---
+Available actions:
+- `code` — Read, search, edit files, run commands, commit
+- `mate_submit` — Submit work for captain review (blocks)
+- `mate_ask_captain` — Ask the captain a blocking question

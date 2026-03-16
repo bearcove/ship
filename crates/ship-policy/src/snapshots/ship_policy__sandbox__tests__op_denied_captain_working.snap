@@ -1,0 +1,5 @@
+---
+source: crates/ship-policy/src/sandbox.rs
+expression: "op_denied_reason(AgentRole::Captain, Some(TaskPhase::Working), OpKind::Edit)"
+---
+Write operations are not available to Captain during Working. The mate handles implementation — use captain_assign to delegate work, or captain_steer to redirect an active task.
