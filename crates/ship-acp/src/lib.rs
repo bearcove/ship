@@ -11,7 +11,7 @@ use std::pin::Pin;
 
 use futures_core::Stream;
 use ship_types::{
-    AgentKind, EffortValue, McpServerConfig, Role, SessionEvent, SessionId,
+    AgentKind, EffortValue, McpServerConfig, Role, SessionEvent,
 };
 
 pub use driver::AcpAgentDriver;
@@ -21,13 +21,23 @@ pub use launcher::{
 pub use mcp::{McpConfigError, resolve_mcp_servers};
 pub use fakes::{FakeAgentDriver, FakePromptScript, SpawnRecord};
 
+/// Opaque identifier for a running ACP agent process.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct AcpSessionId(String);
+
+impl AcpSessionId {
+    pub fn new() -> Self {
+        Self(ulid::Ulid::new().to_string())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AgentHandle {
-    id: SessionId,
+    id: AcpSessionId,
 }
 
 impl AgentHandle {
-    pub fn new(id: SessionId) -> Self {
+    pub fn new(id: AcpSessionId) -> Self {
         Self { id }
     }
 }

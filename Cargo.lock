@@ -3606,6 +3606,18 @@ dependencies = [
  "similar",
  "tokio",
  "tracing",
+ "ulid",
+]
+
+[[package]]
+name = "ship-agent"
+version = "0.1.0"
+dependencies = [
+ "ship-acp",
+ "ship-policy",
+ "ship-types",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

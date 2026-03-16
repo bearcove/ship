@@ -1,0 +1,14 @@
+[package]
+name = "ship-agent"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ship-acp = { path = "../ship-acp" }
+ship-policy = { path = "../ship-policy" }
+ship-types = { path = "../ship-types" }
+tokio = { version = "1", features = ["sync"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

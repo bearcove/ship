@@ -15,6 +15,7 @@ members = [
   "crates/facet-mcp",
   "crates/facet-acp",
   "crates/ship-runtime",
+  "crates/ship-agent",
   "crates/rusqlite-facet",
 ]
 resolver = "2"

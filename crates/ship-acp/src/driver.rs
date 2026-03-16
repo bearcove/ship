@@ -23,8 +23,6 @@ use crate::{
     StopReason,
 };
 use crate::{SystemBinaryPathProbe, resolve_agent_launcher};
-use ship_types::SessionId;
-
 type ModelInfo = (Option<String>, Vec<String>);
 type EffortInfo = (Option<String>, Option<String>, Vec<EffortValue>);
 
@@ -116,7 +114,7 @@ impl AgentDriver for AcpAgentDriver {
         role: Role,
         config: &AgentSessionConfig,
     ) -> Result<AgentSpawnInfo, AgentError> {
-        let handle = AgentHandle::new(SessionId::new());
+        let handle = AgentHandle::new(crate::AcpSessionId::new());
         let (command_tx, command_rx) = mpsc::unbounded_channel::<DriverCommand>();
         let (notifications_tx, notifications_rx) = mpsc::unbounded_channel::<SessionEvent>();
         let (ready_tx, ready_rx) = oneshot::channel::<ReadyResult>();
@@ -965,8 +963,6 @@ mod tests {
         AgentDriver, AgentHandle, AgentSessionConfig, BinaryPathProbe,
         launcher::AgentLauncher, resolve_agent_launcher,
     };
-    use ship_types::SessionId;
-
     #[derive(Clone, Copy)]
     struct FakeProbe {
         claude: bool,
@@ -1180,7 +1176,7 @@ mod tests {
 
     #[tokio::test]
     async fn prompt_rejects_overlapping_in_flight_requests() {
-        let handle = AgentHandle::new(SessionId::new());
+        let handle = AgentHandle::new(crate::AcpSessionId::new());
         let (command_tx, _command_rx) = mpsc::unbounded_channel();
         let (_notifications_tx, notifications_rx) = mpsc::unbounded_channel();
 
