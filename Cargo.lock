@@ -1027,6 +1027,7 @@ dependencies = [
  "facet-json-schema",
  "tokio",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

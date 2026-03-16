@@ -25,7 +25,10 @@ impl fmt::Display for TransportError {
 
 impl std::error::Error for TransportError {}
 
-/// Newline-delimited JSON-RPC over stdin/stdout.
+/// MCP stdio transport using newline-delimited JSON-RPC messages.
+///
+/// Each message is a single JSON object on one line, terminated by `\n`.
+/// Per the MCP specification, messages MUST NOT contain embedded newlines.
 pub struct StdioTransport {
     reader: BufReader<tokio::io::Stdin>,
     writer: tokio::io::Stdout,
@@ -41,14 +44,21 @@ impl StdioTransport {
 
     pub async fn read_request(&mut self) -> Result<Option<JsonRpcRequest>, TransportError> {
         let mut line = String::new();
-        let n = self.reader.read_line(&mut line).await.map_err(TransportError::Io)?;
+        let n = self
+            .reader
+            .read_line(&mut line)
+            .await
+            .map_err(TransportError::Io)?;
         if n == 0 {
-            return Ok(None);
+            return Ok(None); // EOF
         }
         let line = line.trim();
         if line.is_empty() {
             return Ok(None);
         }
+
+        tracing::trace!(bytes = n, payload = %line, "← recv");
+
         let request: JsonRpcRequest =
             facet_json::from_str(line).map_err(|e| TransportError::InvalidJson(e.to_string()))?;
         Ok(Some(request))
@@ -67,8 +77,17 @@ impl StdioTransport {
         };
         let json = facet_json::to_string(&response)
             .map_err(|e| TransportError::SerializeFailed(e.to_string()))?;
-        self.writer.write_all(json.as_bytes()).await.map_err(TransportError::Io)?;
-        self.writer.write_all(b"\n").await.map_err(TransportError::Io)?;
+
+        tracing::trace!(bytes = json.len(), payload = %json, "→ send");
+
+        self.writer
+            .write_all(json.as_bytes())
+            .await
+            .map_err(TransportError::Io)?;
+        self.writer
+            .write_all(b"\n")
+            .await
+            .map_err(TransportError::Io)?;
         self.writer.flush().await.map_err(TransportError::Io)?;
         Ok(())
     }

@@ -3,9 +3,19 @@ name = "facet-mcp"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "facet-mcp-test-server"
+path = "src/test_server.rs"
+required-features = ["test-server"]
+
 [dependencies]
 facet = { workspace = true }
 facet-json = { workspace = true }
 facet-json-schema = "0.44.3"
 tokio = { workspace = true, features = ["io-util", "io-std", "sync"] }
 tracing = { workspace = true }
+tracing-subscriber = { workspace = true, optional = true }
+
+[features]
+default = []
+test-server = ["tracing-subscriber"]

@@ -23,6 +23,7 @@ pub enum JsonRpcId {
 }
 
 #[derive(Debug, Facet)]
+#[facet(skip_all_unless_truthy)]
 pub struct JsonRpcResponse {
     pub jsonrpc: String,
     #[facet(default)]
@@ -117,6 +118,7 @@ pub struct CallToolResult {
 }
 
 #[derive(Debug, Facet)]
+#[facet(tag = "type", rename_all = "lowercase")]
 #[repr(u8)]
 pub enum ContentBlock {
     Text { text: String },
@@ -202,6 +204,7 @@ mod tests {
     fn serialize_call_tool_result_text() {
         let result = CallToolResult::text("hello world");
         let json = facet_json::to_string(&result).unwrap();
+        eprintln!("CallToolResult JSON: {json}");
         assert!(json.contains("hello world"));
         assert!(!json.contains("isError"));
     }

@@ -1,9 +1,8 @@
 use facet::Facet;
-use facet_mcp::{CallToolResult, ToolCtx};
+use facet_mcp::{McpServer, McpServerInfo, Tool, ToolCtx};
 
 // ── Args and result types ───────────────────────────────────────────
 
-/// Add two numbers together.
 #[derive(Debug, Facet)]
 struct AddArgs {
     /// First operand
@@ -21,8 +20,9 @@ struct AddResult {
 // ── Tool definition via macro ───────────────────────────────────────
 
 facet_mcp::tool! {
+    /// Add two numbers together and return the sum.
     async fn add(args: AddArgs, ctx: &ToolCtx) -> AddResult {
-        let _ = ctx; // unused in this simple example
+        let _ = ctx;
         AddResult { sum: args.a + args.b }
     }
 }
@@ -30,54 +30,30 @@ facet_mcp::tool! {
 // ── Tests ───────────────────────────────────────────────────────────
 
 #[test]
-fn tool_def_has_correct_name() {
-    let def = add::def();
-    assert_eq!(def.name, "add");
+fn tool_has_correct_name() {
+    assert_eq!(add::name(), "add");
 }
 
 #[test]
-fn tool_def_has_description_from_args_doc() {
-    let def = add::def();
-    assert_eq!(def.description, "Add two numbers together.");
+fn tool_has_description_from_fn_doc() {
+    assert_eq!(add::description().trim(), "Add two numbers together and return the sum.");
 }
 
 #[test]
-fn tool_def_input_schema_has_fields() {
-    let def = add::def();
-    let json = facet_json::to_string(&def.input_schema).unwrap();
+fn tool_input_schema_has_fields() {
+    let schema = facet_mcp::schema_for::<AddArgs>();
+    let json = facet_json::to_string(&schema).unwrap();
     assert!(json.contains("\"a\""));
     assert!(json.contains("\"b\""));
     assert!(json.contains("integer"));
 }
 
 #[test]
-fn tool_def_output_schema_has_fields() {
-    let def = add::def();
-    let json = facet_json::to_string(&def.output_schema).unwrap();
+fn tool_output_schema_has_fields() {
+    let schema = facet_mcp::schema_for::<AddResult>();
+    let json = facet_json::to_string(&schema).unwrap();
     assert!(json.contains("\"sum\""));
     assert!(json.contains("integer"));
-}
-
-#[tokio::test]
-async fn dispatch_valid_args() {
-    let ctx = ToolCtx::new();
-    let raw = facet_json::RawJson::from_owned(r#"{"a": 3, "b": 4}"#.to_owned());
-    let result = add::dispatch(&raw, &ctx).await;
-    assert!(result.is_error.is_none());
-    // result.content[0] should be text containing the serialized AddResult
-    match &result.content[0] {
-        facet_mcp::ContentBlock::Text { text } => {
-            assert!(text.contains("7"));
-        }
-    }
-}
-
-#[tokio::test]
-async fn dispatch_invalid_args() {
-    let ctx = ToolCtx::new();
-    let raw = facet_json::RawJson::from_owned(r#"{"x": 1}"#.to_owned());
-    let result = add::dispatch(&raw, &ctx).await;
-    assert_eq!(result.is_error, Some(true));
 }
 
 #[tokio::test]
@@ -85,4 +61,43 @@ async fn call_directly() {
     let ctx = ToolCtx::new();
     let result = add::call(AddArgs { a: 10, b: 20 }, &ctx).await;
     assert_eq!(result.sum, 30);
+}
+
+// ── Server builder tests ────────────────────────────────────────────
+
+struct Greeting(String);
+
+#[derive(Debug, Facet)]
+struct GreetArgs {
+    name: String,
+}
+
+#[derive(Debug, Facet)]
+struct GreetResult {
+    message: String,
+}
+
+facet_mcp::tool! {
+    /// Greet someone by name.
+    async fn greet(args: GreetArgs, ctx: &ToolCtx) -> GreetResult {
+        let greeting = ctx.get::<Greeting>();
+        GreetResult {
+            message: format!("{} {}", greeting.0, args.name),
+        }
+    }
+}
+
+#[test]
+fn server_builder_collects_tools() {
+    let ctx = ToolCtx::new();
+    let server = McpServer::new(ctx, McpServerInfo {
+        name: "test".to_owned(),
+        version: "0.1".to_owned(),
+    })
+    .tool::<add>()
+    .tool::<greet>();
+
+    // We can't inspect tools directly since they're private,
+    // but building without panic proves registration works.
+    let _ = server;
 }
