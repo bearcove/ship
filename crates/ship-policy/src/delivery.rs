@@ -1,4 +1,7 @@
-use crate::{AgentRole, Lane, ParticipantKind, ParticipantName, ParticipantNameRef, RoomId, Topology, allowed_mentions};
+use crate::{
+    AgentRole, Lane, ParticipantKind, ParticipantName, ParticipantNameRef, RoomId, Topology,
+    allowed_mentions,
+};
 use std::fmt::Write as _;
 
 // ── Actions: everything that can happen in the system ────────────────
@@ -50,10 +53,7 @@ pub enum Action {
     },
 
     /// CI checks started.
-    ChecksStarted {
-        session: RoomId,
-        context: String,
-    },
+    ChecksStarted { session: RoomId, context: String },
 
     /// CI checks finished.
     ChecksFinished {
@@ -107,7 +107,10 @@ pub enum DeliveryContent {
     ActivitySummary { summary: String },
 
     /// Bounce: message had no addressee or addressed unknown target.
-    Bounce { reason: String, allowed: Vec<ParticipantName> },
+    Bounce {
+        reason: String,
+        allowed: Vec<ParticipantName>,
+    },
 
     /// Access denied: sender cannot address target.
     Denied {
@@ -131,7 +134,6 @@ pub enum DeliveryContent {
         summary: String,
     },
 }
-
 
 // ── Urgent tag parsing ───────────────────────────────────────────────
 
@@ -177,9 +179,7 @@ pub fn extract_urgency(text: &str) -> (String, bool) {
 /// e.g. `[("Jordan", "mate"), ("Amos", "human")]`.
 pub fn render_for_prompt(delivery: &Delivery, mention_hints: &[(&str, &str)]) -> String {
     match &delivery.content {
-        DeliveryContent::Message { text } => {
-            wrap_message(&delivery.from, text, mention_hints)
-        }
+        DeliveryContent::Message { text } => wrap_message(&delivery.from, text, mention_hints),
 
         DeliveryContent::Committed {
             step,
@@ -205,9 +205,7 @@ pub fn render_for_prompt(delivery: &Delivery, mention_hints: &[(&str, &str)]) ->
             wrap_message(&delivery.from, &body, mention_hints)
         }
 
-        DeliveryContent::Question { text } => {
-            wrap_message(&delivery.from, text, mention_hints)
-        }
+        DeliveryContent::Question { text } => wrap_message(&delivery.from, text, mention_hints),
 
         DeliveryContent::ActivitySummary { summary } => {
             // Summarizer is a system process, not a participant — attributed separately
@@ -305,16 +303,26 @@ pub fn route(action: &Action, topology: &Topology) -> Vec<Delivery> {
             step_description,
             commit_summary,
             diff_section,
-        } => route_mate_committed(topology, session, step_description.as_deref(), commit_summary, diff_section),
+        } => route_mate_committed(
+            topology,
+            session,
+            step_description.as_deref(),
+            commit_summary,
+            diff_section,
+        ),
 
-        Action::MateSubmitted { session, summary } => route_mate_submitted(topology, session, summary),
+        Action::MateSubmitted { session, summary } => {
+            route_mate_submitted(topology, session, summary)
+        }
 
         Action::MatePlanSet {
             session,
             plan_status,
         } => route_mate_plan_set(topology, session, plan_status),
 
-        Action::MateQuestion { session, question } => route_mate_question(topology, session, question),
+        Action::MateQuestion { session, question } => {
+            route_mate_question(topology, session, question)
+        }
 
         Action::MateActivitySummary { session, summary } => {
             route_mate_activity_summary(topology, session, summary)
@@ -399,9 +407,7 @@ fn route_message_sent(
         return vec![Delivery {
             to: topology.admiral.name.clone(),
             from: from.to_owned(),
-            content: DeliveryContent::Message {
-                text: clean_text,
-            },
+            content: DeliveryContent::Message { text: clean_text },
             urgent: true,
         }];
     }
@@ -410,9 +416,7 @@ fn route_message_sent(
     vec![Delivery {
         to: mention.to_owned(),
         from: from.to_owned(),
-        content: DeliveryContent::Message {
-            text: clean_text,
-        },
+        content: DeliveryContent::Message { text: clean_text },
         urgent,
     }]
 }
@@ -480,11 +484,7 @@ fn route_mate_committed(
     deliveries
 }
 
-fn route_mate_submitted(
-    topology: &Topology,
-    session: &RoomId,
-    summary: &str,
-) -> Vec<Delivery> {
+fn route_mate_submitted(topology: &Topology, session: &RoomId, summary: &str) -> Vec<Delivery> {
     let room = match find_lane(topology, session) {
         Some(r) => r,
         None => return vec![],
@@ -512,11 +512,7 @@ fn route_mate_submitted(
     ]
 }
 
-fn route_mate_plan_set(
-    topology: &Topology,
-    session: &RoomId,
-    plan_status: &str,
-) -> Vec<Delivery> {
+fn route_mate_plan_set(topology: &Topology, session: &RoomId, plan_status: &str) -> Vec<Delivery> {
     let room = match find_lane(topology, session) {
         Some(r) => r,
         None => return vec![],
@@ -532,11 +528,7 @@ fn route_mate_plan_set(
     }]
 }
 
-fn route_mate_question(
-    topology: &Topology,
-    session: &RoomId,
-    question: &str,
-) -> Vec<Delivery> {
+fn route_mate_question(topology: &Topology, session: &RoomId, question: &str) -> Vec<Delivery> {
     let room = match find_lane(topology, session) {
         Some(r) => r,
         None => return vec![],
@@ -613,11 +605,7 @@ fn route_task_assigned(
     ]
 }
 
-fn route_checks_started(
-    topology: &Topology,
-    session: &RoomId,
-    context: &str,
-) -> Vec<Delivery> {
+fn route_checks_started(topology: &Topology, session: &RoomId, context: &str) -> Vec<Delivery> {
     let room = match find_lane(topology, session) {
         Some(r) => r,
         None => return vec![],
