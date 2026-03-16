@@ -431,19 +431,19 @@ fn parse_realistic_usage_update() {
 
 #[test]
 fn parse_realistic_new_session_response() {
+    // Flat format — type/currentValue/options are at the same level as id/name
+    // (reference schema uses #[serde(flatten)] on kind, which we inline)
     let raw = r#"{
         "sessionId": "sess-new-123",
         "configOptions": [{
             "id": "thinking",
             "name": "Thinking",
-            "kind": {
-                "type": "select",
-                "options": [
-                    {"value": "off", "name": "Off"},
-                    {"value": "on", "name": "On"}
-                ],
-                "currentValue": "on"
-            }
+            "type": "select",
+            "currentValue": "on",
+            "options": [
+                {"value": "off", "name": "Off"},
+                {"value": "on", "name": "On"}
+            ]
         }]
     }"#;
     let resp: NewSessionResponse = facet_json::from_str(raw).unwrap();
@@ -451,6 +451,8 @@ fn parse_realistic_new_session_response() {
     let opts = resp.config_options.unwrap();
     assert_eq!(opts.len(), 1);
     assert_eq!(opts[0].id.0.as_ref(), "thinking");
+    assert_eq!(opts[0].config_type, "select");
+    assert_eq!(opts[0].current_value.0.as_ref(), "on");
 }
 
 #[test]

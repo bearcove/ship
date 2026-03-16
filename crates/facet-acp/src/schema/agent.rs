@@ -644,6 +644,9 @@ impl From<&str> for SessionConfigGroupId {
     }
 }
 
+/// Session config option — flattened because facet doesn't support #[facet(flatten)].
+/// The reference schema has `kind: SessionConfigKind` with `#[serde(flatten)]`,
+/// which puts `type`, `currentValue`, `options` at the same level as `id`, `name`, etc.
 #[derive(Debug, Clone, Facet)]
 #[facet(rename_all = "camelCase")]
 pub struct SessionConfigOption {
@@ -653,23 +656,13 @@ pub struct SessionConfigOption {
     pub description: Option<String>,
     #[facet(default, skip_unless_truthy)]
     pub category: Option<SessionConfigOptionCategory>,
-    pub kind: SessionConfigKind,
-    #[facet(default, skip_unless_truthy, rename = "_meta")]
-    pub meta: Option<RawJson<'static>>,
-}
-
-#[derive(Debug, Clone, Facet)]
-#[facet(tag = "type", rename_all = "snake_case")]
-#[repr(u8)]
-pub enum SessionConfigKind {
-    Select(SessionConfigSelect),
-}
-
-#[derive(Debug, Clone, Facet)]
-#[facet(rename_all = "camelCase")]
-pub struct SessionConfigSelect {
+    // Flattened from SessionConfigKind::Select
+    #[facet(rename = "type")]
+    pub config_type: String,
     pub current_value: SessionConfigValueId,
     pub options: SessionConfigSelectOptions,
+    #[facet(default, skip_unless_truthy, rename = "_meta")]
+    pub meta: Option<RawJson<'static>>,
 }
 
 #[derive(Debug, Clone, Facet)]
