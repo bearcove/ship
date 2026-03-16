@@ -39,20 +39,20 @@ fn participant_role() {
 fn find_participant_across_topology() {
     let topo = test_topology();
 
-    assert!(topo.find_participant("Amos").unwrap().is_human());
+    assert!(topo.find_participant("Amos".into()).unwrap().is_human());
     assert_eq!(
-        topo.find_participant("Morgan").unwrap().role(),
+        topo.find_participant("Morgan".into()).unwrap().role(),
         Some(AgentRole::Admiral)
     );
     assert_eq!(
-        topo.find_participant("Cedar").unwrap().role(),
+        topo.find_participant("Cedar".into()).unwrap().role(),
         Some(AgentRole::Captain)
     );
     assert_eq!(
-        topo.find_participant("Jordan").unwrap().role(),
+        topo.find_participant("Jordan".into()).unwrap().role(),
         Some(AgentRole::Mate)
     );
-    assert!(topo.find_participant("Nobody").is_none());
+    assert!(topo.find_participant("Nobody".into()).is_none());
 }
 
 #[test]
@@ -89,46 +89,46 @@ fn session_room_not_found() {
 #[test]
 fn mate_can_only_mention_captain() {
     let topo = test_topology();
-    let jordan = topo.find_participant("Jordan").unwrap();
+    let jordan = topo.find_participant("Jordan".into()).unwrap();
     let allowed = allowed_mentions(&topo, jordan);
 
-    assert_eq!(allowed, vec!["Cedar"]);
+    assert_eq!(allowed, vec![ParticipantName::from_static("Cedar")]);
 }
 
 #[test]
 fn captain_can_mention_mate_and_human() {
     let topo = test_topology();
-    let cedar = topo.find_participant("Cedar").unwrap();
+    let cedar = topo.find_participant("Cedar".into()).unwrap();
     let allowed = allowed_mentions(&topo, cedar);
 
-    assert!(allowed.contains(&"Jordan".to_string()));
-    assert!(allowed.contains(&"Amos".to_string()));
-    assert!(!allowed.contains(&"Morgan".to_string()));
-    assert!(!allowed.contains(&"Birch".to_string()));
+    assert!(allowed.contains(&ParticipantName::from_static("Jordan")));
+    assert!(allowed.contains(&ParticipantName::from_static("Amos")));
+    assert!(!allowed.contains(&ParticipantName::from_static("Morgan")));
+    assert!(!allowed.contains(&ParticipantName::from_static("Birch")));
 }
 
 #[test]
 fn admiral_can_mention_all_captains() {
     let topo = test_topology();
-    let morgan = topo.find_participant("Morgan").unwrap();
+    let morgan = topo.find_participant("Morgan".into()).unwrap();
     let allowed = allowed_mentions(&topo, morgan);
 
-    assert!(allowed.contains(&"Cedar".to_string()));
-    assert!(allowed.contains(&"Birch".to_string()));
-    assert!(!allowed.contains(&"Jordan".to_string()));
-    assert!(!allowed.contains(&"Amos".to_string()));
+    assert!(allowed.contains(&ParticipantName::from_static("Cedar")));
+    assert!(allowed.contains(&ParticipantName::from_static("Birch")));
+    assert!(!allowed.contains(&ParticipantName::from_static("Jordan")));
+    assert!(!allowed.contains(&ParticipantName::from_static("Amos")));
 }
 
 #[test]
 fn human_can_mention_admiral_and_captains() {
     let topo = test_topology();
-    let amos = topo.find_participant("Amos").unwrap();
+    let amos = topo.find_participant("Amos".into()).unwrap();
     let allowed = allowed_mentions(&topo, amos);
 
-    assert!(allowed.contains(&"Morgan".to_string()));
-    assert!(allowed.contains(&"Cedar".to_string()));
-    assert!(allowed.contains(&"Birch".to_string()));
-    assert!(!allowed.contains(&"Jordan".to_string()));
+    assert!(allowed.contains(&ParticipantName::from_static("Morgan")));
+    assert!(allowed.contains(&ParticipantName::from_static("Cedar")));
+    assert!(allowed.contains(&ParticipantName::from_static("Birch")));
+    assert!(!allowed.contains(&ParticipantName::from_static("Jordan")));
 }
 
 // ── Prompt snapshots ─────────────────────────────────────────────────
@@ -136,10 +136,10 @@ fn human_can_mention_admiral_and_captains() {
 #[test]
 fn snapshot_captain_prompt() {
     let prompt = CaptainPrompt {
-        captain_name: "Cedar".into(),
-        mate_name: "Jordan".into(),
-        human_name: "Amos".into(),
-        admiral_name: Some("Morgan".into()),
+        captain_name: ParticipantName::from_static("Cedar"),
+        mate_name: ParticipantName::from_static("Jordan"),
+        human_name: ParticipantName::from_static("Amos"),
+        admiral_name: Some(ParticipantName::from_static("Morgan")),
         state_summary: "New session, no active task. Greet the human and wait for direction.".into(),
     };
     insta::assert_snapshot!("captain_prompt", prompt.render_once().unwrap());
@@ -148,9 +148,9 @@ fn snapshot_captain_prompt() {
 #[test]
 fn snapshot_captain_prompt_no_admiral() {
     let prompt = CaptainPrompt {
-        captain_name: "Cedar".into(),
-        mate_name: "Jordan".into(),
-        human_name: "Amos".into(),
+        captain_name: ParticipantName::from_static("Cedar"),
+        mate_name: ParticipantName::from_static("Jordan"),
+        human_name: ParticipantName::from_static("Amos"),
         admiral_name: None,
         state_summary: "New session, no active task. Greet the human and wait for direction.".into(),
     };
@@ -160,9 +160,9 @@ fn snapshot_captain_prompt_no_admiral() {
 #[test]
 fn snapshot_mate_prompt() {
     let prompt = MatePrompt {
-        mate_name: "Jordan".into(),
-        captain_name: "Cedar".into(),
-        human_name: "Amos".into(),
+        mate_name: ParticipantName::from_static("Jordan"),
+        captain_name: ParticipantName::from_static("Cedar"),
+        human_name: ParticipantName::from_static("Amos"),
         task_description: "Refactor the auth middleware to use the new session store.".into(),
     };
     insta::assert_snapshot!("mate_prompt", prompt.render_once().unwrap());
@@ -171,16 +171,16 @@ fn snapshot_mate_prompt() {
 #[test]
 fn snapshot_admiral_prompt() {
     let prompt = AdmiralPrompt {
-        admiral_name: "Morgan".into(),
-        human_name: "Amos".into(),
+        admiral_name: ParticipantName::from_static("Morgan"),
+        human_name: ParticipantName::from_static("Amos"),
         lanes: vec![
             LaneInfo {
-                captain_name: "Cedar".into(),
+                captain_name: ParticipantName::from_static("Cedar"),
                 label: "auth-refactor".into(),
                 status_summary: "working, step 3/5".into(),
             },
             LaneInfo {
-                captain_name: "Birch".into(),
+                captain_name: ParticipantName::from_static("Birch"),
                 label: "logging-migration".into(),
                 status_summary: "idle, finished step 1".into(),
             },
@@ -194,9 +194,9 @@ fn snapshot_admiral_prompt() {
 #[test]
 fn snapshot_wrap_mate_to_captain() {
     let wrapped = wrap_message(
-        "Jordan",
+        "Jordan".into(),
         "I've completed the refactor and all tests pass.",
-        &captain_routing_hint("Jordan", "Amos"),
+        &captain_routing_hint("Jordan".into(), "Amos".into()),
     );
     insta::assert_snapshot!("wrap_mate_to_captain", wrapped);
 }
@@ -204,7 +204,7 @@ fn snapshot_wrap_mate_to_captain() {
 #[test]
 fn snapshot_wrap_captain_steer_to_mate() {
     let wrapped = wrap_message(
-        "Cedar",
+        "Cedar".into(),
         "Focus on the error handling first, the UI can wait.",
         &mate_routing_hint(),
     );
@@ -214,14 +214,14 @@ fn snapshot_wrap_captain_steer_to_mate() {
 #[test]
 fn snapshot_bounce_for_captain() {
     let topo = test_topology();
-    let bounce = bounce_for(&topo, "Cedar").unwrap();
+    let bounce = bounce_for(&topo, "Cedar".into()).unwrap();
     insta::assert_snapshot!("bounce_captain", bounce);
 }
 
 #[test]
 fn snapshot_bounce_for_mate() {
     let topo = test_topology();
-    let bounce = bounce_for(&topo, "Jordan").unwrap();
+    let bounce = bounce_for(&topo, "Jordan".into()).unwrap();
     insta::assert_snapshot!("bounce_mate", bounce);
 }
 
@@ -237,12 +237,12 @@ fn empty_topology_no_sessions() {
     // Admiral room has just the admiral (no captains).
     let members = topo.admiral_room_members();
     assert_eq!(members.len(), 1);
-    assert_eq!(members[0].name, "Morgan");
+    assert_eq!(members[0].name.as_str(), "Morgan");
 
     // Human mentions admiral — delivers.
     let action = Action::MessageSent {
-        from: "Amos".into(),
-        mention: "Morgan".into(),
+        from: ParticipantName::from_static("Amos"),
+        mention: ParticipantName::from_static("Morgan"),
         text: "hello".into(),
     };
     let deliveries = route(&action, &topo);
@@ -250,9 +250,9 @@ fn empty_topology_no_sessions() {
     assert!(matches!(&deliveries[0].content, DeliveryContent::Message { .. }));
 
     // Human has no captains to mention.
-    let amos = topo.find_participant("Amos").unwrap();
+    let amos = topo.find_participant("Amos".into()).unwrap();
     let allowed = allowed_mentions(&topo, amos);
-    assert_eq!(allowed, vec!["Morgan"]);
+    assert_eq!(allowed, vec![ParticipantName::from_static("Morgan")]);
 }
 
 #[test]
@@ -267,14 +267,14 @@ fn find_participant_ci_works() {
 #[test]
 fn lane_for_participant_finds_by_captain_or_mate() {
     let topo = test_topology();
-    let session = topo.lane_for_participant("Cedar").unwrap();
+    let session = topo.lane_for_participant("Cedar".into()).unwrap();
     assert_eq!(session.id, RoomId::from_static("lane-1"));
 
-    let session = topo.lane_for_participant("Jordan").unwrap();
+    let session = topo.lane_for_participant("Jordan".into()).unwrap();
     assert_eq!(session.id, RoomId::from_static("lane-1"));
 
-    assert!(topo.lane_for_participant("Morgan").is_none());
-    assert!(topo.lane_for_participant("Amos").is_none());
+    assert!(topo.lane_for_participant("Morgan".into()).is_none());
+    assert!(topo.lane_for_participant("Amos".into()).is_none());
 }
 
 // ── Names edge cases ────────────────────────────────────────────────
@@ -508,14 +508,14 @@ fn wrong_tool_for_every_role() {
 #[test]
 fn bounce_for_unknown_participant() {
     let topo = test_topology();
-    assert!(bounce_for(&topo, "Ghost").is_none());
+    assert!(bounce_for(&topo, "Ghost".into()).is_none());
 }
 
 #[test]
 fn bounce_for_human_lists_admiral_and_captains() {
     let topo = test_topology();
     // Humans get a bounce too — they need to @mention someone.
-    let bounce = bounce_for(&topo, "Amos").unwrap();
+    let bounce = bounce_for(&topo, "Amos".into()).unwrap();
     assert!(bounce.contains("Morgan"));
     assert!(bounce.contains("Cedar"));
     assert!(bounce.contains("Birch"));
@@ -524,7 +524,7 @@ fn bounce_for_human_lists_admiral_and_captains() {
 #[test]
 fn bounce_for_admiral() {
     let topo = test_topology();
-    let bounce = bounce_for(&topo, "Morgan");
+    let bounce = bounce_for(&topo, "Morgan".into());
     // Admiral should get a bounce message listing captains.
     assert!(bounce.is_some());
 }
@@ -535,14 +535,14 @@ fn bounce_for_admiral() {
 fn delivery_mate_message_to_captain() {
     let topo = test_topology();
     let action = Action::MessageSent {
-        from: "Jordan".into(),
-        mention: "Cedar".into(),
+        from: ParticipantName::from_static("Jordan"),
+        mention: ParticipantName::from_static("Cedar"),
         text: "work is done".into(),
     };
     let deliveries = route(&action, &topo);
     assert_eq!(deliveries.len(), 1);
-    assert_eq!(deliveries[0].to, "Cedar");
-    assert_eq!(deliveries[0].from, "Jordan");
+    assert_eq!(deliveries[0].to.as_str(), "Cedar");
+    assert_eq!(deliveries[0].from.as_str(), "Jordan");
     assert!(matches!(
         &deliveries[0].content,
         DeliveryContent::Message { text } if text == "work is done"
@@ -553,13 +553,13 @@ fn delivery_mate_message_to_captain() {
 fn delivery_captain_to_mate_is_message() {
     let topo = test_topology();
     let action = Action::MessageSent {
-        from: "Cedar".into(),
-        mention: "Jordan".into(),
+        from: ParticipantName::from_static("Cedar"),
+        mention: ParticipantName::from_static("Jordan"),
         text: "fix the tests".into(),
     };
     let deliveries = route(&action, &topo);
     assert_eq!(deliveries.len(), 1);
-    assert_eq!(deliveries[0].to, "Jordan");
+    assert_eq!(deliveries[0].to.as_str(), "Jordan");
     assert!(matches!(
         &deliveries[0].content,
         DeliveryContent::Message { text } if text == "fix the tests"
@@ -570,14 +570,14 @@ fn delivery_captain_to_mate_is_message() {
 fn delivery_captain_human_intercepted_to_admiral() {
     let topo = test_topology();
     let action = Action::MessageSent {
-        from: "Cedar".into(),
-        mention: "Amos".into(),
+        from: ParticipantName::from_static("Cedar"),
+        mention: ParticipantName::from_static("Amos"),
         text: "task is done".into(),
     };
     let deliveries = route(&action, &topo);
     assert_eq!(deliveries.len(), 1);
-    assert_eq!(deliveries[0].to, "Morgan");
-    assert_eq!(deliveries[0].from, "Cedar");
+    assert_eq!(deliveries[0].to.as_str(), "Morgan");
+    assert_eq!(deliveries[0].from.as_str(), "Cedar");
     assert!(matches!(&deliveries[0].content, DeliveryContent::Message { .. }));
 }
 
@@ -585,13 +585,13 @@ fn delivery_captain_human_intercepted_to_admiral() {
 fn delivery_denied_bounces_to_sender() {
     let topo = test_topology();
     let action = Action::MessageSent {
-        from: "Jordan".into(),
-        mention: "Amos".into(),
+        from: ParticipantName::from_static("Jordan"),
+        mention: ParticipantName::from_static("Amos"),
         text: "hey human".into(),
     };
     let deliveries = route(&action, &topo);
     assert_eq!(deliveries.len(), 1);
-    assert_eq!(deliveries[0].to, "Jordan");
+    assert_eq!(deliveries[0].to.as_str(), "Jordan");
     assert!(matches!(&deliveries[0].content, DeliveryContent::Denied { .. }));
 }
 
@@ -599,13 +599,13 @@ fn delivery_denied_bounces_to_sender() {
 fn delivery_unknown_target_bounces() {
     let topo = test_topology();
     let action = Action::MessageSent {
-        from: "Cedar".into(),
-        mention: "Nobody".into(),
+        from: ParticipantName::from_static("Cedar"),
+        mention: ParticipantName::from_static("Nobody"),
         text: "hello?".into(),
     };
     let deliveries = route(&action, &topo);
     assert_eq!(deliveries.len(), 1);
-    assert_eq!(deliveries[0].to, "Cedar");
+    assert_eq!(deliveries[0].to.as_str(), "Cedar");
     assert!(matches!(&deliveries[0].content, DeliveryContent::Bounce { .. }));
 }
 
@@ -613,12 +613,12 @@ fn delivery_unknown_target_bounces() {
 fn delivery_unaddressed_bounces() {
     let topo = test_topology();
     let action = Action::UnaddressedMessage {
-        from: "Cedar".into(),
+        from: ParticipantName::from_static("Cedar"),
         text: "thinking out loud".into(),
     };
     let deliveries = route(&action, &topo);
     assert_eq!(deliveries.len(), 1);
-    assert_eq!(deliveries[0].to, "Cedar");
+    assert_eq!(deliveries[0].to.as_str(), "Cedar");
     assert!(matches!(&deliveries[0].content, DeliveryContent::Bounce { .. }));
 }
 
@@ -635,15 +635,15 @@ fn delivery_mate_committed_notifies_captain_and_human() {
     assert_eq!(deliveries.len(), 2);
 
     // Captain gets it
-    assert_eq!(deliveries[0].to, "Cedar");
-    assert_eq!(deliveries[0].from, "Jordan");
+    assert_eq!(deliveries[0].to.as_str(), "Cedar");
+    assert_eq!(deliveries[0].from.as_str(), "Jordan");
     assert!(matches!(
         &deliveries[0].content,
         DeliveryContent::Committed { step: Some(s), .. } if s == "Add error handling"
     ));
 
     // Human gets it
-    assert_eq!(deliveries[1].to, "Amos");
+    assert_eq!(deliveries[1].to.as_str(), "Amos");
     assert_eq!(deliveries[1].urgent, false);
 }
 
@@ -657,11 +657,11 @@ fn delivery_mate_submitted_notifies_captain_and_human() {
     let deliveries = route(&action, &topo);
     assert_eq!(deliveries.len(), 2);
 
-    assert_eq!(deliveries[0].to, "Cedar");
+    assert_eq!(deliveries[0].to.as_str(), "Cedar");
     assert_eq!(deliveries[0].urgent, true);
     assert!(matches!(&deliveries[0].content, DeliveryContent::Submitted { .. }));
 
-    assert_eq!(deliveries[1].to, "Amos");
+    assert_eq!(deliveries[1].to.as_str(), "Amos");
     assert_eq!(deliveries[1].urgent, false);
 }
 
@@ -674,7 +674,7 @@ fn delivery_mate_plan_set_notifies_captain() {
     };
     let deliveries = route(&action, &topo);
     assert_eq!(deliveries.len(), 1);
-    assert_eq!(deliveries[0].to, "Cedar");
+    assert_eq!(deliveries[0].to.as_str(), "Cedar");
     assert!(matches!(&deliveries[0].content, DeliveryContent::PlanSet { .. }));
 }
 
@@ -687,7 +687,7 @@ fn delivery_mate_question_notifies_captain_with_attention() {
     };
     let deliveries = route(&action, &topo);
     assert_eq!(deliveries.len(), 1);
-    assert_eq!(deliveries[0].to, "Cedar");
+    assert_eq!(deliveries[0].to.as_str(), "Cedar");
     assert_eq!(deliveries[0].urgent, true);
     assert!(matches!(&deliveries[0].content, DeliveryContent::Question { .. }));
 }
@@ -701,8 +701,8 @@ fn delivery_activity_summary_from_summarizer() {
     };
     let deliveries = route(&action, &topo);
     assert_eq!(deliveries.len(), 1);
-    assert_eq!(deliveries[0].to, "Cedar");
-    assert_eq!(deliveries[0].from, "summarizer");
+    assert_eq!(deliveries[0].to.as_str(), "Cedar");
+    assert_eq!(deliveries[0].from.as_str(), "summarizer");
     assert!(matches!(&deliveries[0].content, DeliveryContent::ActivitySummary { .. }));
 }
 
@@ -714,7 +714,7 @@ fn delivery_forced_submit_nudges_mate() {
     };
     let deliveries = route(&action, &topo);
     assert_eq!(deliveries.len(), 1);
-    assert_eq!(deliveries[0].to, "Jordan");
+    assert_eq!(deliveries[0].to.as_str(), "Jordan");
     assert!(matches!(&deliveries[0].content, DeliveryContent::Guidance { .. }));
 }
 
@@ -728,7 +728,7 @@ fn delivery_task_assigned_notifies_human() {
     };
     let deliveries = route(&action, &topo);
     assert_eq!(deliveries.len(), 1);
-    assert_eq!(deliveries[0].to, "Amos");
+    assert_eq!(deliveries[0].to.as_str(), "Amos");
     assert!(matches!(&deliveries[0].content, DeliveryContent::TaskAssigned { .. }));
 }
 
@@ -784,13 +784,13 @@ fn delivery_both_captains_human_intercepted() {
     let topo = test_topology();
     for (captain, admiral) in [("Cedar", "Morgan"), ("Birch", "Morgan")] {
         let action = Action::MessageSent {
-            from: captain.into(),
-            mention: "Amos".into(),
+            from: ParticipantName::from_static(captain),
+            mention: ParticipantName::from_static("Amos"),
             text: "status update".into(),
         };
         let deliveries = route(&action, &topo);
         assert_eq!(deliveries.len(), 1);
-        assert_eq!(deliveries[0].to, admiral);
+        assert_eq!(deliveries[0].to.as_str(), admiral);
     }
 }
 
@@ -798,8 +798,8 @@ fn delivery_both_captains_human_intercepted() {
 fn delivery_urgent_tag_escalates_urgency() {
     let topo = test_topology();
     let action = Action::MessageSent {
-        from: "Cedar".into(),
-        mention: "Jordan".into(),
+        from: ParticipantName::from_static("Cedar"),
+        mention: ParticipantName::from_static("Jordan"),
         text: "#urgent stop deleting files".into(),
     };
     let deliveries = route(&action, &topo);
@@ -815,8 +815,8 @@ fn delivery_urgent_tag_escalates_urgency() {
 fn delivery_urgent_tag_case_insensitive() {
     let topo = test_topology();
     let action = Action::MessageSent {
-        from: "Cedar".into(),
-        mention: "Jordan".into(),
+        from: ParticipantName::from_static("Cedar"),
+        mention: ParticipantName::from_static("Jordan"),
         text: "fix the tests #URGENT".into(),
     };
     let deliveries = route(&action, &topo);
@@ -831,8 +831,8 @@ fn delivery_urgent_tag_case_insensitive() {
 fn delivery_urgent_tag_in_middle() {
     let topo = test_topology();
     let action = Action::MessageSent {
-        from: "Cedar".into(),
-        mention: "Jordan".into(),
+        from: ParticipantName::from_static("Cedar"),
+        mention: ParticipantName::from_static("Jordan"),
         text: "stop #urgent right now".into(),
     };
     let deliveries = route(&action, &topo);
@@ -847,8 +847,8 @@ fn delivery_urgent_tag_in_middle() {
 fn delivery_no_urgent_tag_is_informational() {
     let topo = test_topology();
     let action = Action::MessageSent {
-        from: "Cedar".into(),
-        mention: "Jordan".into(),
+        from: ParticipantName::from_static("Cedar"),
+        mention: ParticipantName::from_static("Jordan"),
         text: "take your time with the refactor".into(),
     };
     let deliveries = route(&action, &topo);
@@ -859,8 +859,8 @@ fn delivery_no_urgent_tag_is_informational() {
 fn delivery_urgent_not_part_of_word() {
     let topo = test_topology();
     let action = Action::MessageSent {
-        from: "Cedar".into(),
-        mention: "Jordan".into(),
+        from: ParticipantName::from_static("Cedar"),
+        mention: ParticipantName::from_static("Jordan"),
         text: "check #urgently please".into(),
     };
     let deliveries = route(&action, &topo);
@@ -872,13 +872,13 @@ fn delivery_urgent_not_part_of_word() {
 fn delivery_admiral_can_use_urgent_too() {
     let topo = test_topology();
     let action = Action::MessageSent {
-        from: "Morgan".into(),
-        mention: "Cedar".into(),
+        from: ParticipantName::from_static("Morgan"),
+        mention: ParticipantName::from_static("Cedar"),
         text: "#urgent pause all work immediately".into(),
     };
     let deliveries = route(&action, &topo);
     assert_eq!(deliveries.len(), 1);
-    assert_eq!(deliveries[0].to, "Cedar");
+    assert_eq!(deliveries[0].to.as_str(), "Cedar");
     assert_eq!(deliveries[0].urgent, true);
     assert!(matches!(
         &deliveries[0].content,
@@ -896,8 +896,8 @@ fn delivery_lane2_commit_goes_to_lane2_captain() {
         diff_section: "+1 -1".into(),
     };
     let deliveries = route(&action, &topo);
-    assert_eq!(deliveries[0].to, "Birch");
-    assert_eq!(deliveries[0].from, "Riley");
+    assert_eq!(deliveries[0].to.as_str(), "Birch");
+    assert_eq!(deliveries[0].from.as_str(), "Riley");
 }
 
 // ── Render for prompt ───────────────────────────────────────────────
@@ -905,12 +905,12 @@ fn delivery_lane2_commit_goes_to_lane2_captain() {
 #[test]
 fn render_message_with_routing_hints() {
     let delivery = Delivery {
-        to: "Cedar".into(),
-        from: "Jordan".into(),
+        to: ParticipantName::from_static("Cedar"),
+        from: ParticipantName::from_static("Jordan"),
         content: DeliveryContent::Message {
             text: "work is done".into(),
         },
-        
+
         urgent: false,
     };
     let hints = [("Jordan", "mate"), ("Amos", "human")];
@@ -920,8 +920,8 @@ fn render_message_with_routing_hints() {
 #[test]
 fn render_committed_with_step() {
     let delivery = Delivery {
-        to: "Cedar".into(),
-        from: "Jordan".into(),
+        to: ParticipantName::from_static("Cedar"),
+        from: ParticipantName::from_static("Jordan"),
         content: DeliveryContent::Committed {
             step: Some("Add error handling".into()),
             commit_summary: "feat: add error handling".into(),
@@ -937,8 +937,8 @@ fn render_committed_with_step() {
 #[test]
 fn render_committed_no_step() {
     let delivery = Delivery {
-        to: "Cedar".into(),
-        from: "Jordan".into(),
+        to: ParticipantName::from_static("Cedar"),
+        from: ParticipantName::from_static("Jordan"),
         content: DeliveryContent::Committed {
             step: None,
             commit_summary: "fix: typo".into(),
@@ -954,8 +954,8 @@ fn render_committed_no_step() {
 #[test]
 fn render_submitted() {
     let delivery = Delivery {
-        to: "Cedar".into(),
-        from: "Jordan".into(),
+        to: ParticipantName::from_static("Cedar"),
+        from: ParticipantName::from_static("Jordan"),
         content: DeliveryContent::Submitted {
             summary: "Refactored auth middleware".into(),
         },
@@ -969,8 +969,8 @@ fn render_submitted() {
 #[test]
 fn render_plan_set() {
     let delivery = Delivery {
-        to: "Cedar".into(),
-        from: "Jordan".into(),
+        to: ParticipantName::from_static("Cedar"),
+        from: ParticipantName::from_static("Jordan"),
         content: DeliveryContent::PlanSet {
             plan_status: "Step 1: Tests\nStep 2: Implementation\nStep 3: Docs".into(),
         },
@@ -984,8 +984,8 @@ fn render_plan_set() {
 #[test]
 fn render_question() {
     let delivery = Delivery {
-        to: "Cedar".into(),
-        from: "Jordan".into(),
+        to: ParticipantName::from_static("Cedar"),
+        from: ParticipantName::from_static("Jordan"),
         content: DeliveryContent::Question {
             text: "Should I use async here?".into(),
         },
@@ -999,8 +999,8 @@ fn render_question() {
 #[test]
 fn render_activity_summary() {
     let delivery = Delivery {
-        to: "Cedar".into(),
-        from: "summarizer".into(),
+        to: ParticipantName::from_static("Cedar"),
+        from: ParticipantName::from_static("summarizer"),
         content: DeliveryContent::ActivitySummary {
             summary: "Mate edited 3 files, ran tests twice".into(),
         },
@@ -1014,11 +1014,11 @@ fn render_activity_summary() {
 #[test]
 fn render_bounce() {
     let delivery = Delivery {
-        to: "Cedar".into(),
-        from: "system".into(),
+        to: ParticipantName::from_static("Cedar"),
+        from: ParticipantName::from_static("system"),
         content: DeliveryContent::Bounce {
             reason: "Message didn't address anyone.".into(),
-            allowed: vec!["Jordan".into(), "Amos".into()],
+            allowed: vec![ParticipantName::from_static("Jordan"), ParticipantName::from_static("Amos")],
         },
         
         urgent: true,
@@ -1029,10 +1029,10 @@ fn render_bounce() {
 #[test]
 fn render_denied() {
     let delivery = Delivery {
-        to: "Jordan".into(),
-        from: "system".into(),
+        to: ParticipantName::from_static("Jordan"),
+        from: ParticipantName::from_static("system"),
         content: DeliveryContent::Denied {
-            attempted_target: "Amos".into(),
+            attempted_target: ParticipantName::from_static("Amos"),
             reason: "Mate cannot address human directly".into(),
         },
         
@@ -1044,8 +1044,8 @@ fn render_denied() {
 #[test]
 fn render_guidance() {
     let delivery = Delivery {
-        to: "Jordan".into(),
-        from: "system".into(),
+        to: ParticipantName::from_static("Jordan"),
+        from: ParticipantName::from_static("system"),
         content: DeliveryContent::Guidance {
             text: "You stopped without submitting. Call mate_submit with a summary of what you accomplished.".into(),
         },
@@ -1058,8 +1058,8 @@ fn render_guidance() {
 #[test]
 fn render_checks_finished_failed() {
     let delivery = Delivery {
-        to: "Cedar".into(),
-        from: "system".into(),
+        to: ParticipantName::from_static("Cedar"),
+        from: ParticipantName::from_static("system"),
         content: DeliveryContent::ChecksFinished {
             context: "pre-merge".into(),
             all_passed: false,
@@ -1075,8 +1075,8 @@ fn render_checks_finished_failed() {
 #[test]
 fn render_checks_finished_passed() {
     let delivery = Delivery {
-        to: "Cedar".into(),
-        from: "system".into(),
+        to: ParticipantName::from_static("Cedar"),
+        from: ParticipantName::from_static("system"),
         content: DeliveryContent::ChecksFinished {
             context: "post-commit".into(),
             all_passed: true,
@@ -1092,8 +1092,8 @@ fn render_checks_finished_passed() {
 #[test]
 fn render_no_routing_hints() {
     let delivery = Delivery {
-        to: "Amos".into(),
-        from: "Jordan".into(),
+        to: ParticipantName::from_static("Amos"),
+        from: ParticipantName::from_static("Jordan"),
         content: DeliveryContent::Message {
             text: "hello human".into(),
         },

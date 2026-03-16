@@ -173,7 +173,7 @@ impl Runtime {
         let members = self.topology.lane_members(room_id);
         let is_member = members
             .as_ref()
-            .is_some_and(|m| m.iter().any(|p| p.name == sender.as_str()));
+            .is_some_and(|m| m.iter().any(|p| p.name == *sender));
         if !is_member {
             return Err(RuntimeError::NotAMember {
                 participant: sender.clone(),
@@ -189,7 +189,7 @@ impl Runtime {
         let mut delivered = 0;
         for delivery in deliveries {
             // Find the room the recipient belongs to.
-            let room_id = self.room_for_participant(&delivery.to);
+            let room_id = self.room_for_participant(delivery.to.as_str());
             let Some(room_id) = room_id else {
                 tracing::warn!(
                     to = %delivery.to,
@@ -199,8 +199,8 @@ impl Runtime {
             };
 
             let content = delivery_to_block_content(&delivery);
-            let from = ParticipantName::new(delivery.from.clone());
-            let to = ParticipantName::new(delivery.to.clone());
+            let from = delivery.from.clone();
+            let to = delivery.to.clone();
 
             let block_id = self.open_block(
                 &room_id,
@@ -329,7 +329,7 @@ impl Runtime {
     /// Find which room a participant belongs to.
     fn room_for_participant(&self, name: &str) -> Option<RoomId> {
         self.topology
-            .lane_for_participant(name)
+            .lane_for_participant(name.into())
             .map(|s| s.id.clone())
     }
 
@@ -351,14 +351,14 @@ impl Runtime {
         let mention = ship_policy::parse_mention(text, &self.topology);
         match mention {
             ship_policy::ParsedMention::Found { name, rest } => {
-                let sender = self.topology.find_participant(from_name);
+                let sender = self.topology.find_participant(from_name.into());
                 let allowed = sender
                     .map(|s| ship_policy::allowed_mentions(&self.topology, s))
                     .unwrap_or_default();
 
                 if allowed.iter().any(|a| a == &name) {
                     let action = ship_policy::Action::MessageSent {
-                        from: from_name.to_owned(),
+                        from: ParticipantName::new(from_name.to_owned()),
                         mention: name,
                         text: rest,
                     };
@@ -369,7 +369,7 @@ impl Runtime {
             }
             ship_policy::ParsedMention::None => {
                 let action = ship_policy::Action::UnaddressedMessage {
-                    from: from_name.to_owned(),
+                    from: ParticipantName::new(from_name.to_owned()),
                     text: text.clone(),
                 };
                 ship_policy::route(&action, &self.topology)

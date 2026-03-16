@@ -1608,8 +1608,8 @@ mod tests {
         db.save_topology(&topo2).unwrap();
 
         let loaded = db.load_topology().unwrap().unwrap();
-        assert_eq!(loaded.human.name, "Bob");
-        assert_eq!(loaded.admiral.name, "Fleet");
+        assert_eq!(loaded.human.name.as_str(), "Bob");
+        assert_eq!(loaded.admiral.name.as_str(), "Fleet");
         assert!(loaded.lanes.is_empty());
     }
 
@@ -1634,11 +1634,11 @@ mod tests {
 
         let loaded = db.load_topology().unwrap().unwrap();
         assert_eq!(loaded.lanes.len(), 1);
-        assert_eq!(loaded.lanes[0].captain.name, "Alex");
-        assert_eq!(loaded.lanes[0].mate.name, "Jordan");
+        assert_eq!(loaded.lanes[0].captain.name.as_str(), "Alex");
+        assert_eq!(loaded.lanes[0].mate.name.as_str(), "Jordan");
 
         let admiral_members = loaded.admiral_room_members();
-        assert!(admiral_members.iter().any(|p| p.name == "Alex"));
+        assert!(admiral_members.iter().any(|p| p.name.as_str() == "Alex"));
     }
 
     #[test]

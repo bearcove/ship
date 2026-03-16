@@ -269,7 +269,7 @@ fn mention_produces_deliveries() {
         "mention of mate by captain should produce deliveries"
     );
     assert!(
-        deliveries.iter().any(|d| d.to == "Jordan"),
+        deliveries.iter().any(|d| d.to.as_str() == "Jordan"),
         "should have a delivery to Jordan, got: {deliveries:?}"
     );
 
