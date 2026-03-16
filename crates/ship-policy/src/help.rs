@@ -118,7 +118,6 @@ fn captain_actions(phase: Option<TaskPhase>) -> Vec<&'static ActionHelp> {
             "captain_abort_rebase",
             "captain_cancel",
         ],
-        Some(TaskPhase::WaitingForHuman) => &["captain_notify_human"],
         Some(TaskPhase::Accepted | TaskPhase::Cancelled) => &["captain_assign"],
     };
 

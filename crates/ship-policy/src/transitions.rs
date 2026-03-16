@@ -1,5 +1,10 @@
-/// Task lifecycle status. Mirrors ship-types TaskStatus but owned by ship-policy
-/// so the transition rules have no external dependencies.
+/// Canonical task lifecycle phases. This is the source of truth — ship-types
+/// re-exports or maps to these.
+///
+/// Note: `WaitingForHuman` is NOT a task phase. It's a session-level overlay
+/// (`pending_human_review`) that can be set/cleared independently of the task
+/// phase. When the human responds, the overlay clears and the task continues
+/// from whatever phase it was already in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TaskPhase {
     Assigned,
@@ -9,7 +14,6 @@ pub enum TaskPhase {
     RebaseConflict,
     Accepted,
     Cancelled,
-    WaitingForHuman,
 }
 
 impl TaskPhase {
@@ -35,7 +39,8 @@ pub fn can_transition(from: TaskPhase, to: TaskPhase) -> bool {
 
     matches!(
         (from, to),
-        // Assignment phase
+        // Assignment phase — Assigned → Working is triggered by the mate's first
+        // mutation op (the system transitions automatically, not an explicit action).
         (TaskPhase::Assigned, TaskPhase::Working)
             | (TaskPhase::Assigned, TaskPhase::SteerPending)
             | (TaskPhase::Assigned, TaskPhase::Accepted)
@@ -74,7 +79,6 @@ const ALL_PHASES: &[TaskPhase] = &[
     TaskPhase::RebaseConflict,
     TaskPhase::Accepted,
     TaskPhase::Cancelled,
-    TaskPhase::WaitingForHuman,
 ];
 
 #[cfg(test)]
@@ -97,7 +101,6 @@ mod tests {
             TaskPhase::ReviewPending,
             TaskPhase::SteerPending,
             TaskPhase::RebaseConflict,
-            TaskPhase::WaitingForHuman,
         ];
         for from in non_terminal {
             assert!(

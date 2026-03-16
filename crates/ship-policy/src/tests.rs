@@ -612,7 +612,6 @@ fn self_transitions_not_allowed() {
         TaskPhase::ReviewPending,
         TaskPhase::SteerPending,
         TaskPhase::RebaseConflict,
-        TaskPhase::WaitingForHuman,
     ];
     for phase in phases {
         assert!(
@@ -620,12 +619,6 @@ fn self_transitions_not_allowed() {
             "{phase:?} should not self-transition"
         );
     }
-}
-
-#[test]
-fn waiting_for_human_can_only_cancel() {
-    let reachable = reachable_from(TaskPhase::WaitingForHuman);
-    assert_eq!(reachable, vec![TaskPhase::Cancelled]);
 }
 
 #[test]
@@ -668,7 +661,6 @@ fn captain_read_only_at_every_non_rebase_phase() {
         Some(TaskPhase::SteerPending),
         Some(TaskPhase::Accepted),
         Some(TaskPhase::Cancelled),
-        Some(TaskPhase::WaitingForHuman),
     ];
     for phase in phases {
         let policy = code_policy(AgentRole::Captain, phase);
@@ -701,7 +693,6 @@ fn captain_rebase_is_the_only_writable_phase() {
         Some(TaskPhase::SteerPending),
         Some(TaskPhase::Accepted),
         Some(TaskPhase::Cancelled),
-        Some(TaskPhase::WaitingForHuman),
     ];
     for phase in phases {
         let policy = run_policy(AgentRole::Captain, phase);
@@ -724,7 +715,6 @@ fn mate_only_writable_when_working() {
         Some(TaskPhase::SteerPending),
         Some(TaskPhase::Accepted),
         Some(TaskPhase::Cancelled),
-        Some(TaskPhase::WaitingForHuman),
         Some(TaskPhase::RebaseConflict),
     ];
     for phase in read_only_phases {
@@ -753,7 +743,6 @@ fn mate_no_ops_at_non_work_phases() {
         TaskPhase::ReviewPending,
         TaskPhase::SteerPending,
         TaskPhase::RebaseConflict,
-        TaskPhase::WaitingForHuman,
     ] {
         let policy = code_policy(AgentRole::Mate, Some(phase));
         assert!(
@@ -794,14 +783,6 @@ fn captain_steer_pending_has_steer_merge_cancel() {
     assert!(names.contains(&"captain_cancel"));
     assert!(!names.contains(&"captain_assign"));
     assert!(!names.contains(&"captain_review_diff"));
-}
-
-#[test]
-fn captain_waiting_for_human_has_notify() {
-    let actions = available_actions(AgentRole::Captain, Some(TaskPhase::WaitingForHuman));
-    let names: Vec<&str> = actions.iter().map(|a| a.name).collect();
-    assert!(names.contains(&"captain_notify_human"));
-    assert!(!names.contains(&"captain_merge"));
 }
 
 #[test]
