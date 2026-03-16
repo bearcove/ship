@@ -1,70 +1,41 @@
 use rusqlite::Connection;
 
-const SCHEMA_VERSION: i64 = 1;
+/// Each entry is (name, sql). Order matters — they run sequentially.
+/// Add new migrations at the end. Never reorder or remove existing ones.
+const MIGRATIONS: &[(&str, &str)] = &[
+    ("001_initial", include_str!("../migrations/001_initial.sql")),
+    ("002_topology", include_str!("../migrations/002_topology.sql")),
+];
 
-const SCHEMA_SQL: &str = "
-CREATE TABLE IF NOT EXISTS sessions (
-    -- Primary key: ULID string
-    id TEXT PRIMARY KEY NOT NULL,
-
-    -- Scalar fields for fast queries/filtering
-    created_at TEXT NOT NULL DEFAULT '',
-    archived_at TEXT,
-    title TEXT,
-    is_read INTEGER NOT NULL DEFAULT 0,
-
-    -- Session config (queryable scalars pulled out)
-    project TEXT NOT NULL,
-    base_branch TEXT NOT NULL,
-    branch_name TEXT NOT NULL,
-    workflow TEXT NOT NULL DEFAULT 'merge',
-
-    -- Full session data as JSON blob (the complete PersistedSession)
-    -- This is the source of truth — scalar columns above are denormalized
-    -- for query performance.
-    data TEXT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project);
-CREATE INDEX IF NOT EXISTS idx_sessions_archived ON sessions(archived_at);
-CREATE INDEX IF NOT EXISTS idx_sessions_created ON sessions(created_at);
-
-CREATE TABLE IF NOT EXISTS session_events (
-    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-    seq INTEGER NOT NULL,
-    timestamp TEXT NOT NULL,
-    -- The SessionEventEnvelope as JSON
-    data TEXT NOT NULL,
-    PRIMARY KEY (session_id, seq)
-);
-
-CREATE TABLE IF NOT EXISTS activity_log (
-    id INTEGER PRIMARY KEY NOT NULL,
-    timestamp TEXT NOT NULL,
-    session_id TEXT NOT NULL,
-    session_slug TEXT NOT NULL,
-    session_title TEXT,
-    -- The ActivityKind as JSON
-    kind TEXT NOT NULL
+const MIGRATIONS_TABLE_SQL: &str = "
+CREATE TABLE IF NOT EXISTS __migrations (
+    name TEXT PRIMARY KEY NOT NULL,
+    applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 ";
 
 pub fn init(conn: &Connection) -> rusqlite::Result<()> {
-    conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;")?;
+    conn.execute_batch(
+        "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;",
+    )?;
 
-    let current_version: i64 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    conn.execute_batch(MIGRATIONS_TABLE_SQL)?;
 
-    if current_version < SCHEMA_VERSION {
-        if current_version > 0 {
-            // Future: migrate from older versions. For now, drop and recreate.
-            conn.execute_batch(
-                "DROP TABLE IF EXISTS activity_log;
-                 DROP TABLE IF EXISTS session_events;
-                 DROP TABLE IF EXISTS sessions;",
+    for (name, sql) in MIGRATIONS {
+        let already_applied: bool = conn.query_row(
+            "SELECT COUNT(*) > 0 FROM __migrations WHERE name = ?1",
+            [name],
+            |row| row.get(0),
+        )?;
+
+        if !already_applied {
+            tracing::info!("applying migration: {name}");
+            conn.execute_batch(sql)?;
+            conn.execute(
+                "INSERT INTO __migrations (name) VALUES (?1)",
+                [name],
             )?;
         }
-        conn.execute_batch(SCHEMA_SQL)?;
-        conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     }
 
     Ok(())
@@ -94,6 +65,22 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM activity_log", [], |row| row.get(0))
             .unwrap();
         assert_eq!(count, 0);
+
+        // Topology tables
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM participants", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM rooms", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM memberships", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
     }
 
     #[test]
@@ -102,9 +89,59 @@ mod tests {
         init(&conn).unwrap();
         init(&conn).unwrap();
 
-        let version: i64 = conn
-            .pragma_query_value(None, "user_version", |row| row.get(0))
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM __migrations", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, SCHEMA_VERSION);
+        assert_eq!(count, MIGRATIONS.len() as i64);
+    }
+
+    #[test]
+    fn migrations_are_recorded() {
+        let conn = Connection::open_in_memory().unwrap();
+        init(&conn).unwrap();
+
+        let names: Vec<String> = {
+            let mut stmt = conn
+                .prepare("SELECT name FROM __migrations ORDER BY name")
+                .unwrap();
+            stmt.query_map([], |row| row.get(0))
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap()
+        };
+
+        assert_eq!(names, vec!["001_initial", "002_topology"]);
+    }
+
+    #[test]
+    fn incremental_migration() {
+        let conn = Connection::open_in_memory().unwrap();
+
+        // Simulate a v1 database: only run the migrations table + first migration
+        conn.execute_batch(
+            "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;",
+        )
+        .unwrap();
+        conn.execute_batch(MIGRATIONS_TABLE_SQL).unwrap();
+        conn.execute_batch(MIGRATIONS[0].1).unwrap();
+        conn.execute(
+            "INSERT INTO __migrations (name) VALUES (?1)",
+            [MIGRATIONS[0].0],
+        )
+        .unwrap();
+
+        // Now run init — should only apply migration 002
+        init(&conn).unwrap();
+
+        // Topology tables should exist
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM participants", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM __migrations", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 2);
     }
 }

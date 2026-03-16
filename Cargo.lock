@@ -3625,6 +3625,7 @@ dependencies = [
  "facet-json",
  "rusqlite",
  "rusqlite-facet",
+ "ship-policy",
  "ship-types",
  "tokio",
  "tracing",
