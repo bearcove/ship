@@ -1,14 +1,16 @@
 use std::sync::Arc;
 
 use ship_acp::{AgentDriver, AgentSessionConfig, StopReason};
-use ship_policy::{BlockContent, BlockId, DeliveryContent};
+use ship_policy::{Block, BlockContent, BlockId, DeliveryContent};
 use ship_types::{AgentKind, Role, SessionEvent};
 use tokio::sync::mpsc;
 use ulid::Ulid;
 
 use crate::{
-    AgentChannels, AgentConfig, AgentInput, AgentOutput, AgentStatus, ModelSpec, RoomReader,
+    AgentChannels, AgentConfig, AgentInput, AgentOutput, AgentStatus, RoomReader,
 };
+
+const CONTEXT_BLOCK_LIMIT: usize = 50;
 
 /// Spawn an agent and return channel endpoints.
 ///
@@ -44,6 +46,8 @@ fn role_for(role: ship_policy::AgentRole) -> Role {
 struct LiveAgent {
     handle: ship_acp::AgentHandle,
     kind: AgentKind,
+    /// True until the first prompt is sent. After a respawn this resets to true.
+    needs_context: bool,
 }
 
 async fn agent_loop<R: RoomReader + 'static>(
@@ -53,14 +57,7 @@ async fn agent_loop<R: RoomReader + 'static>(
     mut input_rx: mpsc::Receiver<AgentInput>,
     output_tx: mpsc::Sender<AgentOutput>,
 ) {
-    let Some(spec) = ModelSpec::parse(&config.model_spec) else {
-        let _ = output_tx
-            .send(AgentOutput::StatusChanged(AgentStatus::Dead {
-                error: format!("invalid model spec: {}", config.model_spec),
-            }))
-            .await;
-        return;
-    };
+    let spec = &config.model_spec;
 
     let mut live = match spawn_acp(&driver, &config, spec.kind).await {
         Ok(live) => live,
@@ -74,7 +71,6 @@ async fn agent_loop<R: RoomReader + 'static>(
         }
     };
 
-    // Set the initial model.
     if let Err(e) = driver.set_model(&live.handle, &spec.model).await {
         tracing::warn!(error = %e, "failed to set initial model");
     }
@@ -85,7 +81,6 @@ async fn agent_loop<R: RoomReader + 'static>(
 
     loop {
         let Some(input) = input_rx.recv().await else {
-            // Channel closed — runtime dropped us.
             let _ = driver.kill(&live.handle).await;
             break;
         };
@@ -97,20 +92,19 @@ async fn agent_loop<R: RoomReader + 'static>(
                     .await;
 
                 let block_id = BlockId::new(Ulid::new().to_string());
-                let prompt_text = delivery_to_prompt_text(&delivery);
 
-                let parts = vec![ship_types::PromptContentPart::Text { text: prompt_text }];
+                let parts = build_prompt_parts(
+                    &config,
+                    room_reader.as_ref(),
+                    &delivery,
+                    live.needs_context,
+                )
+                .await;
+                live.needs_context = false;
 
                 match driver.prompt(&live.handle, &parts).await {
                     Ok(response) => {
-                        // Drain notifications into block updates.
-                        drain_notifications(
-                            &driver,
-                            &live.handle,
-                            &block_id,
-                            &output_tx,
-                        )
-                        .await;
+                        drain_notifications(&driver, &live.handle, &block_id, &output_tx).await;
 
                         if matches!(response.stop_reason, StopReason::ContextExhausted) {
                             let _ = output_tx
@@ -137,14 +131,8 @@ async fn agent_loop<R: RoomReader + 'static>(
                     .await;
             }
 
-            AgentInput::SetModel(new_spec_str) => {
-                let Some(new_spec) = ModelSpec::parse(&new_spec_str) else {
-                    tracing::warn!(spec = %new_spec_str, "ignoring invalid model spec");
-                    continue;
-                };
-
+            AgentInput::SetModel(new_spec) => {
                 if new_spec.kind != live.kind {
-                    // Agent kind changed — need to kill and re-spawn.
                     let _ = driver.kill(&live.handle).await;
 
                     match spawn_acp(&driver, &config, new_spec.kind).await {
@@ -181,7 +169,7 @@ async fn spawn_acp(
     kind: AgentKind,
 ) -> Result<LiveAgent, ship_acp::AgentError> {
     let acp_config = AgentSessionConfig {
-        worktree_path: config.worktree_path.clone(),
+        worktree_path: config.worktree_path.clone().into_std_path_buf(),
         mcp_servers: config.mcp_servers.clone(),
         resume_session_id: None,
     };
@@ -193,7 +181,85 @@ async fn spawn_acp(
     Ok(LiveAgent {
         handle: info.handle,
         kind,
+        needs_context: true,
     })
+}
+
+/// Build the prompt parts for a delivery.
+///
+/// On the first prompt (or after a respawn), includes the system prompt
+/// and recent block history for context. On subsequent prompts, just the
+/// delivery text — the ACP process maintains its own conversation state.
+async fn build_prompt_parts<R: RoomReader>(
+    config: &AgentConfig,
+    room_reader: &R,
+    delivery: &ship_policy::Delivery,
+    needs_context: bool,
+) -> Vec<ship_types::PromptContentPart> {
+    let mut parts = Vec::new();
+
+    if needs_context {
+        // System prompt first.
+        parts.push(ship_types::PromptContentPart::Text {
+            text: config.system_prompt.clone(),
+        });
+
+        // Recent block history for conversation context.
+        let blocks = room_reader
+            .recent_blocks(&config.room_id, CONTEXT_BLOCK_LIMIT)
+            .await;
+        if !blocks.is_empty() {
+            let history = format_block_history(&blocks);
+            parts.push(ship_types::PromptContentPart::Text { text: history });
+        }
+    }
+
+    parts.push(ship_types::PromptContentPart::Text {
+        text: delivery_to_prompt_text(delivery),
+    });
+
+    parts
+}
+
+/// Format sealed blocks into a text summary for context injection.
+fn format_block_history(blocks: &[Block]) -> String {
+    let mut lines = Vec::with_capacity(blocks.len());
+    for block in blocks {
+        let from = block
+            .from
+            .as_ref()
+            .map(|n| n.as_str())
+            .unwrap_or("system");
+        match &block.content {
+            BlockContent::Text { text } => {
+                lines.push(format!("[{from}] {text}"));
+            }
+            BlockContent::Thought { text } => {
+                lines.push(format!("[{from} thinking] {text}"));
+            }
+            BlockContent::ToolCall {
+                tool_name, status, ..
+            } => {
+                lines.push(format!("[{from} tool:{tool_name} {status:?}]"));
+            }
+            BlockContent::PlanUpdate { steps } => {
+                let summary: Vec<&str> = steps.iter().map(|s| s.description.as_str()).collect();
+                lines.push(format!("[{from} plan] {}", summary.join(" → ")));
+            }
+            BlockContent::Error { message } => {
+                lines.push(format!("[error] {message}"));
+            }
+            BlockContent::Milestone {
+                kind, title, summary,
+            } => {
+                lines.push(format!("[{kind:?}: {title}] {summary}"));
+            }
+            BlockContent::Permission { tool_name, .. } => {
+                lines.push(format!("[{from} permission:{tool_name}]"));
+            }
+        }
+    }
+    format!("--- conversation history ---\n{}\n--- end history ---", lines.join("\n"))
 }
 
 fn delivery_to_prompt_text(delivery: &ship_policy::Delivery) -> String {
@@ -289,5 +355,49 @@ async fn drain_notifications(
                 // PlanUpdate, Permission requests, etc.
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use jiff::Timestamp;
+    use ship_policy::{Block, ParticipantName, RoomId};
+
+    #[test]
+    fn format_history_includes_all_block_types() {
+        let now = Timestamp::now();
+        let blocks = vec![
+            Block {
+                id: BlockId::new("b1".into()),
+                room_id: RoomId::from_static("room-1"),
+                seq: 0,
+                from: Some(ParticipantName::from_static("Cedar")),
+                to: None,
+                content: BlockContent::Text {
+                    text: "hello world".into(),
+                },
+                created_at: now,
+                sealed_at: None,
+            },
+            Block {
+                id: BlockId::new("b2".into()),
+                room_id: RoomId::from_static("room-1"),
+                seq: 1,
+                from: None,
+                to: None,
+                content: BlockContent::Error {
+                    message: "something broke".into(),
+                },
+                created_at: now,
+                sealed_at: None,
+            },
+        ];
+
+        let history = format_block_history(&blocks);
+        assert!(history.contains("[Cedar] hello world"));
+        assert!(history.contains("[error] something broke"));
+        assert!(history.starts_with("--- conversation history ---"));
+        assert!(history.ends_with("--- end history ---"));
     }
 }

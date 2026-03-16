@@ -3613,7 +3613,9 @@ dependencies = [
 name = "ship-agent"
 version = "0.1.0"
 dependencies = [
+ "camino",
  "futures-util",
+ "jiff",
  "ship-acp",
  "ship-policy",
  "ship-types",

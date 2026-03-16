@@ -2,8 +2,8 @@ mod model_spec;
 mod run;
 
 use std::future::Future;
-use std::path::PathBuf;
 
+use camino::Utf8PathBuf;
 use ship_policy::{AgentRole, Block, BlockContent, BlockId, Delivery, ParticipantName, RoomId};
 use tokio::sync::mpsc;
 
@@ -22,7 +22,7 @@ pub enum AgentInput {
     Delivery(Delivery),
     /// Change the agent/model, e.g. `claude::opus` or `codex::gpt-5.4-high`.
     /// If the agent kind changes, the agent process is restarted transparently.
-    SetModel(String),
+    SetModel(ModelSpec),
     /// Shut down the agent cleanly.
     Shutdown,
 }
@@ -61,9 +61,10 @@ pub struct AgentConfig {
     pub room_id: RoomId,
     pub participant: ParticipantName,
     pub role: AgentRole,
-    pub model_spec: String,
+    pub model_spec: ModelSpec,
+    pub system_prompt: String,
     pub mcp_servers: Vec<ship_types::McpServerConfig>,
-    pub worktree_path: PathBuf,
+    pub worktree_path: Utf8PathBuf,
 }
 
 pub use model_spec::ModelSpec;
