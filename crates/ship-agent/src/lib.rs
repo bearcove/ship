@@ -1,6 +1,10 @@
-use ship_policy::{
-    AgentRole, Block, BlockContent, BlockId, Delivery, ParticipantName, RoomId,
-};
+mod model_spec;
+mod run;
+
+use std::future::Future;
+use std::path::PathBuf;
+
+use ship_policy::{AgentRole, Block, BlockContent, BlockId, Delivery, ParticipantName, RoomId};
 use tokio::sync::mpsc;
 
 /// Read-only access to a room's history, for context rebuilding.
@@ -47,7 +51,7 @@ pub enum AgentStatus {
 }
 
 /// Channel endpoints for communicating with a running agent.
-pub struct AgentHandle {
+pub struct AgentChannels {
     pub tx: mpsc::Sender<AgentInput>,
     pub rx: mpsc::Receiver<AgentOutput>,
 }
@@ -59,5 +63,8 @@ pub struct AgentConfig {
     pub role: AgentRole,
     pub model_spec: String,
     pub mcp_servers: Vec<ship_types::McpServerConfig>,
-    pub worktree_path: std::path::PathBuf,
+    pub worktree_path: PathBuf,
 }
+
+pub use model_spec::ModelSpec;
+pub use run::spawn_agent;

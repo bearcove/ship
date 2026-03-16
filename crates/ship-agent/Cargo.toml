@@ -7,8 +7,10 @@ edition = "2024"
 ship-acp = { path = "../ship-acp" }
 ship-policy = { path = "../ship-policy" }
 ship-types = { path = "../ship-types" }
-tokio = { version = "1", features = ["sync"] }
+tokio = { version = "1", features = ["sync", "rt"] }
 tracing = { workspace = true }
+futures-util = "0.3"
+ulid = { workspace = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

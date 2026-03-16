@@ -3613,11 +3613,13 @@ dependencies = [
 name = "ship-agent"
 version = "0.1.0"
 dependencies = [
+ "futures-util",
  "ship-acp",
  "ship-policy",
  "ship-types",
  "tokio",
  "tracing",
+ "ulid",
 ]
 
 [[package]]
