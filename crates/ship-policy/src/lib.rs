@@ -14,8 +14,8 @@ pub use help::{
 pub use mentions::{ParsedMention, parse_mention};
 pub use names::{name_pool, pick_names};
 pub use sandbox::{
-    CodePolicy, CommandCheck, OpKind, RunPolicy, SandboxEnv, SandboxPolicy, check_command,
-    code_policy, is_op_allowed, op_denied_reason, run_policy, sandbox_policy, sandbox_profile,
+    CodePolicy, CommandNudge, OpKind, RunPolicy, SandboxEnv, SandboxPolicy, code_policy,
+    command_nudge, is_op_allowed, op_denied_reason, run_policy, sandbox_policy, sandbox_profile,
 };
 pub use transitions::{TaskPhase, can_transition, reachable_from};
 

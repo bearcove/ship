@@ -145,66 +145,133 @@ pub fn run_policy(role: AgentRole, phase: Option<TaskPhase>) -> RunPolicy {
     }
 }
 
-// ── Command blocking ────────────────────────────────────────────────
+// ── Command nudges ──────────────────────────────────────────────────
 
-/// Result of checking a command against the block list.
+/// A nudge is a non-blocking suggestion appended to command output.
+/// It doesn't prevent execution — it teaches the agent about the workflow.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CommandCheck {
-    /// Command is allowed.
-    Allowed,
-    /// Command is blocked with a reason.
-    Blocked(&'static str),
+pub struct CommandNudge {
+    /// What we think the agent is trying to do.
+    pub intent: &'static str,
+    /// The workflow tool they should use instead.
+    pub suggestion: String,
 }
 
-/// Check whether a shell command should be blocked.
+/// Check if a command would benefit from a workflow nudge.
+/// Returns None if the command doesn't match any known patterns.
 ///
-/// This is role-aware: mates can't run git (captain-owned),
-/// and everyone is blocked from broad recursive deletes.
-pub fn check_command(command: &str, role: AgentRole) -> CommandCheck {
+/// This is NOT access control. The command still runs. This is UX:
+/// "I see you're trying to do X — here's how that works in Ship."
+pub fn command_nudge(command: &str, role: AgentRole, phase: Option<TaskPhase>) -> Option<CommandNudge> {
     let normalized = command.trim().to_ascii_lowercase();
-    let program = match normalized.split_whitespace().next() {
-        Some(p) => p,
-        None => return CommandCheck::Allowed,
-    };
+    let parts: Vec<&str> = normalized.split_whitespace().collect();
+    let program = parts.first().copied()?;
 
-    // Git is captain-owned — mates can't run it directly.
-    if program == "git" && role == AgentRole::Mate {
-        return CommandCheck::Blocked(
-            "Git commands are captain-owned. Use mate_ask_captain if you need git information.",
-        );
+    if program != "git" {
+        return None;
     }
 
-    // Prefer modern alternatives.
-    if program == "find" {
-        return CommandCheck::Blocked("Use fd instead of find. Example: fd -t f 'pattern' path/.");
-    }
-    if program == "grep" {
-        return CommandCheck::Blocked("Use rg instead of grep. Example: rg 'pattern' path/.");
-    }
+    let subcommand = parts.get(1).copied().unwrap_or("");
 
-    // Block broad recursive deletes.
-    if program == "rm" {
-        let has_recursive = normalized.contains(" -r")
-            || normalized.contains(" -rf")
-            || normalized.contains(" -fr")
-            || normalized.contains(" --recursive");
-        let has_force = normalized.contains(" -f")
-            || normalized.contains(" -rf")
-            || normalized.contains(" -fr")
-            || normalized.contains(" --force");
-        let broad_target = normalized.contains(" *")
-            || normalized.ends_with(" .")
-            || normalized.contains(" ./")
-            || normalized.contains(" /")
-            || normalized.contains(" ..")
-            || normalized.contains(" ~");
+    match (role, subcommand) {
+        // Captain trying to see the diff — point them to captain_review_diff.
+        (AgentRole::Captain, "diff") => Some(CommandNudge {
+            intent: "view changes",
+            suggestion: match phase {
+                Some(TaskPhase::ReviewPending) => {
+                    "Use `captain_review_diff` to see the mate's work against the base branch. \
+                     Raw `git diff` in the worktree may show unexpected results because of \
+                     shadow commits."
+                        .into()
+                }
+                _ => {
+                    "Use `captain_review_diff` to see changes against the base branch. \
+                     It handles shadow commits and shows what you actually want."
+                        .into()
+                }
+            },
+        }),
 
-        if has_recursive && has_force && broad_target {
-            return CommandCheck::Blocked("Broad recursive delete is not allowed.");
-        }
+        // Captain trying git status — point them to captain_git_status.
+        (AgentRole::Captain, "status") => Some(CommandNudge {
+            intent: "check repository state",
+            suggestion: "Use `captain_git_status` — it shows branch info, dirty state, \
+                         rebase status, and conflict markers in a structured way."
+                .into(),
+        }),
+
+        // Captain trying to commit — explain the shadow commit system.
+        (AgentRole::Captain, "commit") => Some(CommandNudge {
+            intent: "create a commit",
+            suggestion: "Ship uses shadow commits internally. Use the `code` tool's `commit` \
+                         operation to squash shadow commits into a real commit with your message."
+                .into(),
+        }),
+
+        // Captain trying to rebase manually — there's a workflow for this.
+        (AgentRole::Captain, "rebase") => Some(CommandNudge {
+            intent: "rebase the branch",
+            suggestion: match phase {
+                Some(TaskPhase::RebaseConflict) => {
+                    "Use `captain_continue_rebase` after resolving conflicts, \
+                     or `captain_abort_rebase` to abandon. These handle the \
+                     Ship state machine transitions."
+                        .into()
+                }
+                _ => {
+                    "Rebasing happens automatically during `captain_merge`. \
+                     If conflicts arise, the task moves to RebaseConflict phase \
+                     where you can resolve them."
+                        .into()
+                }
+            },
+        }),
+
+        // Captain trying to merge — there's a workflow for this.
+        (AgentRole::Captain, "merge") => Some(CommandNudge {
+            intent: "merge the branch",
+            suggestion: "Use `captain_merge` — it rebases onto the base branch, \
+                         runs checks, and fast-forward merges. Manual `git merge` \
+                         would bypass the workflow."
+                .into(),
+        }),
+
+        // Captain trying to push — Ship handles this.
+        (AgentRole::Captain, "push") => Some(CommandNudge {
+            intent: "push changes",
+            suggestion: "Ship handles pushing as part of `captain_merge`. \
+                         You don't need to push manually."
+                .into(),
+        }),
+
+        // Captain trying git log — that's fine, but let them know about review_diff.
+        (AgentRole::Captain, "log") => Some(CommandNudge {
+            intent: "view commit history",
+            suggestion: "This works, but note that shadow commits may appear in the log. \
+                         `captain_review_diff` shows the clean diff against the base branch."
+                .into(),
+        }),
+
+        // Mate trying git anything — the captain owns git.
+        (AgentRole::Mate, _) => Some(CommandNudge {
+            intent: "use git",
+            suggestion: "Git operations are managed by the captain. \
+                         Use `mate_ask_captain` if you need git information, \
+                         or use the `code` tool's `commit` operation to save your work."
+                .into(),
+        }),
+
+        // Admiral trying git — they have no worktree.
+        (AgentRole::Admiral, _) => Some(CommandNudge {
+            intent: "use git",
+            suggestion: "You don't have a worktree. Use `admiral_list_lanes` to see \
+                         session status, or steer a captain if you need git information."
+                .into(),
+        }),
+
+        // Captain running other git commands — no specific nudge.
+        _ => None,
     }
-
-    CommandCheck::Allowed
 }
 
 // ── Sandbox profile generation ──────────────────────────────────────
@@ -438,87 +505,6 @@ mod tests {
         assert!(!policy.worktree_writable);
     }
 
-    // ── Command checking tests ──────────────────────────────────────
-
-    #[test]
-    fn mate_blocked_from_git() {
-        assert_eq!(
-            check_command("git status", AgentRole::Mate),
-            CommandCheck::Blocked(
-                "Git commands are captain-owned. Use mate_ask_captain if you need git information."
-            )
-        );
-    }
-
-    #[test]
-    fn captain_can_run_git() {
-        assert_eq!(
-            check_command("git status", AgentRole::Captain),
-            CommandCheck::Allowed
-        );
-    }
-
-    #[test]
-    fn find_blocked_for_everyone() {
-        assert!(matches!(
-            check_command("find . -name '*.rs'", AgentRole::Mate),
-            CommandCheck::Blocked(_)
-        ));
-        assert!(matches!(
-            check_command("find . -name '*.rs'", AgentRole::Captain),
-            CommandCheck::Blocked(_)
-        ));
-    }
-
-    #[test]
-    fn grep_blocked_for_everyone() {
-        assert!(matches!(
-            check_command("grep -r pattern .", AgentRole::Mate),
-            CommandCheck::Blocked(_)
-        ));
-    }
-
-    #[test]
-    fn broad_rm_blocked() {
-        assert!(matches!(
-            check_command("rm -rf .", AgentRole::Mate),
-            CommandCheck::Blocked(_)
-        ));
-        assert!(matches!(
-            check_command("rm -rf /", AgentRole::Captain),
-            CommandCheck::Blocked(_)
-        ));
-        assert!(matches!(
-            check_command("rm -rf ~", AgentRole::Mate),
-            CommandCheck::Blocked(_)
-        ));
-    }
-
-    #[test]
-    fn targeted_rm_allowed() {
-        assert_eq!(
-            check_command("rm target/debug/foo", AgentRole::Mate),
-            CommandCheck::Allowed
-        );
-    }
-
-    #[test]
-    fn normal_commands_allowed() {
-        assert_eq!(
-            check_command("cargo test", AgentRole::Mate),
-            CommandCheck::Allowed
-        );
-        assert_eq!(
-            check_command("npm install", AgentRole::Captain),
-            CommandCheck::Allowed
-        );
-    }
-
-    #[test]
-    fn empty_command_allowed() {
-        assert_eq!(check_command("", AgentRole::Mate), CommandCheck::Allowed);
-    }
-
     // ── Sandbox profile tests ───────────────────────────────────────
 
     #[test]
@@ -663,5 +649,101 @@ mod tests {
         assert!(!is_op_allowed(&policy.code, OpKind::Submit));
         // Writable worktree.
         assert!(policy.run.worktree_writable);
+    }
+
+    // ── Command nudge tests ─────────────────────────────────────────
+
+    #[test]
+    fn captain_git_diff_gets_nudge() {
+        let nudge = command_nudge("git diff", AgentRole::Captain, Some(TaskPhase::ReviewPending));
+        assert!(nudge.is_some());
+        let nudge = nudge.unwrap();
+        assert_eq!(nudge.intent, "view changes");
+        assert!(nudge.suggestion.contains("captain_review_diff"));
+    }
+
+    #[test]
+    fn captain_git_status_gets_nudge() {
+        let nudge = command_nudge("git status", AgentRole::Captain, None);
+        assert!(nudge.is_some());
+        assert!(nudge.unwrap().suggestion.contains("captain_git_status"));
+    }
+
+    #[test]
+    fn captain_git_commit_gets_nudge() {
+        let nudge = command_nudge("git commit -m 'fix'", AgentRole::Captain, Some(TaskPhase::Working));
+        assert!(nudge.is_some());
+        assert!(nudge.unwrap().suggestion.contains("shadow commits"));
+    }
+
+    #[test]
+    fn captain_git_rebase_during_conflict_gets_specific_nudge() {
+        let nudge = command_nudge("git rebase --continue", AgentRole::Captain, Some(TaskPhase::RebaseConflict));
+        assert!(nudge.is_some());
+        assert!(nudge.unwrap().suggestion.contains("captain_continue_rebase"));
+    }
+
+    #[test]
+    fn captain_git_rebase_outside_conflict() {
+        let nudge = command_nudge("git rebase main", AgentRole::Captain, Some(TaskPhase::ReviewPending));
+        assert!(nudge.is_some());
+        assert!(nudge.unwrap().suggestion.contains("captain_merge"));
+    }
+
+    #[test]
+    fn captain_git_merge_gets_nudge() {
+        let nudge = command_nudge("git merge main", AgentRole::Captain, Some(TaskPhase::ReviewPending));
+        assert!(nudge.is_some());
+        assert!(nudge.unwrap().suggestion.contains("captain_merge"));
+    }
+
+    #[test]
+    fn captain_git_push_gets_nudge() {
+        let nudge = command_nudge("git push origin main", AgentRole::Captain, None);
+        assert!(nudge.is_some());
+        assert!(nudge.unwrap().suggestion.contains("captain_merge"));
+    }
+
+    #[test]
+    fn captain_git_log_gets_nudge() {
+        let nudge = command_nudge("git log --oneline", AgentRole::Captain, None);
+        assert!(nudge.is_some());
+        assert!(nudge.unwrap().suggestion.contains("shadow commits"));
+    }
+
+    #[test]
+    fn mate_any_git_gets_nudge() {
+        for cmd in ["git status", "git diff", "git log", "git stash"] {
+            let nudge = command_nudge(cmd, AgentRole::Mate, Some(TaskPhase::Working));
+            assert!(nudge.is_some(), "mate should get nudge for: {cmd}");
+            assert!(nudge.unwrap().suggestion.contains("captain"));
+        }
+    }
+
+    #[test]
+    fn admiral_any_git_gets_nudge() {
+        let nudge = command_nudge("git log", AgentRole::Admiral, None);
+        assert!(nudge.is_some());
+        assert!(nudge.unwrap().suggestion.contains("worktree"));
+    }
+
+    #[test]
+    fn non_git_commands_no_nudge() {
+        assert!(command_nudge("cargo test", AgentRole::Captain, None).is_none());
+        assert!(command_nudge("ls -la", AgentRole::Mate, Some(TaskPhase::Working)).is_none());
+        assert!(command_nudge("npm install", AgentRole::Admiral, None).is_none());
+    }
+
+    #[test]
+    fn empty_command_no_nudge() {
+        assert!(command_nudge("", AgentRole::Captain, None).is_none());
+        assert!(command_nudge("   ", AgentRole::Captain, None).is_none());
+    }
+
+    #[test]
+    fn captain_unknown_git_subcommand_no_nudge() {
+        // git stash, git bisect, etc. — no specific nudge for captain.
+        assert!(command_nudge("git stash", AgentRole::Captain, None).is_none());
+        assert!(command_nudge("git bisect start", AgentRole::Captain, None).is_none());
     }
 }
