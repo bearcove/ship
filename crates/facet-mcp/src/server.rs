@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use crate::context::ToolCtx;
 use crate::protocol::{
-    CallToolResult, InitializeResult, ListToolsResult, ServerCapabilities, ServerInfo, ToolInfo,
-    ToolsCapability,
+    CallToolResult, Implementation, InitializeResult, ListToolsResult, ServerCapabilities,
+    ToolInfo, ToolsCapability,
 };
 use crate::transport::{StdioTransport, TransportError};
 
@@ -89,11 +89,17 @@ impl McpServer {
         let name = T::name();
         let description = T::description().trim().to_owned();
 
+        let desc = description;
         let info = ToolInfo {
             name: name.to_owned(),
-            description,
+            title: None,
+            description: if desc.is_empty() { None } else { Some(desc) },
             input_schema: facet_json_schema::schema_for::<T::Args>(),
-            output_schema: facet_json_schema::schema_for::<T::Result>(),
+            output_schema: Some(facet_json_schema::schema_for::<T::Result>()),
+            annotations: None,
+            execution: None,
+            icons: None,
+            _meta: None,
         };
         self.tools.push(info);
 
@@ -140,16 +146,28 @@ impl McpServer {
             let response_result = match request.method.as_str() {
                 "initialize" => {
                     let result = InitializeResult {
-                        protocol_version: "2025-03-26".to_owned(),
+                        protocol_version: "2025-11-25".to_owned(),
                         capabilities: ServerCapabilities {
                             tools: Some(ToolsCapability {
                                 list_changed: Some(false),
                             }),
+                            experimental: None,
+                            logging: None,
+                            completions: None,
+                            prompts: None,
+                            resources: None,
+                            tasks: None,
                         },
-                        server_info: ServerInfo {
+                        server_info: Implementation {
                             name: self.info.name.clone(),
+                            title: None,
                             version: self.info.version.clone(),
+                            description: None,
+                            website_url: None,
+                            icons: None,
                         },
+                        instructions: None,
+                        _meta: None,
                     };
                     Some(self.serialize(&result)?)
                 }
@@ -157,6 +175,8 @@ impl McpServer {
                 "tools/list" => {
                     let result = ListToolsResult {
                         tools: self.tools.clone(),
+                        next_cursor: None,
+                        _meta: None,
                     };
                     Some(self.serialize(&result)?)
                 }
