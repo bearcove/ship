@@ -22,3 +22,4 @@ tracing = { workspace = true }
 [dev-dependencies]
 insta = { version = "1.46.3", features = ["redactions"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+ulid = { workspace = true }

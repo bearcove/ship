@@ -1,4 +1,6 @@
+use camino::Utf8PathBuf;
 use ship_db::ShipDb;
+use ship_git::{BranchName, GitContext, Rev};
 use ship_policy::{
     AgentRole, BlockContent, Lane, Participant, ParticipantName, RoomId, TaskPhase, Topology,
 };
@@ -418,4 +420,129 @@ fn can_assign_new_task_after_previous_completes() {
     assert_eq!(task.id, task_id);
     assert_eq!(task.title, "Task 2");
     assert_eq!(task.phase, TaskPhase::Assigned);
+}
+
+// ── Git commit recording ────────────────────────────────────────────
+
+async fn setup_git_repo() -> (GitContext, Utf8PathBuf) {
+    let dir = Utf8PathBuf::try_from(
+        std::env::temp_dir().join(format!("ship-runtime-test-{}", std::process::id())),
+    )
+    .unwrap();
+    let sub = dir.join(format!("{}", ulid::Ulid::new()));
+    let ctx = GitContext::init(&sub, &BranchName::new("main"))
+        .await
+        .expect("git init");
+    ctx.config_set("user.email", "test@test.com").await.unwrap();
+    ctx.config_set("user.name", "Test").await.unwrap();
+
+    // Initial commit so HEAD exists.
+    tokio::fs::write(sub.join("README.md").as_std_path(), "# hello\n")
+        .await
+        .unwrap();
+    ctx.add_all().await.unwrap();
+    ctx.commit("initial commit").await.unwrap();
+
+    (ctx, sub)
+}
+
+#[tokio::test]
+async fn record_commit_tracks_diff_stats() {
+    let (git_ctx, repo_dir) = setup_git_repo().await;
+    let base = git_ctx.rev_parse(&Rev::from("HEAD")).await.unwrap();
+
+    // Make a change: add 3 lines, remove 1.
+    tokio::fs::write(
+        repo_dir.join("README.md").as_std_path(),
+        "# hello\nline 2\nline 3\n",
+    )
+    .await
+    .unwrap();
+    tokio::fs::write(
+        repo_dir.join("new_file.txt").as_std_path(),
+        "some content\n",
+    )
+    .await
+    .unwrap();
+    git_ctx.add_all().await.unwrap();
+    git_ctx.commit("add stuff").await.unwrap();
+
+    // Set up runtime with the git context.
+    let mut rt = test_runtime();
+    let room_id = RoomId::from_static("session:s1");
+    rt.register_worktree(&room_id, repo_dir.clone());
+
+    // Assign a task so there's something to record against.
+    rt.assign_task(&room_id, "Fix bug".to_owned(), "Details".to_owned())
+        .unwrap();
+    rt.transition_task(&room_id, TaskPhase::Working).unwrap();
+
+    // Record the commit.
+    let base_rev = Rev::from(base);
+    let stats = rt.record_commit(&room_id, &base_rev).await.unwrap();
+    let stats = stats.expect("should have stats");
+
+    assert!(stats.lines_added > 0);
+    assert!(stats.files_changed > 0);
+
+    // Task should have updated cumulative stats.
+    let task = rt.current_task(&room_id).unwrap().unwrap();
+    assert_eq!(task.lines_added, stats.lines_added);
+    assert_eq!(task.lines_removed, stats.lines_removed);
+    assert_eq!(task.commit_count, 1);
+
+    // Second commit — stats accumulate.
+    let base2 = git_ctx.rev_parse(&Rev::from("HEAD")).await.unwrap();
+    tokio::fs::write(
+        repo_dir.join("another.txt").as_std_path(),
+        "more\nlines\nhere\n",
+    )
+    .await
+    .unwrap();
+    git_ctx.add_all().await.unwrap();
+    git_ctx.commit("add another").await.unwrap();
+
+    let stats2 = rt
+        .record_commit(&room_id, &Rev::from(base2))
+        .await
+        .unwrap()
+        .unwrap();
+
+    let task = rt.current_task(&room_id).unwrap().unwrap();
+    assert_eq!(task.lines_added, stats.lines_added + stats2.lines_added);
+    assert_eq!(task.commit_count, 2);
+
+    // Cleanup.
+    let _ = tokio::fs::remove_dir_all(repo_dir.as_std_path()).await;
+}
+
+#[tokio::test]
+async fn record_commit_returns_none_without_git_context() {
+    let mut rt = test_runtime();
+    let room_id = RoomId::from_static("session:s1");
+    rt.assign_task(&room_id, "Task".to_owned(), "Desc".to_owned())
+        .unwrap();
+
+    let result = rt
+        .record_commit(&room_id, &Rev::from("HEAD"))
+        .await
+        .unwrap();
+    assert!(result.is_none());
+}
+
+#[tokio::test]
+async fn record_commit_returns_none_without_active_task() {
+    let (_git_ctx, repo_dir) = setup_git_repo().await;
+    let mut rt = test_runtime();
+    let room_id = RoomId::from_static("session:s1");
+    rt.register_worktree(&room_id, repo_dir.clone());
+
+    // No task assigned.
+    let result = rt
+        .record_commit(&room_id, &Rev::from("HEAD"))
+        .await
+        .unwrap();
+    assert!(result.is_none());
+
+    let _ = tokio::fs::remove_dir_all(repo_dir.as_std_path()).await;
 }

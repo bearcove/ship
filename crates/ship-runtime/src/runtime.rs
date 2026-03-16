@@ -146,6 +146,55 @@ impl Runtime {
         self.git_contexts.get(room_id)
     }
 
+    /// Record a commit's diff stats against the active task for a lane.
+    ///
+    /// Runs `git diff --numstat` between `base_rev` and HEAD in the lane's
+    /// worktree, increments the task's cumulative stats, persists to db,
+    /// and emits a TaskChanged event.
+    ///
+    /// Returns None if the lane has no git context or no active task.
+    pub async fn record_commit(
+        &mut self,
+        room_id: &RoomId,
+        base_rev: &ship_git::Rev,
+    ) -> Result<Option<CommitStats>, RuntimeError> {
+        let git = match self.git_contexts.get(room_id) {
+            Some(g) => g,
+            None => return Ok(None),
+        };
+
+        let task = match self.db.current_task(room_id).map_err(RuntimeError::Db)? {
+            Some(t) => t,
+            None => return Ok(None),
+        };
+
+        let head = ship_git::Rev::from("HEAD");
+        let diff_stats = git
+            .diff_numstat(base_rev, &head)
+            .await
+            .map_err(|e| RuntimeError::Git(e.to_string()))?;
+
+        let stats = CommitStats {
+            lines_added: diff_stats.total_added() as u64,
+            lines_removed: diff_stats.total_removed() as u64,
+            files_changed: diff_stats.files_changed(),
+        };
+
+        self.db
+            .record_commit_stats(&task.id, stats.lines_added, stats.lines_removed)
+            .map_err(RuntimeError::Db)?;
+
+        // Re-read task to get updated cumulative stats for the event.
+        if let Ok(Some(updated)) = self.db.current_task(room_id) {
+            self.emit(FrontendEvent::TaskChanged {
+                room_id: room_id.clone(),
+                task: updated,
+            });
+        }
+
+        Ok(Some(stats))
+    }
+
     /// Emit a frontend event (best-effort, no error if nobody is listening).
     fn emit(&self, event: FrontendEvent) {
         let _ = self.tx.send(event);
@@ -576,6 +625,7 @@ impl Runtime {
 #[derive(Debug)]
 pub enum RuntimeError {
     Db(ship_db::StoreError),
+    Git(String),
     RoomNotFound(RoomId),
     BlockNotFound(BlockId),
     NotAMember {
@@ -598,6 +648,7 @@ impl std::fmt::Display for RuntimeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Db(e) => write!(f, "database error: {e}"),
+            Self::Git(e) => write!(f, "git error: {e}"),
             Self::RoomNotFound(id) => write!(f, "room not found: {id}"),
             Self::BlockNotFound(id) => write!(f, "block not found: {id}"),
             Self::NotAMember { participant, room } => {
