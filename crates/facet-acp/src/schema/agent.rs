@@ -67,10 +67,10 @@ impl InitializeResponse {
 
 /// Metadata about an implementation.
 #[derive(Debug, Clone, Facet)]
-#[facet(rename_all = "camelCase", skip_all_unless_truthy)]
+#[facet(rename_all = "camelCase")]
 pub struct Implementation {
     pub name: String,
-    #[facet(default, skip_unless_truthy)]
+    #[facet(default)]
     pub title: Option<String>,
     pub version: String,
     #[facet(default, skip_unless_truthy, rename = "_meta")]

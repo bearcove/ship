@@ -40,13 +40,13 @@ impl From<&str> for ToolCallId {
 pub struct ToolCall {
     pub tool_call_id: ToolCallId,
     pub title: String,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub kind: ToolKind,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub status: ToolCallStatus,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub content: Vec<ToolCallContent>,
-    #[facet(default)]
+    #[facet(default, skip_unless_truthy)]
     pub locations: Vec<ToolCallLocation>,
     #[facet(default, skip_unless_truthy)]
     pub raw_input: Option<RawJson<'static>>,

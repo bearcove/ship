@@ -889,11 +889,13 @@ dependencies = [
 name = "facet-acp"
 version = "0.1.0"
 dependencies = [
+ "agent-client-protocol",
  "async-trait",
  "facet",
  "facet-json",
  "futures",
  "futures-core",
+ "serde_json",
  "tokio",
  "tokio-util",
  "tracing",

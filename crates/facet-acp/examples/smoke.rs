@@ -276,7 +276,7 @@ async fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
                 write_text_file: true,
                 meta: None,
             },
-            terminal: false,
+            terminal: true,
             meta: None,
         },
     ).client_info(Implementation::new("facet-acp-smoke", env!("CARGO_PKG_VERSION")));
