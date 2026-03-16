@@ -1,3 +1,8 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use ship_acp::AgentDriver;
+use ship_agent::{AgentChannels, AgentConfig, AgentInput, AgentOutput};
 use ship_db::ShipDb;
 use jiff::Timestamp;
 use ship_policy::{
@@ -6,7 +11,8 @@ use ship_policy::{
 };
 use ulid::Ulid;
 
-use crate::events::{FrontendEvent, RoomSummary};
+use crate::agent::RuntimeRoomReader;
+use crate::events::FrontendEvent;
 use crate::room::{Feed, Room, RoomState};
 use tokio::sync::broadcast;
 
@@ -63,16 +69,21 @@ impl Rooms {
 /// The ship runtime: manages the topology of rooms, routes messages
 /// through policy, persists to ship-db, and broadcasts to subscribers.
 pub struct Runtime {
-    db: ShipDb,
+    db: Arc<ShipDb>,
     topology: Topology,
     rooms: Rooms,
     tx: broadcast::Sender<FrontendEvent>,
+    /// Running agents keyed by participant name.
+    agents: HashMap<ParticipantName, AgentChannels>,
+    /// Shared room reader for agents that need conversation history.
+    room_reader: Arc<RuntimeRoomReader>,
 }
 
 impl Runtime {
     /// Create a new runtime backed by the given database.
     /// Loads topology from db if one exists.
     pub fn new(db: ShipDb) -> Self {
+        let db = Arc::new(db);
         let topology = db
             .load_topology()
             .ok()
@@ -80,11 +91,14 @@ impl Runtime {
             .unwrap_or_else(empty_topology);
         let rooms = Rooms::new(&topology);
         let (tx, _) = broadcast::channel(256);
+        let room_reader = Arc::new(RuntimeRoomReader::new(Arc::clone(&db)));
         Self {
             db,
             topology,
             rooms,
             tx,
+            agents: HashMap::new(),
+            room_reader,
         }
     }
 
@@ -324,6 +338,129 @@ impl Runtime {
     /// Get the current task phase for a room (None if no active task).
     pub fn current_phase(&self, room_id: &RoomId) -> Result<Option<TaskPhase>, RuntimeError> {
         Ok(self.current_task(room_id)?.map(|t| t.phase))
+    }
+
+    // ── Agent lifecycle ─────────────────────────────────────────────
+
+    /// Spawn an agent for a specific participant in a specific room.
+    ///
+    /// The agent is started via the provided `AgentDriver` and configured
+    /// with the given `AgentConfig`. The runtime stores the resulting
+    /// channels so it can route deliveries and drain output.
+    pub fn spawn_agent_for(
+        &mut self,
+        config: AgentConfig,
+        driver: Arc<dyn AgentDriver>,
+    ) -> &AgentChannels {
+        let participant = config.participant.clone();
+        let channels =
+            ship_agent::spawn_agent(config, driver, Arc::clone(&self.room_reader));
+        self.agents.insert(participant.clone(), channels);
+        self.agents.get(&participant).expect("just inserted")
+    }
+
+    /// Send a delivery to the agent responsible for the delivery's `to` field.
+    ///
+    /// Returns `true` if the delivery was dispatched, `false` if no agent
+    /// is running for the recipient (the delivery is dropped in that case).
+    pub fn dispatch_delivery(&self, delivery: &Delivery) -> bool {
+        if let Some(channels) = self.agents.get(&delivery.to) {
+            // try_send: don't block the runtime if the agent's input buffer is full.
+            match channels.tx.try_send(AgentInput::Delivery(delivery.clone())) {
+                Ok(()) => true,
+                Err(e) => {
+                    tracing::warn!(
+                        to = %delivery.to,
+                        error = %e,
+                        "failed to dispatch delivery to agent"
+                    );
+                    false
+                }
+            }
+        } else {
+            false
+        }
+    }
+
+    /// Drain all pending output from every running agent.
+    ///
+    /// For each `AgentOutput::UpdateBlock`, creates or updates the
+    /// corresponding block in the appropriate room and persists it.
+    /// Returns the total number of output items processed.
+    pub fn poll_agent_output(&mut self) -> Result<usize, RuntimeError> {
+        // Collect all pending outputs first to avoid holding a mutable
+        // borrow on `self.agents` while we need `self.rooms` / `self.db`.
+        let mut pending: Vec<(ParticipantName, AgentOutput)> = Vec::new();
+
+        for (name, channels) in &mut self.agents {
+            loop {
+                match channels.rx.try_recv() {
+                    Ok(output) => pending.push((name.clone(), output)),
+                    Err(tokio::sync::mpsc::error::TryRecvError::Empty) => break,
+                    Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
+                        tracing::info!(participant = %name, "agent channel disconnected");
+                        break;
+                    }
+                }
+            }
+        }
+
+        let total = pending.len();
+
+        for (name, output) in pending {
+            match output {
+                AgentOutput::UpdateBlock { block_id, content } => {
+                    let room_id = self.room_for_participant(name.as_str());
+                    let Some(room_id) = room_id else {
+                        continue;
+                    };
+
+                    // Try to update an existing unsealed block; if it
+                    // doesn't exist, open a new one.
+                    let feed = self.rooms.ensure_warm(&room_id, &self.db)?;
+                    let existing = feed.update_block(&block_id, content.clone());
+                    if let Some(block) = existing {
+                        let block = block.clone();
+                        self.db
+                            .update_block_content(&block_id, &content)
+                            .map_err(RuntimeError::Db)?;
+                        self.emit(FrontendEvent::BlockChanged {
+                            room_id: room_id.clone(),
+                            block,
+                        });
+                    } else {
+                        // New block from agent.
+                        let feed = self.rooms.ensure_warm(&room_id, &self.db)?;
+                        let block = feed.open_block(
+                            room_id.clone(),
+                            Some(name.clone()),
+                            None,
+                            content,
+                        );
+                        let block = block.clone();
+                        self.db.insert_block(&block).map_err(RuntimeError::Db)?;
+                        self.emit(FrontendEvent::BlockChanged {
+                            room_id: room_id.clone(),
+                            block,
+                        });
+                    }
+                }
+                AgentOutput::StatusChanged(status) => {
+                    tracing::debug!(
+                        participant = %name,
+                        ?status,
+                        "agent status changed"
+                    );
+                }
+            }
+        }
+
+        Ok(total)
+    }
+
+    /// Check whether an agent is running for the given participant.
+    pub fn has_agent(&self, participant: &ParticipantName) -> bool {
+        self.agents.contains_key(participant)
     }
 
     /// Find which room a participant belongs to.

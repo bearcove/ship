@@ -9,6 +9,7 @@ facet-json = { workspace = true }
 jiff = { workspace = true }
 ulid = { workspace = true }
 ship-acp = { path = "../ship-acp" }
+ship-agent = { path = "../ship-agent" }
 ship-code = { path = "../ship-code" }
 ship-db = { path = "../ship-db" }
 ship-policy = { path = "../ship-policy" }

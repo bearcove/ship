@@ -3747,6 +3747,7 @@ dependencies = [
  "insta",
  "jiff",
  "ship-acp",
+ "ship-agent",
  "ship-code",
  "ship-db",
  "ship-policy",

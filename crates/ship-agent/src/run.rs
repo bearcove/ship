@@ -322,6 +322,80 @@ fn delivery_to_prompt_text(delivery: &ship_policy::Delivery) -> String {
     }
 }
 
+fn translate_tool_call_status(
+    status: ship_types::ToolCallStatus,
+) -> ship_policy::ToolCallStatus {
+    match status {
+        ship_types::ToolCallStatus::Running => ship_policy::ToolCallStatus::Running,
+        ship_types::ToolCallStatus::Success => ship_policy::ToolCallStatus::Success,
+        ship_types::ToolCallStatus::Failure => ship_policy::ToolCallStatus::Failure,
+    }
+}
+
+fn translate_locations(
+    locations: Vec<ship_types::ToolCallLocation>,
+) -> Vec<ship_policy::ToolCallLocation> {
+    locations
+        .into_iter()
+        .map(|loc| ship_policy::ToolCallLocation {
+            path: loc.path,
+            line: loc.line.map(|l| l as u64),
+        })
+        .collect()
+}
+
+fn translate_steps(steps: Vec<ship_types::PlanStep>) -> Vec<ship_policy::PlanStep> {
+    steps
+        .into_iter()
+        .map(|s| ship_policy::PlanStep {
+            description: s.description,
+            completed: s.status == ship_types::PlanStepStatus::Completed,
+        })
+        .collect()
+}
+
+fn translate_content_block(block: ship_types::ContentBlock) -> BlockContent {
+    match block {
+        ship_types::ContentBlock::Text { text, .. } => BlockContent::Text { text },
+        ship_types::ContentBlock::ToolCall {
+            tool_name,
+            status,
+            arguments,
+            error,
+            locations,
+            ..
+        } => BlockContent::ToolCall {
+            tool_name,
+            status: translate_tool_call_status(status),
+            arguments,
+            output: None,
+            error: error.map(|e| e.message),
+            locations: translate_locations(locations),
+        },
+        ship_types::ContentBlock::PlanUpdate { steps } => BlockContent::PlanUpdate {
+            steps: translate_steps(steps),
+        },
+        ship_types::ContentBlock::Error { message } => BlockContent::Error { message },
+        ship_types::ContentBlock::Permission {
+            tool_name,
+            description,
+            arguments,
+            ..
+        } => BlockContent::Permission {
+            tool_name,
+            description,
+            arguments,
+            resolution: None,
+        },
+        other => {
+            tracing::trace!(?other, "unhandled ContentBlock variant in translate_content_block");
+            BlockContent::Text {
+                text: String::new(),
+            }
+        }
+    }
+}
+
 async fn drain_notifications(
     driver: &Arc<dyn AgentDriver>,
     handle: &ship_acp::AgentHandle,
@@ -341,6 +415,59 @@ async fn drain_notifications(
                     })
                     .await;
             }
+            SessionEvent::BlockAppend {
+                block_id: event_block_id,
+                block,
+                ..
+            } => {
+                let bid = BlockId::new(event_block_id.0);
+                let content = translate_content_block(block);
+                let _ = output_tx
+                    .send(AgentOutput::UpdateBlock {
+                        block_id: bid,
+                        content,
+                    })
+                    .await;
+            }
+            SessionEvent::BlockPatch {
+                block_id: event_block_id,
+                patch,
+                ..
+            } => match patch {
+                ship_types::BlockPatch::PlanReplace { steps } => {
+                    let bid = BlockId::new(event_block_id.0);
+                    let _ = output_tx
+                        .send(AgentOutput::UpdateBlock {
+                            block_id: bid,
+                            content: BlockContent::PlanUpdate {
+                                steps: translate_steps(steps),
+                            },
+                        })
+                        .await;
+                }
+                other => {
+                    tracing::trace!(?other, "unhandled BlockPatch variant");
+                }
+            },
+            SessionEvent::AgentStateChanged { state, .. } => {
+                let status = match state {
+                    ship_types::AgentState::Working { .. } => AgentStatus::Prompting,
+                    ship_types::AgentState::Idle => AgentStatus::Idle,
+                    ship_types::AgentState::ContextExhausted => {
+                        AgentStatus::ContextUsage { used_pct: 100 }
+                    }
+                    ship_types::AgentState::Error { message } => {
+                        AgentStatus::Dead { error: message }
+                    }
+                    ship_types::AgentState::AwaitingPermission { .. } => {
+                        // TODO: handle permission requests
+                        continue;
+                    }
+                };
+                let _ = output_tx
+                    .send(AgentOutput::StatusChanged(status))
+                    .await;
+            }
             SessionEvent::ContextUpdated {
                 remaining_percent, ..
             } => {
@@ -351,8 +478,7 @@ async fn drain_notifications(
                     .await;
             }
             _ => {
-                // TODO: handle BlockAppend (streaming), ToolCall blocks,
-                // PlanUpdate, Permission requests, etc.
+                tracing::trace!(?event, "unhandled SessionEvent variant in drain_notifications");
             }
         }
     }

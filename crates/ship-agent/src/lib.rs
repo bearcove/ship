@@ -39,6 +39,7 @@ pub enum AgentOutput {
 }
 
 /// Current state of an agent.
+#[derive(Debug)]
 pub enum AgentStatus {
     /// Agent is waiting for input.
     Idle,
