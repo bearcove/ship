@@ -2,4 +2,4 @@ mod room;
 mod runtime;
 
 pub use room::{Feed, Room, RoomState};
-pub use runtime::Runtime;
+pub use runtime::{Runtime, RuntimeError};
