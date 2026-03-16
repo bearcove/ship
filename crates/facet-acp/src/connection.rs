@@ -92,6 +92,8 @@ impl ClientSideConnection {
         let msg = facet_json::to_string(&request)
             .map_err(|e| crate::Error::internal_error().data(e.to_string()))?;
 
+        tracing::trace!(method, id, "→ {msg}");
+
         {
             let mut writer = self.inner.writer.lock().await;
             writer
@@ -112,6 +114,8 @@ impl ClientSideConnection {
         let raw = rx
             .await
             .map_err(|_| crate::Error::internal_error().data("connection closed"))??;
+
+        tracing::trace!(method, id, "← {}", raw.as_ref());
 
         facet_json::from_str(raw.as_ref())
             .map_err(|e| crate::Error::invalid_params().data(e.to_string()))
@@ -134,6 +138,8 @@ impl ClientSideConnection {
 
         let msg = facet_json::to_string(&request)
             .map_err(|e| crate::Error::internal_error().data(e.to_string()))?;
+
+        tracing::trace!(method, "→ {msg}");
 
         let mut writer = self.inner.writer.lock().await;
         writer
@@ -292,6 +298,8 @@ async fn run_read_loop(
         if trimmed.is_empty() {
             continue;
         }
+
+        tracing::trace!("← {trimmed}");
 
         // Try to figure out if this is a response (has result/error) or a request/notification
         // We parse as a generic JSON-RPC message first

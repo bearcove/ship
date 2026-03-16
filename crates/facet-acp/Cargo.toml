@@ -14,4 +14,5 @@ tracing = { workspace = true }
 async-trait = "0.1"
 
 [dev-dependencies]
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "process"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "time"] }
+tracing-subscriber = { workspace = true }
