@@ -83,7 +83,7 @@ mod tests {
             human: Participant::human("Amos"),
             admiral: Participant::agent("Morgan", AgentRole::Admiral),
             sessions: vec![SessionRoom {
-                id: RoomId("lane-1".into()),
+                id: RoomId::from_static("lane-1"),
                 captain: Participant::agent("Cedar", AgentRole::Captain),
                 mate: Participant::agent("Jordan", AgentRole::Mate),
             }],

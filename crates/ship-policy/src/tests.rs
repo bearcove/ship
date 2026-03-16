@@ -8,12 +8,12 @@ fn test_topology() -> Topology {
         admiral: Participant::agent("Morgan", AgentRole::Admiral),
         sessions: vec![
             SessionRoom {
-                id: RoomId("lane-1".into()),
+                id: RoomId::from_static("lane-1"),
                 captain: Participant::agent("Cedar", AgentRole::Captain),
                 mate: Participant::agent("Jordan", AgentRole::Mate),
             },
             SessionRoom {
-                id: RoomId("lane-2".into()),
+                id: RoomId::from_static("lane-2"),
                 captain: Participant::agent("Birch", AgentRole::Captain),
                 mate: Participant::agent("Riley", AgentRole::Mate),
             },
@@ -72,7 +72,7 @@ fn admiral_room_contains_admiral_and_all_captains() {
 #[test]
 fn session_room_contains_captain_and_mate() {
     let topo = test_topology();
-    let members = topo.session_room_members(&RoomId("lane-1".into())).unwrap();
+    let members = topo.session_room_members(&RoomId::from_static("lane-1")).unwrap();
     let names: Vec<&str> = members.iter().map(|p| p.name.as_str()).collect();
 
     assert_eq!(names, vec!["Cedar", "Jordan"]);
@@ -81,7 +81,7 @@ fn session_room_contains_captain_and_mate() {
 #[test]
 fn session_room_not_found() {
     let topo = test_topology();
-    assert!(topo.session_room_members(&RoomId("nope".into())).is_none());
+    assert!(topo.session_room_members(&RoomId::from_static("nope")).is_none());
 }
 
 // ── Allowed mentions ──────────────────────────────────────────────────
@@ -268,10 +268,10 @@ fn find_participant_ci_works() {
 fn session_for_participant_finds_by_captain_or_mate() {
     let topo = test_topology();
     let session = topo.session_for_participant("Cedar").unwrap();
-    assert_eq!(session.id, RoomId("lane-1".into()));
+    assert_eq!(session.id, RoomId::from_static("lane-1"));
 
     let session = topo.session_for_participant("Jordan").unwrap();
-    assert_eq!(session.id, RoomId("lane-1".into()));
+    assert_eq!(session.id, RoomId::from_static("lane-1"));
 
     assert!(topo.session_for_participant("Morgan").is_none());
     assert!(topo.session_for_participant("Amos").is_none());
@@ -626,7 +626,7 @@ fn delivery_unaddressed_bounces() {
 fn delivery_mate_committed_notifies_captain_and_human() {
     let topo = test_topology();
     let action = Action::MateCommitted {
-        session: RoomId("lane-1".into()),
+        session: RoomId::from_static("lane-1"),
         step_description: Some("Add error handling".into()),
         commit_summary: "feat: add error handling".into(),
         diff_section: "+42 -3".into(),
@@ -651,7 +651,7 @@ fn delivery_mate_committed_notifies_captain_and_human() {
 fn delivery_mate_submitted_notifies_captain_and_human() {
     let topo = test_topology();
     let action = Action::MateSubmitted {
-        session: RoomId("lane-1".into()),
+        session: RoomId::from_static("lane-1"),
         summary: "Refactored auth middleware".into(),
     };
     let deliveries = route(&action, &topo);
@@ -669,7 +669,7 @@ fn delivery_mate_submitted_notifies_captain_and_human() {
 fn delivery_mate_plan_set_notifies_captain() {
     let topo = test_topology();
     let action = Action::MatePlanSet {
-        session: RoomId("lane-1".into()),
+        session: RoomId::from_static("lane-1"),
         plan_status: "3 steps, starting with tests".into(),
     };
     let deliveries = route(&action, &topo);
@@ -682,7 +682,7 @@ fn delivery_mate_plan_set_notifies_captain() {
 fn delivery_mate_question_notifies_captain_with_attention() {
     let topo = test_topology();
     let action = Action::MateQuestion {
-        session: RoomId("lane-1".into()),
+        session: RoomId::from_static("lane-1"),
         question: "Should I use async here?".into(),
     };
     let deliveries = route(&action, &topo);
@@ -696,7 +696,7 @@ fn delivery_mate_question_notifies_captain_with_attention() {
 fn delivery_activity_summary_from_summarizer() {
     let topo = test_topology();
     let action = Action::MateActivitySummary {
-        session: RoomId("lane-1".into()),
+        session: RoomId::from_static("lane-1"),
         summary: "Mate edited 3 files".into(),
     };
     let deliveries = route(&action, &topo);
@@ -710,7 +710,7 @@ fn delivery_activity_summary_from_summarizer() {
 fn delivery_forced_submit_nudges_mate() {
     let topo = test_topology();
     let action = Action::MateForcedSubmit {
-        session: RoomId("lane-1".into()),
+        session: RoomId::from_static("lane-1"),
     };
     let deliveries = route(&action, &topo);
     assert_eq!(deliveries.len(), 1);
@@ -722,7 +722,7 @@ fn delivery_forced_submit_nudges_mate() {
 fn delivery_task_assigned_notifies_human() {
     let topo = test_topology();
     let action = Action::TaskAssigned {
-        session: RoomId("lane-1".into()),
+        session: RoomId::from_static("lane-1"),
         title: "Fix auth bug".into(),
         description: "The login flow is broken".into(),
     };
@@ -736,7 +736,7 @@ fn delivery_task_assigned_notifies_human() {
 fn delivery_checks_finished_failed_notifies_human() {
     let topo = test_topology();
     let action = Action::ChecksFinished {
-        session: RoomId("lane-1".into()),
+        session: RoomId::from_static("lane-1"),
         context: "pre-merge".into(),
         all_passed: false,
         summary: "2 hooks failed".into(),
@@ -758,7 +758,7 @@ fn delivery_checks_finished_failed_notifies_human() {
 fn delivery_checks_finished_passed_is_informational() {
     let topo = test_topology();
     let action = Action::ChecksFinished {
-        session: RoomId("lane-1".into()),
+        session: RoomId::from_static("lane-1"),
         context: "post-commit".into(),
         all_passed: true,
         summary: "all green".into(),
@@ -773,7 +773,7 @@ fn delivery_checks_finished_passed_is_informational() {
 fn delivery_unknown_session_returns_empty() {
     let topo = test_topology();
     let action = Action::MateCommitted {
-        session: RoomId("nonexistent".into()),
+        session: RoomId::from_static("nonexistent"),
         step_description: None,
         commit_summary: "oops".into(),
         diff_section: "".into(),
@@ -892,7 +892,7 @@ fn delivery_admiral_can_use_urgent_too() {
 fn delivery_lane2_commit_goes_to_lane2_captain() {
     let topo = test_topology();
     let action = Action::MateCommitted {
-        session: RoomId("lane-2".into()),
+        session: RoomId::from_static("lane-2"),
         step_description: None,
         commit_summary: "fix: typo".into(),
         diff_section: "+1 -1".into(),

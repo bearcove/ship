@@ -54,6 +54,7 @@ fn make_persisted_session(id: &str, description: &str) -> PersistedSession {
             captain_model_id: None,
             mate_model_id: None,
             autonomy_mode: AutonomyMode::HumanInTheLoop,
+            workflow: Default::default(),
             mcp_servers: vec![McpServerConfig::Stdio(McpStdioServerConfig {
                 name: "filesystem".to_owned(),
                 command: "/usr/bin/fs-mcp".to_owned(),

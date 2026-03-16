@@ -963,12 +963,12 @@ mod tests {
             admiral: Participant::agent("Admiral", AgentRole::Admiral),
             sessions: vec![
                 SessionRoom {
-                    id: RoomId("session:s1".into()),
+                    id: RoomId::from_static("session:s1"),
                     captain: Participant::agent("Alex", AgentRole::Captain),
                     mate: Participant::agent("Jordan", AgentRole::Mate),
                 },
                 SessionRoom {
-                    id: RoomId("session:s2".into()),
+                    id: RoomId::from_static("session:s2"),
                     captain: Participant::agent("Morgan", AgentRole::Captain),
                     mate: Participant::agent("Riley", AgentRole::Mate),
                 },
@@ -1344,7 +1344,7 @@ mod tests {
 
         db.save_session(&make_test_session("s1", "proj")).unwrap();
         let session = SessionRoom {
-            id: RoomId("session:s1".into()),
+            id: RoomId::from_static("session:s1"),
             captain: Participant::agent("Alex", AgentRole::Captain),
             mate: Participant::agent("Jordan", AgentRole::Mate),
         };
@@ -1365,11 +1365,11 @@ mod tests {
         let topo = sample_topology(&db);
         db.save_topology(&topo).unwrap();
 
-        db.remove_session_room(&RoomId("session:s1".into())).unwrap();
+        db.remove_session_room(&RoomId::from_static("session:s1")).unwrap();
 
         let loaded = db.load_topology().unwrap().unwrap();
         assert_eq!(loaded.sessions.len(), 1);
-        assert_eq!(loaded.sessions[0].id.0, "session:s2");
+        assert_eq!(loaded.sessions[0].id, RoomId::from_static("session:s2"));
 
         let all_names: Vec<&str> = loaded
             .admiral_room_members()
@@ -1393,7 +1393,7 @@ mod tests {
         for i in 0..3 {
             db.save_session(&make_test_session(&format!("s{i}"), "proj")).unwrap();
             db.add_session_room(&SessionRoom {
-                id: RoomId(format!("session:s{i}")),
+                id: RoomId::new(format!("session:s{i}")),
                 captain: Participant::agent(format!("Captain{i}"), AgentRole::Captain),
                 mate: Participant::agent(format!("Mate{i}"), AgentRole::Mate),
             })

@@ -10549,6 +10549,7 @@ mod tests {
                 captain_model_id: None,
                 mate_model_id: None,
                 autonomy_mode: AutonomyMode::HumanInTheLoop,
+                workflow: Default::default(),
                 mcp_servers: Vec::new(),
             },
             worktree_path: Some(project_root.join(".ship").join(format!("@{branch_name}"))),
@@ -11920,6 +11921,7 @@ agent_presets {
                 captain_model_id: None,
                 mate_model_id: None,
                 autonomy_mode: AutonomyMode::HumanInTheLoop,
+                workflow: Default::default(),
                 mcp_servers: Vec::new(),
             },
             captain: AgentSnapshot {
@@ -12005,6 +12007,7 @@ agent_presets {
                 captain_model_id: None,
                 mate_model_id: None,
                 autonomy_mode: AutonomyMode::HumanInTheLoop,
+                workflow: Default::default(),
                 mcp_servers: Vec::new(),
             },
             captain: AgentSnapshot {
