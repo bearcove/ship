@@ -178,7 +178,7 @@ pub fn command_nudge(command: &str, role: AgentRole, phase: Option<TaskPhase>) -
         (AgentRole::Captain, "diff") => Some(CommandNudge {
             intent: "view changes",
             suggestion: match phase {
-                Some(TaskPhase::ReviewPending) => {
+                Some(TaskPhase::PendingReview) => {
                     "Use `captain_review_diff` to see the mate's work against the base branch. \
                      Raw `git diff` in the worktree may show unexpected results because of \
                      shadow commits."
@@ -420,7 +420,7 @@ mod tests {
 
     #[test]
     fn captain_review_pending_is_read_only() {
-        let policy = code_policy(AgentRole::Captain, Some(TaskPhase::ReviewPending));
+        let policy = code_policy(AgentRole::Captain, Some(TaskPhase::PendingReview));
         assert!(is_op_allowed(&policy, OpKind::Read));
         assert!(!is_op_allowed(&policy, OpKind::Edit));
     }
@@ -655,7 +655,7 @@ mod tests {
 
     #[test]
     fn captain_git_diff_gets_nudge() {
-        let nudge = command_nudge("git diff", AgentRole::Captain, Some(TaskPhase::ReviewPending));
+        let nudge = command_nudge("git diff", AgentRole::Captain, Some(TaskPhase::PendingReview));
         assert!(nudge.is_some());
         let nudge = nudge.unwrap();
         assert_eq!(nudge.intent, "view changes");
@@ -685,14 +685,14 @@ mod tests {
 
     #[test]
     fn captain_git_rebase_outside_conflict() {
-        let nudge = command_nudge("git rebase main", AgentRole::Captain, Some(TaskPhase::ReviewPending));
+        let nudge = command_nudge("git rebase main", AgentRole::Captain, Some(TaskPhase::PendingReview));
         assert!(nudge.is_some());
         assert!(nudge.unwrap().suggestion.contains("captain_merge"));
     }
 
     #[test]
     fn captain_git_merge_gets_nudge() {
-        let nudge = command_nudge("git merge main", AgentRole::Captain, Some(TaskPhase::ReviewPending));
+        let nudge = command_nudge("git merge main", AgentRole::Captain, Some(TaskPhase::PendingReview));
         assert!(nudge.is_some());
         assert!(nudge.unwrap().suggestion.contains("captain_merge"));
     }

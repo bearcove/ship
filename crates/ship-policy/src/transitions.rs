@@ -5,12 +5,15 @@
 /// (`pending_human_review`) that can be set/cleared independently of the task
 /// phase. When the human responds, the overlay clears and the task continues
 /// from whatever phase it was already in.
+///
+/// Note: Steering is NOT a phase. The captain steers by @mentioning the mate
+/// with feedback — this sends the task back to Working directly. There is no
+/// intermediate "steer pending" state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TaskPhase {
     Assigned,
     Working,
-    ReviewPending,
-    SteerPending,
+    PendingReview,
     RebaseConflict,
     Accepted,
     Cancelled,
@@ -42,22 +45,17 @@ pub fn can_transition(from: TaskPhase, to: TaskPhase) -> bool {
         // Assignment phase — Assigned → Working is triggered by the mate's first
         // mutation op (the system transitions automatically, not an explicit action).
         (TaskPhase::Assigned, TaskPhase::Working)
-            | (TaskPhase::Assigned, TaskPhase::SteerPending)
             | (TaskPhase::Assigned, TaskPhase::Accepted)
             | (TaskPhase::Assigned, TaskPhase::RebaseConflict)
             // Work phase
-            | (TaskPhase::Working, TaskPhase::ReviewPending)
-            // Review phase
-            | (TaskPhase::ReviewPending, TaskPhase::SteerPending)
-            | (TaskPhase::ReviewPending, TaskPhase::Working)
-            | (TaskPhase::ReviewPending, TaskPhase::Accepted)
-            | (TaskPhase::ReviewPending, TaskPhase::RebaseConflict)
-            // Steer phase
-            | (TaskPhase::SteerPending, TaskPhase::Working)
-            | (TaskPhase::SteerPending, TaskPhase::Accepted)
-            | (TaskPhase::SteerPending, TaskPhase::RebaseConflict)
+            | (TaskPhase::Working, TaskPhase::PendingReview)
+            // Review phase — captain can steer (sends mate back to Working),
+            // accept, or hit a rebase conflict.
+            | (TaskPhase::PendingReview, TaskPhase::Working)
+            | (TaskPhase::PendingReview, TaskPhase::Accepted)
+            | (TaskPhase::PendingReview, TaskPhase::RebaseConflict)
             // Rebase conflict resolution
-            | (TaskPhase::RebaseConflict, TaskPhase::ReviewPending)
+            | (TaskPhase::RebaseConflict, TaskPhase::PendingReview)
             | (TaskPhase::RebaseConflict, TaskPhase::Accepted)
     )
 }
@@ -74,8 +72,7 @@ pub fn reachable_from(phase: TaskPhase) -> Vec<TaskPhase> {
 const ALL_PHASES: &[TaskPhase] = &[
     TaskPhase::Assigned,
     TaskPhase::Working,
-    TaskPhase::ReviewPending,
-    TaskPhase::SteerPending,
+    TaskPhase::PendingReview,
     TaskPhase::RebaseConflict,
     TaskPhase::Accepted,
     TaskPhase::Cancelled,
@@ -98,8 +95,7 @@ mod tests {
         let non_terminal = [
             TaskPhase::Assigned,
             TaskPhase::Working,
-            TaskPhase::ReviewPending,
-            TaskPhase::SteerPending,
+            TaskPhase::PendingReview,
             TaskPhase::RebaseConflict,
         ];
         for from in non_terminal {
@@ -113,21 +109,21 @@ mod tests {
     #[test]
     fn happy_path() {
         assert!(can_transition(TaskPhase::Assigned, TaskPhase::Working));
-        assert!(can_transition(TaskPhase::Working, TaskPhase::ReviewPending));
-        assert!(can_transition(TaskPhase::ReviewPending, TaskPhase::Accepted));
+        assert!(can_transition(TaskPhase::Working, TaskPhase::PendingReview));
+        assert!(can_transition(TaskPhase::PendingReview, TaskPhase::Accepted));
     }
 
     #[test]
-    fn steer_cycle() {
-        assert!(can_transition(TaskPhase::ReviewPending, TaskPhase::SteerPending));
-        assert!(can_transition(TaskPhase::SteerPending, TaskPhase::Working));
-        assert!(can_transition(TaskPhase::Working, TaskPhase::ReviewPending));
+    fn steer_sends_back_to_working() {
+        // Captain steers by @mentioning mate → PendingReview goes back to Working.
+        assert!(can_transition(TaskPhase::PendingReview, TaskPhase::Working));
+        assert!(can_transition(TaskPhase::Working, TaskPhase::PendingReview));
     }
 
     #[test]
     fn rebase_conflict_flow() {
-        assert!(can_transition(TaskPhase::ReviewPending, TaskPhase::RebaseConflict));
-        assert!(can_transition(TaskPhase::RebaseConflict, TaskPhase::ReviewPending));
+        assert!(can_transition(TaskPhase::PendingReview, TaskPhase::RebaseConflict));
+        assert!(can_transition(TaskPhase::RebaseConflict, TaskPhase::PendingReview));
         assert!(can_transition(TaskPhase::RebaseConflict, TaskPhase::Accepted));
     }
 
@@ -135,8 +131,7 @@ mod tests {
     fn invalid_transitions() {
         assert!(!can_transition(TaskPhase::Working, TaskPhase::Assigned));
         assert!(!can_transition(TaskPhase::Working, TaskPhase::Accepted));
-        assert!(!can_transition(TaskPhase::Working, TaskPhase::SteerPending));
-        assert!(!can_transition(TaskPhase::Assigned, TaskPhase::ReviewPending));
+        assert!(!can_transition(TaskPhase::Assigned, TaskPhase::PendingReview));
     }
 
     #[test]
@@ -144,10 +139,9 @@ mod tests {
         let reachable = reachable_from(TaskPhase::Assigned);
         assert!(reachable.contains(&TaskPhase::Working));
         assert!(reachable.contains(&TaskPhase::Cancelled));
-        assert!(reachable.contains(&TaskPhase::SteerPending));
         assert!(reachable.contains(&TaskPhase::Accepted));
         assert!(reachable.contains(&TaskPhase::RebaseConflict));
-        assert!(!reachable.contains(&TaskPhase::ReviewPending));
+        assert!(!reachable.contains(&TaskPhase::PendingReview));
     }
 
     #[test]

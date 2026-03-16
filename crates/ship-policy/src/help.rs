@@ -105,14 +105,13 @@ fn captain_actions(phase: Option<TaskPhase>) -> Vec<&'static ActionHelp> {
         None => &["captain_assign"],
         Some(TaskPhase::Assigned) => &["captain_cancel"],
         Some(TaskPhase::Working) => &["captain_cancel"],
-        Some(TaskPhase::ReviewPending) => &[
+        Some(TaskPhase::PendingReview) => &[
             "captain_merge",
             "captain_steer",
             "captain_cancel",
             "captain_review_diff",
             "captain_rebase_status",
         ],
-        Some(TaskPhase::SteerPending) => &["captain_steer", "captain_merge", "captain_cancel"],
         Some(TaskPhase::RebaseConflict) => &[
             "captain_continue_rebase",
             "captain_abort_rebase",
@@ -340,7 +339,7 @@ mod tests {
 
     #[test]
     fn captain_review_pending_can_merge_or_steer() {
-        let actions = available_actions(AgentRole::Captain, Some(TaskPhase::ReviewPending));
+        let actions = available_actions(AgentRole::Captain, Some(TaskPhase::PendingReview));
         let names: Vec<&str> = actions.iter().map(|a| a.name).collect();
         assert!(names.contains(&"captain_merge"));
         assert!(names.contains(&"captain_steer"));
@@ -359,7 +358,7 @@ mod tests {
 
     #[test]
     fn captain_always_has_code_and_git_status() {
-        for phase in [None, Some(TaskPhase::Working), Some(TaskPhase::ReviewPending)] {
+        for phase in [None, Some(TaskPhase::Working), Some(TaskPhase::PendingReview)] {
             let actions = available_actions(AgentRole::Captain, phase);
             let names: Vec<&str> = actions.iter().map(|a| a.name).collect();
             assert!(names.contains(&"code"), "missing code for {phase:?}");
@@ -422,7 +421,7 @@ mod tests {
     fn snapshot_short_hint_captain_review() {
         insta::assert_snapshot!(
             "hint_captain_review",
-            short_hint(AgentRole::Captain, Some(TaskPhase::ReviewPending))
+            short_hint(AgentRole::Captain, Some(TaskPhase::PendingReview))
         );
     }
 

@@ -609,8 +609,7 @@ fn self_transitions_not_allowed() {
     let phases = [
         TaskPhase::Assigned,
         TaskPhase::Working,
-        TaskPhase::ReviewPending,
-        TaskPhase::SteerPending,
+        TaskPhase::PendingReview,
         TaskPhase::RebaseConflict,
     ];
     for phase in phases {
@@ -627,13 +626,8 @@ fn working_cannot_skip_to_accepted() {
 }
 
 #[test]
-fn working_cannot_go_to_steer_pending() {
-    assert!(!can_transition(TaskPhase::Working, TaskPhase::SteerPending));
-}
-
-#[test]
 fn assigned_cannot_go_to_review_pending() {
-    assert!(!can_transition(TaskPhase::Assigned, TaskPhase::ReviewPending));
+    assert!(!can_transition(TaskPhase::Assigned, TaskPhase::PendingReview));
 }
 
 #[test]
@@ -657,8 +651,7 @@ fn captain_read_only_at_every_non_rebase_phase() {
         None,
         Some(TaskPhase::Assigned),
         Some(TaskPhase::Working),
-        Some(TaskPhase::ReviewPending),
-        Some(TaskPhase::SteerPending),
+        Some(TaskPhase::PendingReview),
         Some(TaskPhase::Accepted),
         Some(TaskPhase::Cancelled),
     ];
@@ -689,8 +682,7 @@ fn captain_rebase_is_the_only_writable_phase() {
         None,
         Some(TaskPhase::Assigned),
         Some(TaskPhase::Working),
-        Some(TaskPhase::ReviewPending),
-        Some(TaskPhase::SteerPending),
+        Some(TaskPhase::PendingReview),
         Some(TaskPhase::Accepted),
         Some(TaskPhase::Cancelled),
     ];
@@ -711,8 +703,7 @@ fn mate_only_writable_when_working() {
     let read_only_phases = [
         None,
         Some(TaskPhase::Assigned),
-        Some(TaskPhase::ReviewPending),
-        Some(TaskPhase::SteerPending),
+        Some(TaskPhase::PendingReview),
         Some(TaskPhase::Accepted),
         Some(TaskPhase::Cancelled),
         Some(TaskPhase::RebaseConflict),
@@ -740,8 +731,7 @@ fn mate_no_ops_at_terminal_phases() {
 #[test]
 fn mate_no_ops_at_non_work_phases() {
     for phase in [
-        TaskPhase::ReviewPending,
-        TaskPhase::SteerPending,
+        TaskPhase::PendingReview,
         TaskPhase::RebaseConflict,
     ] {
         let policy = code_policy(AgentRole::Mate, Some(phase));
@@ -773,17 +763,6 @@ fn op_denied_read_for_mate_no_task() {
 }
 
 // ── Help failure conditions ─────────────────────────────────────────
-
-#[test]
-fn captain_steer_pending_has_steer_merge_cancel() {
-    let actions = available_actions(AgentRole::Captain, Some(TaskPhase::SteerPending));
-    let names: Vec<&str> = actions.iter().map(|a| a.name).collect();
-    assert!(names.contains(&"captain_steer"));
-    assert!(names.contains(&"captain_merge"));
-    assert!(names.contains(&"captain_cancel"));
-    assert!(!names.contains(&"captain_assign"));
-    assert!(!names.contains(&"captain_review_diff"));
-}
 
 #[test]
 fn captain_accepted_can_assign_again() {
@@ -822,7 +801,7 @@ fn wrong_tool_for_every_role() {
     assert!(msg.contains("Unknown tool"));
 
     // Captain using mate tools.
-    let msg = wrong_tool_help(AgentRole::Captain, Some(TaskPhase::ReviewPending), "mate_submit");
+    let msg = wrong_tool_help(AgentRole::Captain, Some(TaskPhase::PendingReview), "mate_submit");
     assert!(msg.contains("Unknown tool"));
 }
 
