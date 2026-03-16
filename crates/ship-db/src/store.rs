@@ -3,11 +3,12 @@ use std::sync::{Arc, Mutex};
 
 use rusqlite::Connection;
 use rusqlite_facet::ConnectionFacetExt;
+use ship_policy::{AgentRole, Participant, RoomId, SessionRoom, Topology};
 
 use crate::schema;
 use ship_types::{ActivityEntry, PersistedSession, SessionEventEnvelope};
 
-/// Error type for session store operations.
+/// Error type for database operations.
 #[derive(Debug)]
 pub struct StoreError {
     pub message: String,
@@ -112,19 +113,19 @@ struct LimitParam {
     limit: i64,
 }
 
-/// SQLite-backed session store.
+/// SQLite-backed persistence for all of ship's data.
 ///
 /// Thread-safe via internal Mutex on the connection. All public methods
 /// are synchronous — callers should use `spawn_blocking` from async code.
-pub struct SqliteSessionStore {
+pub struct ShipDb {
     conn: Arc<Mutex<Connection>>,
 }
 
-impl SqliteSessionStore {
-    /// Open (or create) the session database at the given path.
+impl ShipDb {
+    /// Open (or create) the database at the given path.
     pub fn open(path: &Path) -> Result<Self, StoreError> {
         let conn = Connection::open(path).map_err(|e| StoreError {
-            message: format!("failed to open session database: {e}"),
+            message: format!("failed to open database: {e}"),
         })?;
         schema::init(&conn).map_err(|e| StoreError {
             message: format!("failed to initialize schema: {e}"),
@@ -134,7 +135,7 @@ impl SqliteSessionStore {
         })
     }
 
-    /// Create an in-memory session store (for testing).
+    /// Create an in-memory database (for testing).
     pub fn open_in_memory() -> Result<Self, StoreError> {
         let conn = Connection::open_in_memory().map_err(|e| StoreError {
             message: format!("failed to open in-memory database: {e}"),
@@ -155,7 +156,7 @@ impl SqliteSessionStore {
             message: format!("failed to serialize session {}: {e}", session.id.0),
         })?;
 
-        let conn = self.conn.lock().expect("session db mutex poisoned");
+        let conn = self.conn.lock().expect("db mutex poisoned");
         conn.facet_execute_ref(
             "INSERT OR REPLACE INTO sessions (id, created_at, archived_at, title, is_read, project, base_branch, branch_name, workflow, data)
              VALUES (:id, :created_at, :archived_at, :title, :is_read, :project, :base_branch, :branch_name, :workflow, :data)",
@@ -181,7 +182,7 @@ impl SqliteSessionStore {
 
     /// Load a single session by ID.
     pub fn load_session(&self, id: &str) -> Result<Option<PersistedSession>, StoreError> {
-        let conn = self.conn.lock().expect("session db mutex poisoned");
+        let conn = self.conn.lock().expect("db mutex poisoned");
         let row: Option<SessionRow> = conn
             .facet_query_optional_ref(
                 "SELECT data FROM sessions WHERE id = :id",
@@ -204,7 +205,7 @@ impl SqliteSessionStore {
 
     /// List all non-archived sessions.
     pub fn list_sessions(&self) -> Result<Vec<PersistedSession>, StoreError> {
-        let conn = self.conn.lock().expect("session db mutex poisoned");
+        let conn = self.conn.lock().expect("db mutex poisoned");
         let rows: Vec<ListRow> = conn
             .facet_query(
                 "SELECT data, archived_at FROM sessions WHERE archived_at IS NULL",
@@ -222,7 +223,7 @@ impl SqliteSessionStore {
         &self,
         project: &str,
     ) -> Result<Vec<PersistedSession>, StoreError> {
-        let conn = self.conn.lock().expect("session db mutex poisoned");
+        let conn = self.conn.lock().expect("db mutex poisoned");
         let rows: Vec<ListRow> = conn
             .facet_query_ref(
                 "SELECT data, archived_at FROM sessions WHERE archived_at IS NULL AND project = :project",
@@ -239,7 +240,7 @@ impl SqliteSessionStore {
 
     /// Delete a session by ID. Also deletes associated events (ON DELETE CASCADE).
     pub fn delete_session(&self, id: &str) -> Result<(), StoreError> {
-        let conn = self.conn.lock().expect("session db mutex poisoned");
+        let conn = self.conn.lock().expect("db mutex poisoned");
         conn.facet_execute_ref(
             "DELETE FROM sessions WHERE id = :id",
             &IdParam {
@@ -257,7 +258,7 @@ impl SqliteSessionStore {
     /// Archive a session. Sets `archived_at` on both the scalar column and
     /// inside the JSON blob, then persists.
     pub fn archive_session(&self, id: &str, timestamp: &str) -> Result<bool, StoreError> {
-        let conn = self.conn.lock().expect("session db mutex poisoned");
+        let conn = self.conn.lock().expect("db mutex poisoned");
 
         let row: Option<SessionRow> = conn
             .facet_query_optional_ref(
@@ -297,7 +298,7 @@ impl SqliteSessionStore {
     /// Unarchive a session. Clears `archived_at` on both the scalar column
     /// and inside the JSON blob.
     pub fn unarchive_session(&self, id: &str) -> Result<bool, StoreError> {
-        let conn = self.conn.lock().expect("session db mutex poisoned");
+        let conn = self.conn.lock().expect("db mutex poisoned");
 
         let row: Option<SessionRow> = conn
             .facet_query_optional_ref(
@@ -346,7 +347,7 @@ impl SqliteSessionStore {
             message: format!("failed to serialize event seq={} for {session_id}: {e}", envelope.seq),
         })?;
 
-        let conn = self.conn.lock().expect("session db mutex poisoned");
+        let conn = self.conn.lock().expect("db mutex poisoned");
         conn.facet_execute_ref(
             "INSERT INTO session_events (session_id, seq, timestamp, data)
              VALUES (:session_id, :seq, :timestamp, :data)",
@@ -372,7 +373,7 @@ impl SqliteSessionStore {
         &self,
         session_id: &str,
     ) -> Result<Vec<SessionEventEnvelope>, StoreError> {
-        let conn = self.conn.lock().expect("session db mutex poisoned");
+        let conn = self.conn.lock().expect("db mutex poisoned");
         let rows: Vec<EventRow> = conn
             .facet_query_ref(
                 "SELECT data FROM session_events WHERE session_id = :session_id ORDER BY seq ASC",
@@ -399,7 +400,7 @@ impl SqliteSessionStore {
 
     /// Return the count of events stored for a session.
     pub fn event_count(&self, session_id: &str) -> Result<u64, StoreError> {
-        let conn = self.conn.lock().expect("session db mutex poisoned");
+        let conn = self.conn.lock().expect("db mutex poisoned");
         let row: CountRow = conn
             .facet_query_one_ref(
                 "SELECT COUNT(*) AS count FROM session_events WHERE session_id = :session_id",
@@ -422,7 +423,7 @@ impl SqliteSessionStore {
             message: format!("failed to serialize activity kind: {e}"),
         })?;
 
-        let conn = self.conn.lock().expect("session db mutex poisoned");
+        let conn = self.conn.lock().expect("db mutex poisoned");
         conn.facet_execute_ref(
             "INSERT INTO activity_log (timestamp, session_id, session_slug, session_title, kind)
              VALUES (:timestamp, :session_id, :session_slug, :session_title, :kind)",
@@ -450,7 +451,7 @@ impl SqliteSessionStore {
     /// List the most recent activity entries, up to `limit`.
     /// Returns entries in reverse chronological order (newest first).
     pub fn list_activity(&self, limit: u64) -> Result<Vec<ActivityEntry>, StoreError> {
-        let conn = self.conn.lock().expect("session db mutex poisoned");
+        let conn = self.conn.lock().expect("db mutex poisoned");
         let rows: Vec<ActivityRow> = conn
             .facet_query_ref(
                 "SELECT id, timestamp, session_id, session_slug, session_title, kind
@@ -482,7 +483,7 @@ impl SqliteSessionStore {
 
     /// Trim the activity log to keep only the most recent `keep` entries.
     pub fn trim_activity(&self, keep: u64) -> Result<u64, StoreError> {
-        let conn = self.conn.lock().expect("session db mutex poisoned");
+        let conn = self.conn.lock().expect("db mutex poisoned");
 
         let total: CountRow = conn
             .facet_query_one(
@@ -511,6 +512,282 @@ impl SqliteSessionStore {
         })?;
 
         Ok(to_delete)
+    }
+
+    // ── Topology ────────────────────────────────────────────────────────
+
+    /// Persist a full topology, replacing whatever was there before.
+    /// Runs in a single transaction.
+    pub fn save_topology(&self, topology: &Topology) -> Result<(), StoreError> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        conn.execute_batch("BEGIN").map_err(se)?;
+
+        // Clear existing topology
+        conn.execute_batch(
+            "DELETE FROM memberships; DELETE FROM rooms; DELETE FROM participants;",
+        )
+        .map_err(se)?;
+
+        // Insert participants
+        let mut insert_participant = conn
+            .prepare_cached(
+                "INSERT INTO participants (name, kind) VALUES (?1, ?2)",
+            )
+            .map_err(se)?;
+
+        insert_participant
+            .execute(rusqlite::params![topology.human.name, "human"])
+            .map_err(se)?;
+        insert_participant
+            .execute(rusqlite::params![topology.admiral.name, "admiral"])
+            .map_err(se)?;
+
+        for session in &topology.sessions {
+            insert_participant
+                .execute(rusqlite::params![session.captain.name, "captain"])
+                .map_err(se)?;
+            insert_participant
+                .execute(rusqlite::params![session.mate.name, "mate"])
+                .map_err(se)?;
+        }
+
+        // Insert rooms and memberships
+        let mut insert_room = conn
+            .prepare_cached(
+                "INSERT INTO rooms (id, kind, session_id) VALUES (?1, ?2, ?3)",
+            )
+            .map_err(se)?;
+        let mut insert_membership = conn
+            .prepare_cached(
+                "INSERT INTO memberships (room_id, participant_name) VALUES (?1, ?2)",
+            )
+            .map_err(se)?;
+
+        // Admiral room: admiral + all captains
+        insert_room
+            .execute(rusqlite::params!["admiral", "admiral", Option::<&str>::None])
+            .map_err(se)?;
+        insert_membership
+            .execute(rusqlite::params!["admiral", topology.admiral.name])
+            .map_err(se)?;
+        for session in &topology.sessions {
+            insert_membership
+                .execute(rusqlite::params!["admiral", session.captain.name])
+                .map_err(se)?;
+        }
+
+        // Session rooms: captain + mate
+        for session in &topology.sessions {
+            let room_id = &session.id.0;
+            let session_id = room_id.strip_prefix("session:");
+            insert_room
+                .execute(rusqlite::params![room_id, "session", session_id])
+                .map_err(se)?;
+            insert_membership
+                .execute(rusqlite::params![room_id, session.captain.name])
+                .map_err(se)?;
+            insert_membership
+                .execute(rusqlite::params![room_id, session.mate.name])
+                .map_err(se)?;
+        }
+
+        conn.execute_batch("COMMIT").map_err(se)?;
+        Ok(())
+    }
+
+    /// Load the full topology from the database.
+    /// Returns None if no participants exist (empty topology).
+    pub fn load_topology(&self) -> Result<Option<Topology>, StoreError> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+
+        // Load all participants
+        let mut stmt = conn
+            .prepare("SELECT name, kind FROM participants")
+            .map_err(se)?;
+        let participant_rows: Vec<(String, String)> = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .map_err(se)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(se)?;
+
+        if participant_rows.is_empty() {
+            return Ok(None);
+        }
+
+        // Find the human and admiral
+        let human = participant_rows
+            .iter()
+            .find(|(_, k)| k == "human")
+            .map(|(name, _)| Participant::human(name.clone()))
+            .ok_or_else(|| StoreError {
+                message: "topology has no human participant".into(),
+            })?;
+
+        let admiral = participant_rows
+            .iter()
+            .find(|(_, k)| k == "admiral")
+            .map(|(name, _)| Participant::agent(name.clone(), AgentRole::Admiral))
+            .ok_or_else(|| StoreError {
+                message: "topology has no admiral participant".into(),
+            })?;
+
+        // Load session rooms
+        let mut room_stmt = conn
+            .prepare("SELECT id, kind, session_id FROM rooms WHERE kind = 'session'")
+            .map_err(se)?;
+        let session_rooms: Vec<(String, Option<String>)> = room_stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(2)?)))
+            .map_err(se)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(se)?;
+
+        // Load memberships for each session room
+        let mut membership_stmt = conn
+            .prepare("SELECT participant_name FROM memberships WHERE room_id = ?1")
+            .map_err(se)?;
+
+        let find_participant = |name: &str, expected_kind: &str| -> Result<Participant, StoreError> {
+            participant_rows
+                .iter()
+                .find(|(n, k)| n == name && k == expected_kind)
+                .map(|(n, k)| to_participant(n, k))
+                .ok_or_else(|| StoreError {
+                    message: format!("expected {expected_kind} participant '{name}' not found"),
+                })
+        };
+
+        let mut sessions = Vec::new();
+        for (room_id, _session_id) in &session_rooms {
+            let members: Vec<String> = membership_stmt
+                .query_map([room_id], |row| row.get(0))
+                .map_err(se)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(se)?;
+
+            let captain_name = members
+                .iter()
+                .find(|name| participant_rows.iter().any(|(n, k)| n == *name && k == "captain"))
+                .ok_or_else(|| StoreError {
+                    message: format!("session room '{room_id}' has no captain"),
+                })?;
+
+            let mate_name = members
+                .iter()
+                .find(|name| participant_rows.iter().any(|(n, k)| n == *name && k == "mate"))
+                .ok_or_else(|| StoreError {
+                    message: format!("session room '{room_id}' has no mate"),
+                })?;
+
+            sessions.push(SessionRoom {
+                id: RoomId(room_id.clone()),
+                captain: find_participant(captain_name, "captain")?,
+                mate: find_participant(mate_name, "mate")?,
+            });
+        }
+
+        Ok(Some(Topology {
+            human,
+            admiral,
+            sessions,
+        }))
+    }
+
+    /// Add a single session room to the existing topology.
+    /// Inserts the captain + mate as participants, creates the room, and wires up memberships.
+    pub fn add_session_room(&self, session: &SessionRoom) -> Result<(), StoreError> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        conn.execute_batch("BEGIN").map_err(se)?;
+
+        conn.execute(
+            "INSERT OR IGNORE INTO participants (name, kind) VALUES (?1, 'captain')",
+            [&session.captain.name],
+        )
+        .map_err(se)?;
+        conn.execute(
+            "INSERT OR IGNORE INTO participants (name, kind) VALUES (?1, 'mate')",
+            [&session.mate.name],
+        )
+        .map_err(se)?;
+
+        let room_id = &session.id.0;
+        let session_id = room_id.strip_prefix("session:");
+        conn.execute(
+            "INSERT INTO rooms (id, kind, session_id) VALUES (?1, 'session', ?2)",
+            rusqlite::params![room_id, session_id],
+        )
+        .map_err(se)?;
+
+        conn.execute(
+            "INSERT INTO memberships (room_id, participant_name) VALUES (?1, ?2)",
+            rusqlite::params![room_id, session.captain.name],
+        )
+        .map_err(se)?;
+        conn.execute(
+            "INSERT INTO memberships (room_id, participant_name) VALUES (?1, ?2)",
+            rusqlite::params![room_id, session.mate.name],
+        )
+        .map_err(se)?;
+
+        conn.execute(
+            "INSERT OR IGNORE INTO memberships (room_id, participant_name) VALUES ('admiral', ?1)",
+            [&session.captain.name],
+        )
+        .map_err(se)?;
+
+        conn.execute_batch("COMMIT").map_err(se)?;
+        Ok(())
+    }
+
+    /// Remove a session room and its participants from the topology.
+    /// Cascading deletes handle memberships.
+    pub fn remove_session_room(&self, room_id: &RoomId) -> Result<(), StoreError> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        conn.execute_batch("BEGIN").map_err(se)?;
+
+        let mut stmt = conn
+            .prepare("SELECT participant_name FROM memberships WHERE room_id = ?1")
+            .map_err(se)?;
+        let members: Vec<String> = stmt
+            .query_map([&room_id.0], |row| row.get(0))
+            .map_err(se)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(se)?;
+
+        conn.execute("DELETE FROM rooms WHERE id = ?1", [&room_id.0])
+            .map_err(se)?;
+
+        for name in &members {
+            let in_any_room: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) > 0 FROM memberships WHERE participant_name = ?1",
+                    [name],
+                    |row| row.get(0),
+                )
+                .map_err(se)?;
+            if !in_any_room {
+                conn.execute("DELETE FROM participants WHERE name = ?1", [name])
+                    .map_err(se)?;
+            }
+        }
+
+        conn.execute_batch("COMMIT").map_err(se)?;
+        Ok(())
+    }
+}
+
+fn to_participant(name: &str, kind: &str) -> Participant {
+    match kind {
+        "human" => Participant::human(name),
+        "admiral" => Participant::agent(name, AgentRole::Admiral),
+        "captain" => Participant::agent(name, AgentRole::Captain),
+        "mate" => Participant::agent(name, AgentRole::Mate),
+        _ => unreachable!("CHECK constraint prevents invalid kind: {kind}"),
+    }
+}
+
+fn se(e: rusqlite::Error) -> StoreError {
+    StoreError {
+        message: e.to_string(),
     }
 }
 
@@ -632,16 +909,38 @@ mod tests {
         }
     }
 
+    fn sample_topology(db: &ShipDb) -> Topology {
+        // Create stub sessions so FK constraints on rooms.session_id are satisfied
+        db.save_session(&make_test_session("s1", "proj")).unwrap();
+        db.save_session(&make_test_session("s2", "proj")).unwrap();
+        Topology {
+            human: Participant::human("Amos"),
+            admiral: Participant::agent("Admiral", AgentRole::Admiral),
+            sessions: vec![
+                SessionRoom {
+                    id: RoomId("session:s1".into()),
+                    captain: Participant::agent("Alex", AgentRole::Captain),
+                    mate: Participant::agent("Jordan", AgentRole::Mate),
+                },
+                SessionRoom {
+                    id: RoomId("session:s2".into()),
+                    captain: Participant::agent("Morgan", AgentRole::Captain),
+                    mate: Participant::agent("Riley", AgentRole::Mate),
+                },
+            ],
+        }
+    }
+
     // ── Session CRUD tests ──────────────────────────────────────────────
 
     #[test]
     fn save_and_load_roundtrip() {
-        let store = SqliteSessionStore::open_in_memory().unwrap();
+        let db = ShipDb::open_in_memory().unwrap();
         let session = make_test_session("sess-001", "myproject");
 
-        store.save_session(&session).unwrap();
+        db.save_session(&session).unwrap();
 
-        let loaded = store.load_session("sess-001").unwrap().unwrap();
+        let loaded = db.load_session("sess-001").unwrap().unwrap();
         assert_eq!(loaded.id.0, "sess-001");
         assert_eq!(loaded.config.project.0, "myproject");
         assert_eq!(loaded.title.as_deref(), Some("Test session"));
@@ -650,80 +949,74 @@ mod tests {
 
     #[test]
     fn load_missing_returns_none() {
-        let store = SqliteSessionStore::open_in_memory().unwrap();
-        let loaded = store.load_session("nonexistent").unwrap();
+        let db = ShipDb::open_in_memory().unwrap();
+        let loaded = db.load_session("nonexistent").unwrap();
         assert!(loaded.is_none());
     }
 
     #[test]
     fn list_excludes_archived() {
-        let store = SqliteSessionStore::open_in_memory().unwrap();
+        let db = ShipDb::open_in_memory().unwrap();
 
         let active = make_test_session("sess-active", "proj");
-        store.save_session(&active).unwrap();
+        db.save_session(&active).unwrap();
 
         let mut archived = make_test_session("sess-archived", "proj");
         archived.archived_at = Some("2025-06-01T00:00:00Z".to_owned());
-        store.save_session(&archived).unwrap();
+        db.save_session(&archived).unwrap();
 
-        let sessions = store.list_sessions().unwrap();
+        let sessions = db.list_sessions().unwrap();
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].id.0, "sess-active");
     }
 
     #[test]
     fn save_upserts() {
-        let store = SqliteSessionStore::open_in_memory().unwrap();
+        let db = ShipDb::open_in_memory().unwrap();
 
         let mut session = make_test_session("sess-001", "proj");
-        store.save_session(&session).unwrap();
+        db.save_session(&session).unwrap();
 
         session.title = Some("Updated title".to_owned());
         session.is_read = true;
-        store.save_session(&session).unwrap();
+        db.save_session(&session).unwrap();
 
-        let loaded = store.load_session("sess-001").unwrap().unwrap();
+        let loaded = db.load_session("sess-001").unwrap().unwrap();
         assert_eq!(loaded.title.as_deref(), Some("Updated title"));
         assert!(loaded.is_read);
 
-        let all = store.list_sessions().unwrap();
+        let all = db.list_sessions().unwrap();
         assert_eq!(all.len(), 1);
     }
 
     #[test]
     fn delete_session() {
-        let store = SqliteSessionStore::open_in_memory().unwrap();
+        let db = ShipDb::open_in_memory().unwrap();
 
         let session = make_test_session("sess-001", "proj");
-        store.save_session(&session).unwrap();
+        db.save_session(&session).unwrap();
 
-        store.delete_session("sess-001").unwrap();
+        db.delete_session("sess-001").unwrap();
 
-        let loaded = store.load_session("sess-001").unwrap();
+        let loaded = db.load_session("sess-001").unwrap();
         assert!(loaded.is_none());
     }
 
     #[test]
     fn delete_nonexistent_is_ok() {
-        let store = SqliteSessionStore::open_in_memory().unwrap();
-        store.delete_session("nonexistent").unwrap();
+        let db = ShipDb::open_in_memory().unwrap();
+        db.delete_session("nonexistent").unwrap();
     }
 
     #[test]
     fn list_multiple_projects() {
-        let store = SqliteSessionStore::open_in_memory().unwrap();
+        let db = ShipDb::open_in_memory().unwrap();
 
-        store
-            .save_session(&make_test_session("s1", "project-a"))
-            .unwrap();
-        store
-            .save_session(&make_test_session("s2", "project-b"))
-            .unwrap();
-        store
-            .save_session(&make_test_session("s3", "project-a"))
-            .unwrap();
+        db.save_session(&make_test_session("s1", "project-a")).unwrap();
+        db.save_session(&make_test_session("s2", "project-b")).unwrap();
+        db.save_session(&make_test_session("s3", "project-a")).unwrap();
 
-        let all = store.list_sessions().unwrap();
+        let all = db.list_sessions().unwrap();
         assert_eq!(all.len(), 3);
     }
 
@@ -731,42 +1024,34 @@ mod tests {
 
     #[test]
     fn list_sessions_for_project_filters() {
-        let store = SqliteSessionStore::open_in_memory().unwrap();
+        let db = ShipDb::open_in_memory().unwrap();
 
-        store
-            .save_session(&make_test_session("s1", "project-a"))
-            .unwrap();
-        store
-            .save_session(&make_test_session("s2", "project-b"))
-            .unwrap();
-        store
-            .save_session(&make_test_session("s3", "project-a"))
-            .unwrap();
+        db.save_session(&make_test_session("s1", "project-a")).unwrap();
+        db.save_session(&make_test_session("s2", "project-b")).unwrap();
+        db.save_session(&make_test_session("s3", "project-a")).unwrap();
 
-        let a = store.list_sessions_for_project("project-a").unwrap();
+        let a = db.list_sessions_for_project("project-a").unwrap();
         assert_eq!(a.len(), 2);
 
-        let b = store.list_sessions_for_project("project-b").unwrap();
+        let b = db.list_sessions_for_project("project-b").unwrap();
         assert_eq!(b.len(), 1);
         assert_eq!(b[0].id.0, "s2");
 
-        let c = store.list_sessions_for_project("nonexistent").unwrap();
+        let c = db.list_sessions_for_project("nonexistent").unwrap();
         assert!(c.is_empty());
     }
 
     #[test]
     fn list_sessions_for_project_excludes_archived() {
-        let store = SqliteSessionStore::open_in_memory().unwrap();
+        let db = ShipDb::open_in_memory().unwrap();
 
-        store
-            .save_session(&make_test_session("s1", "proj"))
-            .unwrap();
+        db.save_session(&make_test_session("s1", "proj")).unwrap();
 
         let mut archived = make_test_session("s2", "proj");
         archived.archived_at = Some("2025-06-01T00:00:00Z".to_owned());
-        store.save_session(&archived).unwrap();
+        db.save_session(&archived).unwrap();
 
-        let result = store.list_sessions_for_project("proj").unwrap();
+        let result = db.list_sessions_for_project("proj").unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].id.0, "s1");
     }
@@ -775,49 +1060,36 @@ mod tests {
 
     #[test]
     fn archive_and_unarchive() {
-        let store = SqliteSessionStore::open_in_memory().unwrap();
-        store
-            .save_session(&make_test_session("s1", "proj"))
-            .unwrap();
+        let db = ShipDb::open_in_memory().unwrap();
+        db.save_session(&make_test_session("s1", "proj")).unwrap();
 
-        // Archive it
-        let found = store
-            .archive_session("s1", "2025-06-15T12:00:00Z")
-            .unwrap();
+        let found = db.archive_session("s1", "2025-06-15T12:00:00Z").unwrap();
         assert!(found);
 
-        // No longer in active list
-        assert!(store.list_sessions().unwrap().is_empty());
+        assert!(db.list_sessions().unwrap().is_empty());
 
-        // But still loadable, with archived_at set in the JSON blob
-        let loaded = store.load_session("s1").unwrap().unwrap();
-        assert_eq!(
-            loaded.archived_at.as_deref(),
-            Some("2025-06-15T12:00:00Z")
-        );
+        let loaded = db.load_session("s1").unwrap().unwrap();
+        assert_eq!(loaded.archived_at.as_deref(), Some("2025-06-15T12:00:00Z"));
 
-        // Unarchive it
-        let found = store.unarchive_session("s1").unwrap();
+        let found = db.unarchive_session("s1").unwrap();
         assert!(found);
 
-        let sessions = store.list_sessions().unwrap();
+        let sessions = db.list_sessions().unwrap();
         assert_eq!(sessions.len(), 1);
         assert!(sessions[0].archived_at.is_none());
     }
 
     #[test]
     fn archive_nonexistent_returns_false() {
-        let store = SqliteSessionStore::open_in_memory().unwrap();
-        let found = store
-            .archive_session("nope", "2025-06-15T12:00:00Z")
-            .unwrap();
+        let db = ShipDb::open_in_memory().unwrap();
+        let found = db.archive_session("nope", "2025-06-15T12:00:00Z").unwrap();
         assert!(!found);
     }
 
     #[test]
     fn unarchive_nonexistent_returns_false() {
-        let store = SqliteSessionStore::open_in_memory().unwrap();
-        let found = store.unarchive_session("nope").unwrap();
+        let db = ShipDb::open_in_memory().unwrap();
+        let found = db.unarchive_session("nope").unwrap();
         assert!(!found);
     }
 
@@ -825,16 +1097,14 @@ mod tests {
 
     #[test]
     fn append_and_list_events() {
-        let store = SqliteSessionStore::open_in_memory().unwrap();
-        store
-            .save_session(&make_test_session("s1", "proj"))
-            .unwrap();
+        let db = ShipDb::open_in_memory().unwrap();
+        db.save_session(&make_test_session("s1", "proj")).unwrap();
 
-        store.append_event("s1", &make_test_event(0)).unwrap();
-        store.append_event("s1", &make_test_event(1)).unwrap();
-        store.append_event("s1", &make_test_event(2)).unwrap();
+        db.append_event("s1", &make_test_event(0)).unwrap();
+        db.append_event("s1", &make_test_event(1)).unwrap();
+        db.append_event("s1", &make_test_event(2)).unwrap();
 
-        let events = store.list_events("s1").unwrap();
+        let events = db.list_events("s1").unwrap();
         assert_eq!(events.len(), 3);
         assert_eq!(events[0].seq, 0);
         assert_eq!(events[1].seq, 1);
@@ -843,51 +1113,47 @@ mod tests {
 
     #[test]
     fn event_count() {
-        let store = SqliteSessionStore::open_in_memory().unwrap();
-        store
-            .save_session(&make_test_session("s1", "proj"))
-            .unwrap();
+        let db = ShipDb::open_in_memory().unwrap();
+        db.save_session(&make_test_session("s1", "proj")).unwrap();
 
-        assert_eq!(store.event_count("s1").unwrap(), 0);
+        assert_eq!(db.event_count("s1").unwrap(), 0);
 
-        store.append_event("s1", &make_test_event(0)).unwrap();
-        store.append_event("s1", &make_test_event(1)).unwrap();
+        db.append_event("s1", &make_test_event(0)).unwrap();
+        db.append_event("s1", &make_test_event(1)).unwrap();
 
-        assert_eq!(store.event_count("s1").unwrap(), 2);
+        assert_eq!(db.event_count("s1").unwrap(), 2);
     }
 
     #[test]
     fn list_events_empty_session() {
-        let store = SqliteSessionStore::open_in_memory().unwrap();
-        let events = store.list_events("nonexistent").unwrap();
+        let db = ShipDb::open_in_memory().unwrap();
+        let events = db.list_events("nonexistent").unwrap();
         assert!(events.is_empty());
     }
 
     #[test]
     fn delete_session_cascades_events() {
-        let store = SqliteSessionStore::open_in_memory().unwrap();
-        store
-            .save_session(&make_test_session("s1", "proj"))
-            .unwrap();
+        let db = ShipDb::open_in_memory().unwrap();
+        db.save_session(&make_test_session("s1", "proj")).unwrap();
 
-        store.append_event("s1", &make_test_event(0)).unwrap();
-        store.append_event("s1", &make_test_event(1)).unwrap();
+        db.append_event("s1", &make_test_event(0)).unwrap();
+        db.append_event("s1", &make_test_event(1)).unwrap();
 
-        store.delete_session("s1").unwrap();
+        db.delete_session("s1").unwrap();
 
-        assert_eq!(store.event_count("s1").unwrap(), 0);
+        assert_eq!(db.event_count("s1").unwrap(), 0);
     }
 
     // ── Activity log tests ──────────────────────────────────────────────
 
     #[test]
     fn append_and_list_activity() {
-        let store = SqliteSessionStore::open_in_memory().unwrap();
+        let db = ShipDb::open_in_memory().unwrap();
 
-        let id1 = store
+        let id1 = db
             .append_activity(&make_test_activity("s1", ActivityKind::SessionCreated))
             .unwrap();
-        let id2 = store
+        let id2 = db
             .append_activity(&make_test_activity("s1", ActivityKind::CaptainMessage {
                 message: "hello".to_owned(),
             }))
@@ -895,59 +1161,55 @@ mod tests {
 
         assert!(id2 > id1);
 
-        let entries = store.list_activity(10).unwrap();
+        let entries = db.list_activity(10).unwrap();
         assert_eq!(entries.len(), 2);
-        // Newest first
         assert_eq!(entries[0].id, id2);
         assert_eq!(entries[1].id, id1);
     }
 
     #[test]
     fn list_activity_respects_limit() {
-        let store = SqliteSessionStore::open_in_memory().unwrap();
+        let db = ShipDb::open_in_memory().unwrap();
 
         for _ in 0..5 {
-            store
-                .append_activity(&make_test_activity("s1", ActivityKind::SessionCreated))
+            db.append_activity(&make_test_activity("s1", ActivityKind::SessionCreated))
                 .unwrap();
         }
 
-        let entries = store.list_activity(3).unwrap();
+        let entries = db.list_activity(3).unwrap();
         assert_eq!(entries.len(), 3);
     }
 
     #[test]
     fn trim_activity() {
-        let store = SqliteSessionStore::open_in_memory().unwrap();
+        let db = ShipDb::open_in_memory().unwrap();
 
         for _ in 0..10 {
-            store
-                .append_activity(&make_test_activity("s1", ActivityKind::SessionCreated))
+            db.append_activity(&make_test_activity("s1", ActivityKind::SessionCreated))
                 .unwrap();
         }
 
-        let deleted = store.trim_activity(3).unwrap();
+        let deleted = db.trim_activity(3).unwrap();
         assert_eq!(deleted, 7);
 
-        let remaining = store.list_activity(100).unwrap();
+        let remaining = db.list_activity(100).unwrap();
         assert_eq!(remaining.len(), 3);
     }
 
     #[test]
     fn trim_activity_noop_when_under_limit() {
-        let store = SqliteSessionStore::open_in_memory().unwrap();
+        let db = ShipDb::open_in_memory().unwrap();
 
-        store
-            .append_activity(&make_test_activity("s1", ActivityKind::SessionCreated))
+        db.append_activity(&make_test_activity("s1", ActivityKind::SessionCreated))
             .unwrap();
 
-        let deleted = store.trim_activity(100).unwrap();
+        let deleted = db.trim_activity(100).unwrap();
         assert_eq!(deleted, 0);
     }
 
     #[test]
     fn activity_kind_roundtrip() {
-        let store = SqliteSessionStore::open_in_memory().unwrap();
+        let db = ShipDb::open_in_memory().unwrap();
 
         let kinds = vec![
             ActivityKind::SessionCreated,
@@ -961,17 +1223,142 @@ mod tests {
         ];
 
         for kind in &kinds {
-            store
-                .append_activity(&make_test_activity("s1", kind.clone()))
+            db.append_activity(&make_test_activity("s1", kind.clone()))
                 .unwrap();
         }
 
-        let entries = store.list_activity(10).unwrap();
+        let entries = db.list_activity(10).unwrap();
         assert_eq!(entries.len(), 4);
 
-        // Reversed order (newest first), so compare backwards
         for (i, entry) in entries.iter().rev().enumerate() {
             assert_eq!(entry.kind, kinds[i]);
         }
+    }
+
+    // ── Topology tests ──────────────────────────────────────────────────
+
+    #[test]
+    fn topology_save_and_load_roundtrip() {
+        let db = ShipDb::open_in_memory().unwrap();
+        let topo = sample_topology(&db);
+
+        db.save_topology(&topo).unwrap();
+        let loaded = db.load_topology().unwrap().unwrap();
+
+        assert_eq!(loaded.human, topo.human);
+        assert_eq!(loaded.admiral, topo.admiral);
+        assert_eq!(loaded.sessions.len(), 2);
+
+        for expected in &topo.sessions {
+            let found = loaded
+                .sessions
+                .iter()
+                .find(|s| s.id == expected.id)
+                .expect("session room not found");
+            assert_eq!(found.captain, expected.captain);
+            assert_eq!(found.mate, expected.mate);
+        }
+    }
+
+    #[test]
+    fn topology_load_empty_returns_none() {
+        let db = ShipDb::open_in_memory().unwrap();
+        assert!(db.load_topology().unwrap().is_none());
+    }
+
+    #[test]
+    fn topology_save_replaces_previous() {
+        let db = ShipDb::open_in_memory().unwrap();
+
+        let topo1 = sample_topology(&db);
+        db.save_topology(&topo1).unwrap();
+
+        let topo2 = Topology {
+            human: Participant::human("Bob"),
+            admiral: Participant::agent("Fleet", AgentRole::Admiral),
+            sessions: vec![],
+        };
+        db.save_topology(&topo2).unwrap();
+
+        let loaded = db.load_topology().unwrap().unwrap();
+        assert_eq!(loaded.human.name, "Bob");
+        assert_eq!(loaded.admiral.name, "Fleet");
+        assert!(loaded.sessions.is_empty());
+    }
+
+    #[test]
+    fn topology_add_session_room() {
+        let db = ShipDb::open_in_memory().unwrap();
+
+        let topo = Topology {
+            human: Participant::human("Amos"),
+            admiral: Participant::agent("Admiral", AgentRole::Admiral),
+            sessions: vec![],
+        };
+        db.save_topology(&topo).unwrap();
+
+        db.save_session(&make_test_session("s1", "proj")).unwrap();
+        let session = SessionRoom {
+            id: RoomId("session:s1".into()),
+            captain: Participant::agent("Alex", AgentRole::Captain),
+            mate: Participant::agent("Jordan", AgentRole::Mate),
+        };
+        db.add_session_room(&session).unwrap();
+
+        let loaded = db.load_topology().unwrap().unwrap();
+        assert_eq!(loaded.sessions.len(), 1);
+        assert_eq!(loaded.sessions[0].captain.name, "Alex");
+        assert_eq!(loaded.sessions[0].mate.name, "Jordan");
+
+        let admiral_members = loaded.admiral_room_members();
+        assert!(admiral_members.iter().any(|p| p.name == "Alex"));
+    }
+
+    #[test]
+    fn topology_remove_session_room() {
+        let db = ShipDb::open_in_memory().unwrap();
+        let topo = sample_topology(&db);
+        db.save_topology(&topo).unwrap();
+
+        db.remove_session_room(&RoomId("session:s1".into())).unwrap();
+
+        let loaded = db.load_topology().unwrap().unwrap();
+        assert_eq!(loaded.sessions.len(), 1);
+        assert_eq!(loaded.sessions[0].id.0, "session:s2");
+
+        let all_names: Vec<&str> = loaded
+            .admiral_room_members()
+            .iter()
+            .map(|p| p.name.as_str())
+            .collect();
+        assert!(!all_names.contains(&"Alex"));
+    }
+
+    #[test]
+    fn topology_add_multiple_session_rooms_incrementally() {
+        let db = ShipDb::open_in_memory().unwrap();
+
+        let topo = Topology {
+            human: Participant::human("Amos"),
+            admiral: Participant::agent("Admiral", AgentRole::Admiral),
+            sessions: vec![],
+        };
+        db.save_topology(&topo).unwrap();
+
+        for i in 0..3 {
+            db.save_session(&make_test_session(&format!("s{i}"), "proj")).unwrap();
+            db.add_session_room(&SessionRoom {
+                id: RoomId(format!("session:s{i}")),
+                captain: Participant::agent(format!("Captain{i}"), AgentRole::Captain),
+                mate: Participant::agent(format!("Mate{i}"), AgentRole::Mate),
+            })
+            .unwrap();
+        }
+
+        let loaded = db.load_topology().unwrap().unwrap();
+        assert_eq!(loaded.sessions.len(), 3);
+
+        let admiral_members = loaded.admiral_room_members();
+        assert_eq!(admiral_members.len(), 4); // admiral + 3 captains
     }
 }
