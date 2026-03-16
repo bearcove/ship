@@ -218,12 +218,13 @@ fn session_notification_structure() {
 // ── MCP servers ────────────────────────────────────────────────────
 
 #[test]
-fn mcp_server_stdio_tagged() {
+fn mcp_server_stdio_untagged() {
     let server = McpServer::Stdio(McpServerStdio::new("my-server", "/usr/bin/server")
         .args(vec!["--flag".to_owned()])
         .env(vec![EnvVariable::new("KEY", "VAL")]));
     let json = facet_json::to_string(&server).unwrap();
-    assert!(json.contains(r#""type":"stdio""#), "missing type tag: {json}");
+    // Stdio is untagged — no "type" field
+    assert!(!json.contains(r#""type""#), "stdio should not have type tag: {json}");
     assert!(json.contains(r#""name":"my-server""#), "missing name: {json}");
 }
 

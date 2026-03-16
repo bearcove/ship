@@ -927,9 +927,9 @@ dependencies = [
 
 [[package]]
 name = "facet-dessert"
-version = "0.44.4"
+version = "0.44.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ffed62499e9764e2a6ebf139b905efb55d41bd8fe0a500024fd60a4b1c98517"
+checksum = "0fb18a3e7ee90139051f679390662ae158439c1564b73b482676b9a3862d13c0"
 dependencies = [
  "facet-core",
  "facet-reflect",
@@ -946,9 +946,9 @@ dependencies = [
 
 [[package]]
 name = "facet-format"
-version = "0.44.4"
+version = "0.44.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9013e366eb724ba12cb501363e37a02c077420ee37b997cae21bfb3a76bb5cc0"
+checksum = "d87b44b7183a982f8c9889b7ec50bf8f1a38318a77069084436cc908bb1e5e96"
 dependencies = [
  "facet-core",
  "facet-dessert",
@@ -959,9 +959,9 @@ dependencies = [
 
 [[package]]
 name = "facet-json"
-version = "0.44.4"
+version = "0.44.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67de8c274c53b5a4c186040a086f7172b9962b4862386606229eaefd9009b92c"
+checksum = "81791a228a3d57e2e982430f92ad2a219feaca8f21234316a830246594f64e84"
 dependencies = [
  "facet",
  "facet-core",

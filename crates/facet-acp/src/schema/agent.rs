@@ -751,6 +751,7 @@ pub struct SetSessionConfigOptionResponse {
 pub enum McpServer {
     Http(McpServerHttp),
     Sse(McpServerSse),
+    #[facet(untagged)]
     Stdio(McpServerStdio),
 }
 
