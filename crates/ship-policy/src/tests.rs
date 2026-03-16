@@ -745,11 +745,11 @@ fn delivery_checks_finished_failed_notifies_human() {
     assert_eq!(deliveries.len(), 2);
 
     // Captain gets attention
-    let captain_d = deliveries.iter().find(|d| d.to == "Cedar").unwrap();
+    let captain_d = deliveries.iter().find(|d| d.to.as_str() == "Cedar").unwrap();
     assert_eq!(captain_d.urgent, true);
 
     // Human gets urgent delivery (failed checks)
-    let human_d = deliveries.iter().find(|d| d.to == "Amos").unwrap();
+    let human_d = deliveries.iter().find(|d| d.to.as_str() == "Amos").unwrap();
     assert_eq!(human_d.urgent, true);
 }
 
@@ -763,7 +763,7 @@ fn delivery_checks_finished_passed_is_informational() {
         summary: "all green".into(),
     };
     let deliveries = route(&action, &topo);
-    let human_d = deliveries.iter().find(|d| d.to == "Amos").unwrap();
+    let human_d = deliveries.iter().find(|d| d.to.as_str() == "Amos").unwrap();
     assert_eq!(human_d.urgent, false);
 }
 

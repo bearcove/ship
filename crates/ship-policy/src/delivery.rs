@@ -1,4 +1,4 @@
-use crate::{AgentRole, Lane, ParticipantKind, RoomId, Topology, allowed_mentions};
+use crate::{AgentRole, Lane, ParticipantKind, ParticipantName, ParticipantNameRef, RoomId, Topology, allowed_mentions};
 use std::fmt::Write as _;
 
 // ── Actions: everything that can happen in the system ────────────────
@@ -8,13 +8,13 @@ use std::fmt::Write as _;
 pub enum Action {
     /// A participant sent a message mentioning another participant.
     MessageSent {
-        from: String,
-        mention: String,
+        from: ParticipantName,
+        mention: ParticipantName,
         text: String,
     },
 
     /// A participant sent a message without addressing anyone.
-    UnaddressedMessage { from: String, text: String },
+    UnaddressedMessage { from: ParticipantName, text: String },
 
     /// Mate made a commit, optionally completing a plan step.
     MateCommitted {
@@ -70,9 +70,9 @@ pub enum Action {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Delivery {
     /// Recipient participant name.
-    pub to: String,
+    pub to: ParticipantName,
     /// Sender participant name (or "system" for system-generated deliveries).
-    pub from: String,
+    pub from: ParticipantName,
     /// Typed content of the delivery.
     pub content: DeliveryContent,
     /// If true: for agents, cancel current prompt and re-prompt.
@@ -107,11 +107,11 @@ pub enum DeliveryContent {
     ActivitySummary { summary: String },
 
     /// Bounce: message had no addressee or addressed unknown target.
-    Bounce { reason: String, allowed: Vec<String> },
+    Bounce { reason: String, allowed: Vec<ParticipantName> },
 
     /// Access denied: sender cannot address target.
     Denied {
-        attempted_target: String,
+        attempted_target: ParticipantName,
         reason: String,
     },
 
@@ -241,7 +241,7 @@ pub fn render_for_prompt(delivery: &Delivery, mention_hints: &[(&str, &str)]) ->
 
         DeliveryContent::ChecksStarted { context } => {
             let body = format!("Checks started: {context}");
-            wrap_message("system", &body, mention_hints)
+            wrap_message(ParticipantNameRef::from_str("system"), &body, mention_hints)
         }
 
         DeliveryContent::ChecksFinished {
@@ -251,13 +251,13 @@ pub fn render_for_prompt(delivery: &Delivery, mention_hints: &[(&str, &str)]) ->
         } => {
             let status = if *all_passed { "passed" } else { "FAILED" };
             let body = format!("Checks {status} ({context}): {summary}");
-            wrap_message("system", &body, mention_hints)
+            wrap_message(ParticipantNameRef::from_str("system"), &body, mention_hints)
         }
     }
 }
 
 /// Wrap content in a `<message>` tag with routing hints for agent prompt injection.
-fn wrap_message(from: &str, body: &str, mention_hints: &[(&str, &str)]) -> String {
+fn wrap_message(from: &ParticipantNameRef, body: &str, mention_hints: &[(&str, &str)]) -> String {
     let mut out = String::new();
     let _ = write!(out, "<message from=\"{from}\">\n{body}\n</message>");
     let routing = format_routing_hint(mention_hints);
@@ -345,8 +345,8 @@ pub fn route(action: &Action, topology: &Topology) -> Vec<Delivery> {
 
 fn route_message_sent(
     topology: &Topology,
-    from: &str,
-    mention: &str,
+    from: &ParticipantNameRef,
+    mention: &ParticipantNameRef,
     text: &str,
 ) -> Vec<Delivery> {
     // Find the sender
@@ -364,7 +364,7 @@ fn route_message_sent(
         None => {
             return vec![Delivery {
                 to: from.to_owned(),
-                from: "system".to_owned(),
+                from: ParticipantName::from_static("system"),
                 content: DeliveryContent::Bounce {
                     reason: format!("Unknown participant: {mention}"),
                     allowed: allowed_mentions(topology, sender),
@@ -379,7 +379,7 @@ fn route_message_sent(
     if !allowed.iter().any(|n| n == mention) {
         return vec![Delivery {
             to: from.to_owned(),
-            from: "system".to_owned(),
+            from: ParticipantName::from_static("system"),
             content: DeliveryContent::Denied {
                 attempted_target: mention.to_owned(),
                 reason: format!(
@@ -417,7 +417,7 @@ fn route_message_sent(
     }]
 }
 
-fn route_unaddressed(topology: &Topology, from: &str, _text: &str) -> Vec<Delivery> {
+fn route_unaddressed(topology: &Topology, from: &ParticipantNameRef, _text: &str) -> Vec<Delivery> {
     let sender = match topology.find_participant(from) {
         Some(p) => p,
         None => return vec![],
@@ -425,7 +425,7 @@ fn route_unaddressed(topology: &Topology, from: &str, _text: &str) -> Vec<Delive
 
     vec![Delivery {
         to: from.to_owned(),
-        from: "system".to_owned(),
+        from: ParticipantName::from_static("system"),
         content: DeliveryContent::Bounce {
             reason: "Message didn't address anyone.".to_owned(),
             allowed: allowed_mentions(topology, sender),
@@ -564,7 +564,7 @@ fn route_mate_activity_summary(
 
     vec![Delivery {
         to: room.captain.name.clone(),
-        from: "summarizer".to_owned(),
+        from: ParticipantName::from_static("summarizer"),
         content: DeliveryContent::ActivitySummary {
             summary: summary.to_owned(),
         },
@@ -580,7 +580,7 @@ fn route_mate_forced_submit(topology: &Topology, session: &RoomId) -> Vec<Delive
 
     vec![Delivery {
         to: room.mate.name.clone(),
-        from: "system".to_owned(),
+        from: ParticipantName::from_static("system"),
         content: DeliveryContent::Guidance {
             text: "You stopped without submitting. Call mate_submit with a summary of what you accomplished.".to_owned(),
         },
@@ -627,7 +627,7 @@ fn route_checks_started(
         // Human sees checks started
         Delivery {
             to: topology.human.name.clone(),
-            from: "system".to_owned(),
+            from: ParticipantName::from_static("system"),
             content: DeliveryContent::ChecksStarted {
                 context: context.to_owned(),
             },
@@ -636,7 +636,7 @@ fn route_checks_started(
         // Captain sees checks started
         Delivery {
             to: room.captain.name.clone(),
-            from: "system".to_owned(),
+            from: ParticipantName::from_static("system"),
             content: DeliveryContent::ChecksStarted {
                 context: context.to_owned(),
             },
@@ -663,7 +663,7 @@ fn route_checks_finished(
         // Captain sees results (always needs to know)
         Delivery {
             to: room.captain.name.clone(),
-            from: "system".to_owned(),
+            from: ParticipantName::from_static("system"),
             content: DeliveryContent::ChecksFinished {
                 context: context.to_owned(),
                 all_passed,
@@ -674,7 +674,7 @@ fn route_checks_finished(
         // Human sees results (urgent if checks failed)
         Delivery {
             to: topology.human.name.clone(),
-            from: "system".to_owned(),
+            from: ParticipantName::from_static("system"),
             content: DeliveryContent::ChecksFinished {
                 context: context.to_owned(),
                 all_passed,

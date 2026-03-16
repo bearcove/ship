@@ -8,7 +8,7 @@ use crate::RoomId;
 pub struct BlockId;
 
 /// A participant's display name. Links to the participants table.
-#[braid(rusqlite)]
+#[braid(rusqlite, sailfish)]
 pub struct ParticipantName;
 
 /// A block in a room's feed. The fundamental unit of content that the

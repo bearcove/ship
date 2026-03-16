@@ -1,10 +1,10 @@
-use crate::Topology;
+use crate::{ParticipantName, Topology};
 
 /// Result of parsing a mention from the start of a text block.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParsedMention {
     /// Found `@Name rest-of-text` where Name is a known participant.
-    Found { name: String, rest: String },
+    Found { name: ParticipantName, rest: String },
     /// No mention found — text doesn't start with @.
     None,
     /// Starts with @ but doesn't match any known participant.
@@ -96,7 +96,7 @@ mod tests {
         assert_eq!(
             result,
             ParsedMention::Found {
-                name: "Cedar".into(),
+                name: ParticipantName::from_static("Cedar"),
                 rest: "fix the tests".into()
             }
         );
@@ -108,7 +108,7 @@ mod tests {
         assert_eq!(
             result,
             ParsedMention::Found {
-                name: "Cedar".into(),
+                name: ParticipantName::from_static("Cedar"),
                 rest: "fix the tests".into()
             }
         );
@@ -120,7 +120,7 @@ mod tests {
         assert_eq!(
             result,
             ParsedMention::Found {
-                name: "Jordan".into(),
+                name: ParticipantName::from_static("Jordan"),
                 rest: "done".into()
             }
         );
@@ -132,7 +132,7 @@ mod tests {
         assert_eq!(
             result,
             ParsedMention::Found {
-                name: "Amos".into(),
+                name: ParticipantName::from_static("Amos"),
                 rest: "task is ready".into()
             }
         );
@@ -144,7 +144,7 @@ mod tests {
         assert_eq!(
             result,
             ParsedMention::Found {
-                name: "Morgan".into(),
+                name: ParticipantName::from_static("Morgan"),
                 rest: "reassign lane 2".into()
             }
         );
@@ -204,7 +204,7 @@ mod tests {
         assert_eq!(
             result,
             ParsedMention::Found {
-                name: "Cedar".into(),
+                name: ParticipantName::from_static("Cedar"),
                 rest: String::new()
             }
         );

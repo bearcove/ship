@@ -26,8 +26,8 @@ pub use task::{Task, TaskId};
 pub use transitions::{TaskPhase, can_transition, reachable_from};
 
 pub use block::{
-    Block, BlockContent, BlockId, MilestoneKind, ParticipantName, PermissionResolution, PlanStep,
-    ToolCallLocation, ToolCallStatus,
+    Block, BlockContent, BlockId, MilestoneKind, ParticipantName, ParticipantNameRef,
+    PermissionResolution, PlanStep, ToolCallLocation, ToolCallStatus,
 };
 pub use identity::*;
 pub use room::{Lane, LaneId, RoomId, Topology, allowed_mentions};

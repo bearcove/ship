@@ -1,3 +1,5 @@
+use crate::block::ParticipantName;
+
 /// The role an agent plays. Determines tool access and behavioral constraints.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, facet::Facet)]
@@ -14,7 +16,7 @@ pub enum AgentRole {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, facet::Facet)]
 pub struct Participant {
     /// Display name, e.g. "Alex", "Jordan", "Morgan", "Amos"
-    pub name: String,
+    pub name: ParticipantName,
     /// What kind of participant this is
     pub kind: ParticipantKind,
 }
@@ -30,14 +32,14 @@ pub enum ParticipantKind {
 impl Participant {
     pub fn agent(name: impl Into<String>, role: AgentRole) -> Self {
         Self {
-            name: name.into(),
+            name: ParticipantName::new(name.into()),
             kind: ParticipantKind::Agent(role),
         }
     }
 
     pub fn human(name: impl Into<String>) -> Self {
         Self {
-            name: name.into(),
+            name: ParticipantName::new(name.into()),
             kind: ParticipantKind::Human,
         }
     }

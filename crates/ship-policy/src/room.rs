@@ -1,6 +1,6 @@
 use strid::braid;
 
-use crate::{AgentRole, Participant, ParticipantKind};
+use crate::{AgentRole, Participant, ParticipantKind, ParticipantName, ParticipantNameRef};
 
 /// A named communication space. Participants in a room can see each other's messages.
 #[braid(rusqlite)]
@@ -48,21 +48,21 @@ impl Topology {
     }
 
     /// Find which lane a participant belongs to (by name).
-    pub fn lane_for_participant(&self, name: &str) -> Option<&Lane> {
+    pub fn lane_for_participant(&self, name: &ParticipantNameRef) -> Option<&Lane> {
         self.lanes
             .iter()
-            .find(|l| l.captain.name == name || l.mate.name == name)
+            .find(|l| l.captain.name == *name || l.mate.name == *name)
     }
 
     /// Find a participant by name across the entire topology (exact match).
-    pub fn find_participant(&self, name: &str) -> Option<&Participant> {
-        self.all_participants().find(|p| p.name == name)
+    pub fn find_participant(&self, name: &ParticipantNameRef) -> Option<&Participant> {
+        self.all_participants().find(|p| p.name == *name)
     }
 
     /// Find a participant by name, case-insensitive.
     pub fn find_participant_ci(&self, name: &str) -> Option<&Participant> {
         self.all_participants()
-            .find(|p| p.name.eq_ignore_ascii_case(name))
+            .find(|p| p.name.as_str().eq_ignore_ascii_case(name))
     }
 
     /// Check if any participant's name starts with the given prefix (case-insensitive).
@@ -70,7 +70,7 @@ impl Topology {
     pub fn any_name_starts_with(&self, prefix: &str) -> bool {
         let prefix_lower = prefix.to_ascii_lowercase();
         self.all_participants()
-            .any(|p| p.name.to_ascii_lowercase().starts_with(&prefix_lower))
+            .any(|p| p.name.as_str().to_ascii_lowercase().starts_with(&prefix_lower))
     }
 
     /// Iterate over all participants in the topology.
@@ -87,7 +87,7 @@ impl Topology {
 
 /// Who can a given participant mention?
 /// Returns the set of names this participant is allowed to address.
-pub fn allowed_mentions(topology: &Topology, sender: &Participant) -> Vec<String> {
+pub fn allowed_mentions(topology: &Topology, sender: &Participant) -> Vec<ParticipantName> {
     match sender.kind {
         ParticipantKind::Human => {
             let mut names = vec![topology.admiral.name.clone()];
