@@ -5,7 +5,7 @@ edition = "2024"
 
 [features]
 default = []
-whisper = ["dep:whisper-cpp-plus", "dep:silero-vad-rust"]
+whisper = ["dep:whisper-cpp-plus", "dep:silero-vad-rust", "dep:ort"]
 audio = ["dep:cpal"]
 
 [dependencies]
@@ -16,6 +16,8 @@ dirs-next = "2.0.0"
 
 # Optional heavy dependencies for speech transcription
 whisper-cpp-plus = { version = "0.1.4", features = ["metal", "async", "tokio"], optional = true }
+# Pin ort to rc.10 — rc.11+ uses ndarray 0.17, rc.12 broke Error types; silero-vad-rust 6.2.1 needs rc.10 + ndarray 0.16
+ort = { version = "=2.0.0-rc.10", optional = true }
 silero-vad-rust = { version = "6.2.1", optional = true }
 
 # Optional audio I/O

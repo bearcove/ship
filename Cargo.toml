@@ -57,3 +57,4 @@ rusqlite = { version = "0.39.0", features = ["bundled", "jiff"] }
 rusqlite-facet = { path = "crates/rusqlite-facet" }
 facet-core = "0.44.3"
 facet-reflect = "0.44.3"
+

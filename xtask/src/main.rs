@@ -72,13 +72,13 @@ fn build_frontend(workspace_root: &Path) {
 }
 
 fn install(workspace_root: &Path) {
-    let binaries = ["ship"];
+    let binaries = ["ship", "ship-old"];
 
     build_frontend(workspace_root);
 
     println!("Building ship binaries...");
     let status = Command::new("cargo")
-        .args(["build", "--release", "--features", "ship-server/voice"])
+        .args(["build", "--release", "-p", "ship", "-p", "ship-server", "--features", "ship-server/voice"])
         .current_dir(workspace_root)
         .status()
         .expect("Failed to run cargo build");

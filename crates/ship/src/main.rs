@@ -33,6 +33,11 @@ struct AppState {
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
+    if std::env::args().any(|a| a == "--version" || a == "-V") {
+        println!("ship {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
     tracing_subscriber::registry()
         .with(fmt::layer())
         .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| {
