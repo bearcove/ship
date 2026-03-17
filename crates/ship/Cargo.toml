@@ -25,3 +25,9 @@ hyper-tungstenite = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 eyre = { workspace = true }
+
+[dev-dependencies]
+tokio-tungstenite = "0.26"
+ship-types = { path = "../ship-types" }
+tempfile = "3"
+camino = { workspace = true }

@@ -3557,6 +3557,7 @@ name = "ship"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "camino",
  "eyre",
  "hyper-tungstenite",
  "roam",
@@ -3568,7 +3569,10 @@ dependencies = [
  "ship-runtime",
  "ship-tool-impl",
  "ship-tool-service",
+ "ship-types",
+ "tempfile",
  "tokio",
+ "tokio-tungstenite 0.26.2",
  "tracing",
  "tracing-subscriber",
 ]
