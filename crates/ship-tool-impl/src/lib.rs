@@ -10,6 +10,7 @@ use tokio::sync::Mutex;
 /// Each MCP server process gets its own roam connection with a ToolBackendImpl
 /// scoped to a specific participant and room. The `caller` identity is set at
 /// connection time, not per-call.
+#[derive(Clone)]
 pub struct ToolBackendImpl {
     runtime: Arc<Mutex<Runtime>>,
     participant: ParticipantName,

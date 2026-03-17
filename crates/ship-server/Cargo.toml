@@ -7,7 +7,7 @@ name = "ship-server"
 version = "0.1.0"
 edition = "2024"
 autobins = false
-default-run = "ship"
+default-run = "ship-old"
 
 [package.metadata]
 
@@ -15,7 +15,7 @@ default-run = "ship"
 rustdoc-args = ["--html-in-header", "arborium-header.html"]
 
 [[bin]]
-name = "ship"
+name = "ship-old"
 path = "src/main.rs"
 
 [features]

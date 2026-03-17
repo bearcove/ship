@@ -1,0 +1,27 @@
+[package]
+name = "ship"
+version = "0.1.0"
+edition = "2024"
+autobins = false
+
+[[bin]]
+name = "ship"
+path = "src/main.rs"
+
+[dependencies]
+ship-runtime = { path = "../ship-runtime" }
+ship-db = { path = "../ship-db" }
+ship-policy = { path = "../ship-policy" }
+ship-frontend-service = { path = "../ship-frontend-service" }
+ship-tool-service = { path = "../ship-tool-service" }
+ship-frontend-impl = { path = "../ship-frontend-impl" }
+ship-tool-impl = { path = "../ship-tool-impl" }
+
+axum = { workspace = true }
+tokio = { workspace = true, features = ["sync", "signal"] }
+roam = { workspace = true }
+roam-websocket = { workspace = true }
+hyper-tungstenite = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+eyre = { workspace = true }

@@ -3589,6 +3589,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "ship"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "eyre",
+ "hyper-tungstenite",
+ "roam",
+ "roam-websocket",
+ "ship-db",
+ "ship-frontend-impl",
+ "ship-frontend-service",
+ "ship-policy",
+ "ship-runtime",
+ "ship-tool-impl",
+ "ship-tool-service",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "ship-acp"
 version = "0.1.0"
 dependencies = [

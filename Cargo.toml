@@ -21,6 +21,7 @@ members = [
   "crates/ship-tool-service",
   "crates/ship-frontend-impl",
   "crates/ship-tool-impl",
+  "crates/ship",
 ]
 resolver = "2"
 
